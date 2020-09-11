@@ -1,0 +1,49 @@
+use crate::goal::Goal;
+use crate::lterm::LTerm;
+use crate::state::UserState;
+use std::rc::Rc;
+
+/// A relation that succeeds when `s` is an empty list. This is equivalent to `s == []`.
+///
+/// # Example
+/// ```rust
+/// # #![recursion_limit = "512"]
+/// use proto_vulcan::*;
+/// use proto_vulcan::relation::emptyo;
+/// let query = proto_vulcan_query!(|q| {
+///     conde {
+///         [q == [], emptyo(q)]
+///     }
+/// });
+/// assert!(query.run().next().unwrap().q == lterm!([]));
+/// ```
+pub fn emptyo<U: UserState>(s: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    proto_vulcan!([] == s)
+}
+
+#[cfg(test)]
+mod test {
+    use super::emptyo;
+    use crate::operator::conde::conde;
+    use crate::*;
+
+    #[test]
+    fn test_emptyo_1() {
+        let query = proto_vulcan_query!(|q| {
+            conde {
+                [q == [], emptyo(q)]
+            }
+        });
+        assert!(query.run().next().unwrap().q == lterm!([]));
+    }
+
+    #[test]
+    fn test_emptyo_2() {
+        let query = proto_vulcan_query!(|q| {
+            conde {
+                [q == [1, 2, 3], emptyo(q)],
+            }
+        });
+        assert!(query.run().next().is_none());
+    }
+}

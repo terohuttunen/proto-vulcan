@@ -1,0 +1,11 @@
+[package]
+name = "proto-vulcan"
+version = "0.1.0"
+authors = ["Tero Huttunen <tero.huttunen@ultic.io>"]
+description = "A miniKanren-family relational logic programming language embedded in Rust"
+edition = "2018"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+derivative = "2.1.1"
+tt-call = "1.0.7"
