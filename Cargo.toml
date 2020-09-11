@@ -5,6 +5,7 @@ authors = ["Tero Huttunen <tero.huttunen@ultic.io>"]
 description = "A miniKanren-family relational logic programming language embedded in Rust"
 edition = "2018"
 license = "MIT/Apache-2.0"
+repository = "https://github.com/terohuttunen/proto-vulcan/"
 
 [dependencies]
 derivative = "2.1.1"
