@@ -132,8 +132,10 @@ macro_rules! proto_vulcan_query {
         }
 
         impl<U: UserState> fmt::Display for QueryResult<U> {
+            #[allow(unused_variables, unused_assignments)]
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                $( writeln!(f, "{}: {}", stringify!($query), self.$query)?; )+
+                let mut count = 0;
+                $( if count > 0 { writeln!(f, "")?; }  write!(f, "{}: {}", stringify!($query), self.$query)?; count += 1; )+
                 write!(f, "")
             }
         }
