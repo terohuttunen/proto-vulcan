@@ -4,7 +4,7 @@ use crate::operator::conde;
 use crate::relation::conso;
 use crate::relation::rembero;
 use crate::relation::resto;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation that will permute xl into yl.

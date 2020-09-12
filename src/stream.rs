@@ -1,5 +1,6 @@
 use crate::goal::Goal;
-use crate::state::{SResult, State, UserState};
+use crate::state::{SResult, State};
+use crate::user::UserState;
 use std::fmt;
 use std::rc::Rc;
 

@@ -2,7 +2,7 @@ use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::operator::conde;
 use crate::relation::conso;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation where `out` is equal to `ls` with first occurrence of `x` removed.

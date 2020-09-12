@@ -2,7 +2,7 @@ use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::operator::conde;
 use crate::relation::conso;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation that succeeds once if `x` is in list `l`.

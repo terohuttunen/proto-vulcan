@@ -1,6 +1,6 @@
 use crate::goal::Goal;
 use crate::operator::condu;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// Once operator

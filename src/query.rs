@@ -1,6 +1,7 @@
 use crate::goal::Goal;
-use crate::state::{State, UserState};
+use crate::state::State;
 use crate::stream::Stream;
+use crate::user::UserState;
 use std::fmt;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
@@ -117,7 +118,8 @@ impl<V: ReifyQuery<R, EmptyUserState>, R> Query<V, R, EmptyUserState> {
 #[macro_export]
 macro_rules! proto_vulcan_query {
     (| $($query:ident),+ | { $( $body:tt )* } ) => {{
-        use $crate::state::{State, UserState};
+        use $crate::state::State;
+        use $crate::user::UserState;
         use std::fmt;
         use std::rc::Rc;
         use $crate::lresult::LResult;

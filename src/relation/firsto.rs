@@ -1,7 +1,7 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::relation::conso;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation such that the `first` is the first element of `list`.

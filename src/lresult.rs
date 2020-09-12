@@ -2,7 +2,7 @@ use crate::lterm::LTerm;
 use crate::lvalue::LValue;
 use crate::state::constraint::store::ConstraintStore;
 use crate::state::constraint::Constraint;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;

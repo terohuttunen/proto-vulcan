@@ -2,7 +2,7 @@ use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::operator::conde;
 use crate::relation::emptyo;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation which guarantees that all elements of `l` are distinct from each other.

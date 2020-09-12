@@ -3,7 +3,7 @@ use crate::lterm::LTerm;
 use crate::operator::conde;
 use crate::relation::conso;
 use crate::relation::emptyo;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation where `l`, `s`, and `ls` are proper lists, such that `ls` is `s` appended to `l`.

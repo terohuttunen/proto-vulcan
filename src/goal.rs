@@ -1,6 +1,7 @@
 use crate::query::EmptyUserState;
-use crate::state::{State, UserState};
+use crate::state::State;
 use crate::stream::Stream;
+use crate::user::UserState;
 use std::fmt;
 
 // A goal is a function which, given an input state, will give an output state (or infinite stream

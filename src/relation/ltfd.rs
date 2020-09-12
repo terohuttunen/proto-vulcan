@@ -3,7 +3,7 @@ use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::relation::diseqfd::diseqfd;
 use crate::relation::ltefd::ltefd;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 pub fn ltfd<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {

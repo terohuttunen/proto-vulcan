@@ -274,13 +274,16 @@ pub mod state;
 
 pub mod lresult;
 
+pub mod user;
+
 #[macro_use]
 pub mod query;
 
 pub use goal::Goal;
 pub use lterm::LTerm;
 pub use lvalue::LValue;
-pub use state::{Constraint, UserState, UserUnify};
+pub use state::Constraint;
+pub use user::{UserState, UserUnify};
 
 // conde is the only non-built-in operator exported by default.
 pub use crate::operator::conde::conde;

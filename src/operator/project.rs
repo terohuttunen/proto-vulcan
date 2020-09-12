@@ -1,7 +1,8 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::state::{State, UserState};
+use crate::state::State;
 use crate::stream::Stream;
+use crate::user::UserState;
 use std::rc::Rc;
 
 #[derive(Debug)]

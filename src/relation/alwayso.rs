@@ -1,5 +1,5 @@
 use crate::goal::Goal;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation that succeeds an unbounded number of times.

@@ -52,7 +52,7 @@ pub enum Constraint<U: UserState> {
     Tree(Rc<dyn TreeConstraint<U>>),
     FiniteDomain(Rc<dyn FiniteDomainConstraint<U>>),
     Z(Rc<dyn ZConstraint<U>>),
-    User(Rc<dyn UserConstraint<U>>)
+    User(Rc<dyn UserConstraint<U>>),
 }
 
 impl<U: UserState> Constraint<U> {

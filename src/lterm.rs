@@ -1,4 +1,4 @@
-use crate::state::UserUnify;
+use crate::user::UserUnify;
 use std::borrow::Borrow;
 use std::fmt;
 use std::hash::{Hash, Hasher};

@@ -3,7 +3,7 @@ use crate::lterm::LTerm;
 use crate::operator::all::All;
 use crate::relation::domfd::DomFd;
 use crate::state::FiniteDomain;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 

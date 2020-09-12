@@ -1,6 +1,6 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::state::UserState;
+use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation that succeeds when `s` is an empty list. This is equivalent to `s == []`.

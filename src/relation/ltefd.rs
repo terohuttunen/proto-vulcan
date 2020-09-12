@@ -1,9 +1,10 @@
 /// Less than or equal FD
 use crate::goal::Goal;
 use crate::lterm::LTerm;
+use crate::state::State;
 use crate::state::{BaseConstraint, LessThanOrEqualFdConstraint};
-use crate::state::{State, UserState};
 use crate::stream::Stream;
+use crate::user::UserState;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
