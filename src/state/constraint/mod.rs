@@ -45,11 +45,14 @@ pub trait FiniteDomainConstraint<U: UserState>: BaseConstraint<U> {}
 
 pub trait ZConstraint<U: UserState>: BaseConstraint<U> {}
 
+pub trait UserConstraint<U: UserState>: BaseConstraint<U> {}
+
 #[derive(Clone, Debug)]
 pub enum Constraint<U: UserState> {
     Tree(Rc<dyn TreeConstraint<U>>),
     FiniteDomain(Rc<dyn FiniteDomainConstraint<U>>),
     Z(Rc<dyn ZConstraint<U>>),
+    User(Rc<dyn UserConstraint<U>>)
 }
 
 impl<U: UserState> Constraint<U> {
@@ -67,11 +70,19 @@ impl<U: UserState> Constraint<U> {
         }
     }
 
+    pub fn is_user(&self) -> bool {
+        match self {
+            Constraint::User(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn run(self, state: State<U>) -> SResult<U> {
         match self {
             Constraint::Tree(constraint) => constraint.run(state),
             Constraint::FiniteDomain(constraint) => constraint.run(state),
             Constraint::Z(constraint) => constraint.run(state),
+            Constraint::User(constraint) => constraint.run(state),
         }
     }
 
@@ -81,6 +92,7 @@ impl<U: UserState> Constraint<U> {
             Constraint::Tree(constraint) => constraint.operands(),
             Constraint::FiniteDomain(constraint) => constraint.operands(),
             Constraint::Z(constraint) => constraint.operands(),
+            Constraint::User(constraint) => constraint.operands(),
         }
     }
 
@@ -91,6 +103,7 @@ impl<U: UserState> Constraint<U> {
                 BaseConstraint::reify(constraint.as_ref(), state)
             }
             Constraint::Z(constraint) => BaseConstraint::reify(constraint.as_ref(), state),
+            Constraint::User(constraint) => BaseConstraint::reify(constraint.as_ref(), state),
         }
     }
 }
@@ -101,6 +114,7 @@ impl<U: UserState> Hash for Constraint<U> {
             Constraint::Tree(constraint) => ptr::hash(&**constraint, state),
             Constraint::FiniteDomain(constraint) => ptr::hash(&**constraint, state),
             Constraint::Z(constraint) => ptr::hash(&**constraint, state),
+            Constraint::User(constraint) => ptr::hash(&**constraint, state),
         }
     }
 }
@@ -111,6 +125,7 @@ impl<U: UserState> std::fmt::Display for Constraint<U> {
             Constraint::Tree(constraint) => std::fmt::Display::fmt(constraint, f),
             Constraint::FiniteDomain(constraint) => std::fmt::Display::fmt(constraint, f),
             Constraint::Z(constraint) => std::fmt::Display::fmt(constraint, f),
+            Constraint::User(constraint) => std::fmt::Display::fmt(constraint, f),
         }
     }
 }
@@ -123,6 +138,7 @@ impl<U: UserState> PartialEq for Constraint<U> {
                 Rc::ptr_eq(left, right)
             }
             (Constraint::Z(left), Constraint::Z(right)) => Rc::ptr_eq(left, right),
+            (Constraint::User(left), Constraint::User(right)) => Rc::ptr_eq(left, right),
             _ => false,
         }
     }
@@ -145,5 +161,11 @@ impl<U: UserState> From<Rc<dyn FiniteDomainConstraint<U>>> for Constraint<U> {
 impl<U: UserState> From<Rc<dyn ZConstraint<U>>> for Constraint<U> {
     fn from(c: Rc<dyn ZConstraint<U>>) -> Constraint<U> {
         Constraint::Z(c)
+    }
+}
+
+impl<U: UserState> From<Rc<dyn UserConstraint<U>>> for Constraint<U> {
+    fn from(c: Rc<dyn UserConstraint<U>>) -> Constraint<U> {
+        Constraint::User(c)
     }
 }

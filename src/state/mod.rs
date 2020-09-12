@@ -15,7 +15,7 @@ pub mod constraint;
 pub use constraint::{
     BaseConstraint, Constraint, DiseqFdConstraint, DisequalityConstraint, DistinctFdConstraint,
     FiniteDomain, LessThanOrEqualFdConstraint, MinusFdConstraint, PlusFdConstraint,
-    PlusZConstraint, TimesFdConstraint, TimesZConstraint, TreeConstraint,
+    PlusZConstraint, TimesFdConstraint, TimesZConstraint, TreeConstraint, UserConstraint,
 };
 
 use constraint::store::ConstraintStore;
