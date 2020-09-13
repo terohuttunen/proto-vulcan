@@ -1,5 +1,5 @@
 use crate::goal::Goal;
-use crate::operator::any::Any;
+use crate::operator::all::All;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::UserState;
@@ -7,37 +7,54 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Conde<U: UserState> {
-    body: Rc<dyn Goal<U>>,
+    conjunctions: Vec<Rc<dyn Goal<U>>>,
 }
 
 impl<U: UserState> Conde<U> {
-    pub fn new(body: Rc<dyn Goal<U>>) -> Rc<dyn Goal<U>> {
-        Rc::new(Conde { body })
-    }
-
-    pub fn from_vec(v: Vec<Rc<dyn Goal<U>>>) -> Rc<dyn Goal<U>> {
-        Rc::new(Conde {
-            body: Any::from_vec(v),
-        })
+    pub fn from_vec(conjunctions: Vec<Rc<dyn Goal<U>>>) -> Rc<dyn Goal<U>> {
+        Rc::new(Conde { conjunctions })
     }
 
     pub fn from_array(goals: &[Rc<dyn Goal<U>>]) -> Rc<dyn Goal<U>> {
         Rc::new(Conde {
-            body: Any::from_array(goals),
+            conjunctions: goals.to_vec(),
         })
     }
 
     // The parameter is a list of conjunctions, and the resulting goal is a disjunction
     // of conjunctions.
-    pub fn from_conjunctions(conjunctions: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
-        Conde::new(Any::from_conjunctions(conjunctions))
+    pub fn from_conjunctions(goals: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
+        let mut conjunctions = vec![];
+        for conjunction_goals in goals {
+            conjunctions.push(All::from_array(conjunction_goals));
+        }
+        Conde::from_vec(conjunctions)
     }
 }
 
 impl<U: UserState> Goal<U> for Conde<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
-        let goal = Rc::clone(&self.body);
-        Stream::Lazy(LazyStream::from_goal(goal, state))
+        let mut stream = Stream::Empty;
+
+        // Process first element separately to avoid one extra clone of `state`.
+        if self.conjunctions.len() > 1 {
+            for conjunction in self
+                .conjunctions
+                .iter()
+                .rev()
+                .take(self.conjunctions.len() - 1)
+            {
+                let new_stream = conjunction.apply(state.clone());
+                stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
+            }
+        }
+
+        if self.conjunctions.len() > 0 {
+            let new_stream = self.conjunctions[0].apply(state);
+            stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
+        }
+
+        stream
     }
 }
 

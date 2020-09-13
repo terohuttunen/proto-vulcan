@@ -79,16 +79,16 @@ mod tests {
             }
         });
         let mut iter = query.run();
-        assert!(iter.next().unwrap().q == lterm!([0, 0, 0]));
-        assert!(iter.next().unwrap().q == lterm!([0, 1, 1]));
-        assert!(iter.next().unwrap().q == lterm!([0, 2, 2]));
-        assert!(iter.next().unwrap().q == lterm!([0, 3, 3]));
-        assert!(iter.next().unwrap().q == lterm!([1, 0, 1]));
-        assert!(iter.next().unwrap().q == lterm!([3, 0, 3]));
-        assert!(iter.next().unwrap().q == lterm!([1, 1, 2]));
-        assert!(iter.next().unwrap().q == lterm!([1, 2, 3]));
-        assert!(iter.next().unwrap().q == lterm!([2, 0, 2]));
-        assert!(iter.next().unwrap().q == lterm!([2, 1, 3]));
+        assert_eq!(iter.next().unwrap().q, lterm!([0, 0, 0]));
+        assert_eq!(iter.next().unwrap().q, lterm!([0, 1, 1]));
+        assert_eq!(iter.next().unwrap().q, lterm!([0, 2, 2]));
+        assert_eq!(iter.next().unwrap().q, lterm!([1, 0, 1]));
+        assert_eq!(iter.next().unwrap().q, lterm!([0, 3, 3]));
+        assert_eq!(iter.next().unwrap().q, lterm!([3, 0, 3]));
+        assert_eq!(iter.next().unwrap().q, lterm!([1, 1, 2]));
+        assert_eq!(iter.next().unwrap().q, lterm!([1, 2, 3]));
+        assert_eq!(iter.next().unwrap().q, lterm!([2, 0, 2]));
+        assert_eq!(iter.next().unwrap().q, lterm!([2, 1, 3]));
         assert!(iter.next().is_none());
     }
 }
