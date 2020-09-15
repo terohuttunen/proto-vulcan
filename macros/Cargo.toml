@@ -1,6 +1,6 @@
 [package]
 name = "proto-vulcan-macros"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Tero Huttunen <tero.huttunen@ultic.io>"]
 edition = "2018"
 
