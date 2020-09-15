@@ -7,15 +7,17 @@ use std::rc::Rc;
 ///
 /// # Example
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
 /// use proto_vulcan::relation::emptyo;
-/// let query = proto_vulcan_query!(|q| {
-///     conde {
-///         [q == [], emptyo(q)]
-///     }
-/// });
-/// assert!(query.run().next().unwrap().q == lterm!([]));
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         conde {
+///             [q == [], emptyo(q)]
+///         }
+///     });
+///     assert!(query.run().next().unwrap().q == lterm!([]));
+/// }
 /// ```
 pub fn emptyo<U: UserState>(s: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!([] == s)

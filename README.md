@@ -9,20 +9,13 @@ In addition to core miniKanren language, proto-vulcan currently provides support
 * User extension interface
 
 The language is embedded into Rust with macros which parse the language syntax and convert it
-into Rust. For parsing the language syntax, it uses the [`tt-call`] library.
+into Rust.
 
 [`miniKanren`]: http://minikanren.org
-[`tt-call`]: http://github.com/dtolnay/tt-call
 
-Due to heavy macro-usage, the default recursion limit is not sufficient. It can be increased
-with:
-```rust
-#![recursion_limit = "512"]
-```
 
 # Example
 ```rust
-#![recursion_limit = "512"]
 extern crate proto_vulcan;
 use proto_vulcan::*;
 

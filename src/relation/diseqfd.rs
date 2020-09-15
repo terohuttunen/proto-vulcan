@@ -40,23 +40,25 @@ impl<U: UserState> Goal<U> for DiseqFd<U> {
 ///
 /// Note: The built-in syntax `x != y` does not work with finite domains.
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
 /// use proto_vulcan::relation::diseqfd;
 /// use proto_vulcan::relation::infd;
-/// let query = proto_vulcan_query!(|q| {
-///     |x, y| {
-///         infd(x, #&[1, 2]),
-///         infd(y, #&[2, 3]),
-///         diseqfd(x, y),
-///         q == [x, y],
-///     }
-/// });
-/// let mut iter = query.run();
-/// assert!(iter.next().unwrap().q == lterm!([2, 3]));
-/// assert!(iter.next().unwrap().q == lterm!([1, 2]));
-/// assert!(iter.next().unwrap().q == lterm!([1, 3]));
-/// assert!(iter.next().is_none())
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         |x, y| {
+///             infd(x, #&[1, 2]),
+///             infd(y, #&[2, 3]),
+///             diseqfd(x, y),
+///             q == [x, y],
+///         }
+///     });
+///     let mut iter = query.run();
+///     assert!(iter.next().unwrap().q == lterm!([2, 3]));
+///     assert!(iter.next().unwrap().q == lterm!([1, 2]));
+///     assert!(iter.next().unwrap().q == lterm!([1, 3]));
+///     assert!(iter.next().is_none())
+/// }
 /// ```
 pub fn diseqfd<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     DiseqFd::new(Rc::clone(u), Rc::clone(v))

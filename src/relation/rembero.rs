@@ -9,13 +9,15 @@ use std::rc::Rc;
 ///
 /// # Example
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
 /// use proto_vulcan::relation::rembero;
-/// let query = proto_vulcan_query!(|q| {
-///     rembero(2, [1, 2, 3, 2, 4], q)
-/// });
-/// assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]))
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         rembero(2, [1, 2, 3, 2, 4], q)
+///     });
+///     assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]));
+/// }
 /// ```
 pub fn rembero<U: UserState>(x: &Rc<LTerm>, ls: &Rc<LTerm>, out: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let x = Rc::clone(x);

@@ -35,17 +35,19 @@ impl<U: UserState> Goal<U> for Fail<U> {
 /// Proto-vulcan provides a built-in syntax `false` to avoid the use-clause.
 ///
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
-/// let query = proto_vulcan_query!(|q| {
-///     conde {
-///         [true, q == 1],
-///         [false, q == 2],
-///     }
-/// });
-/// let mut iter = query.run();
-/// assert!(iter.next().unwrap().q == 1);
-/// assert!(iter.next().is_none());
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         conde {
+///             [true, q == 1],
+///             [false, q == 2],
+///         }
+///     });
+///     let mut iter = query.run();
+///     assert!(iter.next().unwrap().q == 1);
+///     assert!(iter.next().is_none());
+/// }
 /// ```
 pub fn fail<U: UserState>() -> Rc<dyn Goal<U>> {
     Fail::new()

@@ -5,13 +5,7 @@
 //! provides an interface for user-defined extensions.
 //!
 //! The language is embedded into Rust with macros which parse the language syntax and convert it
-//! into Rust. For parsing the language syntax, it uses the [`tt-call`] library.
-//!
-//! Due to heavy macro-usage, the default recursion limit is not sufficient. It can be increased
-//! with:
-//! ```rust
-//! #![recursion_limit = "512"]
-//! ```
+//! into Rust.
 //!
 //! # Syntax overview
 //! Proto-vulcan has two kinds of goal-constructors: operators and relations. Operators operate on
@@ -90,7 +84,6 @@
 //! A simple example of a Proto-vulcan program that declares a disjunction of query variable `q`
 //! being equal to `1`, `2` or `3`.
 //! ```rust
-//! #![recursion_limit = "512"]
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //!
@@ -122,18 +115,20 @@
 //! to use anything other than the default `EmptyUserState`. A simple function example that
 //! implements a relation that succeeds when argument `s` is an empty list is declared as:
 //! ```rust
-//! # #![recursion_limit = "512"]
+//! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //! use std::rc::Rc;
 //!
 //! pub fn emptyo<U: UserState>(s: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
 //!     proto_vulcan!([] == s)
 //! }
+//! # fn main() {}
 //! ```
 //! # Declaring operators
 //! The signature of operators is different from relations. Operators have only one parameter
 //! which is an array of arrays of goals. For example `onceo` can be implemented as:
 //! ```rust
+//! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //! use proto_vulcan::operator::condu;
 //! use std::rc::Rc;
@@ -142,6 +137,7 @@
 //!     let g = proto_vulcan::operator::all::All::from_conjunctions(goals);
 //!     proto_vulcan!(condu { g })
 //! }
+//! # fn main() {}
 //! ```
 //!
 //!
@@ -152,7 +148,7 @@
 //! `emptyo(l)`-relation declared previously.
 //!
 //! ```rust
-//! # #![recursion_limit = "512"]
+//! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //! use proto_vulcan::relation::emptyo;
 //! use proto_vulcan::relation::conso;
@@ -173,6 +169,7 @@
 //!         }
 //!     )
 //! }
+//! # fn main() {}
 //! ```
 //! # Constraint Logic Programming
 //! ## CLP(Tree)
@@ -180,14 +177,16 @@
 //!
 //! # Example
 //! ```rust
-//! # #![recursion_limit = "512"]
+//! extern crate proto_vulcan;
 //! use proto_vulcan::*;
-//! let query = proto_vulcan_query!(|x, y| {
-//!     [x, 1] != [2, y],
-//! });
+//! fn main() {
+//!     let query = proto_vulcan_query!(|x, y| {
+//!         [x, 1] != [2, y],
+//!     });
 //!
-//! for result in query.run() {
-//!     println!("{}", result);
+//!     for result in query.run() {
+//!         println!("{}", result);
+//!     }
 //! }
 //! ```
 //! Because the variables are not fully constrained, they can be anything except specific values,
@@ -219,7 +218,7 @@
 //! `State`-monad. The function must return a `Stream<U>`, that can be obtained by applying the
 //! returned goal to the input state. For example, a goal that always succeeds, can be written as:
 //! ```rust
-//! # #![recursion_limit = "512"]
+//! # extern crate proto_vulcan;
 //! # use proto_vulcan::*;
 //! # use std::rc::Rc;
 //! fn example() -> Rc<dyn Goal> {
@@ -230,6 +229,7 @@
 //!         }
 //!     )
 //! }
+//! # fn main() {}
 //! ```
 //! See more complex example in `reification.rs` of Proto-vulcan itself.
 //!
@@ -248,12 +248,14 @@
 //! by the user state type.
 //!
 //! [`miniKanren`]: http://minikanren.org
-//! [`tt-call`]: http://github.com/dtolnay/tt-call
 
-#![recursion_limit = "512"]
 #![feature(move_ref_pattern)]
-#[doc(hidden)]
-pub extern crate tt_call;
+
+#[macro_use]
+extern crate proto_vulcan_macros;
+
+pub use proto_vulcan_macros::proto_vulcan;
+
 #[macro_use]
 extern crate derivative;
 
@@ -261,10 +263,6 @@ extern crate derivative;
 pub mod lterm;
 pub mod goal;
 pub mod stream;
-
-#[doc(hidden)]
-#[macro_use]
-pub mod parse;
 
 pub mod lvalue;
 pub mod operator;

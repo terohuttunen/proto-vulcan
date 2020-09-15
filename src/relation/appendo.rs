@@ -10,13 +10,15 @@ use std::rc::Rc;
 ///
 /// # Example
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
 /// use proto_vulcan::relation::appendo;
-/// let query = proto_vulcan_query!(|q| {
-///     appendo([1, 2, 3], [4, 5], q)
-/// });
-/// assert!(query.run().next().unwrap().q == lterm!([1, 2, 3, 4, 5]));
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         appendo([1, 2, 3], [4, 5], q)
+///     });
+///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3, 4, 5]));
+/// }
 pub fn appendo<U: UserState>(l: &Rc<LTerm>, s: &Rc<LTerm>, ls: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let s = Rc::clone(s);
     proto_vulcan!(

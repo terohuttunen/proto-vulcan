@@ -39,24 +39,26 @@ impl<U: UserState> Goal<U> for Anyo<U> {
 /// # Example
 /// In this example the conde-operator would be tried unbounded number of times.
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
-/// let query = proto_vulcan_query!(|q| {
-///     loop {
-///         conde {
-///             1 == q,
-///             2 == q,
-///             3 == q,
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         loop {
+///             conde {
+///                 1 == q,
+///                 2 == q,
+///                 3 == q,
+///             }
 ///         }
-///     }
-/// });
-/// let mut iter = query.run();
-/// assert_eq!(iter.next().unwrap().q, 1);
-/// assert_eq!(iter.next().unwrap().q, 2);
-/// assert_eq!(iter.next().unwrap().q, 3);
-/// assert_eq!(iter.next().unwrap().q, 1);
-/// assert_eq!(iter.next().unwrap().q, 2);
-/// assert_eq!(iter.next().unwrap().q, 3);
+///     });
+///     let mut iter = query.run();
+///     assert_eq!(iter.next().unwrap().q, 1);
+///     assert_eq!(iter.next().unwrap().q, 2);
+///     assert_eq!(iter.next().unwrap().q, 3);
+///     assert_eq!(iter.next().unwrap().q, 1);
+///     assert_eq!(iter.next().unwrap().q, 2);
+///     assert_eq!(iter.next().unwrap().q, 3);
+/// }
 /// ```
 pub fn anyo<U: UserState>(goals: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
     Anyo::new(All::from_conjunctions(goals))

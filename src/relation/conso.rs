@@ -8,13 +8,15 @@ use std::rc::Rc;
 ///
 /// # Example
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
 /// use proto_vulcan::relation::conso;
-/// let query = proto_vulcan_query!(|q| {
-///     conso(1, [2, 3], q)
-/// });
-/// assert!(query.run().next().unwrap().q == lterm!([1, 2, 3]));
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         conso(1, [2, 3], q)
+///     });
+///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3]));
+/// }
 /// ```
 pub fn conso<U: UserState>(
     first: &Rc<LTerm>,

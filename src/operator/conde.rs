@@ -79,27 +79,29 @@ impl<U: UserState> Goal<U> for Conde<U> {
 /// streams of solutions from the conjunctions. This example shows how the solutions from the
 /// `membero`-relations, are interleaved by the `conde`-operator:
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
 /// use proto_vulcan::relation::membero;
-/// let query = proto_vulcan_query!(|q| {
-///     conde {
-///         membero(q, [1, 2, 3]),
-///         membero(q, [4, 5, 6]),
-///         membero(q, [7, 8, 9]),
-///     }
-/// });
-/// let mut iter = query.run();
-/// assert_eq!(iter.next().unwrap().q, 1);
-/// assert_eq!(iter.next().unwrap().q, 2);
-/// assert_eq!(iter.next().unwrap().q, 4);
-/// assert_eq!(iter.next().unwrap().q, 7);
-/// assert_eq!(iter.next().unwrap().q, 3);
-/// assert_eq!(iter.next().unwrap().q, 5);
-/// assert_eq!(iter.next().unwrap().q, 8);
-/// assert_eq!(iter.next().unwrap().q, 6);
-/// assert_eq!(iter.next().unwrap().q, 9);
-/// assert!(iter.next().is_none());
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         conde {
+///             membero(q, [1, 2, 3]),
+///             membero(q, [4, 5, 6]),
+///             membero(q, [7, 8, 9]),
+///         }
+///     });
+///     let mut iter = query.run();
+///     assert_eq!(iter.next().unwrap().q, 1);
+///     assert_eq!(iter.next().unwrap().q, 2);
+///     assert_eq!(iter.next().unwrap().q, 4);
+///     assert_eq!(iter.next().unwrap().q, 7);
+///     assert_eq!(iter.next().unwrap().q, 3);
+///     assert_eq!(iter.next().unwrap().q, 5);
+///     assert_eq!(iter.next().unwrap().q, 8);
+///     assert_eq!(iter.next().unwrap().q, 6);
+///     assert_eq!(iter.next().unwrap().q, 9);
+///     assert!(iter.next().is_none());
+/// }
 /// ```
 pub fn conde<U: UserState>(body: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
     Conde::from_conjunctions(&body)

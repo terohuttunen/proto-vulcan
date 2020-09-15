@@ -10,17 +10,19 @@ use std::rc::Rc;
 ///
 /// # Example
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
 /// use proto_vulcan::relation::membero;
-/// let query = proto_vulcan_query!(|q| {
-///     membero(q, [1, 2, 3])
-/// });
-/// let mut iter = query.run();
-/// assert!(iter.next().unwrap().q == 1);
-/// assert!(iter.next().unwrap().q == 2);
-/// assert!(iter.next().unwrap().q == 3);
-/// assert!(iter.next().is_none());
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         membero(q, [1, 2, 3])
+///     });
+///     let mut iter = query.run();
+///     assert!(iter.next().unwrap().q == 1);
+///     assert!(iter.next().unwrap().q == 2);
+///     assert!(iter.next().unwrap().q == 3);
+///     assert!(iter.next().is_none());
+/// }
 /// ```
 pub fn membero<U: UserState>(x: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let x = Rc::clone(x);

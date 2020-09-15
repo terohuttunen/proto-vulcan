@@ -1,4 +1,3 @@
-#![recursion_limit = "256"]
 extern crate proto_vulcan;
 use proto_vulcan::relation::conso;
 use proto_vulcan::relation::firsto;

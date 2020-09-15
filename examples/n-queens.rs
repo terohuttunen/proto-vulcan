@@ -1,4 +1,3 @@
-#![recursion_limit = "512"]
 extern crate proto_vulcan;
 use proto_vulcan::relation::diseqfd;
 use proto_vulcan::relation::distinctfd;
@@ -7,6 +6,7 @@ use proto_vulcan::relation::infdrange;
 use proto_vulcan::relation::plusfd;
 use proto_vulcan::relation::resto;
 use proto_vulcan::*;
+use proto_vulcan::proto_vulcan;
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 
@@ -30,6 +30,7 @@ fn diago(
 fn diagonalso(n: isize, i: isize, j: isize, s: &Rc<LTerm>, r: &Rc<LTerm>) -> Rc<dyn Goal> {
     /* Slightly faster but uglier non-relational version: */
     /*
+    let jmi = lterm!(j - i);
     if r.is_empty() || r.tail().unwrap().is_empty() {
         proto_vulcan!(true)
     } else if s.is_empty() {
@@ -42,7 +43,7 @@ fn diagonalso(n: isize, i: isize, j: isize, s: &Rc<LTerm>, r: &Rc<LTerm>) -> Rc<
         let qi = r.head().unwrap();
         let qj = s.head().unwrap();
         proto_vulcan!([
-            diago(qi, qj, (j - i), #&(0..=2 * n)),
+            diago(qi, qj, jmi, #&(0..=2 * n)),
             diagonalso(#n, #i, #j + 1, #s.tail().unwrap(), r)
         ])
     }
@@ -50,6 +51,7 @@ fn diagonalso(n: isize, i: isize, j: isize, s: &Rc<LTerm>, r: &Rc<LTerm>) -> Rc<
     /* Fully relational version: */
     let s = Rc::clone(s);
     let r = Rc::clone(r);
+    let jmi = lterm!(j - i);
     proto_vulcan!(
         closure {
             conde {
@@ -68,7 +70,7 @@ fn diagonalso(n: isize, i: isize, j: isize, s: &Rc<LTerm>, r: &Rc<LTerm>) -> Rc<
                     firsto(r, qi),
                     firsto(s, qj),
                     resto(s, tail),
-                    diago(qi, qj, (j - i), #&(0..=2 * n)),
+                    diago(qi, qj, jmi, #&(0..=2 * n)),
                     diagonalso(#n, #i, #j + 1, tail, r),
                 }
             }

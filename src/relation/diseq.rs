@@ -42,16 +42,18 @@ impl<U: UserState> Goal<U> for Diseq<U> {
 ///
 /// # Example
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
-/// let query = proto_vulcan_query!(|x, y| {
-///     [x, 1] != [2, y],
-/// });
-/// let mut iter = query.run();
-/// let result = iter.next().unwrap();
-/// assert!(result.x.is_any_except(&2));
-/// assert!(result.y.is_any_except(&1));
-/// assert!(iter.next().is_none());
+/// fn main() {
+///     let query = proto_vulcan_query!(|x, y| {
+///         [x, 1] != [2, y],
+///     });
+///     let mut iter = query.run();
+///     let result = iter.next().unwrap();
+///     assert!(result.x.is_any_except(&2));
+///     assert!(result.y.is_any_except(&1));
+///     assert!(iter.next().is_none());
+/// }
 /// ```
 pub fn diseq<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     Diseq::new(Rc::clone(u), Rc::clone(v))

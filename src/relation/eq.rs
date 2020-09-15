@@ -39,14 +39,16 @@ impl<U: UserState> Goal<U> for Eq<U> {
 ///
 /// # Example
 /// ```rust
-/// # #![recursion_limit = "512"]
+/// extern crate proto_vulcan;
 /// use proto_vulcan::*;
-/// let query = proto_vulcan_query!(|q| {
-///     q == 5,
-/// });
-/// let mut iter = query.run();
-/// assert!(iter.next().unwrap().q == 5);
-/// assert!(iter.next().is_none());
+/// fn main() {
+///     let query = proto_vulcan_query!(|q| {
+///         q == 5,
+///     });
+///     let mut iter = query.run();
+///     assert!(iter.next().unwrap().q == 5);
+///     assert!(iter.next().is_none());
+/// }
 /// ```
 pub fn eq<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     Eq::new(Rc::clone(u), Rc::clone(v))
