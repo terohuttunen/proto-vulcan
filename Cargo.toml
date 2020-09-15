@@ -8,8 +8,8 @@ license = "MIT/Apache-2.0"
 repository = "https://github.com/terohuttunen/proto-vulcan/"
 
 [dependencies]
-proto-vulcan-macros = { version = "0.1.1", path = "macros" }
-derivative = "2.1.1"
+proto-vulcan-macros = { version = "=0.1.1", path = "macros" }
+derivative = "2.1"
 
 [workspace]
 members = ["macros"]
