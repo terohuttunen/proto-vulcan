@@ -6,6 +6,7 @@
 /// [a0 AND a1 AND ...] OR
 /// [b0 AND b1 AND ...] OR ...
 use crate::goal::Goal;
+use crate::operator::OperatorParam;
 use crate::operator::all::All;
 use crate::state::State;
 use crate::stream::Stream;
@@ -25,7 +26,7 @@ pub struct Condu<U: UserState> {
 }
 
 impl<U: UserState> Condu<U> {
-    fn from_conjunctions(body: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
+    pub fn from_conjunctions(body: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
         let mut next = proto_vulcan!(false);
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
@@ -52,8 +53,8 @@ impl<U: UserState> Goal<U> for Condu<U> {
 }
 
 /// Committed choice operator.
-pub fn condu<U: UserState>(body: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
-    Condu::from_conjunctions(&body)
+pub fn condu<U: UserState>(param: OperatorParam<U>) -> Rc<dyn Goal<U>> {
+    Condu::from_conjunctions(param.body)
 }
 
 #[cfg(test)]

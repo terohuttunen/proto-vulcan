@@ -356,14 +356,19 @@ impl fmt::Display for LTerm {
             LTerm::Empty => write!(f, "[]"),
             LTerm::Cons(_, _) => {
                 if self.is_improper() {
-                    write!(f, "(")?;
+                    let len = self.iter().count();
+                    write!(f, "[")?;
                     for (count, v) in self.iter().enumerate() {
-                        if count != 0 {
+                        if count == 0 {
+                            ()
+                        } else if count > 0 && count < len - 1 {
                             write!(f, ", ")?;
+                        } else {
+                            write!(f, " | ")?;
                         }
                         write!(f, "{}", v)?;
                     }
-                    write!(f, ")")
+                    write!(f, "]")
                 } else {
                     write!(f, "[")?;
                     for (count, v) in self.iter().enumerate() {
@@ -648,32 +653,6 @@ where
     fn from(u: T) -> LTerm {
         LTerm::Val(u.into())
     }
-}
-
-#[macro_export]
-macro_rules! lterm {
-    // Pass-through section
-    ( # $( $h:tt )+ ) => { $( $h )+ };
-    ( # $e:expr ) => { $e };
-
-    // Logic terms inside lists must be cloned if they are from reference
-    (@cloning true ) => { ::std::rc::Rc::new($crate::lterm::LTerm::from(true)) };
-    (@cloning false ) => { ::std::rc::Rc::new($crate::lterm::LTerm::from(false)) };
-    (@cloning $e:ident ) => { ::std::rc::Rc::clone(&$e) };
-    (@cloning _ ) => { $crate::lterm::LTerm::any() };
-    (@cloning ( $( $h:tt ),+ ) ) => { $crate::lterm::LTerm::improper_from_array( &[ $( lterm!(@cloning $h) ),+ ] ) };
-    (@cloning [ $($t:tt),* ] ) => { $crate::lterm::LTerm::from_array( &[ $( lterm!(@cloning $t) ),* ] ) };
-    (@cloning $l:literal ) => { ::std::rc::Rc::new($crate::lterm::LTerm::from($l)) };
-    (@cloning $e:expr ) => { ::std::rc::Rc::clone(&$e) };
-
-    ( true ) => { ::std::rc::Rc::new($crate::lterm::LTerm::from(true)) };
-    ( false ) => { ::std::rc::Rc::new($crate::lterm::LTerm::from(false)) };
-    ( $e:ident ) => { $e };
-    ( _ ) => { $crate::lterm::LTerm::any() };
-    ( ( $( $h:tt ),+ ) ) => { $crate::lterm::LTerm::improper_from_array( &[ $( lterm!(@cloning $h) ),+ ] ) };
-    ( [ $($t:tt),* ] ) => { $crate::lterm::LTerm::from_array( &[ $( lterm!(@cloning $t) ),* ] ) };
-    ( $l:literal ) => { std::rc::Rc::new($crate::lterm::LTerm::from($l)) };
-    ( $e:expr ) => { std::rc::Rc::new($crate::lterm::LTerm::from($e)) };
 }
 
 #[cfg(test)]

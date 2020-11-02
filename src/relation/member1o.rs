@@ -1,7 +1,5 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::operator::conde;
-use crate::relation::conso;
 use crate::user::UserState;
 use std::rc::Rc;
 
@@ -26,12 +24,9 @@ pub fn member1o<U: UserState>(x: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let l = Rc::clone(l);
     proto_vulcan!(
         closure {
-            |first, rest| {
-                conso(first, rest, l),
-                conde {
-                    x == first,
-                    [x != first, member1o(x, rest)]
-                }
+            match l {
+                [head | _] => head == x,
+                [head | rest] => [head != x, member1o(x, rest)],
             }
         }
     )

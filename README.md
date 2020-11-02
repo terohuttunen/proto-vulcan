@@ -5,6 +5,7 @@ In addition to core miniKanren language, proto-vulcan currently provides support
 * Disequality constraints CLP(Tree)
 * Finite-domain constraints CLP(FD)
 * Various operators: anyo, conda, condu, onceo, project
+* Pattern matching
 * Writing goals in Rust embedded inline within proto-vulcan
 * User extension interface
 
@@ -48,22 +49,15 @@ use proto_vulcan::relation::conso;
 use std::rc::Rc;
 
 pub fn appendo<U: UserState>(l: &Rc<LTerm>, s: &Rc<LTerm>, ls: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    let s = Rc::clone(s);
     proto_vulcan!(
-        conde {
-            [s == ls, emptyo(l)],
-            |a, d, res| {
-                conso(a, d, l),
-                conso(a, res, ls),
-                closure {
-                    appendo(d, s, res)
-                }
-            }
+        match [l, s, ls] {
+            [[], x, x] => ,
+            [[x | l1], l2, [x | l3]] => closure { appendo(l1, l2, l3) },
         }
     )
 }
 ```
-More examples in documentation.
+More examples in [documentation](https://docs.rs/proto-vulcan/).
 
 ## License
 

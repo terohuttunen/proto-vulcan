@@ -1,8 +1,9 @@
 //! A miniKanren-family relational logic programming language embedded in Rust.
 //!
-//! In addition to core miniKanren language, proto-vulcan currently provides support for
-//! disequality constraints CLP(Tree), as well as finite-domain constraints CLP(FD). It also
-//! provides an interface for user-defined extensions.
+//! In addition to core miniKanren language, proto-vulcan currently supports disequality
+//! constraints CLP(Tree), finite-domain constraints CLP(FD), as well as pattern-matching
+//! (`match`) operator. The user can write additional relations and operators
+//! as Rust functions, and even customize logic terms.
 //!
 //! The language is embedded into Rust with macros which parse the language syntax and convert it
 //! into Rust.
@@ -23,13 +24,25 @@
 //! It is up to the operator what to do with the goals; some operators compute disjunction,
 //! and some conjunction.
 //!
+//! Pattern-matching operators have an additional tree-term parameter and a map from
+//! patterns to goals. Each arm of the operator has a pattern or a set of patterns; if any of
+//! the patterns of an arm unify with the tree-term, then the operator may produce solutions
+//! from the goal of that branch if it succeeds as well.
+//! ```text
+//! <operator> <tree-term> {
+//!     <pattern0> | <pattern1> => <goal1>,
+//!     <pattern2> => <goal2>,
+//!     ...
+//! }
+//! ```
+//!
 //! Relations are functions that can have any number of tree-term parameters,
 //! for example: `foo(<tree-term1>, <tree-term2>)`. The tree-terms can be:
 //! * Literal constants: `1234`, `"foo"`, `'c'`, `true`
 //! * Variables: `a`, `b`, `c`, `d`
 //! * Any-variables: `_`
 //! * Proper lists: `[1, 2, 3, 'c']`
-//! * Improper lists: `(a, b)`
+//! * Improper lists: `[first, second | rest]`
 //! * Trees: `[[1, 2], "foo", false]`
 //!
 //! Core miniKanren language (fresh, conde, ==) is mapped into two Proto-vulcan operators and one
@@ -125,17 +138,43 @@
 //! # fn main() {}
 //! ```
 //! # Declaring operators
-//! The signature of operators is different from relations. Operators have only one parameter
-//! which is an array of arrays of goals. For example `onceo` can be implemented as:
+//! The signature of operators is different from relations. Operators have different kinds of
+//! parameters, of which only `OperatorParam` and `PatternMatchOperatorParam` are of interest
+//! to user; the parser generates these parameter types for regular operators and pattern-match
+//! operators, respectively.
+//! ```rust
+//! # extern crate proto_vulcan;
+//! # use proto_vulcan::*;
+//! # use std::rc::Rc;
+//! pub struct OperatorParam<'a, U: UserState> {
+//!     pub body: &'a [&'a [Rc<dyn Goal<U>>]],
+//! }
+//!
+//! // operator <term> {
+//! //    <pattern0> | <pattern1> => <body0/1>,
+//! //    <pattern2> => <body2>,
+//! //    ...
+//! //    _ => <body_default>,
+//! // }
+//! pub struct PatternMatchOperatorParam<'a, U: UserState> {
+//!     // First goal of each arm is the match-goal
+//!     pub arms: &'a [&'a [Rc<dyn Goal<U>>]],
+//! }
+//! ```
+//! Even though the structs are identical, the first goal on each arm of
+//! `PatternMatchOperatorParam` is the pattern and the match-term equality.
+//!
+//! For example `onceo` can be implemented as:
 //! ```rust
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //! use proto_vulcan::operator::condu;
+//! use proto_vulcan::operator::OperatorParam;
 //! use std::rc::Rc;
 //!
-//! pub fn onceo<U: UserState>(goals: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
-//!     let g = proto_vulcan::operator::all::All::from_conjunctions(goals);
-//!     proto_vulcan!(condu { g })
+//! pub fn onceo<U: UserState>(param: OperatorParam<U>) -> Rc<dyn Goal<U>> {
+//!    let g = crate::operator::all::All::from_conjunctions(param.body);
+//!    proto_vulcan!(condu { g })
 //! }
 //! # fn main() {}
 //! ```
@@ -155,20 +194,14 @@
 //! use std::rc::Rc;
 //!
 //! pub fn appendo<U: UserState>(l: &Rc<LTerm>, s: &Rc<LTerm>, ls: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-//!     let s = Rc::clone(s);
 //!     proto_vulcan!(
-//!         conde {
-//!             [s == ls, emptyo(l)],
-//!             |a, d, res| {
-//!                 conso(a, d, l),
-//!                 conso(a, res, ls),
-//!                 closure {
-//!                     appendo(d, s, res)
-//!                 }
-//!             }
-//!         }
-//!     )
+//!        match [l, s, ls] {
+//!            [[], x, x] => ,
+//!            [[x | l1], l2, [x | l3]] => closure { appendo(l1, l2, l3) },
+//!        }
+//!    )
 //! }
+//!
 //! # fn main() {}
 //! ```
 //! # Constraint Logic Programming
@@ -254,7 +287,7 @@
 #[macro_use]
 extern crate proto_vulcan_macros;
 
-pub use proto_vulcan_macros::proto_vulcan;
+pub use proto_vulcan_macros::{proto_vulcan, lterm};
 
 #[macro_use]
 extern crate derivative;

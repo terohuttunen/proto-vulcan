@@ -3,6 +3,8 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
+use crate::operator::ProjectOperatorParam;
+use crate::operator::all::All;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -25,6 +27,10 @@ impl<U: UserState> Goal<U> for Project<U> {
         }
         self.body.apply(state)
     }
+}
+
+pub fn project<U: UserState>(param: ProjectOperatorParam<U>) -> Rc<dyn Goal<U>> {
+    Project::new(param.var_list, All::from_conjunctions(param.body))
 }
 
 #[cfg(test)]

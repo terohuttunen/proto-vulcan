@@ -1,4 +1,5 @@
 use crate::goal::Goal;
+use crate::operator::OperatorParam;
 use crate::operator::all::All;
 use crate::operator::conde::conde;
 use crate::state::State;
@@ -60,8 +61,8 @@ impl<U: UserState> Goal<U> for Anyo<U> {
 ///     assert_eq!(iter.next().unwrap().q, 3);
 /// }
 /// ```
-pub fn anyo<U: UserState>(goals: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
-    Anyo::new(All::from_conjunctions(goals))
+pub fn anyo<U: UserState>(param: OperatorParam<U>) -> Rc<dyn Goal<U>> {
+    Anyo::new(All::from_conjunctions(param.body))
 }
 
 #[cfg(test)]

@@ -1,12 +1,13 @@
 use crate::goal::Goal;
 use crate::operator::condu;
 use crate::user::UserState;
+use crate::operator::OperatorParam;
 use std::rc::Rc;
 
 /// Once operator
 ///
 /// Guarantees that the conjunction of body goals generates at most one answer.
-pub fn onceo<U: UserState>(goals: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
-    let g = crate::operator::all::All::from_conjunctions(goals);
+pub fn onceo<U: UserState>(param: OperatorParam<U>) -> Rc<dyn Goal<U>> {
+    let g = crate::operator::all::All::from_conjunctions(param.body);
     proto_vulcan!(condu { g })
 }

@@ -23,7 +23,7 @@ pub fn conso<U: UserState>(
     rest: &Rc<LTerm>,
     out: &Rc<LTerm>,
 ) -> Rc<dyn Goal<U>> {
-    proto_vulcan!((first, rest) == out)
+    proto_vulcan!([first | rest] == out)
 }
 
 #[cfg(test)]

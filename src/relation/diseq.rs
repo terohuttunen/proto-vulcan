@@ -355,8 +355,8 @@ mod tests {
     fn test_diseq_22() {
         let query = proto_vulcan_query!(|q| {
             |a, d| {
-                (a, d) == q,
-                q != (5, 6),
+                [a | d] == q,
+                q != [5 | 6],
                 a == 5,
                 d == 6,
             }
@@ -443,8 +443,8 @@ mod tests {
     fn test_diseq_29() {
         let query = proto_vulcan_query!(|a, d| {
             |q| {
-                (a, d) == q,
-                q != (5, 6),
+                [a | d] == q,
+                q != [5 | 6],
                 a == 5,
             }
         });

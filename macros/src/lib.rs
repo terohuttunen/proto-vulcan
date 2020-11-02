@@ -10,6 +10,7 @@ use syn::punctuated::Punctuated;
 use syn::token::{Brace, Bracket, Paren};
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Project {
     project: Ident,
     or1_token: Token![|],
@@ -60,14 +61,17 @@ impl ToTokens for Project {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
             #( let #variables = crate::lterm::LTerm::projection(::std::rc::Rc::clone(&#variables)); )*
-            crate::operator::project::Project::new(vec![ #( ::std::rc::Rc::clone(&#variables) ),* ],
-                crate::operator::all::All::from_array(&[ #( #body ),* ]))
+            crate::operator::project::project(crate::operator::ProjectOperatorParam {
+                var_list: vec![ #( ::std::rc::Rc::clone(&#variables) ),* ],
+                body: &[ #( &[ #body  ] ),* ],
+            })
         }};
         output.to_tokens(tokens);
     }
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct FnGoal {
     fngoal: Ident,
     m: Option<Token![move]>,
@@ -118,6 +122,7 @@ impl ToTokens for FnGoal {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Fresh {
     or1_token: Token![|],
     variables: Punctuated<Ident, Token![,]>,
@@ -171,6 +176,7 @@ impl ToTokens for Fresh {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Conjunction {
     bracket_token: Bracket,
     body: Punctuated<Clause, Token![,]>,
@@ -194,20 +200,36 @@ impl ToTokens for Conjunction {
     }
 }
 
+#[derive(Clone)]
 enum Argument {
     TreeTerm(TreeTerm),
     Quoted(syn::Expr),
+    Expr(syn::Expr),
 }
 
 impl Parse for Argument {
     fn parse(input: ParseStream) -> Result<Self> {
+        // No parsing for quoted input
         if input.peek(Token![#]) {
             let _: Token![#] = input.parse()?;
             let expr: syn::Expr = input.parse()?;
             Ok(Argument::Quoted(expr))
         } else {
-            let term: TreeTerm = input.parse()?;
-            Ok(Argument::TreeTerm(term))
+            // Try parsing TreeTerm
+            if let Ok(term) = input.parse() {
+                Ok(Argument::TreeTerm(term))
+            } else {
+                // By parsing parenthesises away if any, we avoid unused parenthesis warnings
+                if input.peek(Paren) {
+                    let content;
+                    let _ = parenthesized!(content in input);
+                    let expr = content.parse()?;
+                    Ok(Argument::Expr(expr))
+                } else {
+                    let expr = input.parse()?;
+                    Ok(Argument::Expr(expr))
+                }
+            }
         }
     }
 }
@@ -222,11 +244,16 @@ impl ToTokens for Argument {
             Argument::Quoted(expr) => {
                 expr.to_tokens(tokens);
             },
+            Argument::Expr(expr) => {
+                let output = quote! { &::std::rc::Rc::new( crate::lterm::LTerm::from(#expr)) };
+                output.to_tokens(tokens);
+            },
         }
     }
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Relation {
     name: Ident,
     paren_token: Paren,
@@ -254,6 +281,7 @@ impl ToTokens for Relation {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Closure {
     name: Ident,
     brace_token: Brace,
@@ -279,13 +307,14 @@ impl ToTokens for Closure {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            crate::operator::closure::Closure::new(Box::new(move || crate::operator::all::All::from_array( &[ #( #body ),* ] ) ))
+            crate::operator::closure::Closure::new(crate::operator::ClosureOperatorParam {f: Box::new(move || crate::operator::all::All::from_array( &[ #( #body ),* ] ) )})
         }};
         output.to_tokens(tokens);
     }
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Loop {
     kw: Token![loop],
     brace_token: Brace,
@@ -308,13 +337,14 @@ impl ToTokens for Loop {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output = quote! {{
-            crate::operator::anyo::anyo( &[ #( #body ),* ] )
+            crate::operator::anyo::anyo(crate::operator::OperatorParam { body: &[ #( #body ),* ] })
         }};
         output.to_tokens(tokens);
     }
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Operator {
     name: Ident,
     brace_token: Brace,
@@ -336,11 +366,150 @@ impl ToTokens for Operator {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let name = &self.name;
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
-        let output = quote! { #name ( &[ #( #body ),* ] )};
+        let output = quote! { #name ( crate::operator::OperatorParam { body: &[ #( #body ),* ] } )};
         output.to_tokens(tokens);
     }
 }
 
+#[derive(Clone)]
+struct PatternArm {
+    patterns: Vec<TreeTerm>,
+    arrow: Token![=>],
+    brace_token: Option<Brace>,
+    body: Punctuated<Clause, Token![,]>,
+}
+
+impl Parse for PatternArm {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut patterns = vec![];
+        loop {
+            let pattern: TreeTerm = input.parse()?;
+            patterns.push(pattern);
+
+            if input.peek(Token![|]) {
+                let _: Token![|] = input.parse()?;
+            } else if input.peek(Token![=>]) {
+                break
+            }
+        }
+
+        for pattern in patterns.iter() {
+            for var_ident in pattern.get_vars().iter() {
+                if var_ident.to_string() == "__term__" {
+                    return Err(Error::new(var_ident.span(), "A pattern variable cannot be named '__term__'"))
+                }
+            }
+        }
+
+        let arrow: Token![=>] = input.parse()?;
+
+        if input.peek(Brace) {
+            let content;
+            let brace_token = braced!(content in input);
+            let body = content.parse_terminated(Clause::parse)?;
+            Ok(PatternArm {
+                patterns,
+                arrow,
+                brace_token: Some(brace_token),
+                body,
+            })
+        } else if input.peek(Token![,]) {
+            Ok(PatternArm {
+                patterns,
+                arrow,
+                brace_token: None,
+                body: Punctuated::new(),
+            })
+        } else {
+            let mut body: Punctuated<Clause, Token![,]> = Punctuated::new();
+            body.push(input.parse()?);
+            Ok(PatternArm {
+                patterns,
+                arrow,
+                brace_token: None,
+                body,
+            })
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+struct PatternMatchOperator {
+    name: Ident,
+    term: TreeTerm,
+    brace_token: Brace,
+    arms: Punctuated<PatternArm, Token![,]>,
+}
+
+impl Parse for PatternMatchOperator {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let name: Ident;
+        if input.peek(Ident) {
+            name = input.parse()?;
+        } else {
+            let token: Token![match] = input.parse()?;
+            name = Ident::new("match", token.span);
+        };
+        let content;
+        Ok(PatternMatchOperator {
+            name,
+            term: input.parse()?,
+            brace_token: braced!(content in input),
+            arms: content.parse_terminated(PatternArm::parse)?,
+        })
+    }
+}
+
+impl ToTokens for PatternMatchOperator {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let name = &self.name;
+        let term = &self.term;
+
+        let mut patterns: Vec<TreeTerm> = vec![];
+        let mut vars: Vec<Vec<Ident>> = vec![];
+        let mut clauses: Vec<Punctuated<Clause, Token![,]>> = vec![];
+        for arm in self.arms.iter() {
+            // Repeat |-expression patterns with multiple single pattern entries
+            for pattern in arm.patterns.iter() {
+                patterns.push(pattern.clone());
+                vars.push(pattern.get_vars());
+                clauses.push(arm.body.clone());
+            }
+        }
+
+        let output = if name.to_string() == "match" {
+            quote! {
+                crate::operator::matche ( crate::operator::PatternMatchOperatorParam {
+                    arms: &[ #( &{
+                        // Define alias for the `term` so that pattern-variables do not redefine it
+                        // before the equality-relation with pattern is created.
+                        let __term__ = &#term;
+                        // Define new variables found in the pattern
+                        #( let #vars = LTerm::var(stringify!(#vars)); )*
+                        [crate::relation::eq(__term__, &#patterns), #clauses ]
+                    } ),* ],
+                })
+            }
+        } else {
+            quote! {
+                #name ( crate::operator::PatternMatchOperatorParam {
+                    arms: &[ #( &{
+                        // Define alias for the `term` so that pattern-variables do not redefine it
+                        // before the equality-relation with pattern is created.
+                        let __term__ = &#term;
+                        // Define new variables found in the pattern
+                        #( let #vars = LTerm::var(stringify!(#vars)); )*
+                        [crate::relation::eq(__term__, &#patterns), #clauses ]
+                    } ),* ],
+                })
+            }
+        };
+        output.to_tokens(tokens);
+    }
+}
+
+#[derive(Clone, Debug)]
 enum Value {
     Bool(syn::LitBool),
     Number(syn::LitInt),
@@ -381,7 +550,14 @@ impl ToTokens for Value {
 }
 
 /// TreeTerm within a TreeTerm
+#[derive(Clone, Debug)]
 struct InnerTreeTerm(TreeTerm);
+
+impl InnerTreeTerm {
+    fn get_vars(&self) -> Vec<Ident> {
+        self.0.get_vars()
+    }
+}
 
 impl Parse for InnerTreeTerm {
     fn parse(input: ParseStream) -> Result<Self> {
@@ -412,12 +588,12 @@ impl ToTokens for InnerTreeTerm {
                 let output = quote! { crate::lterm::LTerm::any() };
                 output.to_tokens(tokens);
             },
-            TreeTerm::ImproperList {paren_token: _, items} => {
+            TreeTerm::ImproperList {items} => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
                 let output = quote! { crate::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
             },
-            TreeTerm::ProperList {bracket_token: _, items} => {
+            TreeTerm::ProperList {items} => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
                 let output = quote! { crate::lterm::LTerm::from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
@@ -427,17 +603,44 @@ impl ToTokens for InnerTreeTerm {
 }
 
 #[allow(dead_code)]
+#[derive(Clone, Debug)]
 enum TreeTerm {
     Value(Value),
     Var(Ident),
     Any(Token![_]),
     ImproperList {
-        paren_token: Paren,
-        items: Punctuated<InnerTreeTerm, Token![,]>,
+        items: Vec<InnerTreeTerm>,
     },
     ProperList {
-        bracket_token: Bracket,
-        items: Punctuated<InnerTreeTerm, Token![,]>,
+        items: Vec<InnerTreeTerm>,
+    }
+}
+
+impl TreeTerm {
+    fn get_vars(&self) -> Vec<Ident> {
+        match self {
+            TreeTerm::Value(_) => vec![],
+            TreeTerm::Var(ident) => vec![ident.clone()],
+            TreeTerm::Any(_) => vec![],
+            TreeTerm::ImproperList {items} => {
+                let mut variables = vec![];
+                for item in items {
+                    variables.append(&mut item.get_vars());
+                }
+                variables.sort();
+                variables.dedup();
+                variables
+            },
+            TreeTerm::ProperList {items} => {
+                let mut variables = vec![];
+                for item in items {
+                    variables.append(&mut item.get_vars());
+                }
+                variables.sort();
+                variables.dedup();
+                variables
+            }
+        }
     }
 }
 
@@ -452,18 +655,39 @@ impl Parse for TreeTerm {
         } else if input.peek(syn::Lit) {
             let value: Value = input.parse()?;
             Ok(TreeTerm::Value(value))
-        } else if input.peek(Paren) {
-            let content;
-            Ok(TreeTerm::ImproperList {
-                paren_token: parenthesized!(content in input),
-                items: content.parse_terminated(InnerTreeTerm::parse)?,
-            })
         } else if input.peek(Bracket) {
             let content;
-            Ok(TreeTerm::ProperList {
-                bracket_token: bracketed!(content in input),
-                items: content.parse_terminated(InnerTreeTerm::parse)?,
-            })
+            let _ = bracketed!(content in input);
+
+            let mut items: Vec<InnerTreeTerm> = vec![];
+            let mut is_proper = true;
+            while !content.is_empty() {
+                let term: InnerTreeTerm = content.parse()?;
+                items.push(term);
+                if content.peek(Token![,]) {
+                    let _: Token![,] = content.parse()?;
+                } else if content.peek(Token![|]) {
+                    let _: Token![|] = content.parse()?;
+                    let rest: InnerTreeTerm = content.parse()?;
+                    items.push(rest);
+                    is_proper = false;
+                    break
+                }
+            }
+
+            if !content.is_empty() {
+                return Err(content.error("Trailing characters"))
+            }
+
+            if is_proper {
+                Ok(TreeTerm::ProperList {
+                    items,
+                })
+            } else {
+                Ok(TreeTerm::ImproperList {
+                    items,
+                })
+            }
         } else {
             Err(input.error("Invalid tree-term."))
         }
@@ -485,12 +709,12 @@ impl ToTokens for TreeTerm {
                 let output = quote! { crate::lterm::LTerm::any() };
                 output.to_tokens(tokens);
             },
-            TreeTerm::ImproperList {paren_token: _, items} => {
+            TreeTerm::ImproperList {items} => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
                 let output = quote! { crate::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
             },
-            TreeTerm::ProperList {bracket_token: _, items} => {
+            TreeTerm::ProperList {items} => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
                 let output = quote! { crate::lterm::LTerm::from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
@@ -500,6 +724,7 @@ impl ToTokens for TreeTerm {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Eq {
     left: TreeTerm,
     eqeq: Token![==],
@@ -526,6 +751,7 @@ impl ToTokens for Eq {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 struct Diseq {
     left: TreeTerm,
     ne: Token![!=],
@@ -552,7 +778,7 @@ impl ToTokens for Diseq {
 }
 
 
-
+#[derive(Clone)]
 enum Clause {
     /// project |x, y, z| { }
     Project(Project),
@@ -578,6 +804,8 @@ enum Clause {
     Loop(Loop),
     // $operator { }
     Operator(Operator),
+    // $operator $term { pattern0 => body0, ...}
+    PatternMatchOperator(PatternMatchOperator),
     // Expression that evaluates to Goal
     Expression(syn::Expr),
 }
@@ -624,6 +852,10 @@ impl Parse for Clause {
             let operator: Operator = input.parse()?;
             Ok(Clause::Operator(operator))
         } else {
+            if (input.peek(Ident) || input.peek(Token![match])) && input.peek3(Brace) {
+                return Ok(PatternMatchOperator::parse(input)
+                    .and_then(|operator| Ok(Clause::PatternMatchOperator(operator)))?);
+            }
             let expr: syn::Expr = input.parse()?;
             Ok(Clause::Expression(expr))
         }
@@ -674,6 +906,9 @@ impl ToTokens for Clause {
             Clause::Operator(operator) => {
                 operator.to_tokens(tokens);
             },
+            Clause::PatternMatchOperator(operator) => {
+                operator.to_tokens(tokens);
+            },
             Clause::Expression(expr) => {
                 expr.to_tokens(tokens);
             },
@@ -681,6 +916,7 @@ impl ToTokens for Clause {
     }
 }
 
+#[derive(Clone)]
 struct ClauseInOperator(Clause);
 
 impl Parse for ClauseInOperator {
@@ -742,6 +978,10 @@ impl ToTokens for ClauseInOperator {
                 let output = quote! { &[ #operator ] };
                 output.to_tokens(tokens);
             },
+            Clause::PatternMatchOperator(operator) => {
+                let output = quote! { &[ #operator ] };
+                output.to_tokens(tokens);
+            },
             Clause::Expression(expr) => {
                 let output = quote! { &[ #expr ]};
                 output.to_tokens(tokens);
@@ -756,6 +996,16 @@ pub fn proto_vulcan(input: TokenStream) -> TokenStream {
 
     let output = quote! {
         #clause
+    };
+    output.into()
+}
+
+#[proc_macro]
+pub fn lterm(input: TokenStream) -> TokenStream {
+    let term = parse_macro_input!(input as TreeTerm);
+
+    let output = quote! {
+        #term
     };
     output.into()
 }

@@ -2,6 +2,7 @@ use crate::goal::Goal;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
+use crate::operator::FnOperatorParam;
 use std::fmt;
 use std::rc::Rc;
 
@@ -25,4 +26,8 @@ impl<U: UserState> fmt::Debug for FnGoal<U> {
     fn fmt(&self, fm: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(fm, "FnGoal()")
     }
+}
+
+pub fn fngoal<U: UserState>(param: FnOperatorParam<U>) -> Rc<dyn Goal<U>> {
+    FnGoal::new(param.f)
 }

@@ -1,7 +1,5 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::operator::conde;
-use crate::relation::conso;
 use crate::user::UserState;
 use std::rc::Rc;
 
@@ -22,18 +20,12 @@ use std::rc::Rc;
 pub fn rembero<U: UserState>(x: &Rc<LTerm>, ls: &Rc<LTerm>, out: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let x = Rc::clone(x);
     proto_vulcan!(
-        conde {
-            [ls == [], out == []],
-            |a, d| {
-                conso(a, d, ls),
-                a == x,
-                d == out,
-            },
-            |a, d, res| {
-                conso(a, d, ls),
-                a != x,
-                conso(a, res, out),
-                closure { rembero(x, d, res) },
+        match [ls, out] {
+            [[], []] => ,
+            [[a | d], d] => a == x,
+            [[y | ys], [y | zs]] => {
+                y != x,
+                closure { rembero(x, ys, zs) }
             }
         }
     )

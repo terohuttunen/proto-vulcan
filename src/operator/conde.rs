@@ -3,6 +3,7 @@ use crate::operator::all::All;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::UserState;
+use crate::operator::OperatorParam;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -103,8 +104,8 @@ impl<U: UserState> Goal<U> for Conde<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn conde<U: UserState>(body: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
-    Conde::from_conjunctions(&body)
+pub fn conde<U: UserState>(param: OperatorParam<U>) -> Rc<dyn Goal<U>> {
+    Conde::from_conjunctions(param.body)
 }
 
 #[cfg(test)]

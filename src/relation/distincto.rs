@@ -1,7 +1,5 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::operator::conde;
-use crate::relation::emptyo;
 use crate::user::UserState;
 use std::rc::Rc;
 
@@ -10,16 +8,12 @@ pub fn distincto<U: UserState>(l: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let l = Rc::clone(l);
     proto_vulcan!(
         closure {
-            conde {
-                emptyo(l),
-                |single| {
-                    [single] == l
-                },
-                |first, second, rest| {
-                    (first, second, rest) == l,
+            match l {
+                [] | [_] => ,
+                [first, second | rest] => {
                     first != second,
-                    distincto((first, rest)),
-                    distincto((second, rest)),
+                    distincto([first | rest]),
+                    distincto([second | rest]),
                 }
             }
         }

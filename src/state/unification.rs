@@ -283,7 +283,7 @@ mod tests {
     fn test_unify_11() {
         // 11. list[N] != list[M] where N != M
         let mut smap = SMap::new();
-        let v0 = lterm!((1, 1));
+        let v0 = lterm!([1 | 1]);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
         let v3 = lterm!([1]);

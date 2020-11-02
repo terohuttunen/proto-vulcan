@@ -1,5 +1,4 @@
 extern crate proto_vulcan;
-use proto_vulcan::relation::conso;
 use proto_vulcan::relation::firsto;
 use proto_vulcan::relation::membero;
 use proto_vulcan::*;
@@ -37,17 +36,15 @@ use std::time::Instant;
 fn righto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
     let x = Rc::clone(x);
     let y = Rc::clone(y);
-    proto_vulcan!(|first, rest| {
-        conso(first, rest, l),
-        conde {
-            |second| {
-                firsto(rest, second),
+    proto_vulcan!(
+        match l {
+            [first, second | _] => {
                 first == y,
-                second == x
+                second == x,
             },
-            closure { righto(x, y, rest) }
+            [_ | rest] => closure { righto(x, y, rest) },
         }
-    })
+    )
 }
 
 fn nexto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {

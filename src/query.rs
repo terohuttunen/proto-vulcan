@@ -141,7 +141,7 @@ macro_rules! proto_vulcan_query {
         }
 
         /* The query variables */
-        $(let $query = Rc::new(LTerm::var(stringify!($query)));)+
+        $(let $query = LTerm::var(stringify!($query));)+
         #[derive(Debug)]
         struct QueryVariables<R> {
             $( $query: Rc<LTerm>, )+

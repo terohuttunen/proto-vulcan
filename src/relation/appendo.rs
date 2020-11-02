@@ -1,8 +1,5 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::operator::conde;
-use crate::relation::conso;
-use crate::relation::emptyo;
 use crate::user::UserState;
 use std::rc::Rc;
 
@@ -20,17 +17,10 @@ use std::rc::Rc;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3, 4, 5]));
 /// }
 pub fn appendo<U: UserState>(l: &Rc<LTerm>, s: &Rc<LTerm>, ls: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    let s = Rc::clone(s);
     proto_vulcan!(
-        conde {
-            [s == ls, emptyo(l)],
-            |a, d, res| {
-                conso(a, d, l),
-                conso(a, res, ls),
-                closure {
-                    appendo(d, s, res)
-                }
-            }
+        match [l, s, ls] {
+            [[], x, x] => ,
+            [[x | l1], l2, [x | l3]] => closure { appendo(l1, l2, l3) },
         }
     )
 }
