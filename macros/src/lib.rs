@@ -284,22 +284,31 @@ impl ToTokens for Relation {
 #[allow(dead_code)]
 #[derive(Clone)]
 struct Closure {
-    name: Ident,
-    brace_token: Brace,
-    body: Punctuated<Clause, Token![,]>,
+    body: Vec<Clause>,
+}
+
+impl Closure {
+    fn new(body: Vec<Clause>) -> Closure {
+        Closure {
+            body
+        }
+    }
 }
 
 impl Parse for Closure {
     fn parse(input: ParseStream) -> Result<Self> {
-        let name = input.parse()?;
+        let name: Ident = input.parse()?;
         if name != String::from("closure") {
             return Err(input.error("Expected \"closure\""));
         }
         let content;
+        let _ = braced!(content in input);
+        let mut body = vec![];
+        for clause in content.parse_terminated::<Clause, Clause>(Clause::parse)? {
+            body.push(clause);
+        }
         Ok(Closure {
-            name,
-            brace_token: braced!(content in input),
-            body: content.parse_terminated(Clause::parse)?,
+            body
         })
     }
 }
@@ -994,6 +1003,17 @@ pub fn proto_vulcan(input: TokenStream) -> TokenStream {
 
     let output = quote! {
         #clause
+    };
+    output.into()
+}
+
+#[proc_macro]
+pub fn proto_vulcan_closure(input: TokenStream) -> TokenStream {
+    let clause = parse_macro_input!(input as Clause);
+    let closure = Closure::new(vec![clause]);
+
+    let output = quote! {
+        #closure
     };
     output.into()
 }

@@ -24,12 +24,10 @@ use std::rc::Rc;
 pub fn membero<U: UserState>(x: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let x = Rc::clone(x);
     let l = Rc::clone(l);
-    proto_vulcan!(
-        closure {
-            match l {
-                [head | _] => head == x,
-                [_ | rest] => membero(x, rest),
-            }
+    proto_vulcan_closure!(
+        match l {
+            [head | _] => head == x,
+            [_ | rest] => membero(x, rest),
         }
     )
 }

@@ -10,13 +10,14 @@ use std::time::Instant;
 fn lefto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
     let x = Rc::clone(x);
     let y = Rc::clone(y);
-    proto_vulcan!(
+    let l = Rc::clone(l);
+    proto_vulcan_closure!(
         match l {
             [head | rest] => {
                 head == x,
                 membero(y, rest),
             },
-            [_ | rest] => closure { lefto(x, y, rest) },
+            [_ | rest] => lefto(x, y, rest),
         }
     )
 }

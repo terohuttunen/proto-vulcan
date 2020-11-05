@@ -17,10 +17,13 @@ use std::rc::Rc;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3, 4, 5]));
 /// }
 pub fn appendo<U: UserState>(l: &Rc<LTerm>, s: &Rc<LTerm>, ls: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    proto_vulcan!(
+    let l = Rc::clone(l);
+    let s = Rc::clone(s);
+    let ls = Rc::clone(ls);
+    proto_vulcan_closure!(
         match [l, s, ls] {
             [[], x, x] => ,
-            [[x | l1], l2, [x | l3]] => closure { appendo(l1, l2, l3) },
+            [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
         }
     )
 }

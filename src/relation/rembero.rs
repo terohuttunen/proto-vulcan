@@ -19,13 +19,15 @@ use std::rc::Rc;
 /// ```
 pub fn rembero<U: UserState>(x: &Rc<LTerm>, ls: &Rc<LTerm>, out: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let x = Rc::clone(x);
-    proto_vulcan!(
+    let ls = Rc::clone(ls);
+    let out = Rc::clone(out);
+    proto_vulcan_closure!(
         match [ls, out] {
             [[], []] => ,
             [[a | d], d] => a == x,
             [[y | ys], [y | zs]] => {
                 y != x,
-                closure { rembero(x, ys, zs) }
+                rembero(x, ys, zs)
             }
         }
     )

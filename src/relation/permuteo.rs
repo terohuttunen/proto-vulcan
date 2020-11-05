@@ -8,14 +8,12 @@ use std::rc::Rc;
 pub fn permuteo<U: UserState>(xl: &Rc<LTerm>, yl: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let xl = Rc::clone(xl);
     let yl = Rc::clone(yl);
-    proto_vulcan!(
-        closure {
-            match [xl, yl] {
-                [[], []] => ,
-                [[x | xs], _] => |ys| {
-                    permuteo(xs, ys),
-                    rembero(x, yl, ys),
-                }
+    proto_vulcan_closure!(
+        match [xl, yl] {
+            [[], []] => ,
+            [[x | xs], _] => |ys| {
+                permuteo(xs, ys),
+                rembero(x, yl, ys),
             }
         }
     )

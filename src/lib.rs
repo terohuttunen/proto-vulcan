@@ -81,11 +81,15 @@
 //! ```
 //!
 //! ## Embedding in Rust
-//! To embed proto-vulcan in Rust, three macros are used: `proto_vulcan!`, `proto_vulcan_query!`,
-//! and `lterm!`.
+//! To embed proto-vulcan in Rust, four macros are used: `proto_vulcan!`, `proto_vulcan_closure!`,
+//! `proto_vulcan_query!`, and `lterm!`.
 //!
 //! * `proto_vulcan!(<goal>)` declares a Proto-vulcan goal, and returns a Rust
 //! variable of type `Rc<dyn Goal>`.
+//! * `proto_vulcan_closure!(<goal>)` declares a Proto-vulcan goal, and returns a Rust
+//! variable of type `Rc<dyn Goal>`. The goal expression is evaluated lazily when the goal
+//! is evaluated. The closure takes ownership of all variables referenced within the closure,
+//! therefore all `&Rc<LTerm>`-type parameters must be cloned before the closure is introduced.
 //! * `proto_vulcan_query!(|a, b, c| { <goal> })` defines a Proto-vulcan query with query-variables
 //! `a`, `b` and `c`. The returned value is a `Query`-struct, that when `run`, produces an
 //! iterator that can be used to iterate over valid solutions to the logic program. The iterator
@@ -181,23 +185,23 @@
 //!
 //!
 //! # Recursion
-//! Recursive goal constructors must enclose at least the recursive call into built-in
-//! `closure { <recursive-call> }` operator. Any arguments given to the function must be cloned
-//! so that the closure can take the ownership. In this example we also call the
-//! `emptyo(l)`-relation declared previously.
+//! Recursive calls must enclose the returned goal-expression into `proto_vulcan_closure!`-macro,
+//! which will be evaluated lazily. The closure will take ownership of the variables referenced
+//! within the closure, and therefore any `&Rc<LTerm>`-type parameters must be cloned.
 //!
 //! ```rust
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
-//! use proto_vulcan::relation::emptyo;
-//! use proto_vulcan::relation::conso;
 //! use std::rc::Rc;
 //!
 //! pub fn appendo<U: UserState>(l: &Rc<LTerm>, s: &Rc<LTerm>, ls: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-//!     proto_vulcan!(
+//!     let l = Rc::clone(l);
+//!     let s = Rc::clone(s);
+//!     let ls = Rc::clone(ls);
+//!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,
-//!            [[x | l1], l2, [x | l3]] => closure { appendo(l1, l2, l3) },
+//!            [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
 //!        }
 //!    )
 //! }
@@ -287,7 +291,7 @@
 #[macro_use]
 extern crate proto_vulcan_macros;
 
-pub use proto_vulcan_macros::{lterm, proto_vulcan};
+pub use proto_vulcan_macros::{lterm, proto_vulcan, proto_vulcan_closure};
 
 #[macro_use]
 extern crate derivative;

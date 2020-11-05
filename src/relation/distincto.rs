@@ -6,15 +6,13 @@ use std::rc::Rc;
 /// A relation which guarantees that all elements of `l` are distinct from each other.
 pub fn distincto<U: UserState>(l: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     let l = Rc::clone(l);
-    proto_vulcan!(
-        closure {
-            match l {
-                [] | [_] => ,
-                [first, second | rest] => {
-                    first != second,
-                    distincto([first | rest]),
-                    distincto([second | rest]),
-                }
+    proto_vulcan_closure!(
+        match l {
+            [] | [_] => ,
+            [first, second | rest] => {
+                first != second,
+                distincto([first | rest]),
+                distincto([second | rest]),
             }
         }
     )

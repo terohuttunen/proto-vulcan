@@ -7,13 +7,14 @@ use std::time::Instant;
 fn righto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
     let x = Rc::clone(x);
     let y = Rc::clone(y);
-    proto_vulcan!(
+    let l = Rc::clone(l);
+    proto_vulcan_closure!(
         match l {
             [first, second | _] => {
                 first == y,
                 second == x,
             },
-            [_ | rest] => closure { righto(x, y, rest) },
+            [_ | rest] => righto(x, y, rest),
         }
     )
 }

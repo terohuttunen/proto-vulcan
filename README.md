@@ -41,18 +41,21 @@ q = 2
 q = 3
 ```
 
-New relations can be defined as Rust-functions using `proto_vulcan!`-macro.
+New relations can be defined as Rust-functions using `proto_vulcan!` and
+`proto_vulcan_closure!`-macros. The latter is used for lazy evaluation
+in recursion.
 ```rust
 use proto_vulcan::*;
-use proto_vulcan::relation::emptyo;
-use proto_vulcan::relation::conso;
 use std::rc::Rc;
 
 pub fn appendo<U: UserState>(l: &Rc<LTerm>, s: &Rc<LTerm>, ls: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    proto_vulcan!(
+    let l = Rc::clone(l);
+    let s = Rc::clone(s);
+    let ls = Rc::clone(ls);
+    proto_vulcan_closure!(
         match [l, s, ls] {
             [[], x, x] => ,
-            [[x | l1], l2, [x | l3]] => closure { appendo(l1, l2, l3) },
+            [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
         }
     )
 }
