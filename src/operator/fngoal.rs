@@ -1,8 +1,8 @@
 use crate::goal::Goal;
+use crate::operator::FnOperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
-use crate::operator::FnOperatorParam;
 use std::fmt;
 use std::rc::Rc;
 

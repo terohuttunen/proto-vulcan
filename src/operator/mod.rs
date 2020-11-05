@@ -56,15 +56,15 @@ pub mod fngoal;
 #[doc(hidden)]
 pub mod fresh;
 #[doc(hidden)]
-pub mod onceo;
-#[doc(hidden)]
-pub mod project;
+pub mod matcha;
 #[doc(hidden)]
 pub mod matche;
 #[doc(hidden)]
 pub mod matchu;
 #[doc(hidden)]
-pub mod matcha;
+pub mod onceo;
+#[doc(hidden)]
+pub mod project;
 
 #[doc(inline)]
 pub use anyo::anyo;

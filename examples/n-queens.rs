@@ -1,10 +1,10 @@
 extern crate proto_vulcan;
+use proto_vulcan::proto_vulcan;
 use proto_vulcan::relation::diseqfd;
 use proto_vulcan::relation::distinctfd;
 use proto_vulcan::relation::infdrange;
 use proto_vulcan::relation::plusfd;
 use proto_vulcan::*;
-use proto_vulcan::proto_vulcan;
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 

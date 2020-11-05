@@ -1,9 +1,9 @@
 use crate::goal::Goal;
 use crate::operator::all::All;
+use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::UserState;
-use crate::operator::OperatorParam;
 use std::rc::Rc;
 
 #[derive(Debug)]

@@ -287,7 +287,7 @@
 #[macro_use]
 extern crate proto_vulcan_macros;
 
-pub use proto_vulcan_macros::{proto_vulcan, lterm};
+pub use proto_vulcan_macros::{lterm, proto_vulcan};
 
 #[macro_use]
 extern crate derivative;

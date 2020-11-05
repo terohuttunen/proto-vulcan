@@ -5,8 +5,8 @@
 /// [a0 AND a1 AND ...] OR
 /// [b0 AND b1 AND ...] OR ...
 use crate::goal::Goal;
-use crate::operator::OperatorParam;
 use crate::operator::all::All;
+use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;

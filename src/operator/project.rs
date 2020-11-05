@@ -1,10 +1,10 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
+use crate::operator::all::All;
+use crate::operator::ProjectOperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
-use crate::operator::ProjectOperatorParam;
-use crate::operator::all::All;
 use std::rc::Rc;
 
 #[derive(Debug)]

@@ -1,11 +1,11 @@
 extern crate proto_vulcan;
+use itertools::izip;
+use proto_vulcan::lterm::LTerm;
 use proto_vulcan::relation::membero;
 use proto_vulcan::relation::permuteo;
-use proto_vulcan::lterm::LTerm;
 use proto_vulcan::*;
 use std::rc::Rc;
 use std::time::Instant;
-use itertools::izip;
 
 fn lefto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
     let x = Rc::clone(x);
@@ -37,9 +37,7 @@ fn rule1(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
 
 // The blue-cheese enthusiast subscribed to Fortune.
 fn rule2(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
-    proto_vulcan!(
-        membero([_, "fortune", "blue-cheese", _], answers)
-    )
+    proto_vulcan!(membero([_, "fortune", "blue-cheese", _], answers))
 }
 
 // The muenster enthusiast didn't subscribe to Vogue.
@@ -60,12 +58,10 @@ fn rule3(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
 // subscriber.
 fn rule4(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
     proto_vulcan!(
-        permuteo([[_, "fortune", _, _],
-                  ["landon", _, _, _],
-                  [_, _, _, "5:00pm"],
-                  [_, _, "mascarpone", _],
-                  [_, "vogue", _, _]],
-                 answers)
+        permuteo(
+            [[_, "fortune", _, _], ["landon", _, _, _], [_, _, _, "5:00pm"], [_, _, "mascarpone", _], [_, "vogue", _, _]],
+            answers,
+        )
     )
 }
 
@@ -144,9 +140,7 @@ fn rule10(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
 
 // The person with a reservation at 5:00pm loves mozzarella.
 fn rule11(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
-    proto_vulcan!(
-        membero([_, _, "mozzarella", "5:00pm"], answers)
-    )
+    proto_vulcan!(membero([_, _, "mozzarella", "5:00pm"], answers))
 }
 
 fn hard_zebrao(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
@@ -155,7 +149,12 @@ fn hard_zebrao(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
     let cheeses = lterm!([_, _, _, _, _]);
     let reservations = lterm!([_, _, _, _, _]);
     let mut ans = lterm!([]);
-    for (p, m, c, r) in izip!(people.iter(), magazines.iter(), cheeses.iter(), reservations.iter()) {
+    for (p, m, c, r) in izip!(
+        people.iter(),
+        magazines.iter(),
+        cheeses.iter(),
+        reservations.iter()
+    ) {
         ans = LTerm::cons(lterm!([p, m, c, r]), ans);
     }
     proto_vulcan!([
@@ -172,9 +171,24 @@ fn hard_zebrao(answers: &Rc<LTerm>) -> Rc<dyn Goal> {
         rule9(answers),
         rule10(answers),
         rule11(answers),
-        permuteo(magazines, ["fortune", "time", "cosmopolitan", "us-weekly", "vogue"]),
-        permuteo(cheeses, ["asiago", "blue-cheese", "mascarpone", "mozzarella", "muenster"]),
-        permuteo(reservations, ["5:00pm", "6:00pm", "7:00pm", "7:30pm", "8:30pm"]),
+        permuteo(
+            magazines,
+            ["fortune", "time", "cosmopolitan", "us-weekly", "vogue"]
+        ),
+        permuteo(
+            cheeses,
+            [
+                "asiago",
+                "blue-cheese",
+                "mascarpone",
+                "mozzarella",
+                "muenster"
+            ]
+        ),
+        permuteo(
+            reservations,
+            ["5:00pm", "6:00pm", "7:00pm", "7:30pm", "8:30pm"]
+        ),
     ])
 }
 

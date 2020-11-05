@@ -4,10 +4,10 @@ extern crate quote;
 extern crate syn;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
-use syn::{parse_macro_input, Ident, Token, braced, bracketed, parenthesized, Error};
 use syn::parse::{Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
 use syn::token::{Brace, Bracket, Paren};
+use syn::{braced, bracketed, parenthesized, parse_macro_input, Error, Ident, Token};
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -24,7 +24,10 @@ impl Parse for Project {
     fn parse(input: ParseStream) -> Result<Self> {
         let project: Ident = input.parse()?;
         if project.to_string().as_str() != "project" {
-            return Err(Error::new(project.span(), "Identifier \"project\" expected"))
+            return Err(Error::new(
+                project.span(),
+                "Identifier \"project\" expected",
+            ));
         }
 
         let or1_token: Token![|] = input.parse()?;
@@ -85,7 +88,7 @@ impl Parse for FnGoal {
     fn parse(input: ParseStream) -> Result<Self> {
         let fngoal: Ident = input.parse()?;
         if fngoal.to_string().as_str() != "fngoal" {
-            return Err(Error::new(fngoal.span(), "Identifier \"fngoal\" expected"))
+            return Err(Error::new(fngoal.span(), "Identifier \"fngoal\" expected"));
         }
 
         let m = if input.peek(Token![move]) {
@@ -129,12 +132,10 @@ struct Fresh {
     or2_token: Token![|],
     brace_token: Brace,
     body: Punctuated<Clause, Token![,]>,
-
 }
 
 impl Parse for Fresh {
     fn parse(input: ParseStream) -> Result<Self> {
-
         let or1_token: Token![|] = input.parse()?;
         let mut variables = Punctuated::new();
         loop {
@@ -240,14 +241,14 @@ impl ToTokens for Argument {
             Argument::TreeTerm(term) => {
                 let output = quote! { &#term };
                 output.to_tokens(tokens);
-            },
+            }
             Argument::Quoted(expr) => {
                 expr.to_tokens(tokens);
-            },
+            }
             Argument::Expr(expr) => {
                 let output = quote! { &::std::rc::Rc::new( crate::lterm::LTerm::from(#expr)) };
                 output.to_tokens(tokens);
-            },
+            }
         }
     }
 }
@@ -292,7 +293,7 @@ impl Parse for Closure {
     fn parse(input: ParseStream) -> Result<Self> {
         let name = input.parse()?;
         if name != String::from("closure") {
-            return Err(input.error("Expected \"closure\""))
+            return Err(input.error("Expected \"closure\""));
         }
         let content;
         Ok(Closure {
@@ -389,14 +390,17 @@ impl Parse for PatternArm {
             if input.peek(Token![|]) {
                 let _: Token![|] = input.parse()?;
             } else if input.peek(Token![=>]) {
-                break
+                break;
             }
         }
 
         for pattern in patterns.iter() {
             for var_ident in pattern.get_vars().iter() {
                 if var_ident.to_string() == "__term__" {
-                    return Err(Error::new(var_ident.span(), "A pattern variable cannot be named '__term__'"))
+                    return Err(Error::new(
+                        var_ident.span(),
+                        "A pattern variable cannot be named '__term__'",
+                    ));
                 }
             }
         }
@@ -521,19 +525,11 @@ impl Parse for Value {
     fn parse(input: ParseStream) -> Result<Self> {
         let lit: syn::Lit = input.parse()?;
         match lit {
-            syn::Lit::Str(s) => {
-                Ok(Value::String(s))
-            },
-            syn::Lit::Char(c) => {
-                Ok(Value::Char(c))
-            },
-            syn::Lit::Int(n) => {
-                Ok(Value::Number(n))
-            },
-            syn::Lit::Bool(b) => {
-                Ok(Value::Bool(b))
-            },
-            _ => Err(Error::new(lit.span(), "Invalid literal"))
+            syn::Lit::Str(s) => Ok(Value::String(s)),
+            syn::Lit::Char(c) => Ok(Value::Char(c)),
+            syn::Lit::Int(n) => Ok(Value::Number(n)),
+            syn::Lit::Bool(b) => Ok(Value::Bool(b)),
+            _ => Err(Error::new(lit.span(), "Invalid literal")),
         }
     }
 }
@@ -578,26 +574,27 @@ impl ToTokens for InnerTreeTerm {
             TreeTerm::Value(value) => {
                 let output = quote! { ::std::rc::Rc::new(crate::lterm::LTerm::from(#value)) };
                 output.to_tokens(tokens);
-            },
+            }
             TreeTerm::Var(ident) => {
                 // For InnerTreeTerms any references to variables must be cloned
                 let output = quote! { ::std::rc::Rc::clone(&#ident) };
                 output.to_tokens(tokens);
-            },
+            }
             TreeTerm::Any(_) => {
                 let output = quote! { crate::lterm::LTerm::any() };
                 output.to_tokens(tokens);
-            },
-            TreeTerm::ImproperList {items} => {
+            }
+            TreeTerm::ImproperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
-                let output = quote! { crate::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
+                let output =
+                    quote! { crate::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
-            },
-            TreeTerm::ProperList {items} => {
+            }
+            TreeTerm::ProperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
                 let output = quote! { crate::lterm::LTerm::from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
-            },
+            }
         }
     }
 }
@@ -608,12 +605,8 @@ enum TreeTerm {
     Value(Value),
     Var(Ident),
     Any(Token![_]),
-    ImproperList {
-        items: Vec<InnerTreeTerm>,
-    },
-    ProperList {
-        items: Vec<InnerTreeTerm>,
-    }
+    ImproperList { items: Vec<InnerTreeTerm> },
+    ProperList { items: Vec<InnerTreeTerm> },
 }
 
 impl TreeTerm {
@@ -622,7 +615,7 @@ impl TreeTerm {
             TreeTerm::Value(_) => vec![],
             TreeTerm::Var(ident) => vec![ident.clone()],
             TreeTerm::Any(_) => vec![],
-            TreeTerm::ImproperList {items} => {
+            TreeTerm::ImproperList { items } => {
                 let mut variables = vec![];
                 for item in items {
                     variables.append(&mut item.get_vars());
@@ -630,8 +623,8 @@ impl TreeTerm {
                 variables.sort();
                 variables.dedup();
                 variables
-            },
-            TreeTerm::ProperList {items} => {
+            }
+            TreeTerm::ProperList { items } => {
                 let mut variables = vec![];
                 for item in items {
                     variables.append(&mut item.get_vars());
@@ -671,22 +664,18 @@ impl Parse for TreeTerm {
                     let rest: InnerTreeTerm = content.parse()?;
                     items.push(rest);
                     is_proper = false;
-                    break
+                    break;
                 }
             }
 
             if !content.is_empty() {
-                return Err(content.error("Trailing characters"))
+                return Err(content.error("Trailing characters"));
             }
 
             if is_proper {
-                Ok(TreeTerm::ProperList {
-                    items,
-                })
+                Ok(TreeTerm::ProperList { items })
             } else {
-                Ok(TreeTerm::ImproperList {
-                    items,
-                })
+                Ok(TreeTerm::ImproperList { items })
             }
         } else {
             Err(input.error("Invalid tree-term."))
@@ -700,25 +689,26 @@ impl ToTokens for TreeTerm {
             TreeTerm::Value(value) => {
                 let output = quote! { ::std::rc::Rc::new(crate::lterm::LTerm::from(#value)) };
                 output.to_tokens(tokens);
-            },
+            }
             TreeTerm::Var(ident) => {
                 let output = quote! { #ident };
                 output.to_tokens(tokens);
-            },
+            }
             TreeTerm::Any(_) => {
                 let output = quote! { crate::lterm::LTerm::any() };
                 output.to_tokens(tokens);
-            },
-            TreeTerm::ImproperList {items} => {
+            }
+            TreeTerm::ImproperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
-                let output = quote! { crate::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
+                let output =
+                    quote! { crate::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
-            },
-            TreeTerm::ProperList {items} => {
+            }
+            TreeTerm::ProperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
                 let output = quote! { crate::lterm::LTerm::from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
-            },
+            }
         }
     }
 }
@@ -777,7 +767,6 @@ impl ToTokens for Diseq {
     }
 }
 
-
 #[derive(Clone)]
 enum Clause {
     /// project |x, y, z| { }
@@ -814,13 +803,22 @@ impl Parse for Clause {
     fn parse(input: ParseStream) -> Result<Self> {
         let maybe_ident = input.cursor().ident().map(|x| x.0.to_string());
 
-        if input.peek(Ident) && input.peek2(Token![|]) && maybe_ident == Some(String::from("project")) {
+        if input.peek(Ident)
+            && input.peek2(Token![|])
+            && maybe_ident == Some(String::from("project"))
+        {
             let project: Project = input.parse()?;
             Ok(Clause::Project(project))
-        } else if input.peek(Ident) && (input.peek2(Token![|]) || (input.peek2(Token![move]) && input.peek3(Token![|]))) && maybe_ident == Some(String::from("fngoal")) {
+        } else if input.peek(Ident)
+            && (input.peek2(Token![|]) || (input.peek2(Token![move]) && input.peek3(Token![|])))
+            && maybe_ident == Some(String::from("fngoal"))
+        {
             let fngoal: FnGoal = input.parse()?;
             Ok(Clause::FnGoal(fngoal))
-        } else if input.peek(Ident) && input.peek2(Brace) && maybe_ident == Some(String::from("closure")) {
+        } else if input.peek(Ident)
+            && input.peek2(Brace)
+            && maybe_ident == Some(String::from("closure"))
+        {
             let closure: Closure = input.parse()?;
             Ok(Clause::Closure(closure))
         } else if input.peek(Token![loop]) && input.peek2(Brace) {
@@ -867,51 +865,51 @@ impl ToTokens for Clause {
         match self {
             Clause::Project(project) => {
                 project.to_tokens(tokens);
-            },
+            }
             Clause::FnGoal(fngoal) => {
                 fngoal.to_tokens(tokens);
-            },
+            }
             Clause::Fresh(fresh) => {
                 fresh.to_tokens(tokens);
-            },
+            }
             Clause::Eq(eq) => {
                 eq.to_tokens(tokens);
-            },
+            }
             Clause::Diseq(diseq) => {
                 diseq.to_tokens(tokens);
-            },
+            }
             Clause::Succeed(_) => {
                 let output = quote! { crate::relation::succeed() };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Fail(_) => {
                 let output = quote! { crate::relation::fail() };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Conjunction(conjunction) => {
                 // When conjunction is not inside a non-conjunction an operator we can construct
                 // an All-goal from it.
                 let output = quote! { crate::operator::all::All::from_array( #conjunction ) };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Relation(relation) => {
                 relation.to_tokens(tokens);
-            },
+            }
             Clause::Closure(closure) => {
                 closure.to_tokens(tokens);
-            },
+            }
             Clause::Loop(l) => {
                 l.to_tokens(tokens);
-            },
+            }
             Clause::Operator(operator) => {
                 operator.to_tokens(tokens);
-            },
+            }
             Clause::PatternMatchOperator(operator) => {
                 operator.to_tokens(tokens);
-            },
+            }
             Clause::Expression(expr) => {
                 expr.to_tokens(tokens);
-            },
+            }
         }
     }
 }
@@ -932,60 +930,60 @@ impl ToTokens for ClauseInOperator {
             Clause::Project(project) => {
                 let output = quote! { &[ #project ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::FnGoal(fngoal) => {
                 let output = quote! { &[ #fngoal ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Fresh(fresh) => {
                 let output = quote! { &[ #fresh ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Eq(eq) => {
                 let output = quote! { &[ #eq ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Diseq(diseq) => {
                 let output = quote! { &[ #diseq ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Succeed(_) => {
                 let output = quote! { &[ crate::relation::succeed() ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Fail(_) => {
                 let output = quote! { &[ crate::relation::fail() ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Conjunction(conjunction) => {
                 // When conjunction is inside an operator, we do not create All-goal, and instead
                 // let the conjunction be represented as an array of goals.
                 conjunction.to_tokens(tokens);
-            },
+            }
             Clause::Relation(relation) => {
                 let output = quote! { &[ #relation ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Closure(closure) => {
                 let output = quote! { &[ #closure ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Loop(l) => {
                 let output = quote! { &[ #l ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Operator(operator) => {
                 let output = quote! { &[ #operator ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::PatternMatchOperator(operator) => {
                 let output = quote! { &[ #operator ] };
                 output.to_tokens(tokens);
-            },
+            }
             Clause::Expression(expr) => {
                 let output = quote! { &[ #expr ]};
                 output.to_tokens(tokens);
-            },
+            }
         }
     }
 }
@@ -1009,4 +1007,3 @@ pub fn lterm(input: TokenStream) -> TokenStream {
     };
     output.into()
 }
-

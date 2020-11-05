@@ -23,8 +23,8 @@ pub fn permuteo<U: UserState>(xl: &Rc<LTerm>, yl: &Rc<LTerm>) -> Rc<dyn Goal<U>>
 
 #[cfg(test)]
 mod test {
-    use crate::*;
     use super::*;
+    use crate::*;
 
     #[test]
     fn test_permuteo_1() {
