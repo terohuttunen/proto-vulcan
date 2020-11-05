@@ -1,6 +1,6 @@
 [package]
 name = "proto-vulcan-macros"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Tero Huttunen <tero.huttunen@ultic.io>"]
 description = "Internal macro library for proto-vulcan"
 edition = "2018"
