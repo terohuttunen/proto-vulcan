@@ -11,5 +11,8 @@ repository = "https://github.com/terohuttunen/proto-vulcan/"
 proto-vulcan-macros = { version = "=0.1.2", path = "macros" }
 derivative = "2.1"
 
+[dev-dependencies]
+itertools = "0.9.0"
+
 [workspace]
 members = ["macros"]
