@@ -18,11 +18,7 @@ use std::rc::Rc;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3]));
 /// }
 /// ```
-pub fn conso<U: UserState>(
-    first: &Rc<LTerm>,
-    rest: &Rc<LTerm>,
-    out: &Rc<LTerm>,
-) -> Rc<dyn Goal<U>> {
+pub fn conso<U: UserState>(first: Rc<LTerm>, rest: Rc<LTerm>, out: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!([first | rest] == out)
 }
 

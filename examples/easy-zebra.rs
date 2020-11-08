@@ -4,10 +4,7 @@ use proto_vulcan::*;
 use std::rc::Rc;
 use std::time::Instant;
 
-fn righto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
-    let x = Rc::clone(x);
-    let y = Rc::clone(y);
-    let l = Rc::clone(l);
+fn righto(x: Rc<LTerm>, y: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal> {
     proto_vulcan_closure!(
         match l {
             [first, second | _] => {
@@ -19,7 +16,7 @@ fn righto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
     )
 }
 
-fn easy_zebrao(houses: &Rc<LTerm>) -> Rc<dyn Goal> {
+fn easy_zebrao(houses: Rc<LTerm>) -> Rc<dyn Goal> {
     proto_vulcan!([
         // Italian lives in the second house
         [_, ["italian", _], _] == houses,

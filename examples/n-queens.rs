@@ -9,9 +9,9 @@ use std::ops::RangeInclusive;
 use std::rc::Rc;
 
 fn diago(
-    qi: &Rc<LTerm>,
-    qj: &Rc<LTerm>,
-    d: &Rc<LTerm>,
+    qi: Rc<LTerm>,
+    qj: Rc<LTerm>,
+    d: Rc<LTerm>,
     range: &RangeInclusive<isize>,
 ) -> Rc<dyn Goal> {
     proto_vulcan!(
@@ -25,9 +25,7 @@ fn diago(
     )
 }
 
-fn diagonalso(n: isize, i: isize, j: isize, s: &Rc<LTerm>, r: &Rc<LTerm>) -> Rc<dyn Goal> {
-    let s = Rc::clone(s);
-    let r = Rc::clone(r);
+fn diagonalso(n: isize, i: isize, j: isize, s: Rc<LTerm>, r: Rc<LTerm>) -> Rc<dyn Goal> {
     proto_vulcan_closure!(
         match r {
             [] | [_] => ,
@@ -46,12 +44,10 @@ fn diagonalso(n: isize, i: isize, j: isize, s: &Rc<LTerm>, r: &Rc<LTerm>) -> Rc<
     )
 }
 
-fn nqueenso(queens: &Rc<LTerm>, n: isize, i: isize, l: &Rc<LTerm>) -> Rc<dyn Goal> {
+fn nqueenso(queens: Rc<LTerm>, n: isize, i: isize, l: Rc<LTerm>) -> Rc<dyn Goal> {
     if i == 0 {
-        proto_vulcan!([distinctfd(l), diagonalso(#n, #0, #1, #l.tail().unwrap(), #l), queens == l])
+        proto_vulcan!([distinctfd(l), diagonalso(#n, #0, #1, #Rc::clone(l.tail().unwrap()), l), queens == l])
     } else {
-        let queens = Rc::clone(queens);
-        let l = Rc::clone(l);
         proto_vulcan_closure!(|x| {
             infdrange(x, #&(1..=n)),
             nqueenso(queens, #n, #i - 1, [x | l])

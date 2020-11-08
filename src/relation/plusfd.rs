@@ -40,8 +40,8 @@ impl<U: UserState> Goal<U> for PlusFd<U> {
     }
 }
 
-pub fn plusfd<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>, w: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    PlusFd::new(Rc::clone(u), Rc::clone(v), Rc::clone(w))
+pub fn plusfd<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    PlusFd::new(u, v, w)
 }
 
 #[cfg(test)]

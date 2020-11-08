@@ -239,14 +239,14 @@ impl ToTokens for Argument {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match self {
             Argument::TreeTerm(term) => {
-                let output = quote! { &#term };
+                let output = quote! { #term };
                 output.to_tokens(tokens);
             }
             Argument::Quoted(expr) => {
                 expr.to_tokens(tokens);
             }
             Argument::Expr(expr) => {
-                let output = quote! { &::std::rc::Rc::new( crate::lterm::LTerm::from(#expr)) };
+                let output = quote! { ::std::rc::Rc::new( crate::lterm::LTerm::from(#expr)) };
                 output.to_tokens(tokens);
             }
         }
@@ -289,9 +289,7 @@ struct Closure {
 
 impl Closure {
     fn new(body: Vec<Clause>) -> Closure {
-        Closure {
-            body
-        }
+        Closure { body }
     }
 }
 
@@ -307,9 +305,7 @@ impl Parse for Closure {
         for clause in content.parse_terminated::<Clause, Clause>(Clause::parse)? {
             body.push(clause);
         }
-        Ok(Closure {
-            body
-        })
+        Ok(Closure { body })
     }
 }
 
@@ -497,10 +493,10 @@ impl ToTokens for PatternMatchOperator {
                     arms: &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
-                        let __term__ = &#term;
+                        let __term__ = #term;
                         // Define new variables found in the pattern
                         #( let #vars = LTerm::var(stringify!(#vars)); )*
-                        [crate::relation::eq(__term__, &#patterns), #clauses ]
+                        [crate::relation::eq(__term__, #patterns), #clauses ]
                     } ),* ],
                 })
             }
@@ -510,10 +506,10 @@ impl ToTokens for PatternMatchOperator {
                     arms: &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
-                        let __term__ = &#term;
+                        let __term__ = #term;
                         // Define new variables found in the pattern
                         #( let #vars = LTerm::var(stringify!(#vars)); )*
-                        [crate::relation::eq(__term__, &#patterns), #clauses ]
+                        [crate::relation::eq(__term__, #patterns), #clauses ]
                     } ),* ],
                 })
             }
@@ -700,7 +696,7 @@ impl ToTokens for TreeTerm {
                 output.to_tokens(tokens);
             }
             TreeTerm::Var(ident) => {
-                let output = quote! { #ident };
+                let output = quote! { ::std::rc::Rc::clone(&#ident) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Any(_) => {
@@ -744,7 +740,7 @@ impl ToTokens for Eq {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let left = &self.left;
         let right = &self.right;
-        let output = quote! { crate::relation::eq::eq ( &#left, &#right ) };
+        let output = quote! { crate::relation::eq::eq ( #left, #right ) };
         output.to_tokens(tokens)
     }
 }
@@ -771,7 +767,7 @@ impl ToTokens for Diseq {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let left = &self.left;
         let right = &self.right;
-        let output = quote! { crate::relation::diseq::diseq ( &#left, &#right ) };
+        let output = quote! { crate::relation::diseq::diseq ( #left, #right ) };
         output.to_tokens(tokens)
     }
 }

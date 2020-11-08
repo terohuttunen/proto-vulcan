@@ -6,15 +6,14 @@ use crate::state::UserState;
 use crate::stream::Stream;
 use std::rc::Rc;
 
-fn enforce_constraints_diseq<U: UserState>(_x: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
+fn enforce_constraints_diseq<U: UserState>(_x: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!(true)
 }
 
 /// Enforces the finite domain constraints by expanding the domains into sequences of numbers,
 /// and returning solutions for all numbers. Adds a `x == d` substitution for each `d` in
 /// the domain.
-fn force_ans<U: UserState>(x: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    let x = Rc::clone(x);
+fn force_ans<U: UserState>(x: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!(fngoal move |state| {
         let xwalk = state.smap_ref().walk(&x);
         let maybe_xdomain = state.dstore_ref().get(xwalk);
@@ -34,7 +33,7 @@ fn force_ans<U: UserState>(x: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
     })
 }
 
-fn enforce_constraints_fd<U: UserState>(x: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
+fn enforce_constraints_fd<U: UserState>(x: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!([
         force_ans(x),
         fngoal | state | {
@@ -53,17 +52,16 @@ fn enforce_constraints_fd<U: UserState>(x: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
 /// of answers such that the result variariables always have singular domains.
 ///
 /// For disequality constraints this is a no-op.
-fn enforce_constraints<U: UserState>(x: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
+fn enforce_constraints<U: UserState>(x: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!([enforce_constraints_diseq(x), enforce_constraints_fd(x)])
 }
 
-pub fn reify<U: UserState>(x: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    let y = Rc::clone(x);
+pub fn reify<U: UserState>(x: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!([
         enforce_constraints(x),
         fngoal move |state| {
             let smap = state.get_smap();
-            let v = smap.walk_star(&y);
+            let v = smap.walk_star(&x);
             let r = smap.reify(&v);
             let cstore = state.get_cstore().walk_star(&smap);
             Stream::unit(Box::new(state.with_smap(r).with_cstore(cstore)))

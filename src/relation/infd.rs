@@ -8,9 +8,9 @@ use std::ops::RangeInclusive;
 use std::rc::Rc;
 
 /// Associates the same domain to multiple variables
-pub fn infd<U: UserState>(u: &Rc<LTerm>, domain: &[isize]) -> Rc<dyn Goal<U>> {
+pub fn infd<U: UserState>(u: Rc<LTerm>, domain: &[isize]) -> Rc<dyn Goal<U>> {
     if u.is_var() {
-        DomFd::new(Rc::clone(u), FiniteDomain::from(domain))
+        DomFd::new(u, FiniteDomain::from(domain))
     } else if u.is_list() {
         let goals = u
             .iter()
@@ -22,9 +22,9 @@ pub fn infd<U: UserState>(u: &Rc<LTerm>, domain: &[isize]) -> Rc<dyn Goal<U>> {
     }
 }
 
-pub fn infdrange<U: UserState>(u: &Rc<LTerm>, domain: &RangeInclusive<isize>) -> Rc<dyn Goal<U>> {
+pub fn infdrange<U: UserState>(u: Rc<LTerm>, domain: &RangeInclusive<isize>) -> Rc<dyn Goal<U>> {
     if u.is_var() {
-        DomFd::new(Rc::clone(u), FiniteDomain::from(domain))
+        DomFd::new(u, FiniteDomain::from(domain))
     } else if u.is_list() {
         let goals = u
             .iter()

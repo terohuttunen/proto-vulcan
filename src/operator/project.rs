@@ -75,8 +75,8 @@ mod tests {
         }
     }
 
-    fn sqeq<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-        SqEq::new(Rc::clone(u), Rc::clone(v))
+    fn sqeq<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+        SqEq::new(u, v)
     }
 
     #[test]

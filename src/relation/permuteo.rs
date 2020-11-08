@@ -5,9 +5,7 @@ use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation that will permute xl into yl.
-pub fn permuteo<U: UserState>(xl: &Rc<LTerm>, yl: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    let xl = Rc::clone(xl);
-    let yl = Rc::clone(yl);
+pub fn permuteo<U: UserState>(xl: Rc<LTerm>, yl: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan_closure!(
         match [xl, yl] {
             [[], []] => ,

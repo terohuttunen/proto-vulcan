@@ -21,15 +21,11 @@ use std::rc::Rc;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn membero<U: UserState>(x: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    let x = Rc::clone(x);
-    let l = Rc::clone(l);
-    proto_vulcan_closure!(
-        match l {
-            [head | _] => head == x,
-            [_ | rest] => membero(x, rest),
-        }
-    )
+pub fn membero<U: UserState>(x: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    proto_vulcan_closure!(match l {
+        [head | _] => head == x,
+        [_ | rest] => membero(x, rest),
+    })
 }
 
 #[cfg(test)]

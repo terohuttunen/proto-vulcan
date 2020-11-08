@@ -32,8 +32,8 @@ impl<U: UserState> Goal<U> for DistinctFd<U> {
     }
 }
 
-pub fn distinctfd<U: UserState>(u: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    DistinctFd::new(Rc::clone(u))
+pub fn distinctfd<U: UserState>(u: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    DistinctFd::new(u)
 }
 
 #[cfg(test)]

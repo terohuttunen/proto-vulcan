@@ -6,7 +6,7 @@ use crate::relation::ltefd::ltefd;
 use crate::user::UserState;
 use std::rc::Rc;
 
-pub fn ltfd<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn ltfd<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!([diseqfd(u, v), ltefd(u, v)])
 }
 

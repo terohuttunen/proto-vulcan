@@ -50,6 +50,6 @@ impl<U: UserState> Goal<U> for Eq<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn eq<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    Eq::new(Rc::clone(u), Rc::clone(v))
+pub fn eq<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    Eq::new(u, v)
 }

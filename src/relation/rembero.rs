@@ -17,10 +17,7 @@ use std::rc::Rc;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]));
 /// }
 /// ```
-pub fn rembero<U: UserState>(x: &Rc<LTerm>, ls: &Rc<LTerm>, out: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    let x = Rc::clone(x);
-    let ls = Rc::clone(ls);
-    let out = Rc::clone(out);
+pub fn rembero<U: UserState>(x: Rc<LTerm>, ls: Rc<LTerm>, out: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan_closure!(
         match [ls, out] {
             [[], []] => ,

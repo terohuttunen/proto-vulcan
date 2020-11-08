@@ -5,7 +5,7 @@ use crate::user::UserState;
 use std::rc::Rc;
 
 /// A relation such that the `first` is the first element of `list`.
-pub fn firsto<U: UserState>(list: &Rc<LTerm>, first: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn firsto<U: UserState>(list: Rc<LTerm>, first: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!(|rest| { conso(first, rest, list) })
 }
 

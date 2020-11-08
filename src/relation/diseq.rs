@@ -55,8 +55,8 @@ impl<U: UserState> Goal<U> for Diseq<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn diseq<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    Diseq::new(Rc::clone(u), Rc::clone(v))
+pub fn diseq<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    Diseq::new(u, v)
 }
 
 #[cfg(test)]

@@ -37,8 +37,8 @@ impl<U: UserState> Goal<U> for LessThanOrEqualFd<U> {
     }
 }
 
-pub fn ltefd<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    LessThanOrEqualFd::new(Rc::clone(u), Rc::clone(v))
+pub fn ltefd<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    LessThanOrEqualFd::new(u, v)
 }
 
 #[cfg(test)]

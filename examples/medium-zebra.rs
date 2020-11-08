@@ -33,10 +33,7 @@ use std::time::Instant;
 
 */
 
-fn righto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
-    let x = Rc::clone(x);
-    let y = Rc::clone(y);
-    let l = Rc::clone(l);
+fn righto(x: Rc<LTerm>, y: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal> {
     proto_vulcan_closure!(
         match l {
             [first, second | _] => {
@@ -48,14 +45,14 @@ fn righto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
     )
 }
 
-fn nexto(x: &Rc<LTerm>, y: &Rc<LTerm>, l: &Rc<LTerm>) -> Rc<dyn Goal> {
+fn nexto(x: Rc<LTerm>, y: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal> {
     proto_vulcan!(conde {
         righto(x, y, l),
         righto(y, x, l)
     })
 }
 
-fn medium_zebrao(houses: &Rc<LTerm>) -> Rc<dyn Goal> {
+fn medium_zebrao(houses: Rc<LTerm>) -> Rc<dyn Goal> {
     proto_vulcan!([
         [_, _, [_, _, "milk", _, _], _, _] == houses,
         firsto(houses, ["norwegian", _, _, _, _]),

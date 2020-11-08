@@ -88,8 +88,7 @@
 //! variable of type `Rc<dyn Goal>`.
 //! * `proto_vulcan_closure!(<goal>)` declares a Proto-vulcan goal, and returns a Rust
 //! variable of type `Rc<dyn Goal>`. The goal expression is evaluated lazily when the goal
-//! is evaluated. The closure takes ownership of all variables referenced within the closure,
-//! therefore all `&Rc<LTerm>`-type parameters must be cloned before the closure is introduced.
+//! is evaluated. The closure takes ownership of all variables referenced within the closure.
 //! * `proto_vulcan_query!(|a, b, c| { <goal> })` defines a Proto-vulcan query with query-variables
 //! `a`, `b` and `c`. The returned value is a `Query`-struct, that when `run`, produces an
 //! iterator that can be used to iterate over valid solutions to the logic program. The iterator
@@ -136,7 +135,7 @@
 //! use proto_vulcan::*;
 //! use std::rc::Rc;
 //!
-//! pub fn emptyo<U: UserState>(s: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
+//! pub fn emptyo<U: UserState>(s: Rc<LTerm>) -> Rc<dyn Goal<U>> {
 //!     proto_vulcan!([] == s)
 //! }
 //! # fn main() {}
@@ -185,25 +184,22 @@
 //!
 //!
 //! # Recursion
-//! Recursive calls must enclose the returned goal-expression into `proto_vulcan_closure!`-macro,
-//! which will be evaluated lazily. The closure will take ownership of the variables referenced
-//! within the closure, and therefore any `&Rc<LTerm>`-type parameters must be cloned.
-//!
+//! The relation-constructor calls within `proto_vulcan!`-macro are evaluated immediately when the
+//! relation-constructor containing the macro is called; relations within `proto-vulcan!` are just
+//! function calls. Recursive relations must instead use `proto_vulcan_closure!`-macro, that
+//! puts the function calls and necessary context into a closure that will be evaluated later.
 //! ```rust
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //! use std::rc::Rc;
 //!
-//! pub fn appendo<U: UserState>(l: &Rc<LTerm>, s: &Rc<LTerm>, ls: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-//!     let l = Rc::clone(l);
-//!     let s = Rc::clone(s);
-//!     let ls = Rc::clone(ls);
+//! pub fn appendo<U: UserState>(l: Rc<LTerm>, s: Rc<LTerm>, ls: Rc<LTerm>) -> Rc<dyn Goal<U>> {
 //!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,
 //!            [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
 //!        }
-//!    )
+//!     )
 //! }
 //!
 //! # fn main() {}
@@ -245,8 +241,8 @@
 //! by the projection list `|x, y, z|`.
 //!
 //! # Quoting
-//! Proto-vulcan assumes that all arguments to relations are of type `&Rc<LTerm>`. If the argument
-//! is not of type `&Rc<LTerm>`, then it must be quoted with `#`-prefix, in order to be passed
+//! Proto-vulcan assumes that all arguments to relations are of type `Rc<LTerm>`. If the argument
+//! is not of type `Rc<LTerm>`, then it must be quoted with `#`-prefix, in order to be passed
 //! to the relation as-is. For examples of usage, see the `n-queens` example in repository.
 //!
 //! # Embedding Rust into Proto-vulcan

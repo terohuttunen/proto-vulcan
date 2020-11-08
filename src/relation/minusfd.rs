@@ -40,6 +40,6 @@ impl<U: UserState> Goal<U> for MinusFd<U> {
     }
 }
 
-pub fn minusfd<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>, w: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    MinusFd::new(Rc::clone(u), Rc::clone(v), Rc::clone(w))
+pub fn minusfd<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    MinusFd::new(u, v, w)
 }

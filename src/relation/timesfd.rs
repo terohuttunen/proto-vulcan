@@ -40,8 +40,8 @@ impl<U: UserState> Goal<U> for TimesFd<U> {
     }
 }
 
-pub fn timesfd<U: UserState>(u: &Rc<LTerm>, v: &Rc<LTerm>, w: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
-    TimesFd::new(Rc::clone(u), Rc::clone(v), Rc::clone(w))
+pub fn timesfd<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    TimesFd::new(u, v, w)
 }
 
 #[cfg(test)]

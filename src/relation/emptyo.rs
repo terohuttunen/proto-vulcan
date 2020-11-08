@@ -19,7 +19,7 @@ use std::rc::Rc;
 ///     assert!(query.run().next().unwrap().q == lterm!([]));
 /// }
 /// ```
-pub fn emptyo<U: UserState>(s: &Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn emptyo<U: UserState>(s: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!([] == s)
 }
 
