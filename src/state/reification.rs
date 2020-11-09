@@ -1,13 +1,45 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::operator::conde::Conde;
 use crate::operator::onceo;
-use crate::state::UserState;
-use crate::stream::Stream;
+use crate::state::{State, UserState};
+use crate::stream::{LazyStream, Stream};
 use std::rc::Rc;
 
 fn enforce_constraints_diseq<U: UserState>(_x: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!(true)
+}
+
+/// Map function `f` to each value of iterable (stream of separate solutions)
+fn map_sum<U, F, T>(
+    state: State<U>,
+    mut f: F,
+    iter: impl DoubleEndedIterator<Item = T>,
+) -> Stream<U>
+where
+    U: UserState,
+    F: FnMut(T) -> Rc<dyn Goal<U>>,
+{
+    let mut iter = iter.rev().peekable();
+    let mut stream = Stream::Empty;
+    loop {
+        match iter.next() {
+            Some(d) => {
+                if iter.peek().is_none() {
+                    // If this is last value in the domain, no need to clone `state`.
+                    let new_stream = f(d).apply(state);
+                    stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
+                    break;
+                } else {
+                    let new_stream = f(d).apply(state.clone());
+                    stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
+                }
+            }
+            None => {
+                unreachable!();
+            }
+        }
+    }
+    stream
 }
 
 /// Enforces the finite domain constraints by expanding the domains into sequences of numbers,
@@ -15,21 +47,20 @@ fn enforce_constraints_diseq<U: UserState>(_x: Rc<LTerm>) -> Rc<dyn Goal<U>> {
 /// the domain.
 fn force_ans<U: UserState>(x: Rc<LTerm>) -> Rc<dyn Goal<U>> {
     proto_vulcan!(fngoal move |state| {
-        let xwalk = state.smap_ref().walk(&x);
-        let maybe_xdomain = state.dstore_ref().get(xwalk);
+        let xwalk = Rc::clone(state.smap_ref().walk(&x));
+        let maybe_xdomain = state.dstore_ref().get(&xwalk).cloned();
 
         match (xwalk.as_ref(), maybe_xdomain) {
             (LTerm::Var(_, _), Some(xdomain)) => {
-                let goals = xdomain.iter().map(|d| {
-                    let d = Rc::new(LTerm::from(d));
-                    proto_vulcan!(xwalk == d)
-                }).collect();
-                Conde::from_vec(goals)
+                // Stream of solutions where xwalk can equal any value of xdomain
+                map_sum(state, |d| {
+                    let dterm = Rc::new(LTerm::from(d));
+                    proto_vulcan!(dterm == xwalk)
+                }, xdomain.iter())
             }
-            (LTerm::Cons(head, tail), _) => proto_vulcan!([force_ans(head), force_ans(tail)]),
-            (_, _) => proto_vulcan!(true),
+            (LTerm::Cons(head, tail), _) => proto_vulcan!([force_ans(head), force_ans(tail)]).apply(state),
+            (_, _) => proto_vulcan!(true).apply(state),
         }
-        .apply(state)
     })
 }
 

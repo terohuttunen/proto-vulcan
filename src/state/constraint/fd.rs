@@ -225,6 +225,15 @@ impl<'a> Iterator for FiniteDomainIter<'a> {
     }
 }
 
+impl<'a> DoubleEndedIterator for FiniteDomainIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            FiniteDomainIter::IntervalIter(r) => r.next_back(),
+            FiniteDomainIter::SparseIter(v) => v.copied().next_back(),
+        }
+    }
+}
+
 impl From<Vec<isize>> for FiniteDomain {
     fn from(mut v: Vec<isize>) -> FiniteDomain {
         if v.is_empty() {
