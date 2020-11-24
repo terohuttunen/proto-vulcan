@@ -46,7 +46,10 @@ fn diagonalso(n: isize, i: isize, j: isize, s: Rc<LTerm>, r: Rc<LTerm>) -> Rc<dy
 
 fn nqueenso(queens: Rc<LTerm>, n: isize, i: isize, l: Rc<LTerm>) -> Rc<dyn Goal> {
     if i == 0 {
-        proto_vulcan!([distinctfd(l), diagonalso(#n, #0, #1, #Rc::clone(l.tail().unwrap()), l), queens == l])
+        proto_vulcan!(|ltail| {
+            l == [_ | ltail],
+            [distinctfd(l), diagonalso(#n, #0, #1, ltail, l), queens == l]
+        })
     } else {
         proto_vulcan_closure!(|x| {
             infdrange(x, #&(1..=n)),
