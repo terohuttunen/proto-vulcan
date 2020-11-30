@@ -3,6 +3,7 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
+use std::fmt::Debug;
 use std::rc::Rc;
 
 // operator { <body> }
@@ -37,6 +38,19 @@ pub struct ClosureOperatorParam<U: UserState> {
     pub f: Box<dyn Fn() -> Rc<dyn Goal<U>>>,
 }
 
+// for x in coll { <body> }
+pub struct ForOperatorParam<U, T>
+where
+    U: UserState,
+    T: Debug + 'static,
+    for<'b> &'b T: IntoIterator<Item = &'b Rc<LTerm>>,
+{
+    pub coll: T,
+    // Goal generator: generates a goal for each cycle of the "loop" given element from the
+    // collection.
+    pub g: Box<dyn Fn(Rc<LTerm>) -> Rc<dyn Goal<U>>>,
+}
+
 #[doc(hidden)]
 pub mod all;
 #[doc(hidden)]
@@ -51,6 +65,8 @@ pub mod conda;
 pub mod conde;
 #[doc(hidden)]
 pub mod condu;
+#[doc(hidden)]
+pub mod everyg;
 #[doc(hidden)]
 pub mod fngoal;
 #[doc(hidden)]
@@ -89,3 +105,6 @@ pub use matchu::matchu;
 
 #[doc(inline)]
 pub use matcha::matcha;
+
+#[doc(inline)]
+pub use everyg::everyg;

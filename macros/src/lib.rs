@@ -518,6 +518,51 @@ impl ToTokens for PatternMatchOperator {
     }
 }
 
+#[derive(Clone)]
+struct For {
+    for_token: Token![for],
+    pattern: Ident,
+    in_token: Token![in],
+    coll: syn::Expr,
+    brace_token: Brace,
+    body: Punctuated<ClauseInOperator, Token![,]>,
+}
+
+impl Parse for For {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let for_token: Token![for] = input.parse()?;
+        let pattern = input.parse()?;
+        let in_token: Token![in] = input.parse()?;
+        let coll = input.call(syn::Expr::parse_without_eager_brace)?;
+        let content;
+        let brace_token = braced!(content in input);
+        let body = content.parse_terminated(ClauseInOperator::parse)?;
+        Ok(For {
+            for_token,
+            pattern,
+            in_token,
+            coll,
+            brace_token,
+            body,
+        })
+    }
+}
+
+impl ToTokens for For {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let pattern = &self.pattern;
+        let coll = &self.coll;
+        let body: Vec<&ClauseInOperator> = self.body.iter().collect();
+        let output = quote!({
+            crate::operator::everyg(crate::operator::ForOperatorParam {
+                coll: Clone::clone(#coll),
+                g: Box::new(|#pattern| crate::operator::all::All::from_conjunctions(&[ #( #body ),* ])),
+            })
+        });
+        output.to_tokens(tokens);
+    }
+}
+
 #[derive(Clone, Debug)]
 enum Value {
     Bool(syn::LitBool),
@@ -774,6 +819,8 @@ impl ToTokens for Diseq {
 
 #[derive(Clone)]
 enum Clause {
+    /// for x in coll { }
+    For(For),
     /// project |x, y, z| { }
     Project(Project),
     // fngoal |state| { }
@@ -826,6 +873,9 @@ impl Parse for Clause {
         {
             let closure: Closure = input.parse()?;
             Ok(Clause::Closure(closure))
+        } else if input.peek(Token![for]) {
+            let for_clause: For = input.parse()?;
+            Ok(Clause::For(for_clause))
         } else if input.peek(Token![loop]) && input.peek2(Brace) {
             let l: Loop = input.parse()?;
             Ok(Clause::Loop(l))
@@ -868,6 +918,9 @@ impl Parse for Clause {
 impl ToTokens for Clause {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match self {
+            Clause::For(for_clause) => {
+                for_clause.to_tokens(tokens);
+            }
             Clause::Project(project) => {
                 project.to_tokens(tokens);
             }
@@ -932,6 +985,10 @@ impl Parse for ClauseInOperator {
 impl ToTokens for ClauseInOperator {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match &self.0 {
+            Clause::For(for_clause) => {
+                let output = quote! { &[ #for_clause ] };
+                output.to_tokens(tokens);
+            }
             Clause::Project(project) => {
                 let output = quote! { &[ #project ] };
                 output.to_tokens(tokens);

@@ -585,6 +585,7 @@ impl Extend<Rc<LTerm>> for LTerm {
     }
 }
 
+#[derive(Debug)]
 pub struct LTermIter<'a> {
     maybe_u: Option<&'a LTerm>,
     maybe_last_improper: Option<&'a Rc<LTerm>>,

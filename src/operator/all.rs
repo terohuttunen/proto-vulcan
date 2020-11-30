@@ -31,6 +31,17 @@ impl<U: UserState> All<U> {
         p
     }
 
+    pub fn from_iter<I>(iter: I) -> Rc<dyn Goal<U>>
+    where
+        I: Iterator<Item = Rc<dyn Goal<U>>>,
+    {
+        let mut p = proto_vulcan!(true);
+        for g in iter {
+            p = All::new(g, p);
+        }
+        p
+    }
+
     // The parameter is a list of conjunctions, and the resulting goal is a conjunction
     // of all the goals.
     pub fn from_conjunctions(conjunctions: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
