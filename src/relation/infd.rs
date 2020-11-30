@@ -9,30 +9,26 @@ use std::rc::Rc;
 
 /// Associates the same domain to multiple variables
 pub fn infd<U: UserState>(u: Rc<LTerm>, domain: &[isize]) -> Rc<dyn Goal<U>> {
-    if u.is_var() {
-        DomFd::new(u, FiniteDomain::from(domain))
-    } else if u.is_list() {
+    if u.is_list() {
         let goals = u
             .iter()
             .map(|v| DomFd::new(Rc::clone(v), FiniteDomain::from(domain)))
             .collect();
         All::from_vec(goals)
     } else {
-        unimplemented!();
+        DomFd::new(u, FiniteDomain::from(domain))
     }
 }
 
 pub fn infdrange<U: UserState>(u: Rc<LTerm>, domain: &RangeInclusive<isize>) -> Rc<dyn Goal<U>> {
-    if u.is_var() {
-        DomFd::new(u, FiniteDomain::from(domain))
-    } else if u.is_list() {
+    if u.is_list() {
         let goals = u
             .iter()
             .map(|v| DomFd::new(Rc::clone(v), FiniteDomain::from(domain)))
             .collect();
         All::from_vec(goals)
     } else {
-        unimplemented!();
+        DomFd::new(u, FiniteDomain::from(domain))
     }
 }
 
