@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
@@ -13,14 +13,14 @@ pub struct Succeed<U: UserState> {
 }
 
 impl<U: UserState> Succeed<U> {
-    pub fn new() -> Rc<dyn Goal<U>> {
+    pub fn new() -> Goal<U> {
         Rc::new(Succeed {
             _phantom: PhantomData,
         })
     }
 }
 
-impl<U: UserState> Goal<U> for Succeed<U> {
+impl<U: UserState> Solver<U> for Succeed<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         Stream::from(state)
     }
@@ -49,6 +49,6 @@ impl<U: UserState> Goal<U> for Succeed<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn succeed<U: UserState>() -> Rc<dyn Goal<U>> {
+pub fn succeed<U: UserState>() -> Goal<U> {
     Succeed::new()
 }

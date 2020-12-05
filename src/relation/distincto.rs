@@ -1,10 +1,9 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::UserState;
-use std::rc::Rc;
 
 /// A relation which guarantees that all elements of `l` are distinct from each other.
-pub fn distincto<U: UserState>(l: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn distincto<U: UserState>(l: LTerm) -> Goal<U> {
     proto_vulcan_closure!(
         match l {
             [] | [_] => ,

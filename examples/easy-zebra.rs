@@ -1,10 +1,9 @@
 extern crate proto_vulcan;
 use proto_vulcan::relation::membero;
 use proto_vulcan::*;
-use std::rc::Rc;
 use std::time::Instant;
 
-fn righto(x: Rc<LTerm>, y: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal> {
+fn righto<U: UserState>(x: LTerm, y: LTerm, l: LTerm) -> Goal<U> {
     proto_vulcan_closure!(
         match l {
             [first, second | _] => {
@@ -16,7 +15,7 @@ fn righto(x: Rc<LTerm>, y: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal> {
     )
 }
 
-fn easy_zebrao(houses: Rc<LTerm>) -> Rc<dyn Goal> {
+fn easy_zebrao<U: UserState>(houses: LTerm) -> Goal<U> {
     proto_vulcan!([
         // Italian lives in the second house
         [_, ["italian", _], _] == houses,

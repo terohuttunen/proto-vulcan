@@ -1,7 +1,6 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::UserState;
-use std::rc::Rc;
 
 /// A relation that succeeds once if `x` is in list `l`.
 ///
@@ -19,7 +18,7 @@ use std::rc::Rc;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn member1o<U: UserState>(x: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn member1o<U: UserState>(x: LTerm, l: LTerm) -> Goal<U> {
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
         [head | rest] => [head != x, member1o(x, rest)],

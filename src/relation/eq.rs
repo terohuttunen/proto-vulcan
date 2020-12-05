@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
@@ -9,14 +9,14 @@ use std::rc::Rc;
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Eq<U: UserState> {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
 impl<U: UserState> Eq<U> {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
         Rc::new(Eq {
             u,
             v,
@@ -25,7 +25,7 @@ impl<U: UserState> Eq<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for Eq<U> {
+impl<U: UserState> Solver<U> for Eq<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         Stream::from(state.unify(&self.u, &self.v))
     }
@@ -50,6 +50,6 @@ impl<U: UserState> Goal<U> for Eq<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn eq<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn eq<U: UserState>(u: LTerm, v: LTerm) -> Goal<U> {
     Eq::new(u, v)
 }

@@ -97,7 +97,7 @@ impl<U: UserState> ConstraintStore<U> {
     /// Iterate over constraints that refer to terms in `u`
     pub fn relevant<'a>(
         &'a self,
-        relevant_operands: &Vec<Rc<LTerm>>,
+        relevant_operands: &Vec<LTerm>,
     ) -> impl Iterator<Item = &'a Constraint<U>> {
         let relevant_operands = relevant_operands.clone();
         self.iter().filter(move |c| {
@@ -107,7 +107,7 @@ impl<U: UserState> ConstraintStore<U> {
         })
     }
 
-    pub fn display_relevant(&self, u: &Rc<LTerm>, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    pub fn display_relevant(&self, u: &LTerm, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let anyvars = u.anyvars();
         let mut count = 0;
         for storec in self.relevant(&anyvars) {

@@ -18,8 +18,8 @@ pub trait UserUnify: Debug {
     /// Return Some(smap) if the terms can be unified, and None if not.
     fn unify<'a>(
         &self,
-        this: &Rc<LTerm>,
-        other: &Rc<LTerm>,
+        this: &LTerm,
+        other: &LTerm,
         smap: &mut Rc<SMap>,
         // Note: Extensions to `smap` must be added also to `extension`.
         extension: &mut SMap,

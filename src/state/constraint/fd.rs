@@ -1,5 +1,5 @@
 use super::{BaseConstraint, Constraint, FiniteDomainConstraint};
-use crate::lterm::LTerm;
+use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{SResult, State, UserState};
 use std::borrow::Borrow;
@@ -272,12 +272,12 @@ impl From<&[isize]> for FiniteDomain {
 // Finite Domain Constraints
 #[derive(Debug, Clone)]
 pub struct LessThanOrEqualFdConstraint {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
 }
 
 impl LessThanOrEqualFdConstraint {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>) -> LessThanOrEqualFdConstraint {
+    pub fn new(u: LTerm, v: LTerm) -> LessThanOrEqualFdConstraint {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         LessThanOrEqualFdConstraint { u, v }
@@ -349,8 +349,8 @@ impl<U: UserState> BaseConstraint<U> for LessThanOrEqualFdConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<&Rc<LTerm>> {
-        vec![&self.u, &self.v]
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.u.clone(), self.v.clone()]
     }
 }
 
@@ -370,13 +370,13 @@ impl<U: UserState> From<Rc<LessThanOrEqualFdConstraint>> for Constraint<U> {
 
 #[derive(Debug)]
 pub struct PlusFdConstraint {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
-    w: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
 }
 
 impl PlusFdConstraint {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> PlusFdConstraint {
+    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> PlusFdConstraint {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
@@ -392,8 +392,8 @@ impl<U: UserState> BaseConstraint<U> for PlusFdConstraint {
         let uwalk = smap.walk(&self.u);
         let singleton_udomain;
         let maybe_udomain = match uwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(uwalk),
-            LTerm::Val(LValue::Number(u)) => {
+            LTermInner::Var(_, _) => dstore.get(uwalk),
+            LTermInner::Val(LValue::Number(u)) => {
                 singleton_udomain = Rc::new(FiniteDomain::from(*u));
                 Some(&singleton_udomain)
             }
@@ -403,8 +403,8 @@ impl<U: UserState> BaseConstraint<U> for PlusFdConstraint {
         let vwalk = smap.walk(&self.v);
         let singleton_vdomain;
         let maybe_vdomain = match vwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(vwalk),
-            LTerm::Val(LValue::Number(v)) => {
+            LTermInner::Var(_, _) => dstore.get(vwalk),
+            LTermInner::Val(LValue::Number(v)) => {
                 singleton_vdomain = Rc::new(FiniteDomain::from(*v));
                 Some(&singleton_vdomain)
             }
@@ -414,8 +414,8 @@ impl<U: UserState> BaseConstraint<U> for PlusFdConstraint {
         let wwalk = smap.walk(&self.w);
         let singleton_wdomain;
         let maybe_wdomain = match wwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(wwalk),
-            LTerm::Val(LValue::Number(w)) => {
+            LTermInner::Var(_, _) => dstore.get(wwalk),
+            LTermInner::Val(LValue::Number(w)) => {
                 singleton_wdomain = Rc::new(FiniteDomain::from(*w));
                 Some(&singleton_wdomain)
             }
@@ -478,8 +478,8 @@ impl<U: UserState> BaseConstraint<U> for PlusFdConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<&Rc<LTerm>> {
-        vec![&self.u, &self.v, &self.w]
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.u.clone(), self.v.clone(), self.w.clone()]
     }
 }
 
@@ -499,13 +499,13 @@ impl<U: UserState> From<Rc<PlusFdConstraint>> for Constraint<U> {
 
 #[derive(Debug)]
 pub struct MinusFdConstraint {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
-    w: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
 }
 
 impl MinusFdConstraint {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> MinusFdConstraint {
+    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> MinusFdConstraint {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
@@ -521,8 +521,8 @@ impl<U: UserState> BaseConstraint<U> for MinusFdConstraint {
         let uwalk = smap.walk(&self.u);
         let singleton_udomain;
         let maybe_udomain = match uwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(uwalk),
-            LTerm::Val(LValue::Number(u)) => {
+            LTermInner::Var(_, _) => dstore.get(uwalk),
+            LTermInner::Val(LValue::Number(u)) => {
                 singleton_udomain = Rc::new(FiniteDomain::from(*u));
                 Some(&singleton_udomain)
             }
@@ -532,8 +532,8 @@ impl<U: UserState> BaseConstraint<U> for MinusFdConstraint {
         let vwalk = smap.walk(&self.v);
         let singleton_vdomain;
         let maybe_vdomain = match vwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(vwalk),
-            LTerm::Val(LValue::Number(v)) => {
+            LTermInner::Var(_, _) => dstore.get(vwalk),
+            LTermInner::Val(LValue::Number(v)) => {
                 singleton_vdomain = Rc::new(FiniteDomain::from(*v));
                 Some(&singleton_vdomain)
             }
@@ -543,8 +543,8 @@ impl<U: UserState> BaseConstraint<U> for MinusFdConstraint {
         let wwalk = smap.walk(&self.w);
         let singleton_wdomain;
         let maybe_wdomain = match wwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(wwalk),
-            LTerm::Val(LValue::Number(w)) => {
+            LTermInner::Var(_, _) => dstore.get(wwalk),
+            LTermInner::Val(LValue::Number(w)) => {
                 singleton_wdomain = Rc::new(FiniteDomain::from(*w));
                 Some(&singleton_wdomain)
             }
@@ -610,8 +610,8 @@ impl<U: UserState> BaseConstraint<U> for MinusFdConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<&Rc<LTerm>> {
-        vec![&self.u, &self.v, &self.w]
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.u.clone(), self.v.clone(), self.w.clone()]
     }
 }
 
@@ -631,13 +631,13 @@ impl<U: UserState> From<Rc<MinusFdConstraint>> for Constraint<U> {
 
 #[derive(Debug)]
 pub struct TimesFdConstraint {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
-    w: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
 }
 
 impl TimesFdConstraint {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> TimesFdConstraint {
+    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> TimesFdConstraint {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
@@ -653,8 +653,8 @@ impl<U: UserState> BaseConstraint<U> for TimesFdConstraint {
         let uwalk = smap.walk(&self.u);
         let singleton_udomain;
         let maybe_udomain = match uwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(uwalk),
-            LTerm::Val(LValue::Number(u)) => {
+            LTermInner::Var(_, _) => dstore.get(uwalk),
+            LTermInner::Val(LValue::Number(u)) => {
                 singleton_udomain = Rc::new(FiniteDomain::from(*u));
                 Some(&singleton_udomain)
             }
@@ -664,8 +664,8 @@ impl<U: UserState> BaseConstraint<U> for TimesFdConstraint {
         let vwalk = smap.walk(&self.v);
         let singleton_vdomain;
         let maybe_vdomain = match vwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(vwalk),
-            LTerm::Val(LValue::Number(v)) => {
+            LTermInner::Var(_, _) => dstore.get(vwalk),
+            LTermInner::Val(LValue::Number(v)) => {
                 singleton_vdomain = Rc::new(FiniteDomain::from(*v));
                 Some(&singleton_vdomain)
             }
@@ -675,8 +675,8 @@ impl<U: UserState> BaseConstraint<U> for TimesFdConstraint {
         let wwalk = smap.walk(&self.w);
         let singleton_wdomain;
         let maybe_wdomain = match wwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(wwalk),
-            LTerm::Val(LValue::Number(w)) => {
+            LTermInner::Var(_, _) => dstore.get(wwalk),
+            LTermInner::Val(LValue::Number(w)) => {
                 singleton_wdomain = Rc::new(FiniteDomain::from(*w));
                 Some(&singleton_wdomain)
             }
@@ -744,8 +744,8 @@ impl<U: UserState> BaseConstraint<U> for TimesFdConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<&Rc<LTerm>> {
-        vec![&self.u, &self.v, &self.w]
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.u.clone(), self.v.clone(), self.w.clone()]
     }
 }
 
@@ -765,12 +765,12 @@ impl<U: UserState> From<Rc<TimesFdConstraint>> for Constraint<U> {
 
 #[derive(Debug)]
 pub struct DiseqFdConstraint {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
 }
 
 impl DiseqFdConstraint {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>) -> DiseqFdConstraint {
+    pub fn new(u: LTerm, v: LTerm) -> DiseqFdConstraint {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         DiseqFdConstraint { u, v }
@@ -782,24 +782,24 @@ impl<U: UserState> BaseConstraint<U> for DiseqFdConstraint {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
 
-        let u = Rc::clone(&self.u);
+        let u = self.u.clone();
         let uwalk = smap.walk(&u);
         let singleton_udomain;
         let maybe_udomain = match uwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(uwalk),
-            LTerm::Val(LValue::Number(u)) => {
+            LTermInner::Var(_, _) => dstore.get(uwalk),
+            LTermInner::Val(LValue::Number(u)) => {
                 singleton_udomain = Rc::new(FiniteDomain::from(*u));
                 Some(&singleton_udomain)
             }
             _ => None,
         };
 
-        let v = Rc::clone(&self.v);
+        let v = self.v.clone();
         let vwalk = smap.walk(&v);
         let singleton_vdomain;
         let maybe_vdomain = match vwalk.as_ref() {
-            LTerm::Var(_, _) => dstore.get(vwalk),
-            LTerm::Val(LValue::Number(v)) => {
+            LTermInner::Var(_, _) => dstore.get(vwalk),
+            LTermInner::Val(LValue::Number(v)) => {
                 singleton_vdomain = Rc::new(FiniteDomain::from(*v));
                 Some(&singleton_vdomain)
             }
@@ -842,8 +842,8 @@ impl<U: UserState> BaseConstraint<U> for DiseqFdConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<&Rc<LTerm>> {
-        vec![&self.u, &self.v]
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.u.clone(), self.v.clone()]
     }
 }
 
@@ -863,11 +863,11 @@ impl<U: UserState> From<Rc<DiseqFdConstraint>> for Constraint<U> {
 
 #[derive(Debug)]
 pub struct DistinctFdConstraint {
-    u: Rc<LTerm>,
+    u: LTerm,
 }
 
 impl DistinctFdConstraint {
-    pub fn new(u: Rc<LTerm>) -> DistinctFdConstraint {
+    pub fn new(u: LTerm) -> DistinctFdConstraint {
         assert!(u.is_list());
         DistinctFdConstraint { u }
     }
@@ -879,12 +879,12 @@ impl<U: UserState> BaseConstraint<U> for DistinctFdConstraint {
 
         let v = smap.walk(&self.u);
         match v.as_ref() {
-            LTerm::Var(_, _) => {
+            LTermInner::Var(_, _) => {
                 // The term has not yet been associated with a list of terms that we want
                 // to constrain, keep the constraint for later.
                 Ok(state.with_constraint(self))
             }
-            LTerm::Empty | LTerm::Cons(_, _) => {
+            LTermInner::Empty | LTermInner::Cons(_, _) => {
                 // Partition the list of terms to unresolved variables in `x` and constants in `n`.
                 let (x, n): (LTerm, LTerm) = v.iter().cloned().partition(|v| v.is_var());
 
@@ -892,7 +892,7 @@ impl<U: UserState> BaseConstraint<U> for DistinctFdConstraint {
                 let mut n = n
                     .iter()
                     .map(|t| match t.as_ref() {
-                        LTerm::Val(LValue::Number(u)) => *u,
+                        LTermInner::Val(LValue::Number(u)) => *u,
                         _ => panic!("Invalid constant constraint {:?}", t),
                     })
                     .collect::<Vec<isize>>();
@@ -916,11 +916,7 @@ impl<U: UserState> BaseConstraint<U> for DistinctFdConstraint {
                 if no_duplicates {
                     // There are no duplicate constant constraints. Create a new constraint
                     // to follow the fulfillment of the variable domain constraints.
-                    let c = Rc::new(DistinctFd2Constraint::new(
-                        Rc::clone(&self.u),
-                        Rc::new(x),
-                        n,
-                    ));
+                    let c = Rc::new(DistinctFd2Constraint::new(self.u.clone(), x, n));
                     Ok(state.with_constraint(c))
                 } else {
                     // If there are duplicate constants in the array, then the constraint is
@@ -935,8 +931,8 @@ impl<U: UserState> BaseConstraint<U> for DistinctFdConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<&Rc<LTerm>> {
-        vec![&self.u]
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.u.clone()]
     }
 }
 
@@ -956,13 +952,13 @@ impl<U: UserState> From<Rc<DistinctFdConstraint>> for Constraint<U> {
 
 #[derive(Debug, Clone)]
 struct DistinctFd2Constraint {
-    u: Rc<LTerm>,
-    y: Rc<LTerm>,
+    u: LTerm,
+    y: LTerm,
     n: Vec<isize>,
 }
 
 impl DistinctFd2Constraint {
-    pub fn new(u: Rc<LTerm>, y: Rc<LTerm>, n: Vec<isize>) -> DistinctFd2Constraint {
+    pub fn new(u: LTerm, y: LTerm, n: Vec<isize>) -> DistinctFd2Constraint {
         assert!(u.is_list());
         assert!(y.is_list());
         DistinctFd2Constraint { u, y, n }
@@ -973,18 +969,18 @@ impl<U: UserState> BaseConstraint<U> for DistinctFd2Constraint {
     fn run(mut self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
 
-        let mut x = LTerm::Empty;
+        let mut x = LTerm::empty_list();
         let mut mself = Rc::make_mut(&mut self);
-        for y in Rc::make_mut(&mut mself.y).into_iter() {
+        for y in mself.y.into_iter() {
             let ywalk = smap.walk(&y);
             match ywalk.as_ref() {
-                LTerm::Var(_, _) => {
+                LTermInner::Var(_, _) => {
                     // Terms that walk to variables cannot be resolved to values yet. Such terms
                     // are moved from y to x, where they will become the new y on next run of
                     // constraints.
-                    x.extend(Some(y));
+                    x.extend(Some(y.clone()));
                 }
-                LTerm::Val(val) => {
+                LTermInner::Val(val) => {
                     // A variable has been associated with a value and can be moved from y to n.
                     match val {
                         LValue::Number(u) => {
@@ -1009,8 +1005,7 @@ impl<U: UserState> BaseConstraint<U> for DistinctFd2Constraint {
 
         // Create a new all-diff constraint with (hopefully) less unassociated variables in y and
         // more constants in n.
-        let x = Rc::new(x);
-        mself.y = Rc::clone(&x);
+        mself.y = x.clone();
         if mself.n.is_empty() {
             Ok(state.with_constraint(self))
         } else {
@@ -1019,8 +1014,8 @@ impl<U: UserState> BaseConstraint<U> for DistinctFd2Constraint {
         }
     }
 
-    fn operands(&self) -> Vec<&Rc<LTerm>> {
-        self.u.iter().collect()
+    fn operands(&self) -> Vec<LTerm> {
+        self.u.iter().cloned().collect()
     }
 }
 

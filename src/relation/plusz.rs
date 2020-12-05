@@ -1,5 +1,5 @@
 /// Constrains u + v = w
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, PlusZConstraint};
@@ -11,15 +11,15 @@ use std::rc::Rc;
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct PlusZ<U: UserState> {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
-    w: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
 impl<U: UserState> PlusZ<U> {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
         Rc::new(PlusZ {
             u,
             v,
@@ -29,7 +29,7 @@ impl<U: UserState> PlusZ<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for PlusZ<U> {
+impl<U: UserState> Solver<U> for PlusZ<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(PlusZConstraint::new(
             self.u.clone(),
@@ -40,7 +40,7 @@ impl<U: UserState> Goal<U> for PlusZ<U> {
     }
 }
 
-pub fn plusz<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn plusz<U: UserState>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
     PlusZ::new(u, v, w)
 }
 

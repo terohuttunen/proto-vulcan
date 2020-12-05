@@ -4,11 +4,10 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
 use std::fmt::Debug;
-use std::rc::Rc;
 
 // operator { <body> }
 pub struct OperatorParam<'a, U: UserState> {
-    pub body: &'a [&'a [Rc<dyn Goal<U>>]],
+    pub body: &'a [&'a [Goal<U>]],
 }
 
 // operator <term> {
@@ -19,13 +18,13 @@ pub struct OperatorParam<'a, U: UserState> {
 // }
 pub struct PatternMatchOperatorParam<'a, U: UserState> {
     // First goal of each arm is the match-goal
-    pub arms: &'a [&'a [Rc<dyn Goal<U>>]],
+    pub arms: &'a [&'a [Goal<U>]],
 }
 
 // project |x, y, ...| { <body> }
 pub struct ProjectOperatorParam<'a, U: UserState> {
-    pub var_list: Vec<Rc<LTerm>>,
-    pub body: &'a [&'a [Rc<dyn Goal<U>>]],
+    pub var_list: Vec<LTerm>,
+    pub body: &'a [&'a [Goal<U>]],
 }
 
 // fngoal [move]* |state| { <rust> }
@@ -35,7 +34,7 @@ pub struct FnOperatorParam<U: UserState> {
 
 // closure { <body> }
 pub struct ClosureOperatorParam<U: UserState> {
-    pub f: Box<dyn Fn() -> Rc<dyn Goal<U>>>,
+    pub f: Box<dyn Fn() -> Goal<U>>,
 }
 
 // for x in coll { <body> }
@@ -43,12 +42,12 @@ pub struct ForOperatorParam<U, T>
 where
     U: UserState,
     T: Debug + 'static,
-    for<'b> &'b T: IntoIterator<Item = &'b Rc<LTerm>>,
+    for<'b> &'b T: IntoIterator<Item = &'b LTerm>,
 {
     pub coll: T,
     // Goal generator: generates a goal for each cycle of the "loop" given element from the
     // collection.
-    pub g: Box<dyn Fn(Rc<LTerm>) -> Rc<dyn Goal<U>>>,
+    pub g: Box<dyn Fn(LTerm) -> Goal<U>>,
 }
 
 #[doc(hidden)]

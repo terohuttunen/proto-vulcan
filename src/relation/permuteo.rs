@@ -2,10 +2,9 @@ use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::relation::rembero;
 use crate::user::UserState;
-use std::rc::Rc;
 
 /// A relation that will permute xl into yl.
-pub fn permuteo<U: UserState>(xl: Rc<LTerm>, yl: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn permuteo<U: UserState>(xl: LTerm, yl: LTerm) -> Goal<U> {
     proto_vulcan_closure!(
         match [xl, yl] {
             [[], []] => ,

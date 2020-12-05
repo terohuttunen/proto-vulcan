@@ -5,14 +5,13 @@ use crate::relation::domfd::DomFd;
 use crate::state::FiniteDomain;
 use crate::user::UserState;
 use std::ops::RangeInclusive;
-use std::rc::Rc;
 
 /// Associates the same domain to multiple variables
-pub fn infd<U: UserState>(u: Rc<LTerm>, domain: &[isize]) -> Rc<dyn Goal<U>> {
+pub fn infd<U: UserState>(u: LTerm, domain: &[isize]) -> Goal<U> {
     if u.is_list() {
         let goals = u
             .iter()
-            .map(|v| DomFd::new(Rc::clone(v), FiniteDomain::from(domain)))
+            .map(|v| DomFd::new(v.clone(), FiniteDomain::from(domain)))
             .collect();
         All::from_vec(goals)
     } else {
@@ -20,11 +19,11 @@ pub fn infd<U: UserState>(u: Rc<LTerm>, domain: &[isize]) -> Rc<dyn Goal<U>> {
     }
 }
 
-pub fn infdrange<U: UserState>(u: Rc<LTerm>, domain: &RangeInclusive<isize>) -> Rc<dyn Goal<U>> {
+pub fn infdrange<U: UserState>(u: LTerm, domain: &RangeInclusive<isize>) -> Goal<U> {
     if u.is_list() {
         let goals = u
             .iter()
-            .map(|v| DomFd::new(Rc::clone(v), FiniteDomain::from(domain)))
+            .map(|v| DomFd::new(v.clone(), FiniteDomain::from(domain)))
             .collect();
         All::from_vec(goals)
     } else {

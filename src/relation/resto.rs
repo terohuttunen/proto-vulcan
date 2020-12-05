@@ -2,7 +2,6 @@ use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::relation::conso;
 use crate::user::UserState;
-use std::rc::Rc;
 
 /// A relation such that `rest` is `list` without its first element.
 ///
@@ -18,7 +17,7 @@ use std::rc::Rc;
 ///     assert!(query.run().next().unwrap().q == lterm!([2, 3]));
 /// }
 /// ```
-pub fn resto<U: UserState>(list: Rc<LTerm>, rest: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn resto<U: UserState>(list: LTerm, rest: LTerm) -> Goal<U> {
     proto_vulcan!(|first| { conso(first, rest, list) })
 }
 

@@ -1,7 +1,6 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::UserState;
-use std::rc::Rc;
 
 /// A relation where `l`, `s`, and `ls` are proper lists, such that `ls` is `s` appended to `l`.
 ///
@@ -16,7 +15,7 @@ use std::rc::Rc;
 ///     });
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3, 4, 5]));
 /// }
-pub fn appendo<U: UserState>(l: Rc<LTerm>, s: Rc<LTerm>, ls: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn appendo<U: UserState>(l: LTerm, s: LTerm, ls: LTerm) -> Goal<U> {
     proto_vulcan_closure!(
         match [l, s, ls] {
             [[], x, x] => ,

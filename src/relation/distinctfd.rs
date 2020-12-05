@@ -1,5 +1,5 @@
 /// distinctfd finite domain constraint
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, DistinctFdConstraint};
@@ -11,13 +11,13 @@ use std::rc::Rc;
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct DistinctFd<U: UserState> {
-    u: Rc<LTerm>,
+    u: LTerm,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
 impl<U: UserState> DistinctFd<U> {
-    pub fn new(u: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    pub fn new(u: LTerm) -> Goal<U> {
         Rc::new(DistinctFd {
             u,
             _phantom: PhantomData,
@@ -25,14 +25,14 @@ impl<U: UserState> DistinctFd<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for DistinctFd<U> {
+impl<U: UserState> Solver<U> for DistinctFd<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(DistinctFdConstraint::new(self.u.clone()));
         Stream::from(c.run(state))
     }
 }
 
-pub fn distinctfd<U: UserState>(u: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn distinctfd<U: UserState>(u: LTerm) -> Goal<U> {
     DistinctFd::new(u)
 }
 

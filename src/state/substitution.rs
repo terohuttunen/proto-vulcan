@@ -1,13 +1,12 @@
-use crate::lterm::LTerm;
+use crate::lterm::{LTerm, LTermInner};
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
 
 /// Substitution Map
 ///
 /// Substitution maps track the binding of variables to terms.
 #[derive(Clone, Debug)]
-pub struct SMap(HashMap<Rc<LTerm>, Rc<LTerm>>);
+pub struct SMap(HashMap<LTerm, LTerm>);
 
 impl SMap {
     /// Construct an an empty substitution map with no substitutions
@@ -16,7 +15,7 @@ impl SMap {
     }
 
     /// Extend substitution map with a new substitution
-    pub fn extend(&mut self, k: Rc<LTerm>, v: Rc<LTerm>) {
+    pub fn extend(&mut self, k: LTerm, v: LTerm) {
         self.0.insert(k, v);
     }
 
@@ -28,10 +27,10 @@ impl SMap {
     ///
     /// Walking the substitution map recursively traverses the map until no next term is found,
     /// or the term found is a non-variable.
-    pub fn walk<'a>(&'a self, mut k: &'a Rc<LTerm>) -> &'a Rc<LTerm> {
+    pub fn walk<'a>(&'a self, mut k: &'a LTerm) -> &'a LTerm {
         loop {
             match k.as_ref() {
-                LTerm::Var(_, _) => {
+                LTermInner::Var(_, _) => {
                     match self.0.get(k) {
                         Some(s) => k = s, // recurse for variable-kind
                         None => return k, // if no next term found
@@ -44,7 +43,7 @@ impl SMap {
 
     /// Alternative walk of the substitution map that does not bind the return value lifetime
     /// to lifetime of the input variable `k`.
-    pub fn walk_if<'a, 'b>(&'a self, k: &'b Rc<LTerm>) -> Option<&'a Rc<LTerm>> {
+    pub fn walk_if<'a, 'b>(&'a self, k: &'b LTerm) -> Option<&'a LTerm> {
         if k.is_var() {
             // First step
             let mut step = match self.0.get(k) {
@@ -55,7 +54,7 @@ impl SMap {
             // Further steps have lifetime of `self`, not input `k`
             loop {
                 match step.as_ref() {
-                    LTerm::Var(_, _) => match self.0.get(step) {
+                    LTermInner::Var(_, _) => match self.0.get(step) {
                         Some(next) => step = next,
                         None => return Some(step),
                     },
@@ -72,11 +71,11 @@ impl SMap {
     /// Walks the substitution map recursively like `walk()`, but does not stop at lists, and
     /// instead recurses to do the deep walk also for the list elements. Returns a term which
     /// is a tree where all leaves are walked terms.
-    pub fn walk_star(&self, v: &Rc<LTerm>) -> Rc<LTerm> {
+    pub fn walk_star(&self, v: &LTerm) -> LTerm {
         let v = self.walk(v);
         match v.as_ref() {
-            LTerm::Cons(head, tail) => LTerm::cons(self.walk_star(head), self.walk_star(tail)),
-            _ => Rc::clone(v),
+            LTermInner::Cons(head, tail) => LTerm::cons(self.walk_star(head), self.walk_star(tail)),
+            _ => v.clone(),
         }
     }
 
@@ -84,13 +83,15 @@ impl SMap {
     ///
     /// Occurs check is used to prevent unification of terms that would cause the variable to
     /// be contained in itself.
-    pub fn occurs_check(&self, x: &Rc<LTerm>, v: &Rc<LTerm>) -> bool {
+    pub fn occurs_check(&self, x: &LTerm, v: &LTerm) -> bool {
         match self.walk(v).as_ref() {
-            LTerm::Var(vvar, _) => match x.as_ref() {
-                LTerm::Var(xvar, _) => *vvar == *xvar,
+            LTermInner::Var(vvar, _) => match x.as_ref() {
+                LTermInner::Var(xvar, _) => *vvar == *xvar,
                 _ => false,
             },
-            LTerm::Cons(head, tail) => self.occurs_check(x, head) || self.occurs_check(x, tail),
+            LTermInner::Cons(head, tail) => {
+                self.occurs_check(x, head) || self.occurs_check(x, tail)
+            }
             _ => false,
         }
     }
@@ -104,35 +105,35 @@ impl SMap {
     ///
     /// This is typically used to generate a reifying substitution map from an empty map. The
     /// reifying map maps free variables to reified names. See State::reify().
-    pub fn reify(&self, v: &Rc<LTerm>) -> SMap {
+    pub fn reify(&self, v: &LTerm) -> SMap {
         let walkv = self.walk(v);
         match walkv.as_ref() {
-            LTerm::Var(_, _) => {
+            LTermInner::Var(_, _) => {
                 // If it was not possible to find substitution that ends in a value, then we
                 // append substitution to Any-variable, which can have any value.
                 let mut c = self.clone();
-                c.extend(Rc::clone(walkv), LTerm::any());
+                c.extend(walkv.clone(), LTerm::any());
                 c
             }
-            LTerm::Cons(head, tail) => self.reify(head).reify(tail),
+            LTermInner::Cons(head, tail) => self.reify(head).reify(tail),
             _ => self.clone(),
         }
     }
 
     /// Check if the given logic term refers to any unassociated variables
-    pub fn is_anyvar(&self, v: &Rc<LTerm>) -> bool {
+    pub fn is_anyvar(&self, v: &LTerm) -> bool {
         match v.as_ref() {
-            LTerm::Var(_, _) if self.contains_key(v) => {
+            LTermInner::Var(_, _) if self.contains_key(v) => {
                 let walkv = self.walk(&v);
                 walkv.is_var()
             }
-            LTerm::Cons(u, v) => self.is_anyvar(u) || self.is_anyvar(v),
+            LTermInner::Cons(u, v) => self.is_anyvar(u) || self.is_anyvar(v),
             _ => false,
         }
     }
 
     /// Returns a list of variables referenced by the substitution map
-    pub fn get_vars(&self) -> Vec<&Rc<LTerm>> {
+    pub fn get_vars(&self) -> Vec<&LTerm> {
         let mut vars = vec![];
         for (k, v) in self.0.iter() {
             vars.push(k);
@@ -144,12 +145,12 @@ impl SMap {
     }
 
     /// Returns a set of variables operands referencesd by the substitution
-    pub fn operands(&self) -> Vec<&Rc<LTerm>> {
+    pub fn operands(&self) -> Vec<LTerm> {
         let mut operands = vec![];
         for (k, v) in self.0.iter() {
-            operands.push(k);
+            operands.push(k.clone());
             if v.is_var() {
-                operands.push(v);
+                operands.push(v.clone());
             }
         }
         operands
@@ -157,8 +158,8 @@ impl SMap {
 }
 
 impl IntoIterator for SMap {
-    type Item = (Rc<LTerm>, Rc<LTerm>);
-    type IntoIter = ::std::collections::hash_map::IntoIter<Rc<LTerm>, Rc<LTerm>>;
+    type Item = (LTerm, LTerm);
+    type IntoIter = ::std::collections::hash_map::IntoIter<LTerm, LTerm>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -166,7 +167,7 @@ impl IntoIterator for SMap {
 }
 
 impl Deref for SMap {
-    type Target = HashMap<Rc<LTerm>, Rc<LTerm>>;
+    type Target = HashMap<LTerm, LTerm>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -179,14 +180,14 @@ impl DerefMut for SMap {
     }
 }
 
-impl AsRef<HashMap<Rc<LTerm>, Rc<LTerm>>> for SMap {
-    fn as_ref(&self) -> &HashMap<Rc<LTerm>, Rc<LTerm>> {
+impl AsRef<HashMap<LTerm, LTerm>> for SMap {
+    fn as_ref(&self) -> &HashMap<LTerm, LTerm> {
         &self.0
     }
 }
 
-impl AsMut<HashMap<Rc<LTerm>, Rc<LTerm>>> for SMap {
-    fn as_mut(&mut self) -> &mut HashMap<Rc<LTerm>, Rc<LTerm>> {
+impl AsMut<HashMap<LTerm, LTerm>> for SMap {
+    fn as_mut(&mut self) -> &mut HashMap<LTerm, LTerm> {
         &mut self.0
     }
 }
@@ -211,12 +212,12 @@ mod tests {
 
         // In an empty substitution map, a walk leads to nowhere.
         let w = smap.walk(&v);
-        assert!(Rc::ptr_eq(&w, &v));
+        assert!(LTerm::ptr_eq(&w, &v));
 
         // In an extended substitution map, a walk follows the map.
-        smap.extend(Rc::clone(&v), Rc::clone(&t));
+        smap.extend(v.clone(), t.clone());
         let w = smap.walk(&v);
-        assert!(Rc::ptr_eq(&w, &t));
+        assert!(LTerm::ptr_eq(&w, &t));
     }
 
     #[test]
@@ -228,11 +229,11 @@ mod tests {
 
         // Extending empty substitution map cannot fail occurs check
         assert!(!smap.occurs_check(&v0, &v1));
-        smap.extend(Rc::clone(&v0), Rc::clone(&v1));
+        smap.extend(v0.clone(), v1.clone());
 
         // Continuing variable substitution without forming a loop does not fail occurs check
         assert!(!smap.occurs_check(&v1, &v2));
-        smap.extend(Rc::clone(&v1), Rc::clone(&v2));
+        smap.extend(v1.clone(), v2.clone());
 
         // Checking if it is possible to form a loop of substitutions will trigger the occurs check
         assert!(smap.occurs_check(&v2, &v0));
@@ -245,15 +246,15 @@ mod tests {
         let v1 = lterm!(_);
         let v2 = lterm!(_);
         let v3 = lterm!(_);
-        let l = LTerm::cons(Rc::clone(&v1), Rc::clone(&v2));
+        let l = LTerm::cons(v1.clone(), v2.clone());
 
         // Extending empty substitution map cannot fail occurs check
         assert!(!smap.occurs_check(&v0, &l));
-        smap.extend(Rc::clone(&v0), Rc::clone(&l));
+        smap.extend(v0.clone(), l.clone());
 
         // Continuing variable substitution without forming a loop does not fail occurs check
         assert!(!smap.occurs_check(&v1, &v3));
-        smap.extend(Rc::clone(&v1), Rc::clone(&v3));
+        smap.extend(v1.clone(), v3.clone());
 
         // Checking if it is possible to form a loop of substitutions will trigger the occurs check
         assert!(smap.occurs_check(&v2, &v0));
@@ -265,7 +266,7 @@ mod tests {
         let smap = SMap::new();
         let v = lterm!(_);
         let w = smap.walk(&v);
-        assert!(Rc::ptr_eq(&v, &w));
+        assert!(LTerm::ptr_eq(&v, &w));
     }
 
     #[test]
@@ -276,11 +277,11 @@ mod tests {
         let v1 = lterm!(_);
         let v2 = lterm!(_);
 
-        smap.extend(Rc::clone(&v0), Rc::clone(&v1));
-        smap.extend(Rc::clone(&v1), Rc::clone(&v2));
+        smap.extend(v0.clone(), v1.clone());
+        smap.extend(v1.clone(), v2.clone());
 
         let w = smap.walk(&v0);
-        assert!(Rc::ptr_eq(&v2, &w));
+        assert!(LTerm::ptr_eq(&v2, &w));
     }
 
     #[test]
@@ -291,13 +292,13 @@ mod tests {
         let v1 = lterm!(_);
         let v2 = lterm!(_);
 
-        smap.extend(Rc::clone(&v0), Rc::clone(&v1));
-        smap.extend(Rc::clone(&v1), Rc::clone(&v2));
+        smap.extend(v0.clone(), v1.clone());
+        smap.extend(v1.clone(), v2.clone());
 
         let v3 = lterm!(1);
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v2.clone(), v3.clone());
         let w = smap.walk(&v0);
-        assert!(Rc::ptr_eq(&v3, &w));
+        assert!(LTerm::ptr_eq(&v3, &w));
     }
 
     #[test]
@@ -309,16 +310,16 @@ mod tests {
         let v1 = lterm!(_);
         let v2 = lterm!(_);
 
-        smap.extend(Rc::clone(&v0), Rc::clone(&v1));
-        smap.extend(Rc::clone(&v1), Rc::clone(&v2));
+        smap.extend(v0.clone(), v1.clone());
+        smap.extend(v1.clone(), v2.clone());
 
         let v3 = lterm!(_);
-        let vs = LTerm::singleton(Rc::clone(&v3));
+        let vs = LTerm::singleton(v3.clone());
         let v4 = lterm!(_);
-        smap.extend(Rc::clone(&v2), Rc::clone(&vs));
-        smap.extend(Rc::clone(&v3), Rc::clone(&v4));
+        smap.extend(v2.clone(), vs.clone());
+        smap.extend(v3.clone(), v4.clone());
         let w = smap.walk(&v0);
-        assert!(Rc::ptr_eq(&vs, &w));
+        assert!(LTerm::ptr_eq(&vs, &w));
     }
 
     #[test]
@@ -327,7 +328,7 @@ mod tests {
         let smap = SMap::new();
         let v = lterm!(_);
         let w = smap.walk_star(&v);
-        assert!(Rc::ptr_eq(&v, &w));
+        assert!(LTerm::ptr_eq(&v, &w));
     }
 
     #[test]
@@ -338,11 +339,11 @@ mod tests {
         let v1 = lterm!(_);
         let v2 = lterm!(_);
 
-        smap.extend(Rc::clone(&v0), Rc::clone(&v1));
-        smap.extend(Rc::clone(&v1), Rc::clone(&v2));
+        smap.extend(v0.clone(), v1.clone());
+        smap.extend(v1.clone(), v2.clone());
 
         let w = smap.walk_star(&v0);
-        assert!(Rc::ptr_eq(&v2, &w));
+        assert!(LTerm::ptr_eq(&v2, &w));
     }
 
     #[test]
@@ -353,13 +354,13 @@ mod tests {
         let v1 = lterm!(_);
         let v2 = lterm!(_);
 
-        smap.extend(Rc::clone(&v0), Rc::clone(&v1));
-        smap.extend(Rc::clone(&v1), Rc::clone(&v2));
+        smap.extend(v0.clone(), v1.clone());
+        smap.extend(v1.clone(), v2.clone());
 
         let v3 = lterm!(1);
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v2.clone(), v3.clone());
         let w = smap.walk_star(&v0);
-        assert!(Rc::ptr_eq(&v3, &w));
+        assert!(LTerm::ptr_eq(&v3, &w));
     }
 
     #[test]
@@ -371,18 +372,18 @@ mod tests {
         let v1 = lterm!(_);
         let v2 = lterm!(_);
 
-        smap.extend(Rc::clone(&v0), Rc::clone(&v1));
-        smap.extend(Rc::clone(&v1), Rc::clone(&v2));
+        smap.extend(v0.clone(), v1.clone());
+        smap.extend(v1.clone(), v2.clone());
 
         let v3 = lterm!(_);
-        let vs = LTerm::singleton(Rc::clone(&v3));
+        let vs = LTerm::singleton(v3.clone());
         let v4 = lterm!(_);
-        smap.extend(Rc::clone(&v2), Rc::clone(&vs));
-        smap.extend(Rc::clone(&v3), Rc::clone(&v4));
+        smap.extend(v2.clone(), vs.clone());
+        smap.extend(v3.clone(), v4.clone());
         let w = smap.walk_star(&v0);
         match w.as_ref() {
-            LTerm::Cons(head, _) => {
-                assert!(Rc::ptr_eq(head, &v4));
+            LTermInner::Cons(head, _) => {
+                assert!(LTerm::ptr_eq(head, &v4));
             }
             _ => assert!(false),
         }
@@ -393,10 +394,10 @@ mod tests {
         let smap = SMap::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
-        let v = LTerm::cons(Rc::clone(&v0), LTerm::singleton(Rc::clone(&v1)));
+        let v = LTerm::cons(v0.clone(), LTerm::singleton(v1.clone()));
 
         let r = smap.reify(&v);
-        assert!(r.walk(&v0).as_ref().is_var());
-        assert!(r.walk(&v1).as_ref().is_var());
+        assert!(r.walk(&v0).is_var());
+        assert!(r.walk(&v1).is_var());
     }
 }

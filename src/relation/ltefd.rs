@@ -1,5 +1,5 @@
 /// Less than or equal FD
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, LessThanOrEqualFdConstraint};
@@ -11,14 +11,14 @@ use std::rc::Rc;
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct LessThanOrEqualFd<U: UserState> {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
 impl<U: UserState> LessThanOrEqualFd<U> {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
         Rc::new(LessThanOrEqualFd {
             u,
             v,
@@ -27,7 +27,7 @@ impl<U: UserState> LessThanOrEqualFd<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for LessThanOrEqualFd<U> {
+impl<U: UserState> Solver<U> for LessThanOrEqualFd<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(LessThanOrEqualFdConstraint::new(
             self.u.clone(),
@@ -37,7 +37,7 @@ impl<U: UserState> Goal<U> for LessThanOrEqualFd<U> {
     }
 }
 
-pub fn ltefd<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn ltefd<U: UserState>(u: LTerm, v: LTerm) -> Goal<U> {
     LessThanOrEqualFd::new(u, v)
 }
 

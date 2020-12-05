@@ -1,4 +1,4 @@
-use crate::lterm::LTerm;
+use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::user::UserState;
 use std::collections::HashMap;
@@ -46,7 +46,7 @@ pub struct State<U: UserState> {
     cstore: Rc<ConstraintStore<U>>,
 
     /// The domain store
-    dstore: Rc<HashMap<Rc<LTerm>, Rc<FiniteDomain>>>,
+    dstore: Rc<HashMap<LTerm, Rc<FiniteDomain>>>,
 
     pub user_state: U,
 }
@@ -105,15 +105,15 @@ impl<U: UserState> State<U> {
     }
 
     /// Return a reference to the domain store of the state
-    pub fn dstore_ref(&self) -> &HashMap<Rc<LTerm>, Rc<FiniteDomain>> {
+    pub fn dstore_ref(&self) -> &HashMap<LTerm, Rc<FiniteDomain>> {
         self.dstore.as_ref()
     }
 
-    pub fn dstore_to_mut(&mut self) -> &mut HashMap<Rc<LTerm>, Rc<FiniteDomain>> {
+    pub fn dstore_to_mut(&mut self) -> &mut HashMap<LTerm, Rc<FiniteDomain>> {
         Rc::make_mut(&mut self.dstore)
     }
 
-    pub fn with_dstore(self, dstore: HashMap<Rc<LTerm>, Rc<FiniteDomain>>) -> State<U> {
+    pub fn with_dstore(self, dstore: HashMap<LTerm, Rc<FiniteDomain>>) -> State<U> {
         State {
             dstore: Rc::new(dstore),
             ..self
@@ -121,7 +121,7 @@ impl<U: UserState> State<U> {
     }
 
     /// Get a cloned reference to the domain store fo the state
-    pub fn get_dstore(&self) -> Rc<HashMap<Rc<LTerm>, Rc<FiniteDomain>>> {
+    pub fn get_dstore(&self) -> Rc<HashMap<LTerm, Rc<FiniteDomain>>> {
         Rc::clone(&self.dstore)
     }
 
@@ -144,10 +144,10 @@ impl<U: UserState> State<U> {
     /// Adds a new domain constraint for a variable `x`; or if the term is a value, then
     /// checks that the value is within the domain. If new domain constraint is added for a
     /// variable, it is updated to the domain store.
-    pub fn process_domain(self, x: &Rc<LTerm>, domain: Rc<FiniteDomain>) -> SResult<U> {
+    pub fn process_domain(self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult<U> {
         match x.as_ref() {
-            LTerm::Var(_, _) => self.update_var_domain(x, domain),
-            LTerm::Val(LValue::Number(v)) if domain.contains(*v) => Ok(self),
+            LTermInner::Var(_, _) => self.update_var_domain(x, domain),
+            LTermInner::Val(LValue::Number(v)) if domain.contains(*v) => Ok(self),
             _ => Err(()),
         }
     }
@@ -162,7 +162,7 @@ impl<U: UserState> State<U> {
     ///
     /// Note: if domains are resolved into singletons, then they are converted into value
     ///       kind LTerms.
-    fn update_var_domain(self, x: &Rc<LTerm>, domain: Rc<FiniteDomain>) -> SResult<U> {
+    fn update_var_domain(self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult<U> {
         assert!(x.is_var());
         match self.dstore.get(x) {
             Some(old_domain) => match old_domain.intersect(domain.as_ref()) {
@@ -179,13 +179,12 @@ impl<U: UserState> State<U> {
     /// If the domain is a singleton, i.e. a single value, it is converted into a constant value
     /// instead, by creating a new constant from the singleton value and extending the
     /// substitution to map from the variable `x` to the newly created constant.
-    fn resolve_storable_domain(mut self, x: &Rc<LTerm>, domain: Rc<FiniteDomain>) -> SResult<U> {
+    fn resolve_storable_domain(mut self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult<U> {
         assert!(x.is_var());
         match domain.singleton_value() {
             Some(n) => {
                 // Extend substitution from `x` to the singleton value `n`
-                self.smap_to_mut()
-                    .extend(Rc::clone(x), Rc::new(LTerm::from(n)));
+                self.smap_to_mut().extend(x.clone(), LTerm::from(n));
 
                 // Remove domain information from store
                 let _ = self.dstore_to_mut().remove(x);
@@ -195,13 +194,13 @@ impl<U: UserState> State<U> {
             }
             None => {
                 // Extend or update domain store with the given `domain`
-                let _ = self.dstore_to_mut().insert(Rc::clone(x), domain);
+                let _ = self.dstore_to_mut().insert(x.clone(), domain);
                 Ok(self)
             }
         }
     }
 
-    pub fn remove_domain(mut self, x: &Rc<LTerm>) -> SResult<U> {
+    pub fn remove_domain(mut self, x: &LTerm) -> SResult<U> {
         match self.dstore_to_mut().remove(x) {
             Some(_) => Ok(self),
             None => Err(()),
@@ -209,11 +208,11 @@ impl<U: UserState> State<U> {
     }
 
     // Removes domain `exclude` from the domain of all variables in list `x`.
-    pub fn exclude_from_domain(mut self, x: &Rc<LTerm>, exclude: Rc<FiniteDomain>) -> SResult<U> {
+    pub fn exclude_from_domain(mut self, x: &LTerm, exclude: Rc<FiniteDomain>) -> SResult<U> {
         assert!(x.is_list());
         let dstore = self.get_dstore();
-        for y in x.as_ref() {
-            match dstore.get(y) {
+        for y in x {
+            match dstore.get(&y) {
                 Some(domain) => {
                     match self.process_domain(&y, Rc::new(domain.diff(exclude.as_ref()).ok_or(())?))
                     {
@@ -317,7 +316,7 @@ impl<U: UserState> State<U> {
         }
     }
 
-    pub fn unify(mut self, u: &Rc<LTerm>, v: &Rc<LTerm>) -> SResult<U> {
+    pub fn unify(mut self, u: &LTerm, v: &LTerm) -> SResult<U> {
         // Extension will contain all substitutions added in the recursive unification of the terms
         let mut extension = SMap::new();
         if unify_rec(&mut self.smap, &mut extension, u, v) {
@@ -328,7 +327,7 @@ impl<U: UserState> State<U> {
     }
 
     /// Add disequality constraint
-    pub fn disunify(self, u: &Rc<LTerm>, v: &Rc<LTerm>) -> SResult<U> {
+    pub fn disunify(self, u: &LTerm, v: &LTerm) -> SResult<U> {
         // Disunification is implemented in terms of unification
         let mut extension = SMap::new();
         let mut state = self.clone();

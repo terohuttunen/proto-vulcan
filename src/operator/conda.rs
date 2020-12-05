@@ -4,7 +4,7 @@
 ///
 /// [a0 AND a1 AND ...] OR
 /// [b0 AND b1 AND ...] OR ...
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
@@ -15,17 +15,17 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub struct Conda<U: UserState> {
     // First goal of this conda clause
-    first: Rc<dyn Goal<U>>,
+    first: Goal<U>,
 
     // Rest of the goals of this conda clause
-    rest: Rc<dyn Goal<U>>,
+    rest: Goal<U>,
 
     // Next conda clause
-    next: Rc<dyn Goal<U>>,
+    next: Goal<U>,
 }
 
 impl<U: UserState> Conda<U> {
-    pub fn from_conjunctions(body: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
+    pub fn from_conjunctions(body: &[&[Goal<U>]]) -> Goal<U> {
         let mut next = proto_vulcan!(false);
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
@@ -39,7 +39,7 @@ impl<U: UserState> Conda<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for Conda<U> {
+impl<U: UserState> Solver<U> for Conda<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let mut stream = self.first.apply(state.clone());
 
@@ -51,7 +51,7 @@ impl<U: UserState> Goal<U> for Conda<U> {
 }
 
 /// Soft cut operator.
-pub fn conda<U: UserState>(param: OperatorParam<U>) -> Rc<dyn Goal<U>> {
+pub fn conda<U: UserState>(param: OperatorParam<U>) -> Goal<U> {
     Conda::from_conjunctions(param.body)
 }
 

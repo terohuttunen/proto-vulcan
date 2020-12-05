@@ -2,18 +2,17 @@ use crate::goal::Goal;
 use crate::state::{SResult, State};
 use crate::user::UserState;
 use std::fmt;
-use std::rc::Rc;
 
 pub enum Thunk<U: UserState> {
     /// A delayed stream.
     Stream(Stream<U>),
 
     /// The goal is applied to the state to generate a delayed stream.
-    Goal(Rc<dyn Goal<U>>, State<U>),
+    Goal(Goal<U>, State<U>),
 
     /// Interleaving operations
     MPlus(LazyStream<U>, LazyStream<U>),
-    Bind(LazyStream<U>, Rc<dyn Goal<U>>),
+    Bind(LazyStream<U>, Goal<U>),
 
     /// Generic closure. This cannot be serialized.
     Closure(Box<dyn FnOnce() -> Stream<U>>),
@@ -93,7 +92,7 @@ impl<U: UserState> LazyStream<U> {
         }
     }
 
-    pub fn from_goal(goal: Rc<dyn Goal<U>>, state: State<U>) -> LazyStream<U> {
+    pub fn from_goal(goal: Goal<U>, state: State<U>) -> LazyStream<U> {
         if goal.is_fail() {
             LazyStream::Empty
         } else {
@@ -115,7 +114,7 @@ impl<U: UserState> LazyStream<U> {
         }
     }
 
-    pub fn bind(lazy: LazyStream<U>, goal: Rc<dyn Goal<U>>) -> LazyStream<U> {
+    pub fn bind(lazy: LazyStream<U>, goal: Goal<U>) -> LazyStream<U> {
         if goal.is_succeed() {
             lazy
         } else if goal.is_fail() {
@@ -220,7 +219,7 @@ impl<U: UserState> Stream<U> {
         Stream::Cons(a, lazy)
     }
 
-    pub fn from_goal(goal: Rc<dyn Goal<U>>, mut state: State<U>) -> Stream<U> {
+    pub fn from_goal(goal: Goal<U>, mut state: State<U>) -> Stream<U> {
         U::finalize(&mut state);
         goal.apply(state)
     }
@@ -238,7 +237,7 @@ impl<U: UserState> Stream<U> {
         Stream::Lazy(LazyStream::mplus(lazy, lazy_hat))
     }
 
-    pub fn bind(stream: Stream<U>, goal: Rc<dyn Goal<U>>) -> Stream<U> {
+    pub fn bind(stream: Stream<U>, goal: Goal<U>) -> Stream<U> {
         if goal.is_succeed() {
             stream
         } else if goal.is_fail() {
@@ -255,7 +254,7 @@ impl<U: UserState> Stream<U> {
         }
     }
 
-    pub fn lazy_bind(lazy: LazyStream<U>, goal: Rc<dyn Goal<U>>) -> Stream<U> {
+    pub fn lazy_bind(lazy: LazyStream<U>, goal: Goal<U>) -> Stream<U> {
         if goal.is_succeed() {
             Stream::Lazy(lazy)
         } else if goal.is_fail() {

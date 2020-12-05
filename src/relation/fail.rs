@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
@@ -13,14 +13,14 @@ pub struct Fail<U: UserState> {
 }
 
 impl<U: UserState> Fail<U> {
-    pub fn new() -> Rc<dyn Goal<U>> {
+    pub fn new() -> Goal<U> {
         Rc::new(Fail {
             _phantom: PhantomData,
         })
     }
 }
 
-impl<U: UserState> Goal<U> for Fail<U> {
+impl<U: UserState> Solver<U> for Fail<U> {
     fn apply(&self, _state: State<U>) -> Stream<U> {
         Stream::empty()
     }
@@ -49,6 +49,6 @@ impl<U: UserState> Goal<U> for Fail<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn fail<U: UserState>() -> Rc<dyn Goal<U>> {
+pub fn fail<U: UserState>() -> Goal<U> {
     Fail::new()
 }

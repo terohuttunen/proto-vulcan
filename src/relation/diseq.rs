@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
@@ -9,14 +9,14 @@ use std::rc::Rc;
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Diseq<U: UserState> {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
 impl<U: UserState> Diseq<U> {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
         Rc::new(Diseq {
             u,
             v,
@@ -25,7 +25,7 @@ impl<U: UserState> Diseq<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for Diseq<U> {
+impl<U: UserState> Solver<U> for Diseq<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         // Return state where u and v are unified under s, or None if unification is not possible
         Stream::from(state.disunify(&self.u, &self.v))
@@ -55,7 +55,7 @@ impl<U: UserState> Goal<U> for Diseq<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn diseq<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn diseq<U: UserState>(u: LTerm, v: LTerm) -> Goal<U> {
     Diseq::new(u, v)
 }
 

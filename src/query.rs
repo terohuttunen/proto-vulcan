@@ -25,7 +25,7 @@ pub struct ResultIterator<V: ReifyQuery<R, U>, R, U: UserState> {
 impl<V: ReifyQuery<R, U>, R, U: UserState> ResultIterator<V, R, U> {
     pub fn new(
         variables: Rc<V>,
-        goal: Rc<dyn Goal<U>>,
+        goal: Goal<U>,
         initial_state: State<U>,
     ) -> ResultIterator<V, R, U> {
         let stream = goal.apply(initial_state);
@@ -62,13 +62,13 @@ impl<V: ReifyQuery<R, U>, R, U: UserState> FusedIterator for ResultIterator<V, R
 #[derivative(Debug)]
 pub struct Query<V: ReifyQuery<R, U>, R, U: UserState> {
     variables: Rc<V>,
-    goal: Rc<dyn Goal<U>>,
+    goal: Goal<U>,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<R>,
 }
 
 impl<V: ReifyQuery<R, U>, R, U: UserState> Query<V, R, U> {
-    pub fn new(variables: Rc<V>, goal: Rc<dyn Goal<U>>) -> Query<V, R, U> {
+    pub fn new(variables: Rc<V>, goal: Goal<U>) -> Query<V, R, U> {
         Query {
             variables,
             goal,
@@ -78,11 +78,7 @@ impl<V: ReifyQuery<R, U>, R, U: UserState> Query<V, R, U> {
 
     pub fn run_with_user(&self, user_state: U) -> ResultIterator<V, R, U> {
         let initial_state = State::new(user_state);
-        ResultIterator::new(
-            Rc::clone(&self.variables),
-            Rc::clone(&self.goal),
-            initial_state,
-        )
+        ResultIterator::new(Rc::clone(&self.variables), self.goal.clone(), initial_state)
     }
 }
 
@@ -107,11 +103,7 @@ impl<V: ReifyQuery<R, EmptyUserState>, R> Query<V, R, EmptyUserState> {
     pub fn run(&self) -> ResultIterator<V, R, EmptyUserState> {
         let user_state = EmptyUserState::new();
         let initial_state = State::new(user_state);
-        ResultIterator::new(
-            Rc::clone(&self.variables),
-            Rc::clone(&self.goal),
-            initial_state,
-        )
+        ResultIterator::new(Rc::clone(&self.variables), self.goal.clone(), initial_state)
     }
 }
 
@@ -144,7 +136,7 @@ macro_rules! proto_vulcan_query {
         $(let $query = LTerm::var(stringify!($query));)+
         #[derive(Debug)]
         struct QueryVariables<R> {
-            $( $query: Rc<LTerm>, )+
+            $( $query: LTerm, )+
             _phantom: ::std::marker::PhantomData<R>,
         }
 
@@ -160,7 +152,7 @@ macro_rules! proto_vulcan_query {
         }
 
         let vars = Rc::new(QueryVariables {
-            $($query: Rc::clone(&$query),)+
+            $($query: ::std::clone::Clone::clone(&$query),)+
             _phantom: ::std::marker::PhantomData,
         });
 

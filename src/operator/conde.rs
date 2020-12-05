@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
@@ -8,15 +8,15 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Conde<U: UserState> {
-    conjunctions: Vec<Rc<dyn Goal<U>>>,
+    conjunctions: Vec<Goal<U>>,
 }
 
 impl<U: UserState> Conde<U> {
-    pub fn from_vec(conjunctions: Vec<Rc<dyn Goal<U>>>) -> Rc<dyn Goal<U>> {
+    pub fn from_vec(conjunctions: Vec<Goal<U>>) -> Goal<U> {
         Rc::new(Conde { conjunctions })
     }
 
-    pub fn from_array(goals: &[Rc<dyn Goal<U>>]) -> Rc<dyn Goal<U>> {
+    pub fn from_array(goals: &[Goal<U>]) -> Goal<U> {
         Rc::new(Conde {
             conjunctions: goals.to_vec(),
         })
@@ -24,7 +24,7 @@ impl<U: UserState> Conde<U> {
 
     // The parameter is a list of conjunctions, and the resulting goal is a disjunction
     // of conjunctions.
-    pub fn from_conjunctions(goals: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
+    pub fn from_conjunctions(goals: &[&[Goal<U>]]) -> Goal<U> {
         let mut conjunctions = vec![];
         for conjunction_goals in goals {
             conjunctions.push(All::from_array(conjunction_goals));
@@ -33,7 +33,7 @@ impl<U: UserState> Conde<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for Conde<U> {
+impl<U: UserState> Solver<U> for Conde<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let mut stream = Stream::Empty;
 
@@ -104,7 +104,7 @@ impl<U: UserState> Goal<U> for Conde<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn conde<U: UserState>(param: OperatorParam<U>) -> Rc<dyn Goal<U>> {
+pub fn conde<U: UserState>(param: OperatorParam<U>) -> Goal<U> {
     Conde::from_conjunctions(param.body)
 }
 

@@ -48,9 +48,8 @@ are stored into a closure and evaluated later. Recursive relations must
 use the latter variant.
 ```rust
 use proto_vulcan::*;
-use std::rc::Rc;
 
-pub fn appendo<U: UserState>(l: Rc<LTerm>, s: Rc<LTerm>, ls: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn appendo<U: UserState>(l: LTerm, s: LTerm, ls: LTerm) -> Goal<U> {
     proto_vulcan_closure!(
         match [l, s, ls] {
             [[], x, x] => ,

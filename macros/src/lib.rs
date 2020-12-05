@@ -63,9 +63,9 @@ impl ToTokens for Project {
         let variables: Vec<&Ident> = self.variables.iter().collect();
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            #( let #variables = crate::lterm::LTerm::projection(::std::rc::Rc::clone(&#variables)); )*
+            #( let #variables = crate::lterm::LTerm::projection(::std::clone::Clone::clone(&#variables)); )*
             crate::operator::project::project(crate::operator::ProjectOperatorParam {
-                var_list: vec![ #( ::std::rc::Rc::clone(&#variables) ),* ],
+                var_list: vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
                 body: &[ #( &[ #body  ] ),* ],
             })
         }};
@@ -169,7 +169,7 @@ impl ToTokens for Fresh {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
             #( let #variables = crate::lterm::LTerm::var(stringify!(#variables)); )*
-            crate::operator::fresh::Fresh::new(vec![ #( ::std::rc::Rc::clone(&#variables) ),* ],
+            crate::operator::fresh::Fresh::new(vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
                 crate::operator::all::All::from_array(&[ #( #body ),* ]))
         }};
         output.to_tokens(tokens);
@@ -246,7 +246,7 @@ impl ToTokens for Argument {
                 expr.to_tokens(tokens);
             }
             Argument::Expr(expr) => {
-                let output = quote! { ::std::rc::Rc::new( crate::lterm::LTerm::from(#expr)) };
+                let output = quote! { crate::lterm::LTerm::from(#expr) };
                 output.to_tokens(tokens);
             }
         }
@@ -555,7 +555,7 @@ impl ToTokens for For {
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output = quote!({
             crate::operator::everyg(crate::operator::ForOperatorParam {
-                coll: Clone::clone(#coll),
+                coll: ::std::clone::Clone::clone(#coll),
                 g: Box::new(|#pattern| crate::operator::all::All::from_conjunctions(&[ #( #body ),* ])),
             })
         });
@@ -622,12 +622,12 @@ impl ToTokens for InnerTreeTerm {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match &self.0 {
             TreeTerm::Value(value) => {
-                let output = quote! { ::std::rc::Rc::new(crate::lterm::LTerm::from(#value)) };
+                let output = quote! { crate::lterm::LTerm::from(#value) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Var(ident) => {
                 // For InnerTreeTerms any references to variables must be cloned
-                let output = quote! { ::std::rc::Rc::clone(&#ident) };
+                let output = quote! { ::std::clone::Clone::clone(&#ident) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Any(_) => {
@@ -737,11 +737,11 @@ impl ToTokens for TreeTerm {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match self {
             TreeTerm::Value(value) => {
-                let output = quote! { ::std::rc::Rc::new(crate::lterm::LTerm::from(#value)) };
+                let output = quote! { crate::lterm::LTerm::from(#value) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Var(ident) => {
-                let output = quote! { ::std::rc::Rc::clone(&#ident) };
+                let output = quote! { ::std::clone::Clone::clone(&#ident) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Any(_) => {

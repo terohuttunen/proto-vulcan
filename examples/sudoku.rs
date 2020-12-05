@@ -1,8 +1,7 @@
 extern crate proto_vulcan;
 use proto_vulcan::relation::distinctfd;
-use proto_vulcan::relation::infd;
+use proto_vulcan::relation::infdrange;
 use proto_vulcan::*;
-use std::rc::Rc;
 
 fn main() {
     const BOARD_SIZE: usize = 9;
@@ -21,13 +20,13 @@ fn main() {
          7, _, 3, _, 1, 8, _, _, _]
     );
 
-    let board_vec: Vec<Rc<LTerm>> = board.iter().cloned().collect();
+    let board_vec: Vec<LTerm> = board.iter().cloned().collect();
 
     let mut rows = vec![];
     for row_index in 0..BOARD_SIZE {
         let mut row = vec![];
         for col_index in 0..BOARD_SIZE {
-            row.push(Rc::clone(&board_vec[row_index * BOARD_SIZE + col_index]));
+            row.push(board_vec[row_index * BOARD_SIZE + col_index].clone());
         }
         rows.push(LTerm::from_vec(row));
     }
@@ -36,7 +35,7 @@ fn main() {
     for col_index in 0..BOARD_SIZE {
         let mut col = vec![];
         for row_index in 0..BOARD_SIZE {
-            col.push(Rc::clone(&board_vec[row_index * BOARD_SIZE + col_index]));
+            col.push(board_vec[row_index * BOARD_SIZE + col_index].clone());
         }
         cols.push(LTerm::from_vec(col));
     }
@@ -44,19 +43,19 @@ fn main() {
     let mut squares = vec![vec![]; 9];
     for row_index in 0..BOARD_SIZE {
         for col_index in 0..BOARD_SIZE {
-            let x = Rc::clone(&board_vec[row_index * BOARD_SIZE + col_index]);
+            let x = board_vec[row_index * BOARD_SIZE + col_index].clone();
             let square_index =
                 (row_index / SQUARE_SIZE) * (BOARD_SIZE / SQUARE_SIZE) + (col_index / SQUARE_SIZE);
             squares[square_index].push(x);
         }
     }
 
-    let squares: Vec<Rc<LTerm>> = squares.into_iter().map(|v| LTerm::from_vec(v)).collect();
+    let squares: Vec<LTerm> = squares.into_iter().map(|v| LTerm::from_vec(v)).collect();
 
     let query = proto_vulcan_query!(|q| {
         q == board,
-        for x in &board_vec {
-            infd(x, #&[1, 2, 3, 4, 5, 6, 7, 8, 9])
+        for x in &board {
+            infdrange(x, #&(1..=9))
         },
         for row in &rows {
             distinctfd(row)

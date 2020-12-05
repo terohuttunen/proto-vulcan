@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::operator::FnOperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
@@ -11,12 +11,12 @@ pub struct FnGoal<U: UserState> {
 }
 
 impl<U: UserState> FnGoal<U> {
-    pub fn new(f: Box<dyn Fn(State<U>) -> Stream<U>>) -> Rc<dyn Goal<U>> {
+    pub fn new(f: Box<dyn Fn(State<U>) -> Stream<U>>) -> Goal<U> {
         Rc::new(FnGoal { f })
     }
 }
 
-impl<U: UserState> Goal<U> for FnGoal<U> {
+impl<U: UserState> Solver<U> for FnGoal<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         (*self.f)(state)
     }
@@ -28,6 +28,6 @@ impl<U: UserState> fmt::Debug for FnGoal<U> {
     }
 }
 
-pub fn fngoal<U: UserState>(param: FnOperatorParam<U>) -> Rc<dyn Goal<U>> {
+pub fn fngoal<U: UserState>(param: FnOperatorParam<U>) -> Goal<U> {
     FnGoal::new(param.f)
 }

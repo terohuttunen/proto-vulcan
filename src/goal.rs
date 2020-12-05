@@ -3,11 +3,14 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::UserState;
 use std::fmt;
+use std::rc::Rc;
+
+pub type Goal<U> = Rc<dyn Solver<U>>;
 
 // A goal is a function which, given an input state, will give an output state (or infinite stream
 // of output states). It encapsulates a logic query that is evaluated as infinite stream of
 // states that solve the query at any given time.
-pub trait Goal<U = EmptyUserState>: fmt::Debug
+pub trait Solver<U = EmptyUserState>: fmt::Debug
 where
     U: UserState,
 {

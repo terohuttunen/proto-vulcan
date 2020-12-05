@@ -1,52 +1,47 @@
 use super::substitution::SMap;
-use crate::lterm::LTerm;
+use crate::lterm::{LTerm, LTermInner};
 use std::rc::Rc;
 
 /// Recursive unification of tree terms
-pub fn unify_rec(
-    mut smap: &mut Rc<SMap>,
-    extension: &mut SMap,
-    u: &Rc<LTerm>,
-    v: &Rc<LTerm>,
-) -> bool {
-    let uwalk = Rc::clone(smap.walk(u));
-    let vwalk = Rc::clone(smap.walk(v));
+pub fn unify_rec(mut smap: &mut Rc<SMap>, extension: &mut SMap, u: &LTerm, v: &LTerm) -> bool {
+    let uwalk = smap.walk(u).clone();
+    let vwalk = smap.walk(v).clone();
     match (uwalk.as_ref(), vwalk.as_ref()) {
-        (LTerm::Var(uvar, _), LTerm::Var(vvar, _)) if uvar == vvar => {
+        (LTermInner::Var(uvar, _), LTermInner::Var(vvar, _)) if uvar == vvar => {
             // If both terms are variables that walk to the same variable id, then the current
             // state can already unify the variables. Return the input state unchanged.
             true
         }
-        (LTerm::Var(_, _), _) => {
+        (LTermInner::Var(_, _), _) => {
             // The term u is a variable and the term v is something else. The variable u and
             // the term v can be unified by extending the substitution map.
             if smap.occurs_check(&uwalk, &vwalk) {
                 false
             } else {
-                extension.extend(Rc::clone(&uwalk), Rc::clone(&vwalk));
-                Rc::make_mut(&mut smap).extend(Rc::clone(&uwalk), Rc::clone(&vwalk));
+                extension.extend(uwalk.clone(), vwalk.clone());
+                Rc::make_mut(&mut smap).extend(uwalk.clone(), vwalk.clone());
                 true
             }
         }
-        (_, LTerm::Var(_, _)) => {
+        (_, LTermInner::Var(_, _)) => {
             // The term `v` is a variable and the term `u` is something else. The variable `v`
             // and the term `u` can be unified by extending the substitution map.
             if smap.occurs_check(&uwalk, &vwalk) {
                 false
             } else {
-                extension.extend(Rc::clone(&vwalk), Rc::clone(&uwalk));
-                Rc::make_mut(&mut smap).extend(Rc::clone(&vwalk), Rc::clone(&uwalk));
+                extension.extend(vwalk.clone(), uwalk.clone());
+                Rc::make_mut(&mut smap).extend(vwalk.clone(), uwalk.clone());
                 true
             }
         }
-        (LTerm::Val(uval), LTerm::Val(vval)) if uval == vval => {
+        (LTermInner::Val(uval), LTermInner::Val(vval)) if uval == vval => {
             // If both terms walk to identical values, then they are already unified.
             true
         }
-        (LTerm::User(uuser), _) => uuser.unify(&uwalk, &vwalk, smap, extension),
-        (_, LTerm::User(vuser)) => vuser.unify(&vwalk, &uwalk, smap, extension),
-        (LTerm::Empty, LTerm::Empty) => true,
-        (LTerm::Cons(uhead, utail), LTerm::Cons(vhead, vtail)) => {
+        (LTermInner::User(uuser), _) => uuser.unify(&uwalk, &vwalk, smap, extension),
+        (_, LTermInner::User(vuser)) => vuser.unify(&vwalk, &uwalk, smap, extension),
+        (LTermInner::Empty, LTermInner::Empty) => true,
+        (LTermInner::Cons(uhead, utail), LTermInner::Cons(vhead, vtail)) => {
             if unify_rec(smap, extension, uhead, vhead) {
                 unify_rec(smap, extension, utail, vtail)
             } else {
@@ -70,8 +65,8 @@ mod tests {
         let v1 = lterm!(_);
         let v2 = lterm!(_);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v0));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v0.clone());
 
         // both v1 and v2 can walk to same variable id, therefore unification should be successful
         // with current substitution
@@ -92,8 +87,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!(_);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // both v1 and v2 can walk to different variable id, unify by substituting variables
         let mut extension = SMap::new();
@@ -113,8 +108,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!(1);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // v1 walks to variable 0, v2 walks to value => success and extended map from v0 to v2
         let mut smap = Rc::new(smap);
@@ -122,7 +117,7 @@ mod tests {
         if unify_rec(&mut smap, &mut extension, &v1, &v2) {
             assert!(!extension.is_empty());
             let w = smap.walk(&v0);
-            assert!(Rc::ptr_eq(&v3, &w));
+            assert!(LTerm::ptr_eq(&v3, &w));
         } else {
             assert!(false);
         }
@@ -137,8 +132,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!([1]);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // v1 walks to variable 0, v2 walks to value => success and extended map from v0 to v2
         let mut smap = Rc::new(smap);
@@ -146,7 +141,7 @@ mod tests {
         if unify_rec(&mut smap, &mut extension, &v1, &v2) {
             assert!(!extension.is_empty());
             let w = smap.walk(&v0);
-            assert!(Rc::ptr_eq(&v3, &w));
+            assert!(LTerm::ptr_eq(&v3, &w));
         } else {
             assert!(false);
         }
@@ -161,8 +156,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!(1);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // v1 walks to variable 0, v2 walks to value => success and extended map from v0 to v2
         let mut smap = Rc::new(smap);
@@ -170,7 +165,7 @@ mod tests {
         if unify_rec(&mut smap, &mut extension, &v1, &v2) {
             assert!(!extension.is_empty());
             let w = smap.walk(&v0);
-            assert!(Rc::ptr_eq(&v3, &w));
+            assert!(LTerm::ptr_eq(&v3, &w));
         } else {
             assert!(false);
         }
@@ -185,8 +180,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!([1]);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // v1 walks to variable 0, v2 walks to value => success and extended map from v0 to v2
         let mut smap = Rc::new(smap);
@@ -194,7 +189,7 @@ mod tests {
         if unify_rec(&mut smap, &mut extension, &v1, &v2) {
             assert!(!extension.is_empty());
             let w = smap.walk(&v0);
-            assert!(Rc::ptr_eq(&v3, &w));
+            assert!(LTerm::ptr_eq(&v3, &w));
         } else {
             assert!(false);
         }
@@ -209,8 +204,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!(1);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // v1 and v2 walk to identical values => success
         let mut extension = SMap::new();
@@ -230,8 +225,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!(2);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // v1 and v2 walk to different values => failure
         let mut extension = SMap::new();
@@ -267,8 +262,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!([2]);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // v1 and v2 walk to different lists of same length => failure
         let mut extension = SMap::new();
@@ -288,8 +283,8 @@ mod tests {
         let v2 = lterm!(_);
         let v3 = lterm!([1]);
 
-        smap.extend(Rc::clone(&v1), Rc::clone(&v0));
-        smap.extend(Rc::clone(&v2), Rc::clone(&v3));
+        smap.extend(v1.clone(), v0.clone());
+        smap.extend(v2.clone(), v3.clone());
 
         // v1 and v2 walk to different length lists with same values => failure
         let mut extension = SMap::new();

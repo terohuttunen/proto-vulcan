@@ -38,7 +38,7 @@ impl<U: UserState> BaseConstraint<U> for DisequalityConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<&Rc<LTerm>> {
+    fn operands(&self) -> Vec<LTerm> {
         self.0.operands()
     }
 }
@@ -105,11 +105,11 @@ mod tests {
         let five = lterm!(5);
         let six = lterm!(6);
         let mut smap = SMap::new();
-        smap.extend(Rc::clone(&x), Rc::clone(&five));
-        smap.extend(Rc::clone(&y), Rc::clone(&six));
+        smap.extend(x.clone(), five.clone());
+        smap.extend(y.clone(), six.clone());
         let c0 = DisequalityConstraint::from(smap);
         let mut smap = SMap::new();
-        smap.extend(Rc::clone(&x), Rc::clone(&five));
+        smap.extend(x.clone(), five.clone());
         let c1 = DisequalityConstraint::from(smap);
         assert!(TreeConstraint::<EmptyUserState>::subsumes(&c1, &c0));
     }

@@ -26,7 +26,7 @@ pub trait BaseConstraint<U: UserState>: fmt::Debug + fmt::Display {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U>;
 
     /// Get list of operands
-    fn operands(&self) -> Vec<&Rc<LTerm>>;
+    fn operands(&self) -> Vec<LTerm>;
 
     fn reify(&self, _state: &mut State<U>) {}
 }
@@ -87,7 +87,7 @@ impl<U: UserState> Constraint<U> {
     }
 
     /// Get list of operands
-    pub fn operands(&self) -> Vec<&Rc<LTerm>> {
+    pub fn operands(&self) -> Vec<LTerm> {
         match self {
             Constraint::Tree(constraint) => constraint.operands(),
             Constraint::FiniteDomain(constraint) => constraint.operands(),

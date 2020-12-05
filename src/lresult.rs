@@ -1,4 +1,4 @@
-use crate::lterm::LTerm;
+use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::constraint::store::ConstraintStore;
 use crate::state::constraint::Constraint;
@@ -8,7 +8,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub struct LResult<U: UserState>(pub Rc<LTerm>, pub Rc<ConstraintStore<U>>);
+pub struct LResult<U: UserState>(pub LTerm, pub Rc<ConstraintStore<U>>);
 
 impl<U: UserState> LResult<U> {
     /// Check if the wrapped LTerm is an Any-variable with constraints such that it cannot be
@@ -22,9 +22,7 @@ impl<U: UserState> LResult<U> {
             for constraint in self.constraints() {
                 if let Constraint::Tree(tree) = constraint {
                     for (cu, cv) in tree.smap_ref().iter() {
-                        if &self.0 == cu && exception == &**cv
-                            || &self.0 == cv && exception == &**cu
-                        {
+                        if &self.0 == cu && exception == cv || &self.0 == cv && exception == cu {
                             return true;
                         }
                     }
@@ -48,9 +46,9 @@ impl<U: UserState> LResult<U> {
 }
 
 impl<U: UserState> Deref for LResult<U> {
-    type Target = Rc<LTerm>;
+    type Target = LTerm;
 
-    fn deref(&self) -> &Rc<LTerm> {
+    fn deref(&self) -> &LTerm {
         &self.0
     }
 }
@@ -70,23 +68,11 @@ impl<U: UserState> fmt::Display for LResult<U> {
 
 impl<U: UserState> PartialEq<LTerm> for LResult<U> {
     fn eq(&self, other: &LTerm) -> bool {
-        &*self == other
-    }
-}
-
-impl<U: UserState> PartialEq<LResult<U>> for LTerm {
-    fn eq(&self, other: &LResult<U>) -> bool {
-        &*other == self
-    }
-}
-
-impl<U: UserState> PartialEq<Rc<LTerm>> for LResult<U> {
-    fn eq(&self, other: &Rc<LTerm>) -> bool {
         &self.0 == other
     }
 }
 
-impl<U: UserState> PartialEq<LResult<U>> for Rc<LTerm> {
+impl<U: UserState> PartialEq<LResult<U>> for LTerm {
     fn eq(&self, other: &LResult<U>) -> bool {
         &other.0 == self
     }
@@ -95,7 +81,7 @@ impl<U: UserState> PartialEq<LResult<U>> for Rc<LTerm> {
 impl<U: UserState> PartialEq<LValue> for LResult<U> {
     fn eq(&self, other: &LValue) -> bool {
         match self.as_ref() {
-            LTerm::Val(v) => v == other,
+            LTermInner::Val(v) => v == other,
             _ => false,
         }
     }
@@ -104,7 +90,7 @@ impl<U: UserState> PartialEq<LValue> for LResult<U> {
 impl<U: UserState> PartialEq<LResult<U>> for LValue {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
-            LTerm::Val(v) => v == self,
+            LTermInner::Val(v) => v == self,
             _ => false,
         }
     }
@@ -113,7 +99,7 @@ impl<U: UserState> PartialEq<LResult<U>> for LValue {
 impl<U: UserState> PartialEq<bool> for LResult<U> {
     fn eq(&self, other: &bool) -> bool {
         match self.as_ref() {
-            LTerm::Val(LValue::Bool(x)) => x == other,
+            LTermInner::Val(LValue::Bool(x)) => x == other,
             _ => false,
         }
     }
@@ -122,7 +108,7 @@ impl<U: UserState> PartialEq<bool> for LResult<U> {
 impl<U: UserState> PartialEq<LResult<U>> for bool {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
-            LTerm::Val(LValue::Bool(x)) => x == self,
+            LTermInner::Val(LValue::Bool(x)) => x == self,
             _ => false,
         }
     }
@@ -131,7 +117,7 @@ impl<U: UserState> PartialEq<LResult<U>> for bool {
 impl<U: UserState> PartialEq<isize> for LResult<U> {
     fn eq(&self, other: &isize) -> bool {
         match self.as_ref() {
-            LTerm::Val(LValue::Number(x)) => x == other,
+            LTermInner::Val(LValue::Number(x)) => x == other,
             _ => false,
         }
     }
@@ -140,7 +126,7 @@ impl<U: UserState> PartialEq<isize> for LResult<U> {
 impl<U: UserState> PartialEq<LResult<U>> for isize {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
-            LTerm::Val(LValue::Number(x)) => x == self,
+            LTermInner::Val(LValue::Number(x)) => x == self,
             _ => false,
         }
     }
@@ -149,7 +135,7 @@ impl<U: UserState> PartialEq<LResult<U>> for isize {
 impl<U: UserState> PartialEq<char> for LResult<U> {
     fn eq(&self, other: &char) -> bool {
         match self.as_ref() {
-            LTerm::Val(LValue::Char(x)) => x == other,
+            LTermInner::Val(LValue::Char(x)) => x == other,
             _ => false,
         }
     }
@@ -158,7 +144,7 @@ impl<U: UserState> PartialEq<char> for LResult<U> {
 impl<U: UserState> PartialEq<LResult<U>> for char {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
-            LTerm::Val(LValue::Char(x)) => x == self,
+            LTermInner::Val(LValue::Char(x)) => x == self,
             _ => false,
         }
     }
@@ -167,7 +153,7 @@ impl<U: UserState> PartialEq<LResult<U>> for char {
 impl<U: UserState> PartialEq<String> for LResult<U> {
     fn eq(&self, other: &String) -> bool {
         match self.as_ref() {
-            LTerm::Val(LValue::String(x)) => x == other,
+            LTermInner::Val(LValue::String(x)) => x == other,
             _ => false,
         }
     }
@@ -176,7 +162,7 @@ impl<U: UserState> PartialEq<String> for LResult<U> {
 impl<U: UserState> PartialEq<LResult<U>> for String {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
-            LTerm::Val(LValue::String(x)) => x == self,
+            LTermInner::Val(LValue::String(x)) => x == self,
             _ => false,
         }
     }
@@ -185,7 +171,7 @@ impl<U: UserState> PartialEq<LResult<U>> for String {
 impl<U: UserState> PartialEq<&str> for LResult<U> {
     fn eq(&self, other: &&str) -> bool {
         match self.as_ref() {
-            LTerm::Val(LValue::String(x)) => x == other,
+            LTermInner::Val(LValue::String(x)) => x == other,
             _ => false,
         }
     }
@@ -194,7 +180,7 @@ impl<U: UserState> PartialEq<&str> for LResult<U> {
 impl<U: UserState> PartialEq<LResult<U>> for &str {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
-            LTerm::Val(LValue::String(x)) => x == self,
+            LTermInner::Val(LValue::String(x)) => x == self,
             _ => false,
         }
     }

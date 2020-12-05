@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::lterm::LTerm;
 use crate::operator::all::All;
 use crate::operator::ProjectOperatorParam;
@@ -9,27 +9,27 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Project<U: UserState> {
-    variables: Vec<Rc<LTerm>>,
-    body: Rc<dyn Goal<U>>,
+    variables: Vec<LTerm>,
+    body: Goal<U>,
 }
 
 impl<U: UserState> Project<U> {
-    pub fn new(variables: Vec<Rc<LTerm>>, body: Rc<dyn Goal<U>>) -> Rc<dyn Goal<U>> {
-        Rc::new(Project { variables, body }) as Rc<dyn Goal<U>>
+    pub fn new(variables: Vec<LTerm>, body: Goal<U>) -> Goal<U> {
+        Rc::new(Project { variables, body }) as Goal<U>
     }
 }
 
-impl<U: UserState> Goal<U> for Project<U> {
+impl<U: UserState> Solver<U> for Project<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         // Walk* each projected variable with the current substitution
         for v in self.variables.iter() {
-            v.project(|x| (*state.smap_ref().walk_star(x)).clone());
+            v.project(|x| state.smap_ref().walk_star(x));
         }
         self.body.apply(state)
     }
 }
 
-pub fn project<U: UserState>(param: ProjectOperatorParam<U>) -> Rc<dyn Goal<U>> {
+pub fn project<U: UserState>(param: ProjectOperatorParam<U>) -> Goal<U> {
     Project::new(param.var_list, All::from_conjunctions(param.body))
 }
 
@@ -38,16 +38,17 @@ mod tests {
     use super::*;
     use crate::*;
     use std::marker::PhantomData;
+    use crate::lterm::LTermInner;
 
     #[derive(Debug)]
     pub struct SqEq<U: UserState> {
-        u: Rc<LTerm>,
-        v: Rc<LTerm>,
+        u: LTerm,
+        v: LTerm,
         _phantom: PhantomData<U>,
     }
 
     impl<U: UserState> SqEq<U> {
-        pub fn new(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+        pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
             Rc::new(SqEq {
                 u,
                 v,
@@ -56,16 +57,17 @@ mod tests {
         }
     }
 
-    impl<U: UserState> Goal<U> for SqEq<U> {
+    impl<U: UserState> Solver<U> for SqEq<U> {
         fn apply(&self, state: State<U>) -> Stream<U> {
-            let u = Rc::clone(&self.u);
-            let v = Rc::clone(&self.v);
+            let u = self.u.clone();
+            let v = self.v.clone();
             proto_vulcan!(fngoal move |state| {
+                println!("u = {}", u);
                 match u.as_ref() {
                     // sqeq is non-relational operator and requires `u` to be associated with
                     // integer value to succeed.
-                    LTerm::Val(LValue::Number(u)) => {
-                        let sq = Rc::new(LTerm::from(u * u));
+                    LTermInner::Val(LValue::Number(u)) => {
+                        let sq = LTerm::from(u * u);
                         Stream::from(state.unify(&sq, &v))
                     }
                     _ => Stream::from(Err(())),
@@ -75,7 +77,7 @@ mod tests {
         }
     }
 
-    fn sqeq<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    fn sqeq<U: UserState>(u: LTerm, v: LTerm) -> Goal<U> {
         SqEq::new(u, v)
     }
 

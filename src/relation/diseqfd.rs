@@ -1,5 +1,5 @@
 /// Constrain disequality in finite domains
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, DiseqFdConstraint};
@@ -11,14 +11,14 @@ use std::rc::Rc;
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct DiseqFd<U: UserState> {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
 impl<U: UserState> DiseqFd<U> {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
         Rc::new(DiseqFd {
             u,
             v,
@@ -27,10 +27,10 @@ impl<U: UserState> DiseqFd<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for DiseqFd<U> {
+impl<U: UserState> Solver<U> for DiseqFd<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
-        let u = Rc::clone(&self.u);
-        let v = Rc::clone(&self.v);
+        let u = self.u.clone();
+        let v = self.v.clone();
         let c = Rc::new(DiseqFdConstraint::new(u, v));
         Stream::from(c.run(state))
     }
@@ -60,7 +60,7 @@ impl<U: UserState> Goal<U> for DiseqFd<U> {
 ///     assert!(iter.next().is_none())
 /// }
 /// ```
-pub fn diseqfd<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn diseqfd<U: UserState>(u: LTerm, v: LTerm) -> Goal<U> {
     DiseqFd::new(u, v)
 }
 

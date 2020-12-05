@@ -2,7 +2,6 @@ extern crate proto_vulcan;
 use proto_vulcan::relation::firsto;
 use proto_vulcan::relation::membero;
 use proto_vulcan::*;
-use std::rc::Rc;
 use std::time::Instant;
 
 /* The puzzle:
@@ -33,7 +32,7 @@ use std::time::Instant;
 
 */
 
-fn righto(x: Rc<LTerm>, y: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal> {
+fn righto<U: UserState>(x: LTerm, y: LTerm, l: LTerm) -> Goal<U> {
     proto_vulcan_closure!(
         match l {
             [first, second | _] => {
@@ -45,14 +44,14 @@ fn righto(x: Rc<LTerm>, y: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal> {
     )
 }
 
-fn nexto(x: Rc<LTerm>, y: Rc<LTerm>, l: Rc<LTerm>) -> Rc<dyn Goal> {
+fn nexto<U: UserState>(x: LTerm, y: LTerm, l: LTerm) -> Goal<U> {
     proto_vulcan!(conde {
         righto(x, y, l),
         righto(y, x, l)
     })
 }
 
-fn medium_zebrao(houses: Rc<LTerm>) -> Rc<dyn Goal> {
+fn medium_zebrao<U: UserState>(houses: LTerm) -> Goal<U> {
     proto_vulcan!([
         [_, _, [_, _, "milk", _, _], _, _] == houses,
         firsto(houses, ["norwegian", _, _, _, _]),

@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::UserState;
@@ -6,16 +6,16 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct All<U: UserState> {
-    goal_1: Rc<dyn Goal<U>>,
-    goal_2: Rc<dyn Goal<U>>,
+    goal_1: Goal<U>,
+    goal_2: Goal<U>,
 }
 
 impl<U: UserState> All<U> {
-    pub fn new(goal_1: Rc<dyn Goal<U>>, goal_2: Rc<dyn Goal<U>>) -> Rc<dyn Goal<U>> {
+    pub fn new(goal_1: Goal<U>, goal_2: Goal<U>) -> Goal<U> {
         Rc::new(All { goal_1, goal_2 })
     }
 
-    pub fn from_vec(mut v: Vec<Rc<dyn Goal<U>>>) -> Rc<dyn Goal<U>> {
+    pub fn from_vec(mut v: Vec<Goal<U>>) -> Goal<U> {
         let mut p = proto_vulcan!(true);
         for g in v.drain(..).rev() {
             p = All::new(g, p);
@@ -23,7 +23,7 @@ impl<U: UserState> All<U> {
         p
     }
 
-    pub fn from_array(goals: &[Rc<dyn Goal<U>>]) -> Rc<dyn Goal<U>> {
+    pub fn from_array(goals: &[Goal<U>]) -> Goal<U> {
         let mut p = proto_vulcan!(true);
         for g in goals.to_vec().drain(..).rev() {
             p = All::new(g, p);
@@ -31,9 +31,9 @@ impl<U: UserState> All<U> {
         p
     }
 
-    pub fn from_iter<I>(iter: I) -> Rc<dyn Goal<U>>
+    pub fn from_iter<I>(iter: I) -> Goal<U>
     where
-        I: Iterator<Item = Rc<dyn Goal<U>>>,
+        I: Iterator<Item = Goal<U>>,
     {
         let mut p = proto_vulcan!(true);
         for g in iter {
@@ -44,7 +44,7 @@ impl<U: UserState> All<U> {
 
     // The parameter is a list of conjunctions, and the resulting goal is a conjunction
     // of all the goals.
-    pub fn from_conjunctions(conjunctions: &[&[Rc<dyn Goal<U>>]]) -> Rc<dyn Goal<U>> {
+    pub fn from_conjunctions(conjunctions: &[&[Goal<U>]]) -> Goal<U> {
         let mut p = proto_vulcan!(true);
         for g in conjunctions.iter().map(|conj| All::from_array(*conj)).rev() {
             p = All::new(g, p);
@@ -53,7 +53,7 @@ impl<U: UserState> All<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for All<U> {
+impl<U: UserState> Solver<U> for All<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let goal_1 = Rc::clone(&self.goal_1);
         let goal_2 = Rc::clone(&self.goal_2);

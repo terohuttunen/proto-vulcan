@@ -1,5 +1,5 @@
 /// Constrains u * v = w finite domains
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, TimesFdConstraint};
@@ -11,15 +11,15 @@ use std::rc::Rc;
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct TimesFd<U: UserState> {
-    u: Rc<LTerm>,
-    v: Rc<LTerm>,
-    w: Rc<LTerm>,
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
 impl<U: UserState> TimesFd<U> {
-    pub fn new(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
         Rc::new(TimesFd {
             u,
             v,
@@ -29,7 +29,7 @@ impl<U: UserState> TimesFd<U> {
     }
 }
 
-impl<U: UserState> Goal<U> for TimesFd<U> {
+impl<U: UserState> Solver<U> for TimesFd<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(TimesFdConstraint::new(
             self.u.clone(),
@@ -40,7 +40,7 @@ impl<U: UserState> Goal<U> for TimesFd<U> {
     }
 }
 
-pub fn timesfd<U: UserState>(u: Rc<LTerm>, v: Rc<LTerm>, w: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+pub fn timesfd<U: UserState>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
     TimesFd::new(u, v, w)
 }
 

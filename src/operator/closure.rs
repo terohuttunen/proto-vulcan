@@ -1,4 +1,4 @@
-use crate::goal::Goal;
+use crate::goal::{Goal, Solver};
 use crate::operator::ClosureOperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
@@ -7,16 +7,16 @@ use std::fmt;
 use std::rc::Rc;
 
 pub struct Closure<U: UserState> {
-    f: Box<dyn Fn() -> Rc<dyn Goal<U>>>,
+    f: Box<dyn Fn() -> Goal<U>>,
 }
 
 impl<U: UserState> Closure<U> {
-    pub fn new(param: ClosureOperatorParam<U>) -> Rc<dyn Goal<U>> {
+    pub fn new(param: ClosureOperatorParam<U>) -> Goal<U> {
         Rc::new(Closure { f: param.f })
     }
 }
 
-impl<U: UserState> Goal<U> for Closure<U> {
+impl<U: UserState> Solver<U> for Closure<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         (*self.f)().apply(state)
     }

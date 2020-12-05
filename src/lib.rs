@@ -85,9 +85,9 @@
 //! `proto_vulcan_query!`, and `lterm!`.
 //!
 //! * `proto_vulcan!(<goal>)` declares a Proto-vulcan goal, and returns a Rust
-//! variable of type `Rc<dyn Goal>`.
+//! variable of type `Goal`.
 //! * `proto_vulcan_closure!(<goal>)` declares a Proto-vulcan goal, and returns a Rust
-//! variable of type `Rc<dyn Goal>`. The goal expression is evaluated lazily when the goal
+//! variable of type `Goal`. The goal expression is evaluated lazily when the goal
 //! is evaluated. The closure takes ownership of all variables referenced within the closure.
 //! * `proto_vulcan_query!(|a, b, c| { <goal> })` defines a Proto-vulcan query with query-variables
 //! `a`, `b` and `c`. The returned value is a `Query`-struct, that when `run`, produces an
@@ -125,17 +125,16 @@
 //! ```
 //!
 //! # Declaring relations
-//! Proto-vulcan relations are implemented as Rust-functions that have `&Rc<LTerm>`-type
-//! parameters, and `Rc<dyn Goal>` return value. Because proto-vulcan is parametrized by
+//! Proto-vulcan relations are implemented as Rust-functions that have `LTerm`-type
+//! parameters, and `Goal` return value. Because proto-vulcan is parametrized by
 //! generic `UserState`-type, functions must be made generic with respect to it if we want
 //! to use anything other than the default `EmptyUserState`. A simple function example that
 //! implements a relation that succeeds when argument `s` is an empty list is declared as:
 //! ```rust
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
-//! use std::rc::Rc;
 //!
-//! pub fn emptyo<U: UserState>(s: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+//! pub fn emptyo<U: UserState>(s: LTerm) -> Goal<U> {
 //!     proto_vulcan!([] == s)
 //! }
 //! # fn main() {}
@@ -148,9 +147,8 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::*;
-//! # use std::rc::Rc;
 //! pub struct OperatorParam<'a, U: UserState> {
-//!     pub body: &'a [&'a [Rc<dyn Goal<U>>]],
+//!     pub body: &'a [&'a [Goal<U>]],
 //! }
 //!
 //! // operator <term> {
@@ -161,7 +159,7 @@
 //! // }
 //! pub struct PatternMatchOperatorParam<'a, U: UserState> {
 //!     // First goal of each arm is the match-goal
-//!     pub arms: &'a [&'a [Rc<dyn Goal<U>>]],
+//!     pub arms: &'a [&'a [Goal<U>]],
 //! }
 //! ```
 //! Even though the structs are identical, the first goal on each arm of
@@ -173,9 +171,8 @@
 //! use proto_vulcan::*;
 //! use proto_vulcan::operator::condu;
 //! use proto_vulcan::operator::OperatorParam;
-//! use std::rc::Rc;
 //!
-//! pub fn onceo<U: UserState>(param: OperatorParam<U>) -> Rc<dyn Goal<U>> {
+//! pub fn onceo<U: UserState>(param: OperatorParam<U>) -> Goal<U> {
 //!    let g = crate::operator::all::All::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }
@@ -191,9 +188,8 @@
 //! ```rust
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
-//! use std::rc::Rc;
 //!
-//! pub fn appendo<U: UserState>(l: Rc<LTerm>, s: Rc<LTerm>, ls: Rc<LTerm>) -> Rc<dyn Goal<U>> {
+//! pub fn appendo<U: UserState>(l: LTerm, s: LTerm, ls: LTerm) -> Goal<U> {
 //!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,
@@ -241,8 +237,8 @@
 //! by the projection list `|x, y, z|`.
 //!
 //! # Quoting
-//! Proto-vulcan assumes that all arguments to relations are of type `Rc<LTerm>`. If the argument
-//! is not of type `Rc<LTerm>`, then it must be quoted with `#`-prefix, in order to be passed
+//! Proto-vulcan assumes that all arguments to relations are of type `LTerm`. If the argument
+//! is not of type `LTerm`, then it must be quoted with `#`-prefix, in order to be passed
 //! to the relation as-is. For examples of usage, see the `n-queens` example in repository.
 //!
 //! # Embedding Rust into Proto-vulcan
@@ -253,8 +249,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::*;
-//! # use std::rc::Rc;
-//! fn example() -> Rc<dyn Goal> {
+//! fn example<U: UserState>() -> Goal<U> {
 //!     proto_vulcan!(
 //!         fngoal |state| {
 //!             // There could be more Rust here modifying the `state`
@@ -310,7 +305,7 @@ pub mod user;
 #[macro_use]
 pub mod query;
 
-pub use goal::Goal;
+pub use goal::{Goal, Solver};
 pub use lterm::LTerm;
 pub use lvalue::LValue;
 pub use state::Constraint;
