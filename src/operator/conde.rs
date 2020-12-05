@@ -3,15 +3,15 @@ use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
-use crate::user::UserState;
+use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Conde<U: UserState> {
+pub struct Conde<U: User> {
     conjunctions: Vec<Goal<U>>,
 }
 
-impl<U: UserState> Conde<U> {
+impl<U: User> Conde<U> {
     pub fn from_vec(conjunctions: Vec<Goal<U>>) -> Goal<U> {
         Rc::new(Conde { conjunctions })
     }
@@ -33,7 +33,7 @@ impl<U: UserState> Conde<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for Conde<U> {
+impl<U: User> Solver<U> for Conde<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let mut stream = Stream::Empty;
 
@@ -104,7 +104,7 @@ impl<U: UserState> Solver<U> for Conde<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn conde<U: UserState>(param: OperatorParam<U>) -> Goal<U> {
+pub fn conde<U: User>(param: OperatorParam<U>) -> Goal<U> {
     Conde::from_conjunctions(param.body)
 }
 

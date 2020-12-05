@@ -4,13 +4,13 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, PlusFdConstraint};
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct PlusFd<U: UserState> {
+pub struct PlusFd<U: User> {
     u: LTerm,
     v: LTerm,
     w: LTerm,
@@ -18,7 +18,7 @@ pub struct PlusFd<U: UserState> {
     _phantom: PhantomData<U>,
 }
 
-impl<U: UserState> PlusFd<U> {
+impl<U: User> PlusFd<U> {
     pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
         Rc::new(PlusFd {
             u,
@@ -29,7 +29,7 @@ impl<U: UserState> PlusFd<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for PlusFd<U> {
+impl<U: User> Solver<U> for PlusFd<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(PlusFdConstraint::new(
             self.u.clone(),
@@ -40,7 +40,7 @@ impl<U: UserState> Solver<U> for PlusFd<U> {
     }
 }
 
-pub fn plusfd<U: UserState>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
+pub fn plusfd<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
     PlusFd::new(u, v, w)
 }
 

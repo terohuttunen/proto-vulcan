@@ -1,8 +1,8 @@
 use crate::goal::Goal;
-use crate::user::UserState;
+use crate::user::User;
 
 /// A relation that succeeds an unbounded number of times.
-pub fn alwayso<U: UserState>() -> Goal<U> {
+pub fn alwayso<U: User>() -> Goal<U> {
     proto_vulcan!(loop {
         true
     })

@@ -4,13 +4,13 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, TimesFdConstraint};
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct TimesFd<U: UserState> {
+pub struct TimesFd<U: User> {
     u: LTerm,
     v: LTerm,
     w: LTerm,
@@ -18,7 +18,7 @@ pub struct TimesFd<U: UserState> {
     _phantom: PhantomData<U>,
 }
 
-impl<U: UserState> TimesFd<U> {
+impl<U: User> TimesFd<U> {
     pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
         Rc::new(TimesFd {
             u,
@@ -29,7 +29,7 @@ impl<U: UserState> TimesFd<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for TimesFd<U> {
+impl<U: User> Solver<U> for TimesFd<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(TimesFdConstraint::new(
             self.u.clone(),
@@ -40,7 +40,7 @@ impl<U: UserState> Solver<U> for TimesFd<U> {
     }
 }
 
-pub fn timesfd<U: UserState>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
+pub fn timesfd<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
     TimesFd::new(u, v, w)
 }
 

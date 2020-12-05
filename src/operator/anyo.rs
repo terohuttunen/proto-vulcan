@@ -4,21 +4,21 @@ use crate::operator::conde::conde;
 use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Anyo<U: UserState> {
+pub struct Anyo<U: User> {
     g: Goal<U>,
 }
 
-impl<U: UserState> Anyo<U> {
+impl<U: User> Anyo<U> {
     pub fn new(g: Goal<U>) -> Goal<U> {
         Rc::new(Anyo { g })
     }
 }
 
-impl<U: UserState> Solver<U> for Anyo<U> {
+impl<U: User> Solver<U> for Anyo<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let g = Rc::clone(&self.g);
         let g2 = Rc::clone(&self.g);
@@ -61,7 +61,7 @@ impl<U: UserState> Solver<U> for Anyo<U> {
 ///     assert_eq!(iter.next().unwrap().q, 3);
 /// }
 /// ```
-pub fn anyo<U: UserState>(param: OperatorParam<U>) -> Goal<U> {
+pub fn anyo<U: User>(param: OperatorParam<U>) -> Goal<U> {
     Anyo::new(All::from_conjunctions(param.body))
 }
 

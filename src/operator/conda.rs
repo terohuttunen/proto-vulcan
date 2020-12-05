@@ -9,11 +9,11 @@ use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Conda<U: UserState> {
+pub struct Conda<U: User> {
     // First goal of this conda clause
     first: Goal<U>,
 
@@ -24,7 +24,7 @@ pub struct Conda<U: UserState> {
     next: Goal<U>,
 }
 
-impl<U: UserState> Conda<U> {
+impl<U: User> Conda<U> {
     pub fn from_conjunctions(body: &[&[Goal<U>]]) -> Goal<U> {
         let mut next = proto_vulcan!(false);
         for clause in body.to_vec().drain(..).rev() {
@@ -39,7 +39,7 @@ impl<U: UserState> Conda<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for Conda<U> {
+impl<U: User> Solver<U> for Conda<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let mut stream = self.first.apply(state.clone());
 
@@ -51,7 +51,7 @@ impl<U: UserState> Solver<U> for Conda<U> {
 }
 
 /// Soft cut operator.
-pub fn conda<U: UserState>(param: OperatorParam<U>) -> Goal<U> {
+pub fn conda<U: User>(param: OperatorParam<U>) -> Goal<U> {
     Conda::from_conjunctions(param.body)
 }
 

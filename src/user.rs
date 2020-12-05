@@ -3,7 +3,7 @@ use crate::state::{SMap, SResult, State};
 use std::fmt::Debug;
 use std::rc::Rc;
 
-pub trait UserState: Debug + Clone + 'static {
+pub trait User: Debug + Clone + 'static {
     /// Process extension to substitution map.
     fn process_extension(state: State<Self>, _extension: &SMap) -> SResult<Self> {
         Ok(state)

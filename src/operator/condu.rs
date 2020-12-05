@@ -10,11 +10,11 @@ use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Condu<U: UserState> {
+pub struct Condu<U: User> {
     // First goal of this condu clause
     first: Goal<U>,
 
@@ -25,7 +25,7 @@ pub struct Condu<U: UserState> {
     next: Goal<U>,
 }
 
-impl<U: UserState> Condu<U> {
+impl<U: User> Condu<U> {
     pub fn from_conjunctions(body: &[&[Goal<U>]]) -> Goal<U> {
         let mut next = proto_vulcan!(false);
         for clause in body.to_vec().drain(..).rev() {
@@ -40,7 +40,7 @@ impl<U: UserState> Condu<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for Condu<U> {
+impl<U: User> Solver<U> for Condu<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let mut stream = self.first.apply(state.clone());
 
@@ -53,7 +53,7 @@ impl<U: UserState> Solver<U> for Condu<U> {
 }
 
 /// Committed choice operator.
-pub fn condu<U: UserState>(param: OperatorParam<U>) -> Goal<U> {
+pub fn condu<U: User>(param: OperatorParam<U>) -> Goal<U> {
     Condu::from_conjunctions(param.body)
 }
 

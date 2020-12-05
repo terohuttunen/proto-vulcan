@@ -1,6 +1,6 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::user::UserState;
+use crate::user::User;
 
 /// A relation that succeeds for each occurrence of `x` in list `l`.
 ///
@@ -20,7 +20,7 @@ use crate::user::UserState;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn membero<U: UserState>(x: LTerm, l: LTerm) -> Goal<U> {
+pub fn membero<U: User>(x: LTerm, l: LTerm) -> Goal<U> {
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
         [_ | rest] => membero(x, rest),

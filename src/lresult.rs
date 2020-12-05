@@ -2,15 +2,15 @@ use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::constraint::store::ConstraintStore;
 use crate::state::constraint::Constraint;
-use crate::user::UserState;
+use crate::user::User;
 use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub struct LResult<U: UserState>(pub LTerm, pub Rc<ConstraintStore<U>>);
+pub struct LResult<U: User>(pub LTerm, pub Rc<ConstraintStore<U>>);
 
-impl<U: UserState> LResult<U> {
+impl<U: User> LResult<U> {
     /// Check if the wrapped LTerm is an Any-variable with constraints such that it cannot be
     /// the `exception`.
     pub fn is_any_except<T>(&self, exception: &T) -> bool
@@ -45,7 +45,7 @@ impl<U: UserState> LResult<U> {
     }
 }
 
-impl<U: UserState> Deref for LResult<U> {
+impl<U: User> Deref for LResult<U> {
     type Target = LTerm;
 
     fn deref(&self) -> &LTerm {
@@ -53,7 +53,7 @@ impl<U: UserState> Deref for LResult<U> {
     }
 }
 
-impl<U: UserState> fmt::Display for LResult<U> {
+impl<U: User> fmt::Display for LResult<U> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.0, f)?;
         if self.is_constrained() {
@@ -66,19 +66,19 @@ impl<U: UserState> fmt::Display for LResult<U> {
     }
 }
 
-impl<U: UserState> PartialEq<LTerm> for LResult<U> {
+impl<U: User> PartialEq<LTerm> for LResult<U> {
     fn eq(&self, other: &LTerm) -> bool {
         &self.0 == other
     }
 }
 
-impl<U: UserState> PartialEq<LResult<U>> for LTerm {
+impl<U: User> PartialEq<LResult<U>> for LTerm {
     fn eq(&self, other: &LResult<U>) -> bool {
         &other.0 == self
     }
 }
 
-impl<U: UserState> PartialEq<LValue> for LResult<U> {
+impl<U: User> PartialEq<LValue> for LResult<U> {
     fn eq(&self, other: &LValue) -> bool {
         match self.as_ref() {
             LTermInner::Val(v) => v == other,
@@ -87,7 +87,7 @@ impl<U: UserState> PartialEq<LValue> for LResult<U> {
     }
 }
 
-impl<U: UserState> PartialEq<LResult<U>> for LValue {
+impl<U: User> PartialEq<LResult<U>> for LValue {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(v) => v == self,
@@ -96,7 +96,7 @@ impl<U: UserState> PartialEq<LResult<U>> for LValue {
     }
 }
 
-impl<U: UserState> PartialEq<bool> for LResult<U> {
+impl<U: User> PartialEq<bool> for LResult<U> {
     fn eq(&self, other: &bool) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::Bool(x)) => x == other,
@@ -105,7 +105,7 @@ impl<U: UserState> PartialEq<bool> for LResult<U> {
     }
 }
 
-impl<U: UserState> PartialEq<LResult<U>> for bool {
+impl<U: User> PartialEq<LResult<U>> for bool {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::Bool(x)) => x == self,
@@ -114,7 +114,7 @@ impl<U: UserState> PartialEq<LResult<U>> for bool {
     }
 }
 
-impl<U: UserState> PartialEq<isize> for LResult<U> {
+impl<U: User> PartialEq<isize> for LResult<U> {
     fn eq(&self, other: &isize) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::Number(x)) => x == other,
@@ -123,7 +123,7 @@ impl<U: UserState> PartialEq<isize> for LResult<U> {
     }
 }
 
-impl<U: UserState> PartialEq<LResult<U>> for isize {
+impl<U: User> PartialEq<LResult<U>> for isize {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::Number(x)) => x == self,
@@ -132,7 +132,7 @@ impl<U: UserState> PartialEq<LResult<U>> for isize {
     }
 }
 
-impl<U: UserState> PartialEq<char> for LResult<U> {
+impl<U: User> PartialEq<char> for LResult<U> {
     fn eq(&self, other: &char) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::Char(x)) => x == other,
@@ -141,7 +141,7 @@ impl<U: UserState> PartialEq<char> for LResult<U> {
     }
 }
 
-impl<U: UserState> PartialEq<LResult<U>> for char {
+impl<U: User> PartialEq<LResult<U>> for char {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::Char(x)) => x == self,
@@ -150,7 +150,7 @@ impl<U: UserState> PartialEq<LResult<U>> for char {
     }
 }
 
-impl<U: UserState> PartialEq<String> for LResult<U> {
+impl<U: User> PartialEq<String> for LResult<U> {
     fn eq(&self, other: &String) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == other,
@@ -159,7 +159,7 @@ impl<U: UserState> PartialEq<String> for LResult<U> {
     }
 }
 
-impl<U: UserState> PartialEq<LResult<U>> for String {
+impl<U: User> PartialEq<LResult<U>> for String {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == self,
@@ -168,7 +168,7 @@ impl<U: UserState> PartialEq<LResult<U>> for String {
     }
 }
 
-impl<U: UserState> PartialEq<&str> for LResult<U> {
+impl<U: User> PartialEq<&str> for LResult<U> {
     fn eq(&self, other: &&str) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == other,
@@ -177,7 +177,7 @@ impl<U: UserState> PartialEq<&str> for LResult<U> {
     }
 }
 
-impl<U: UserState> PartialEq<LResult<U>> for &str {
+impl<U: User> PartialEq<LResult<U>> for &str {
     fn eq(&self, other: &LResult<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == self,

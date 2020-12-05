@@ -2,7 +2,7 @@
 use super::{BaseConstraint, Constraint, ZConstraint};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
-use crate::state::{SResult, State, UserState};
+use crate::state::{SResult, State, User};
 use std::rc::Rc;
 
 /// Product
@@ -22,7 +22,7 @@ impl TimesZConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for TimesZConstraint {
+impl<U: User> BaseConstraint<U> for TimesZConstraint {
     fn run(self: Rc<Self>, mut state: State<U>) -> SResult<U> {
         let uwalk = state.smap_ref().walk(&self.u).clone();
         let vwalk = state.smap_ref().walk(&self.v).clone();
@@ -98,9 +98,9 @@ impl std::fmt::Display for TimesZConstraint {
     }
 }
 
-impl<U: UserState> ZConstraint<U> for TimesZConstraint {}
+impl<U: User> ZConstraint<U> for TimesZConstraint {}
 
-impl<U: UserState> From<Rc<TimesZConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<TimesZConstraint>> for Constraint<U> {
     fn from(c: Rc<TimesZConstraint>) -> Constraint<U> {
         Constraint::Z(c as Rc<dyn ZConstraint<U>>)
     }
@@ -123,7 +123,7 @@ impl PlusZConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for PlusZConstraint {
+impl<U: User> BaseConstraint<U> for PlusZConstraint {
     fn run(self: Rc<Self>, mut state: State<U>) -> SResult<U> {
         let uwalk = state.smap_ref().walk(&self.u).clone();
         let vwalk = state.smap_ref().walk(&self.v).clone();
@@ -199,9 +199,9 @@ impl std::fmt::Display for PlusZConstraint {
     }
 }
 
-impl<U: UserState> ZConstraint<U> for PlusZConstraint {}
+impl<U: User> ZConstraint<U> for PlusZConstraint {}
 
-impl<U: UserState> From<Rc<PlusZConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<PlusZConstraint>> for Constraint<U> {
     fn from(c: Rc<PlusZConstraint>) -> Constraint<U> {
         Constraint::Z(c as Rc<dyn ZConstraint<U>>)
     }

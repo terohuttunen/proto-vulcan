@@ -1,28 +1,28 @@
 use crate::goal::Goal;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::fmt;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[doc(hidden)]
-pub trait ReifyQuery<R, U = EmptyUserState>
+pub trait ReifyQuery<R, U = EmptyUser>
 where
-    U: UserState,
+    U: User,
 {
     fn reify(&self, state: &State<U>) -> R;
 }
 
-pub struct ResultIterator<V: ReifyQuery<R, U>, R, U: UserState> {
+pub struct ResultIterator<V: ReifyQuery<R, U>, R, U: User> {
     variables: Rc<V>,
     stream: Stream<U>,
     _phantom: PhantomData<R>,
 }
 
 #[doc(hidden)]
-impl<V: ReifyQuery<R, U>, R, U: UserState> ResultIterator<V, R, U> {
+impl<V: ReifyQuery<R, U>, R, U: User> ResultIterator<V, R, U> {
     pub fn new(
         variables: Rc<V>,
         goal: Goal<U>,
@@ -38,7 +38,7 @@ impl<V: ReifyQuery<R, U>, R, U: UserState> ResultIterator<V, R, U> {
 }
 
 #[doc(hidden)]
-impl<V: ReifyQuery<R, U>, R, U: UserState> Iterator for ResultIterator<V, R, U> {
+impl<V: ReifyQuery<R, U>, R, U: User> Iterator for ResultIterator<V, R, U> {
     type Item = R;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -56,18 +56,18 @@ impl<V: ReifyQuery<R, U>, R, U: UserState> Iterator for ResultIterator<V, R, U> 
 
 /* ResultIterator is fused because uncons() will always keep returning None on empty stream */
 #[doc(hidden)]
-impl<V: ReifyQuery<R, U>, R, U: UserState> FusedIterator for ResultIterator<V, R, U> {}
+impl<V: ReifyQuery<R, U>, R, U: User> FusedIterator for ResultIterator<V, R, U> {}
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct Query<V: ReifyQuery<R, U>, R, U: UserState> {
+pub struct Query<V: ReifyQuery<R, U>, R, U: User> {
     variables: Rc<V>,
     goal: Goal<U>,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<R>,
 }
 
-impl<V: ReifyQuery<R, U>, R, U: UserState> Query<V, R, U> {
+impl<V: ReifyQuery<R, U>, R, U: User> Query<V, R, U> {
     pub fn new(variables: Rc<V>, goal: Goal<U>) -> Query<V, R, U> {
         Query {
             variables,
@@ -83,25 +83,25 @@ impl<V: ReifyQuery<R, U>, R, U: UserState> Query<V, R, U> {
 }
 
 #[derive(Debug, Clone)]
-pub struct EmptyUserState {}
+pub struct EmptyUser {}
 
-impl EmptyUserState {
-    fn new() -> EmptyUserState {
-        EmptyUserState {}
+impl EmptyUser {
+    fn new() -> EmptyUser {
+        EmptyUser {}
     }
 }
 
-impl fmt::Display for EmptyUserState {
+impl fmt::Display for EmptyUser {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "")
     }
 }
 
-impl UserState for EmptyUserState {}
+impl User for EmptyUser {}
 
-impl<V: ReifyQuery<R, EmptyUserState>, R> Query<V, R, EmptyUserState> {
-    pub fn run(&self) -> ResultIterator<V, R, EmptyUserState> {
-        let user_state = EmptyUserState::new();
+impl<V: ReifyQuery<R, EmptyUser>, R> Query<V, R, EmptyUser> {
+    pub fn run(&self) -> ResultIterator<V, R, EmptyUser> {
+        let user_state = EmptyUser::new();
         let initial_state = State::new(user_state);
         ResultIterator::new(Rc::clone(&self.variables), self.goal.clone(), initial_state)
     }
@@ -111,7 +111,7 @@ impl<V: ReifyQuery<R, EmptyUserState>, R> Query<V, R, EmptyUserState> {
 macro_rules! proto_vulcan_query {
     (| $($query:ident),+ | { $( $body:tt )* } ) => {{
         use $crate::state::State;
-        use $crate::user::UserState;
+        use $crate::user::User;
         use std::fmt;
         use std::rc::Rc;
         use $crate::lresult::LResult;
@@ -119,11 +119,11 @@ macro_rules! proto_vulcan_query {
         use $crate::query::ReifyQuery;
 
         #[derive(Clone, Debug)]
-        struct QueryResult<U: UserState> {
+        struct QueryResult<U: User> {
             $( $query: LResult<U>, )+
         }
 
-        impl<U: UserState> fmt::Display for QueryResult<U> {
+        impl<U: User> fmt::Display for QueryResult<U> {
             #[allow(unused_variables, unused_assignments)]
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let mut count = 0;
@@ -140,7 +140,7 @@ macro_rules! proto_vulcan_query {
             _phantom: ::std::marker::PhantomData<R>,
         }
 
-        impl<U: UserState> ReifyQuery<QueryResult<U>, U> for QueryVariables<QueryResult<U>> {
+        impl<U: User> ReifyQuery<QueryResult<U>, U> for QueryVariables<QueryResult<U>> {
             fn reify(&self, state: &State<U>) -> QueryResult<U> {
                 let smap = state.smap_ref();
                 let purified_cstore = state.cstore_ref().clone().purify(smap).normalize();

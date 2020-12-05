@@ -1,18 +1,18 @@
 use crate::goal::{Goal, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct Fail<U: UserState> {
+pub struct Fail<U: User> {
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
-impl<U: UserState> Fail<U> {
+impl<U: User> Fail<U> {
     pub fn new() -> Goal<U> {
         Rc::new(Fail {
             _phantom: PhantomData,
@@ -20,7 +20,7 @@ impl<U: UserState> Fail<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for Fail<U> {
+impl<U: User> Solver<U> for Fail<U> {
     fn apply(&self, _state: State<U>) -> Stream<U> {
         Stream::empty()
     }
@@ -49,6 +49,6 @@ impl<U: UserState> Solver<U> for Fail<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn fail<U: UserState>() -> Goal<U> {
+pub fn fail<U: User>() -> Goal<U> {
     Fail::new()
 }

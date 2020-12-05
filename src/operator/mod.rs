@@ -2,11 +2,11 @@ use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::fmt::Debug;
 
 // operator { <body> }
-pub struct OperatorParam<'a, U: UserState> {
+pub struct OperatorParam<'a, U: User> {
     pub body: &'a [&'a [Goal<U>]],
 }
 
@@ -16,31 +16,31 @@ pub struct OperatorParam<'a, U: UserState> {
 //    ...
 //    _ => <body_default>,
 // }
-pub struct PatternMatchOperatorParam<'a, U: UserState> {
+pub struct PatternMatchOperatorParam<'a, U: User> {
     // First goal of each arm is the match-goal
     pub arms: &'a [&'a [Goal<U>]],
 }
 
 // project |x, y, ...| { <body> }
-pub struct ProjectOperatorParam<'a, U: UserState> {
+pub struct ProjectOperatorParam<'a, U: User> {
     pub var_list: Vec<LTerm>,
     pub body: &'a [&'a [Goal<U>]],
 }
 
 // fngoal [move]* |state| { <rust> }
-pub struct FnOperatorParam<U: UserState> {
+pub struct FnOperatorParam<U: User> {
     pub f: Box<dyn Fn(State<U>) -> Stream<U>>,
 }
 
 // closure { <body> }
-pub struct ClosureOperatorParam<U: UserState> {
+pub struct ClosureOperatorParam<U: User> {
     pub f: Box<dyn Fn() -> Goal<U>>,
 }
 
 // for x in coll { <body> }
 pub struct ForOperatorParam<U, T>
 where
-    U: UserState,
+    U: User,
     T: Debug + 'static,
     for<'b> &'b T: IntoIterator<Item = &'b LTerm>,
 {

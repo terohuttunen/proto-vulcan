@@ -7,7 +7,7 @@ use proto_vulcan::relation::plusfd;
 use proto_vulcan::*;
 use std::ops::RangeInclusive;
 
-fn diago<U: UserState>(qi: LTerm, qj: LTerm, d: LTerm, range: &RangeInclusive<isize>) -> Goal<U> {
+fn diago<U: User>(qi: LTerm, qj: LTerm, d: LTerm, range: &RangeInclusive<isize>) -> Goal<U> {
     proto_vulcan!(
         |qi_plus_d, qj_plus_d| {
             infdrange([qi_plus_d, qj_plus_d], #range),
@@ -19,7 +19,7 @@ fn diago<U: UserState>(qi: LTerm, qj: LTerm, d: LTerm, range: &RangeInclusive<is
     )
 }
 
-fn diagonalso<U: UserState>(n: isize, i: isize, j: isize, s: LTerm, r: LTerm) -> Goal<U> {
+fn diagonalso<U: User>(n: isize, i: isize, j: isize, s: LTerm, r: LTerm) -> Goal<U> {
     proto_vulcan_closure!(
         match r {
             [] | [_] => ,
@@ -38,7 +38,7 @@ fn diagonalso<U: UserState>(n: isize, i: isize, j: isize, s: LTerm, r: LTerm) ->
     )
 }
 
-fn nqueenso<U: UserState>(queens: LTerm, n: isize, i: isize, l: LTerm) -> Goal<U> {
+fn nqueenso<U: User>(queens: LTerm, n: isize, i: isize, l: LTerm) -> Goal<U> {
     if i == 0 {
         proto_vulcan!(|ltail| {
             l == [_ | ltail],

@@ -1,7 +1,7 @@
 use super::{BaseConstraint, Constraint, FiniteDomainConstraint};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
-use crate::state::{SResult, State, UserState};
+use crate::state::{SResult, State, User};
 use std::borrow::Borrow;
 use std::cmp::{max, min};
 use std::iter::Iterator;
@@ -284,7 +284,7 @@ impl LessThanOrEqualFdConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for LessThanOrEqualFdConstraint {
+impl<U: User> BaseConstraint<U> for LessThanOrEqualFdConstraint {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -360,9 +360,9 @@ impl std::fmt::Display for LessThanOrEqualFdConstraint {
     }
 }
 
-impl<U: UserState> FiniteDomainConstraint<U> for LessThanOrEqualFdConstraint {}
+impl<U: User> FiniteDomainConstraint<U> for LessThanOrEqualFdConstraint {}
 
-impl<U: UserState> From<Rc<LessThanOrEqualFdConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<LessThanOrEqualFdConstraint>> for Constraint<U> {
     fn from(c: Rc<LessThanOrEqualFdConstraint>) -> Constraint<U> {
         Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
     }
@@ -384,7 +384,7 @@ impl PlusFdConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for PlusFdConstraint {
+impl<U: User> BaseConstraint<U> for PlusFdConstraint {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -489,9 +489,9 @@ impl std::fmt::Display for PlusFdConstraint {
     }
 }
 
-impl<U: UserState> FiniteDomainConstraint<U> for PlusFdConstraint {}
+impl<U: User> FiniteDomainConstraint<U> for PlusFdConstraint {}
 
-impl<U: UserState> From<Rc<PlusFdConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<PlusFdConstraint>> for Constraint<U> {
     fn from(c: Rc<PlusFdConstraint>) -> Constraint<U> {
         Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
     }
@@ -513,7 +513,7 @@ impl MinusFdConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for MinusFdConstraint {
+impl<U: User> BaseConstraint<U> for MinusFdConstraint {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -621,9 +621,9 @@ impl std::fmt::Display for MinusFdConstraint {
     }
 }
 
-impl<U: UserState> FiniteDomainConstraint<U> for MinusFdConstraint {}
+impl<U: User> FiniteDomainConstraint<U> for MinusFdConstraint {}
 
-impl<U: UserState> From<Rc<MinusFdConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<MinusFdConstraint>> for Constraint<U> {
     fn from(c: Rc<MinusFdConstraint>) -> Constraint<U> {
         Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
     }
@@ -645,7 +645,7 @@ impl TimesFdConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for TimesFdConstraint {
+impl<U: User> BaseConstraint<U> for TimesFdConstraint {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -755,9 +755,9 @@ impl std::fmt::Display for TimesFdConstraint {
     }
 }
 
-impl<U: UserState> FiniteDomainConstraint<U> for TimesFdConstraint {}
+impl<U: User> FiniteDomainConstraint<U> for TimesFdConstraint {}
 
-impl<U: UserState> From<Rc<TimesFdConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<TimesFdConstraint>> for Constraint<U> {
     fn from(c: Rc<TimesFdConstraint>) -> Constraint<U> {
         Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
     }
@@ -777,7 +777,7 @@ impl DiseqFdConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for DiseqFdConstraint {
+impl<U: User> BaseConstraint<U> for DiseqFdConstraint {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -853,9 +853,9 @@ impl std::fmt::Display for DiseqFdConstraint {
     }
 }
 
-impl<U: UserState> FiniteDomainConstraint<U> for DiseqFdConstraint {}
+impl<U: User> FiniteDomainConstraint<U> for DiseqFdConstraint {}
 
-impl<U: UserState> From<Rc<DiseqFdConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<DiseqFdConstraint>> for Constraint<U> {
     fn from(c: Rc<DiseqFdConstraint>) -> Constraint<U> {
         Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
     }
@@ -873,7 +873,7 @@ impl DistinctFdConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for DistinctFdConstraint {
+impl<U: User> BaseConstraint<U> for DistinctFdConstraint {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
 
@@ -942,9 +942,9 @@ impl std::fmt::Display for DistinctFdConstraint {
     }
 }
 
-impl<U: UserState> FiniteDomainConstraint<U> for DistinctFdConstraint {}
+impl<U: User> FiniteDomainConstraint<U> for DistinctFdConstraint {}
 
-impl<U: UserState> From<Rc<DistinctFdConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<DistinctFdConstraint>> for Constraint<U> {
     fn from(c: Rc<DistinctFdConstraint>) -> Constraint<U> {
         Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
     }
@@ -965,7 +965,7 @@ impl DistinctFd2Constraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for DistinctFd2Constraint {
+impl<U: User> BaseConstraint<U> for DistinctFd2Constraint {
     fn run(mut self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
 
@@ -1025,9 +1025,9 @@ impl std::fmt::Display for DistinctFd2Constraint {
     }
 }
 
-impl<U: UserState> FiniteDomainConstraint<U> for DistinctFd2Constraint {}
+impl<U: User> FiniteDomainConstraint<U> for DistinctFd2Constraint {}
 
-impl<U: UserState> From<Rc<DistinctFd2Constraint>> for Constraint<U> {
+impl<U: User> From<Rc<DistinctFd2Constraint>> for Constraint<U> {
     fn from(c: Rc<DistinctFd2Constraint>) -> Constraint<U> {
         Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
     }

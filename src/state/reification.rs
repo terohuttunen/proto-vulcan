@@ -1,10 +1,10 @@
 use crate::goal::Goal;
 use crate::lterm::{LTerm, LTermInner};
 use crate::operator::onceo;
-use crate::state::{State, UserState};
+use crate::state::{State, User};
 use crate::stream::{LazyStream, Stream};
 
-fn enforce_constraints_diseq<U: UserState>(_x: LTerm) -> Goal<U> {
+fn enforce_constraints_diseq<U: User>(_x: LTerm) -> Goal<U> {
     proto_vulcan!(true)
 }
 
@@ -15,7 +15,7 @@ fn map_sum<U, F, T>(
     iter: impl DoubleEndedIterator<Item = T>,
 ) -> Stream<U>
 where
-    U: UserState,
+    U: User,
     F: FnMut(T) -> Goal<U>,
 {
     let mut iter = iter.rev().peekable();
@@ -44,7 +44,7 @@ where
 /// Enforces the finite domain constraints by expanding the domains into sequences of numbers,
 /// and returning solutions for all numbers. Adds a `x == d` substitution for each `d` in
 /// the domain.
-fn force_ans<U: UserState>(x: LTerm) -> Goal<U> {
+fn force_ans<U: User>(x: LTerm) -> Goal<U> {
     proto_vulcan!(fngoal move |state| {
         let xwalk = state.smap_ref().walk(&x).clone();
         let maybe_xdomain = state.dstore_ref().get(&xwalk).cloned();
@@ -63,7 +63,7 @@ fn force_ans<U: UserState>(x: LTerm) -> Goal<U> {
     })
 }
 
-fn enforce_constraints_fd<U: UserState>(x: LTerm) -> Goal<U> {
+fn enforce_constraints_fd<U: User>(x: LTerm) -> Goal<U> {
     proto_vulcan!([
         force_ans(x),
         fngoal | state | {
@@ -82,11 +82,11 @@ fn enforce_constraints_fd<U: UserState>(x: LTerm) -> Goal<U> {
 /// of answers such that the result variariables always have singular domains.
 ///
 /// For disequality constraints this is a no-op.
-fn enforce_constraints<U: UserState>(x: LTerm) -> Goal<U> {
+fn enforce_constraints<U: User>(x: LTerm) -> Goal<U> {
     proto_vulcan!([enforce_constraints_diseq(x), enforce_constraints_fd(x)])
 }
 
-pub fn reify<U: UserState>(x: LTerm) -> Goal<U> {
+pub fn reify<U: User>(x: LTerm) -> Goal<U> {
     proto_vulcan!([
         enforce_constraints(x),
         fngoal move |state| {

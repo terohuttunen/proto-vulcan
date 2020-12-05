@@ -1,6 +1,6 @@
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
-use crate::user::UserState;
+use crate::user::User;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -38,7 +38,7 @@ pub type SResult<U> = Result<State<U>, ()>;
 ///    3. The domain store
 ///    4. User data
 #[derive(Debug, Clone)]
-pub struct State<U: UserState> {
+pub struct State<U: User> {
     /// The substitution map
     smap: Rc<SMap>,
 
@@ -51,7 +51,7 @@ pub struct State<U: UserState> {
     pub user_state: U,
 }
 
-impl<U: UserState> State<U> {
+impl<U: User> State<U> {
     pub fn new(user_state: U) -> State<U> {
         State {
             smap: Rc::new(SMap::new()),
@@ -286,7 +286,7 @@ impl<U: UserState> State<U> {
     }
 
     fn process_extension_user(self, extension: &SMap) -> SResult<U> {
-        UserState::process_extension(self, extension)
+        User::process_extension(self, extension)
     }
 
     /// Processes the extension to substitution

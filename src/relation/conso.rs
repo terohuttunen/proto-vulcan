@@ -1,6 +1,6 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::user::UserState;
+use crate::user::User;
 
 /// A relation such that the `out` parameter is equal to `rest` parameter appended to `first`
 /// parameter. The `first` parameter is the head of the list `out` and the `rest` is the tail.
@@ -17,7 +17,7 @@ use crate::user::UserState;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3]));
 /// }
 /// ```
-pub fn conso<U: UserState>(first: LTerm, rest: LTerm, out: LTerm) -> Goal<U> {
+pub fn conso<U: User>(first: LTerm, rest: LTerm, out: LTerm) -> Goal<U> {
     proto_vulcan!([first | rest] == out)
 }
 

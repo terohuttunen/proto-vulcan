@@ -4,13 +4,13 @@ use crate::operator::all::All;
 use crate::operator::ForOperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::fmt::Debug;
 use std::rc::Rc;
 
 pub struct Everyg<U, T>
 where
-    U: UserState,
+    U: User,
     T: Debug + 'static,
     for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
 {
@@ -20,7 +20,7 @@ where
 
 impl<U, T> Debug for Everyg<U, T>
 where
-    U: UserState,
+    U: User,
     T: Debug + 'static,
     for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
 {
@@ -31,7 +31,7 @@ where
 
 impl<U, T> Everyg<U, T>
 where
-    U: UserState,
+    U: User,
     T: Debug + 'static,
     for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
 {
@@ -42,7 +42,7 @@ where
 
 impl<U, T> Solver<U> for Everyg<U, T>
 where
-    U: UserState,
+    U: User,
     T: Debug + 'static,
     for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
 {
@@ -55,7 +55,7 @@ where
 
 pub fn everyg<U, T>(param: ForOperatorParam<U, T>) -> Goal<U>
 where
-    U: UserState,
+    U: User,
     T: Debug + 'static,
     for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
 {

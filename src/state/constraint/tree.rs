@@ -1,7 +1,7 @@
 use crate::lterm::LTerm;
 use crate::state::constraint::{BaseConstraint, Constraint, TreeConstraint};
 use crate::state::unification::unify_rec;
-use crate::state::{SMap, SResult, State, UserState};
+use crate::state::{SMap, SResult, State, User};
 use std::rc::Rc;
 
 // Disequality constraint
@@ -20,7 +20,7 @@ impl From<SMap> for DisequalityConstraint {
     }
 }
 
-impl<U: UserState> BaseConstraint<U> for DisequalityConstraint {
+impl<U: User> BaseConstraint<U> for DisequalityConstraint {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let mut extension = SMap::new();
         let mut smap = Rc::new(state.smap_ref().clone());
@@ -52,7 +52,7 @@ impl std::fmt::Display for DisequalityConstraint {
     }
 }
 
-impl<U: UserState> TreeConstraint<U> for DisequalityConstraint {
+impl<U: User> TreeConstraint<U> for DisequalityConstraint {
     /// If the `self` subsumes the `other`.
     ///
     /// A constraint is subsumed by another constraint if unifying the constraint in the
@@ -85,7 +85,7 @@ impl<U: UserState> TreeConstraint<U> for DisequalityConstraint {
     }
 }
 
-impl<U: UserState> From<Rc<DisequalityConstraint>> for Constraint<U> {
+impl<U: User> From<Rc<DisequalityConstraint>> for Constraint<U> {
     fn from(c: Rc<DisequalityConstraint>) -> Constraint<U> {
         Constraint::Tree(c as Rc<dyn TreeConstraint<U>>)
     }
@@ -94,7 +94,7 @@ impl<U: UserState> From<Rc<DisequalityConstraint>> for Constraint<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::EmptyUserState;
+    use crate::query::EmptyUser;
     use crate::*;
 
     #[test]
@@ -111,6 +111,6 @@ mod tests {
         let mut smap = SMap::new();
         smap.extend(x.clone(), five.clone());
         let c1 = DisequalityConstraint::from(smap);
-        assert!(TreeConstraint::<EmptyUserState>::subsumes(&c1, &c0));
+        assert!(TreeConstraint::<EmptyUser>::subsumes(&c1, &c0));
     }
 }

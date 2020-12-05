@@ -127,14 +127,14 @@
 //! # Declaring relations
 //! Proto-vulcan relations are implemented as Rust-functions that have `LTerm`-type
 //! parameters, and `Goal` return value. Because proto-vulcan is parametrized by
-//! generic `UserState`-type, functions must be made generic with respect to it if we want
-//! to use anything other than the default `EmptyUserState`. A simple function example that
+//! generic `User`-type, functions must be made generic with respect to it if we want
+//! to use anything other than the default `EmptyUser`. A simple function example that
 //! implements a relation that succeeds when argument `s` is an empty list is declared as:
 //! ```rust
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //!
-//! pub fn emptyo<U: UserState>(s: LTerm) -> Goal<U> {
+//! pub fn emptyo<U: User>(s: LTerm) -> Goal<U> {
 //!     proto_vulcan!([] == s)
 //! }
 //! # fn main() {}
@@ -147,7 +147,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::*;
-//! pub struct OperatorParam<'a, U: UserState> {
+//! pub struct OperatorParam<'a, U: User> {
 //!     pub body: &'a [&'a [Goal<U>]],
 //! }
 //!
@@ -157,7 +157,7 @@
 //! //    ...
 //! //    _ => <body_default>,
 //! // }
-//! pub struct PatternMatchOperatorParam<'a, U: UserState> {
+//! pub struct PatternMatchOperatorParam<'a, U: User> {
 //!     // First goal of each arm is the match-goal
 //!     pub arms: &'a [&'a [Goal<U>]],
 //! }
@@ -172,7 +172,7 @@
 //! use proto_vulcan::operator::condu;
 //! use proto_vulcan::operator::OperatorParam;
 //!
-//! pub fn onceo<U: UserState>(param: OperatorParam<U>) -> Goal<U> {
+//! pub fn onceo<U: User>(param: OperatorParam<U>) -> Goal<U> {
 //!    let g = crate::operator::all::All::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }
@@ -189,7 +189,7 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //!
-//! pub fn appendo<U: UserState>(l: LTerm, s: LTerm, ls: LTerm) -> Goal<U> {
+//! pub fn appendo<U: User>(l: LTerm, s: LTerm, ls: LTerm) -> Goal<U> {
 //!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,
@@ -249,7 +249,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::*;
-//! fn example<U: UserState>() -> Goal<U> {
+//! fn example<U: User>() -> Goal<U> {
 //!     proto_vulcan!(
 //!         fngoal |state| {
 //!             // There could be more Rust here modifying the `state`
@@ -262,13 +262,13 @@
 //! See more complex example in `reification.rs` of Proto-vulcan itself.
 //!
 //! # User extensions
-//! By defining a struct that implements the `Clone`- `Debug`- and `UserState`-traits, the search
+//! By defining a struct that implements the `Clone`- `Debug`- and `User`-traits, the search
 //! `State`-monad can be extended with any kind of information that gets cloned along with the
 //! search when it forks, and discarded when branches fail. This can be used to add additional
 //! clone-on-write constraint-stores, for example. The user-defined state can be accessed wherever
 //! `State` is available, such as in in `fngoal |state| { }`-functions and in constraints.
 //!
-//! The `UserState`-trait provides optional hooks that the user can implement. What hooks there
+//! The `User`-trait provides optional hooks that the user can implement. What hooks there
 //! should be is still largely TBD.
 //!
 //! Another way of extending Proto-vulcan is `LTerm`s that implement `UserUnify`-trait. User
@@ -309,7 +309,7 @@ pub use goal::{Goal, Solver};
 pub use lterm::LTerm;
 pub use lvalue::LValue;
 pub use state::Constraint;
-pub use user::{UserState, UserUnify};
+pub use user::{User, UserUnify};
 
 // conde is the only non-built-in operator exported by default.
 pub use crate::operator::conde::conde;

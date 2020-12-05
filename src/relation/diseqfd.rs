@@ -4,20 +4,20 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, DiseqFdConstraint};
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct DiseqFd<U: UserState> {
+pub struct DiseqFd<U: User> {
     u: LTerm,
     v: LTerm,
     #[derivative(Debug = "ignore")]
     _phantom: PhantomData<U>,
 }
 
-impl<U: UserState> DiseqFd<U> {
+impl<U: User> DiseqFd<U> {
     pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
         Rc::new(DiseqFd {
             u,
@@ -27,7 +27,7 @@ impl<U: UserState> DiseqFd<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for DiseqFd<U> {
+impl<U: User> Solver<U> for DiseqFd<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let u = self.u.clone();
         let v = self.v.clone();
@@ -60,7 +60,7 @@ impl<U: UserState> Solver<U> for DiseqFd<U> {
 ///     assert!(iter.next().is_none())
 /// }
 /// ```
-pub fn diseqfd<U: UserState>(u: LTerm, v: LTerm) -> Goal<U> {
+pub fn diseqfd<U: User>(u: LTerm, v: LTerm) -> Goal<U> {
     DiseqFd::new(u, v)
 }
 

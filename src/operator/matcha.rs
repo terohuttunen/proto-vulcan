@@ -1,8 +1,8 @@
 use crate::goal::Goal;
 use crate::operator::conda::Conda;
 use crate::operator::PatternMatchOperatorParam;
-use crate::user::UserState;
+use crate::user::User;
 
-pub fn matcha<U: UserState>(param: PatternMatchOperatorParam<U>) -> Goal<U> {
+pub fn matcha<U: User>(param: PatternMatchOperatorParam<U>) -> Goal<U> {
     Conda::from_conjunctions(param.arms)
 }

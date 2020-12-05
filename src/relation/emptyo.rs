@@ -1,6 +1,6 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::user::UserState;
+use crate::user::User;
 
 /// A relation that succeeds when `s` is an empty list. This is equivalent to `s == []`.
 ///
@@ -18,7 +18,7 @@ use crate::user::UserState;
 ///     assert!(query.run().next().unwrap().q == lterm!([]));
 /// }
 /// ```
-pub fn emptyo<U: UserState>(s: LTerm) -> Goal<U> {
+pub fn emptyo<U: User>(s: LTerm) -> Goal<U> {
     proto_vulcan!([] == s)
 }
 

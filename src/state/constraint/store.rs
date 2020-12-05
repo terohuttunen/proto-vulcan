@@ -1,14 +1,14 @@
 use super::SMap;
 use crate::lterm::LTerm;
 use crate::state::constraint::{Constraint, DisequalityConstraint};
-use crate::state::UserState;
+use crate::state::User;
 use std::collections::HashSet;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub struct ConstraintStore<U: UserState>(HashSet<Constraint<U>>);
+pub struct ConstraintStore<U: User>(HashSet<Constraint<U>>);
 
-impl<U: UserState> ConstraintStore<U> {
+impl<U: User> ConstraintStore<U> {
     pub fn new() -> ConstraintStore<U> {
         ConstraintStore(HashSet::new())
     }

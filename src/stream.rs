@@ -1,9 +1,9 @@
 use crate::goal::Goal;
 use crate::state::{SResult, State};
-use crate::user::UserState;
+use crate::user::User;
 use std::fmt;
 
-pub enum Thunk<U: UserState> {
+pub enum Thunk<U: User> {
     /// A delayed stream.
     Stream(Stream<U>),
 
@@ -18,7 +18,7 @@ pub enum Thunk<U: UserState> {
     Closure(Box<dyn FnOnce() -> Stream<U>>),
 }
 
-impl<U: UserState> Thunk<U> {
+impl<U: User> Thunk<U> {
     /// Evaluates the thunk.
     pub fn call(self) -> Stream<U> {
         match self {
@@ -57,7 +57,7 @@ impl<U: UserState> Thunk<U> {
     }
 }
 
-impl<U: UserState> fmt::Debug for Thunk<U> {
+impl<U: User> fmt::Debug for Thunk<U> {
     fn fmt(&self, fm: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Thunk::Stream(stream) => fm.debug_tuple("Stream").field(stream).finish(),
@@ -72,12 +72,12 @@ impl<U: UserState> fmt::Debug for Thunk<U> {
 }
 
 #[derive(Debug)]
-pub enum LazyStream<U: UserState> {
+pub enum LazyStream<U: User> {
     Empty,
     Thunk { delay: usize, thunk: Box<Thunk<U>> },
 }
 
-impl<U: UserState> LazyStream<U> {
+impl<U: User> LazyStream<U> {
     pub fn is_empty(&self) -> bool {
         match self {
             LazyStream::Empty => true,
@@ -183,14 +183,14 @@ impl<U: UserState> LazyStream<U> {
 }
 
 #[derive(Debug)]
-pub enum Stream<U: UserState> {
+pub enum Stream<U: User> {
     Empty,
     Lazy(LazyStream<U>),
     Unit(Box<State<U>>),
     Cons(Box<State<U>>, LazyStream<U>),
 }
 
-impl<U: UserState> Stream<U> {
+impl<U: User> Stream<U> {
     pub fn is_empty(&self) -> bool {
         match self {
             Stream::Empty => true,
@@ -312,7 +312,7 @@ impl<U: UserState> Stream<U> {
     }
 }
 
-impl<U: UserState> Iterator for Stream<U> {
+impl<U: User> Iterator for Stream<U> {
     type Item = Box<State<U>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -320,7 +320,7 @@ impl<U: UserState> Iterator for Stream<U> {
     }
 }
 
-impl<U: UserState> From<SResult<U>> for Stream<U> {
+impl<U: User> From<SResult<U>> for Stream<U> {
     fn from(u: SResult<U>) -> Stream<U> {
         match u {
             Ok(u) => Stream::unit(Box::new(u)),
@@ -329,7 +329,7 @@ impl<U: UserState> From<SResult<U>> for Stream<U> {
     }
 }
 
-impl<U: UserState> From<State<U>> for Stream<U> {
+impl<U: User> From<State<U>> for Stream<U> {
     fn from(u: State<U>) -> Stream<U> {
         Stream::unit(Box::new(u))
     }

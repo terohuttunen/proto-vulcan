@@ -1,6 +1,6 @@
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::user::UserState;
+use crate::user::User;
 
 /// A relation where `out` is equal to `ls` with first occurrence of `x` removed.
 ///
@@ -16,7 +16,7 @@ use crate::user::UserState;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]));
 /// }
 /// ```
-pub fn rembero<U: UserState>(x: LTerm, ls: LTerm, out: LTerm) -> Goal<U> {
+pub fn rembero<U: User>(x: LTerm, ls: LTerm, out: LTerm) -> Goal<U> {
     proto_vulcan_closure!(
         match [ls, out] {
             [[], []] => ,

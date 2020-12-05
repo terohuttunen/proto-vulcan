@@ -4,13 +4,13 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, PlusZConstraint};
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct PlusZ<U: UserState> {
+pub struct PlusZ<U: User> {
     u: LTerm,
     v: LTerm,
     w: LTerm,
@@ -18,7 +18,7 @@ pub struct PlusZ<U: UserState> {
     _phantom: PhantomData<U>,
 }
 
-impl<U: UserState> PlusZ<U> {
+impl<U: User> PlusZ<U> {
     pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
         Rc::new(PlusZ {
             u,
@@ -29,7 +29,7 @@ impl<U: UserState> PlusZ<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for PlusZ<U> {
+impl<U: User> Solver<U> for PlusZ<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(PlusZConstraint::new(
             self.u.clone(),
@@ -40,7 +40,7 @@ impl<U: UserState> Solver<U> for PlusZ<U> {
     }
 }
 
-pub fn plusz<U: UserState>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
+pub fn plusz<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
     PlusZ::new(u, v, w)
 }
 

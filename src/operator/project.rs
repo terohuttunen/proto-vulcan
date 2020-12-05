@@ -4,22 +4,22 @@ use crate::operator::all::All;
 use crate::operator::ProjectOperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Project<U: UserState> {
+pub struct Project<U: User> {
     variables: Vec<LTerm>,
     body: Goal<U>,
 }
 
-impl<U: UserState> Project<U> {
+impl<U: User> Project<U> {
     pub fn new(variables: Vec<LTerm>, body: Goal<U>) -> Goal<U> {
         Rc::new(Project { variables, body }) as Goal<U>
     }
 }
 
-impl<U: UserState> Solver<U> for Project<U> {
+impl<U: User> Solver<U> for Project<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         // Walk* each projected variable with the current substitution
         for v in self.variables.iter() {
@@ -29,7 +29,7 @@ impl<U: UserState> Solver<U> for Project<U> {
     }
 }
 
-pub fn project<U: UserState>(param: ProjectOperatorParam<U>) -> Goal<U> {
+pub fn project<U: User>(param: ProjectOperatorParam<U>) -> Goal<U> {
     Project::new(param.var_list, All::from_conjunctions(param.body))
 }
 
@@ -41,13 +41,13 @@ mod tests {
     use crate::lterm::LTermInner;
 
     #[derive(Debug)]
-    pub struct SqEq<U: UserState> {
+    pub struct SqEq<U: User> {
         u: LTerm,
         v: LTerm,
         _phantom: PhantomData<U>,
     }
 
-    impl<U: UserState> SqEq<U> {
+    impl<U: User> SqEq<U> {
         pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
             Rc::new(SqEq {
                 u,
@@ -57,7 +57,7 @@ mod tests {
         }
     }
 
-    impl<U: UserState> Solver<U> for SqEq<U> {
+    impl<U: User> Solver<U> for SqEq<U> {
         fn apply(&self, state: State<U>) -> Stream<U> {
             let u = self.u.clone();
             let v = self.v.clone();
@@ -77,7 +77,7 @@ mod tests {
         }
     }
 
-    fn sqeq<U: UserState>(u: LTerm, v: LTerm) -> Goal<U> {
+    fn sqeq<U: User>(u: LTerm, v: LTerm) -> Goal<U> {
         SqEq::new(u, v)
     }
 

@@ -4,13 +4,13 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, TimesZConstraint};
 use crate::stream::Stream;
-use crate::user::UserState;
+use crate::user::User;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct TimesZ<U: UserState> {
+pub struct TimesZ<U: User> {
     u: LTerm,
     v: LTerm,
     w: LTerm,
@@ -18,7 +18,7 @@ pub struct TimesZ<U: UserState> {
     _phantom: PhantomData<U>,
 }
 
-impl<U: UserState> TimesZ<U> {
+impl<U: User> TimesZ<U> {
     pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
         Rc::new(TimesZ {
             u,
@@ -29,7 +29,7 @@ impl<U: UserState> TimesZ<U> {
     }
 }
 
-impl<U: UserState> Solver<U> for TimesZ<U> {
+impl<U: User> Solver<U> for TimesZ<U> {
     fn apply(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(TimesZConstraint::new(
             self.u.clone(),
@@ -40,7 +40,7 @@ impl<U: UserState> Solver<U> for TimesZ<U> {
     }
 }
 
-pub fn timesz<U: UserState>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
+pub fn timesz<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
     TimesZ::new(u, v, w)
 }
 
