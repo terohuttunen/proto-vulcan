@@ -20,42 +20,38 @@ fn main() {
          7, _, 3, _, 1, 8, _, _, _]
     );
 
-    let board_vec: Vec<LTerm> = board.iter().cloned().collect();
-
     let mut rows = vec![];
     for row_index in 0..BOARD_SIZE {
-        let mut row = vec![];
+        let mut row = lterm!([]);
         for col_index in 0..BOARD_SIZE {
-            row.push(board_vec[row_index * BOARD_SIZE + col_index].clone());
+            row.extend(Some(board[row_index * BOARD_SIZE + col_index].clone()));
         }
-        rows.push(LTerm::from_vec(row));
+        rows.push(row);
     }
 
     let mut cols = vec![];
     for col_index in 0..BOARD_SIZE {
-        let mut col = vec![];
+        let mut col = lterm!([]);
         for row_index in 0..BOARD_SIZE {
-            col.push(board_vec[row_index * BOARD_SIZE + col_index].clone());
+            col.extend(Some(board[row_index * BOARD_SIZE + col_index].clone()));
         }
-        cols.push(LTerm::from_vec(col));
+        cols.push(col);
     }
 
-    let mut squares = vec![vec![]; 9];
+    let mut squares = vec![lterm!([]); 9];
     for row_index in 0..BOARD_SIZE {
         for col_index in 0..BOARD_SIZE {
-            let x = board_vec[row_index * BOARD_SIZE + col_index].clone();
+            let x = board[row_index * BOARD_SIZE + col_index].clone();
             let square_index =
                 (row_index / SQUARE_SIZE) * (BOARD_SIZE / SQUARE_SIZE) + (col_index / SQUARE_SIZE);
-            squares[square_index].push(x);
+            squares[square_index].extend(Some(x));
         }
     }
-
-    let squares: Vec<LTerm> = squares.into_iter().map(|v| LTerm::from_vec(v)).collect();
 
     let query = proto_vulcan_query!(|q| {
         q == board,
         for x in &board {
-            infdrange(x, #&(1..=9))
+            infdrange(x, #&(1..=BOARD_SIZE as isize))
         },
         for row in &rows {
             distinctfd(row)

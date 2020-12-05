@@ -674,6 +674,14 @@ where
     }
 }
 
+impl std::ops::Index<usize> for LTerm {
+    type Output = LTerm;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.iter().nth(index).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
