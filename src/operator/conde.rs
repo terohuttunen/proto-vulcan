@@ -34,7 +34,7 @@ impl<U: User> Conde<U> {
 }
 
 impl<U: User> Solver<U> for Conde<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let mut stream = Stream::Empty;
 
         // Process first element separately to avoid one extra clone of `state`.
@@ -45,13 +45,13 @@ impl<U: User> Solver<U> for Conde<U> {
                 .rev()
                 .take(self.conjunctions.len() - 1)
             {
-                let new_stream = conjunction.apply(state.clone());
+                let new_stream = conjunction.solve(state.clone());
                 stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
             }
         }
 
         if self.conjunctions.len() > 0 {
-            let new_stream = self.conjunctions[0].apply(state);
+            let new_stream = self.conjunctions[0].solve(state);
             stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
         }
 

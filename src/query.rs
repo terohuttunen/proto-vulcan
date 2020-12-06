@@ -28,7 +28,7 @@ impl<V: ReifyQuery<R, U>, R, U: User> ResultIterator<V, R, U> {
         goal: Goal<U>,
         initial_state: State<U>,
     ) -> ResultIterator<V, R, U> {
-        let stream = goal.apply(initial_state);
+        let stream = goal.solve(initial_state);
         ResultIterator {
             variables,
             stream,

@@ -18,7 +18,7 @@ impl<U: User> Fresh<U> {
 }
 
 impl<U: User> Solver<U> for Fresh<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let goal = Rc::clone(&self.body);
         Stream::Lazy(LazyStream::from_goal(goal, state))
     }

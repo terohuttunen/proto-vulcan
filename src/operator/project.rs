@@ -20,12 +20,12 @@ impl<U: User> Project<U> {
 }
 
 impl<U: User> Solver<U> for Project<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         // Walk* each projected variable with the current substitution
         for v in self.variables.iter() {
             v.project(|x| state.smap_ref().walk_star(x));
         }
-        self.body.apply(state)
+        self.body.solve(state)
     }
 }
 
@@ -58,7 +58,7 @@ mod tests {
     }
 
     impl<U: User> Solver<U> for SqEq<U> {
-        fn apply(&self, state: State<U>) -> Stream<U> {
+        fn solve(&self, state: State<U>) -> Stream<U> {
             let u = self.u.clone();
             let v = self.v.clone();
             proto_vulcan!(fngoal move |state| {
@@ -73,7 +73,7 @@ mod tests {
                     _ => Stream::from(Err(())),
                 }
             })
-            .apply(state)
+            .solve(state)
         }
     }
 

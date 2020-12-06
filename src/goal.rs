@@ -15,7 +15,7 @@ where
     U: User,
 {
     /// Generate a stream of solutions to the goal by applying it to some initial state.
-    fn apply(&self, state: State<U>) -> Stream<U>;
+    fn solve(&self, state: State<U>) -> Stream<U>;
 
     /// A function that returns `true` only if the goal is `Succeed()`. This is used to
     /// prune the search tree.

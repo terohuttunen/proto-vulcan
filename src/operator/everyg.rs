@@ -46,10 +46,10 @@ where
     T: Debug + 'static,
     for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
 {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let term_iter = IntoIterator::into_iter(&self.coll);
         let goal_iter = term_iter.map(|term| (*self.g)(term.clone()));
-        All::from_iter(goal_iter).apply(state)
+        All::from_iter(goal_iter).solve(state)
     }
 }
 

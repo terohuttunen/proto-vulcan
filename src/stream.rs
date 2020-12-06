@@ -23,7 +23,7 @@ impl<U: User> Thunk<U> {
     pub fn call(self) -> Stream<U> {
         match self {
             Thunk::Stream(stream) => stream,
-            Thunk::Goal(goal, state) => goal.apply(state),
+            Thunk::Goal(goal, state) => goal.solve(state),
             Thunk::MPlus(lazy, lazy_hat) => Stream::mplus(lazy.eval(), lazy_hat),
             Thunk::Bind(lazy, goal) => Stream::bind(lazy.eval(), goal),
             Thunk::Closure(f) => f(),
@@ -221,7 +221,7 @@ impl<U: User> Stream<U> {
 
     pub fn from_goal(goal: Goal<U>, mut state: State<U>) -> Stream<U> {
         U::finalize(&mut state);
-        goal.apply(state)
+        goal.solve(state)
     }
 
     pub fn mplus(stream: Stream<U>, lazy: LazyStream<U>) -> Stream<U> {
@@ -246,9 +246,9 @@ impl<U: User> Stream<U> {
             match stream {
                 Stream::Empty => Stream::empty(),
                 Stream::Lazy(lazy) => Stream::lazy_bind(lazy, goal),
-                Stream::Unit(a) => goal.apply(*a),
+                Stream::Unit(a) => goal.solve(*a),
                 Stream::Cons(head, lazy) => {
-                    Stream::mplus(goal.apply(*head), LazyStream::bind(lazy, goal))
+                    Stream::mplus(goal.solve(*head), LazyStream::bind(lazy, goal))
                 }
             }
         }

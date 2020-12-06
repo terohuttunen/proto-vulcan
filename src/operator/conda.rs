@@ -40,12 +40,12 @@ impl<U: User> Conda<U> {
 }
 
 impl<U: User> Solver<U> for Conda<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
-        let mut stream = self.first.apply(state.clone());
+    fn solve(&self, state: State<U>) -> Stream<U> {
+        let mut stream = self.first.solve(state.clone());
 
         match stream.peek() {
             Some(_) => Stream::bind(stream, Rc::clone(&self.rest)),
-            None => self.next.apply(state),
+            None => self.next.solve(state),
         }
     }
 }

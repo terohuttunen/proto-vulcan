@@ -30,7 +30,7 @@ impl<U: User> PlusFd<U> {
 }
 
 impl<U: User> Solver<U> for PlusFd<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(PlusFdConstraint::new(
             self.u.clone(),
             self.v.clone(),

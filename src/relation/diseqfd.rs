@@ -28,7 +28,7 @@ impl<U: User> DiseqFd<U> {
 }
 
 impl<U: User> Solver<U> for DiseqFd<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let u = self.u.clone();
         let v = self.v.clone();
         let c = Rc::new(DiseqFdConstraint::new(u, v));

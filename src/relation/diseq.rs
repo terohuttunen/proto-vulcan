@@ -26,7 +26,7 @@ impl<U: User> Diseq<U> {
 }
 
 impl<U: User> Solver<U> for Diseq<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         // Return state where u and v are unified under s, or None if unification is not possible
         Stream::from(state.disunify(&self.u, &self.v))
     }

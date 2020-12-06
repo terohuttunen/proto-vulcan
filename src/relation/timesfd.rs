@@ -30,7 +30,7 @@ impl<U: User> TimesFd<U> {
 }
 
 impl<U: User> Solver<U> for TimesFd<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(TimesFdConstraint::new(
             self.u.clone(),
             self.v.clone(),

@@ -21,7 +21,7 @@ impl<U: User> Fail<U> {
 }
 
 impl<U: User> Solver<U> for Fail<U> {
-    fn apply(&self, _state: State<U>) -> Stream<U> {
+    fn solve(&self, _state: State<U>) -> Stream<U> {
         Stream::empty()
     }
 

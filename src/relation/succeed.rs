@@ -21,7 +21,7 @@ impl<U: User> Succeed<U> {
 }
 
 impl<U: User> Solver<U> for Succeed<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         Stream::from(state)
     }
 

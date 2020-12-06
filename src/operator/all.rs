@@ -54,7 +54,7 @@ impl<U: User> All<U> {
 }
 
 impl<U: User> Solver<U> for All<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let goal_1 = Rc::clone(&self.goal_1);
         let goal_2 = Rc::clone(&self.goal_2);
         let stream = Stream::Lazy(LazyStream::from_goal(goal_1, state));

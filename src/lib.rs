@@ -253,7 +253,7 @@
 //!     proto_vulcan!(
 //!         fngoal |state| {
 //!             // There could be more Rust here modifying the `state`
-//!             proto_vulcan!(true).apply(state)
+//!             proto_vulcan!(true).solve(state)
 //!         }
 //!     )
 //! }

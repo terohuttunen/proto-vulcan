@@ -44,9 +44,9 @@ impl<U: User> Any<U> {
 }
 
 impl<U: User> Solver<U> for Any<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
-        let s1 = self.goal_1.apply(state.clone());
-        let s2 = self.goal_2.apply(state);
+    fn solve(&self, state: State<U>) -> Stream<U> {
+        let s1 = self.goal_1.solve(state.clone());
+        let s2 = self.goal_2.solve(state);
         if s2.is_empty() {
             s1
         } else {

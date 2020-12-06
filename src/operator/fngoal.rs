@@ -17,7 +17,7 @@ impl<U: User> FnGoal<U> {
 }
 
 impl<U: User> Solver<U> for FnGoal<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         (*self.f)(state)
     }
 }

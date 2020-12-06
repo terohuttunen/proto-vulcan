@@ -41,13 +41,13 @@ impl<U: User> Condu<U> {
 }
 
 impl<U: User> Solver<U> for Condu<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
-        let mut stream = self.first.apply(state.clone());
+    fn solve(&self, state: State<U>) -> Stream<U> {
+        let mut stream = self.first.solve(state.clone());
 
         // Take only first item from the stream of first goal by truncating the stream
         match stream.trunc() {
             Some(_) => Stream::bind(stream, Rc::clone(&self.rest)),
-            None => self.next.apply(state),
+            None => self.next.solve(state),
         }
     }
 }

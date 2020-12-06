@@ -28,7 +28,7 @@ impl<U: User> LessThanOrEqualFd<U> {
 }
 
 impl<U: User> Solver<U> for LessThanOrEqualFd<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(LessThanOrEqualFdConstraint::new(
             self.u.clone(),
             self.v.clone(),

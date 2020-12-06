@@ -28,7 +28,7 @@ impl<U: User> DomFd<U> {
 }
 
 impl<U: User> Solver<U> for DomFd<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let xwalk = state.smap_ref().walk(&self.x).clone();
         Stream::from(state.process_domain(&xwalk, Rc::clone(&self.domain) as Rc<FiniteDomain>))
     }

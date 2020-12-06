@@ -26,7 +26,7 @@ impl<U: User> Eq<U> {
 }
 
 impl<U: User> Solver<U> for Eq<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         Stream::from(state.unify(&self.u, &self.v))
     }
 }

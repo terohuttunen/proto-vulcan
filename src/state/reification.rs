@@ -25,11 +25,11 @@ where
             Some(d) => {
                 if iter.peek().is_none() {
                     // If this is last value in the domain, no need to clone `state`.
-                    let new_stream = f(d).apply(state);
+                    let new_stream = f(d).solve(state);
                     stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
                     break;
                 } else {
-                    let new_stream = f(d).apply(state.clone());
+                    let new_stream = f(d).solve(state.clone());
                     stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
                 }
             }
@@ -57,8 +57,8 @@ fn force_ans<U: User>(x: LTerm) -> Goal<U> {
                     proto_vulcan!(dterm == xwalk)
                 }, xdomain.iter())
             }
-            (LTermInner::Cons(head, tail), _) => proto_vulcan!([force_ans(head), force_ans(tail)]).apply(state),
-            (_, _) => proto_vulcan!(true).apply(state),
+            (LTermInner::Cons(head, tail), _) => proto_vulcan!([force_ans(head), force_ans(tail)]).solve(state),
+            (_, _) => proto_vulcan!(true).solve(state),
         }
     })
 }
@@ -69,7 +69,7 @@ fn enforce_constraints_fd<U: User>(x: LTerm) -> Goal<U> {
         fngoal | state | {
             state.verify_all_bound();
             let bound_x = state.dstore_ref().keys().cloned().collect::<LTerm>();
-            proto_vulcan!( onceo { force_ans(bound_x) } ).apply(state)
+            proto_vulcan!( onceo { force_ans(bound_x) } ).solve(state)
         }
     ])
 }

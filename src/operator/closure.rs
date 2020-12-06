@@ -17,8 +17,8 @@ impl<U: User> Closure<U> {
 }
 
 impl<U: User> Solver<U> for Closure<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
-        (*self.f)().apply(state)
+    fn solve(&self, state: State<U>) -> Stream<U> {
+        (*self.f)().solve(state)
     }
 }
 

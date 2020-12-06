@@ -30,7 +30,7 @@ impl<U: User> PlusZ<U> {
 }
 
 impl<U: User> Solver<U> for PlusZ<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(PlusZConstraint::new(
             self.u.clone(),
             self.v.clone(),

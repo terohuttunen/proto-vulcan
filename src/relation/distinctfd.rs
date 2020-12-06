@@ -26,7 +26,7 @@ impl<U: User> DistinctFd<U> {
 }
 
 impl<U: User> Solver<U> for DistinctFd<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(DistinctFdConstraint::new(self.u.clone()));
         Stream::from(c.run(state))
     }

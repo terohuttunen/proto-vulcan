@@ -19,7 +19,7 @@ impl<U: User> Anyo<U> {
 }
 
 impl<U: User> Solver<U> for Anyo<U> {
-    fn apply(&self, state: State<U>) -> Stream<U> {
+    fn solve(&self, state: State<U>) -> Stream<U> {
         let g = Rc::clone(&self.g);
         let g2 = Rc::clone(&self.g);
         let goal = proto_vulcan!(
@@ -30,7 +30,7 @@ impl<U: User> Solver<U> for Anyo<U> {
                 },
             }
         );
-        goal.apply(state)
+        goal.solve(state)
     }
 }
 
