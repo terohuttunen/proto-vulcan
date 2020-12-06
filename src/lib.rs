@@ -172,7 +172,7 @@
 //! use proto_vulcan::operator::condu;
 //! use proto_vulcan::operator::OperatorParam;
 //!
-//! pub fn onceo(param: OperatorParam<U>) -> Goal {
+//! pub fn onceo<U: User>(param: OperatorParam<U>) -> Goal<U> {
 //!    let g = crate::operator::all::All::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }
