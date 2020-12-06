@@ -1,6 +1,6 @@
 [package]
 name = "proto-vulcan"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Tero Huttunen <tero.huttunen@ultic.io>"]
 description = "A miniKanren-family relational logic programming language embedded in Rust"
 edition = "2018"
@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 repository = "https://github.com/terohuttunen/proto-vulcan/"
 
 [dependencies]
-proto-vulcan-macros = { version = "=0.1.3", path = "macros" }
+proto-vulcan-macros = { version = "=0.1.4", path = "macros" }
 derivative = "2.1"
 
 [dev-dependencies]
