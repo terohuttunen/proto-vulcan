@@ -111,12 +111,12 @@ impl LTerm {
         match self.as_ref() {
             LTermInner::Projection(p) => {
                 let ptr: *const LTermInner = self.inner.as_ref();
-                let projected =  f(p).into_inner();
+                let projected = f(p).into_inner();
                 let _ = unsafe {
                     let mut_ptr = ptr as *mut LTermInner;
                     std::ptr::replace(mut_ptr, projected.as_ref().clone())
                 };
-            },
+            }
             _ => panic!("Cannot project non-Projection LTerm."),
         }
     }
@@ -613,15 +613,13 @@ impl Extend<LTerm> for LTerm {
 
 #[derive(Clone, Debug)]
 pub struct LTermIter<'a> {
-    maybe_u: Option<&'a LTerm>,
-    maybe_last_improper: Option<&'a LTerm>,
+    maybe_next: Option<&'a LTerm>,
 }
 
 impl<'a> LTermIter<'a> {
     pub fn new(u: &'a LTerm) -> LTermIter<'a> {
         LTermIter {
-            maybe_u: Some(u),
-            maybe_last_improper: None,
+            maybe_next: Some(u),
         }
     }
 }
@@ -630,31 +628,32 @@ impl<'a> Iterator for LTermIter<'a> {
     type Item = &'a LTerm;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.maybe_last_improper.take() {
-            Some(u) => return Some(u),
-            None => (),
-        };
-
-        // Take u from iterator
-        let u = match self.maybe_u.take() {
-            Some(u) => u,
-            None => return None,
-        };
-
-        // Replace u in iterator with its tail and return head
-        match u.as_ref() {
-            LTermInner::Cons(head, tail) => {
-                if tail.is_list() {
-                    let _ = self.maybe_u.replace(tail);
+        // Replace maybe_next in iterator with its tail and return head
+        match self.maybe_next.map(|x| x.as_ref()) {
+            Some(LTermInner::Cons(head, tail)) => {
+                if tail.is_empty() {
+                    // The iterator has finished the list after this one
+                    self.maybe_next = None;
                 } else {
-                    let _ = self.maybe_last_improper.replace(tail);
+                    let _ = self.maybe_next.replace(tail);
                 }
+
                 Some(head)
-            }
-            _ => None,
+            },
+            Some(LTermInner::Empty) => {
+                self.maybe_next = None;
+                None
+            },
+            Some(_) => {
+                // If the list is improper, it ends in non-cons term.
+                self.maybe_next.take()
+            },
+            _ => None, // Iterator is finished
         }
     }
 }
+
+impl<'a> std::iter::FusedIterator for LTermIter<'a> {}
 
 impl<'a> IntoIterator for &'a LTerm {
     type Item = &'a LTerm;
@@ -704,6 +703,16 @@ mod test {
     #[test]
     fn test_lterm_iter_3() {
         let u = lterm!([1, 2, 3]);
+        let mut iter = u.iter();
+        assert_eq!(iter.next().unwrap(), &1);
+        assert_eq!(iter.next().unwrap(), &2);
+        assert_eq!(iter.next().unwrap(), &3);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_lterm_iter_4() {
+        let u = lterm!([1, 2 | 3]);
         let mut iter = u.iter();
         assert_eq!(iter.next().unwrap(), &1);
         assert_eq!(iter.next().unwrap(), &2);
