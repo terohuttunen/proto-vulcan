@@ -80,6 +80,32 @@
 //! }
 //! ```
 //!
+//! ## Match-operator
+//! Pattern matching to the tree-terms is done with the `match`-operator, which corresponds to
+//! miniKanren `matche`. Matche, matchu, and matcha are also available.
+//! ```rust
+//! # extern crate proto_vulcan;
+//! # use proto_vulcan::*;
+//! pub fn membero<U: User>(x: LTerm, l: LTerm) -> Goal<U> {
+//!     proto_vulcan_closure!(match l {
+//!         [head | _] => head == x,
+//!         [_ | rest] => membero(x, rest),
+//!     })
+//! }
+//! # fn main() {}
+//! ```
+//!
+//! ## For-operator
+//! For the same effect as miniKanren's `everyg`, proto-vulcan uses the `for`-operator, which
+//! ensures that a goal `g` succeeds for all `x` in collection `coll`. The collection must be such
+//! that it implements `IntoIterator<Item = &LTerm>`.
+//! ```ignore
+//! for x in &coll {
+//!     g
+//! }
+//!
+//! ```
+//!
 //! ## Embedding in Rust
 //! To embed proto-vulcan in Rust, four macros are used: `proto_vulcan!`, `proto_vulcan_closure!`,
 //! `proto_vulcan_query!`, and `lterm!`.

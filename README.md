@@ -5,7 +5,7 @@ In addition to core miniKanren language, proto-vulcan currently provides support
 * Disequality constraints CLP(Tree)
 * Finite-domain constraints CLP(FD)
 * Various operators: anyo, conda, condu, onceo, project
-* Pattern matching
+* Pattern matching: matche, matcha, matchu
 * Writing goals in Rust embedded inline within proto-vulcan
 * User extension interface
 
