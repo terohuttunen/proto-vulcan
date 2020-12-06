@@ -3,7 +3,7 @@ use proto_vulcan::relation::membero;
 use proto_vulcan::*;
 use std::time::Instant;
 
-fn righto<U: User>(x: LTerm, y: LTerm, l: LTerm) -> Goal<U> {
+fn righto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
     proto_vulcan_closure!(
         match l {
             [first, second | _] => {
@@ -15,7 +15,7 @@ fn righto<U: User>(x: LTerm, y: LTerm, l: LTerm) -> Goal<U> {
     )
 }
 
-fn easy_zebrao<U: User>(houses: LTerm) -> Goal<U> {
+fn easy_zebrao(houses: LTerm) -> Goal {
     proto_vulcan!([
         // Italian lives in the second house
         [_, ["italian", _], _] == houses,

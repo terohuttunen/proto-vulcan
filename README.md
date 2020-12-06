@@ -49,7 +49,7 @@ use the latter variant.
 ```rust
 use proto_vulcan::*;
 
-pub fn appendo<U: User>(l: LTerm, s: LTerm, ls: LTerm) -> Goal<U> {
+pub fn appendo(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
     proto_vulcan_closure!(
         match [l, s, ls] {
             [[], x, x] => ,

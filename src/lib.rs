@@ -172,7 +172,7 @@
 //! use proto_vulcan::operator::condu;
 //! use proto_vulcan::operator::OperatorParam;
 //!
-//! pub fn onceo<U: User>(param: OperatorParam<U>) -> Goal<U> {
+//! pub fn onceo(param: OperatorParam<U>) -> Goal {
 //!    let g = crate::operator::all::All::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }
@@ -189,7 +189,7 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //!
-//! pub fn appendo<U: User>(l: LTerm, s: LTerm, ls: LTerm) -> Goal<U> {
+//! pub fn appendo(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
 //!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,
@@ -249,7 +249,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::*;
-//! fn example<U: User>() -> Goal<U> {
+//! fn example() -> Goal {
 //!     proto_vulcan!(
 //!         fngoal |state| {
 //!             // There could be more Rust here modifying the `state`

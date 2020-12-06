@@ -6,7 +6,7 @@ use proto_vulcan::relation::permuteo;
 use proto_vulcan::*;
 use std::time::Instant;
 
-fn lefto<U: User>(x: LTerm, y: LTerm, l: LTerm) -> Goal<U> {
+fn lefto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
     proto_vulcan_closure!(
         match l {
             [head | rest] => {
@@ -19,7 +19,7 @@ fn lefto<U: User>(x: LTerm, y: LTerm, l: LTerm) -> Goal<U> {
 }
 
 // Of Landon and Jason, one has the 7:30pm reservation and the other loves mozzarella.
-fn rule1<U: User>(answers: LTerm) -> Goal<U> {
+fn rule1(answers: LTerm) -> Goal {
     proto_vulcan!(
         |c1, r1, c2, r2| {
             membero(["landon", _, c1, r1], answers),
@@ -33,12 +33,12 @@ fn rule1<U: User>(answers: LTerm) -> Goal<U> {
 }
 
 // The blue-cheese enthusiast subscribed to Fortune.
-fn rule2<U: User>(answers: LTerm) -> Goal<U> {
+fn rule2(answers: LTerm) -> Goal {
     proto_vulcan!(membero([_, "fortune", "blue-cheese", _], answers))
 }
 
 // The muenster enthusiast didn't subscribe to Vogue.
-fn rule3<U: User>(answers: LTerm) -> Goal<U> {
+fn rule3(answers: LTerm) -> Goal {
     proto_vulcan!(
         |s1, s2| {
             [_, "vogue", _, _] == s1,
@@ -53,7 +53,7 @@ fn rule3<U: User>(answers: LTerm) -> Goal<U> {
 // The 5 people were the Fortune subscriber, Landon, the person with a
 // reservation at 5:00pm, the mascarpone enthusiast, and the Vogue
 // subscriber.
-fn rule4<U: User>(answers: LTerm) -> Goal<U> {
+fn rule4(answers: LTerm) -> Goal {
     proto_vulcan!(
         permuteo(
             [[_, "fortune", _, _], ["landon", _, _, _], [_, _, _, "5:00pm"], [_, _, "mascarpone", _], [_, "vogue", _, _]],
@@ -63,7 +63,7 @@ fn rule4<U: User>(answers: LTerm) -> Goal<U> {
 }
 
 // The person with a reservation at 5:00pm didn't subscribe to Time.
-fn rule5<U: User>(answers: LTerm) -> Goal<U> {
+fn rule5(answers: LTerm) -> Goal {
     proto_vulcan!(
         |s1, s2| {
             [_, _, _, "5:00pm"] == s1,
@@ -76,7 +76,7 @@ fn rule5<U: User>(answers: LTerm) -> Goal<U> {
 }
 
 // The Cosmopolitan subscriber has an earlier reservation than the mascarpone enthusiast.
-fn rule6<U: User>(answers: LTerm) -> Goal<U> {
+fn rule6(answers: LTerm) -> Goal {
     proto_vulcan!(
         |r1, r2| {
             membero([_, "cosmopolitan", _, r1], answers),
@@ -87,7 +87,7 @@ fn rule6<U: User>(answers: LTerm) -> Goal<U> {
 }
 
 // Bailey has a later reservation than the blue-cheese enthusiast.
-fn rule7<U: User>(answers: LTerm) -> Goal<U> {
+fn rule7(answers: LTerm) -> Goal {
     proto_vulcan!(
         |r1, r2| {
             membero([_, _, "blue-cheese", r1], answers),
@@ -99,7 +99,7 @@ fn rule7<U: User>(answers: LTerm) -> Goal<U> {
 
 // Either the person with a reservation at 7:00pm or the person with a
 // reservation at 7:30pm subscribed to Fortune.
-fn rule8<U: User>(answers: LTerm) -> Goal<U> {
+fn rule8(answers: LTerm) -> Goal {
     proto_vulcan!(
         |r| {
             membero([_, "fortune", _, r], answers),
@@ -112,7 +112,7 @@ fn rule8<U: User>(answers: LTerm) -> Goal<U> {
 }
 
 // Landon has a later reservation than the Time subscriber.
-fn rule9<U: User>(answers: LTerm) -> Goal<U> {
+fn rule9(answers: LTerm) -> Goal {
     proto_vulcan!(
         |r1, r2| {
             membero([_, "time", _, r1], answers),
@@ -123,7 +123,7 @@ fn rule9<U: User>(answers: LTerm) -> Goal<U> {
 }
 
 // The Fortune subscriber is not Jamari.
-fn rule10<U: User>(answers: LTerm) -> Goal<U> {
+fn rule10(answers: LTerm) -> Goal {
     proto_vulcan!(
         |s1, s2| {
             [_, "fortune", _, _] == s1,
@@ -136,11 +136,11 @@ fn rule10<U: User>(answers: LTerm) -> Goal<U> {
 }
 
 // The person with a reservation at 5:00pm loves mozzarella.
-fn rule11<U: User>(answers: LTerm) -> Goal<U> {
+fn rule11(answers: LTerm) -> Goal {
     proto_vulcan!(membero([_, _, "mozzarella", "5:00pm"], answers))
 }
 
-fn hard_zebrao<U: User>(answers: LTerm) -> Goal<U> {
+fn hard_zebrao(answers: LTerm) -> Goal {
     let people = lterm!([_, _, _, _, _]);
     let magazines = lterm!([_, _, _, _, _]);
     let cheeses = lterm!([_, _, _, _, _]);
@@ -152,7 +152,7 @@ fn hard_zebrao<U: User>(answers: LTerm) -> Goal<U> {
         cheeses.iter(),
         reservations.iter()
     ) {
-        ans = LTerm::cons(lterm!([p, m, c, r]), ans);
+        ans.extend(Some(lterm!([p, m, c, r])));
     }
     proto_vulcan!([
         answers == ans,
