@@ -1,5 +1,5 @@
 /// distinctfd finite domain constraint
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, DistinctFdConstraint};
@@ -25,7 +25,7 @@ impl<U: User> DistinctFd<U> {
     }
 }
 
-impl<U: User> Solver<U> for DistinctFd<U> {
+impl<U: User> Solve<U> for DistinctFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(DistinctFdConstraint::new(self.u.clone()));
         Stream::from(c.run(state))

@@ -1,4 +1,4 @@
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::operator::all::All;
 use crate::operator::ForOperatorParam;
@@ -39,7 +39,7 @@ where
     }
 }
 
-impl<U, T> Solver<U> for Everyg<U, T>
+impl<U, T> Solve<U> for Everyg<U, T>
 where
     U: User,
     T: Debug + 'static,

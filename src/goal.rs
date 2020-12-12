@@ -12,14 +12,14 @@ where
 {
     Succeed,
     Fail,
-    Inner(Rc<dyn Solver<U>>),
+    Inner(Rc<dyn Solve<U>>),
 }
 
 impl<U> Goal<U>
 where
     U: User
 {
-    pub fn new<T: Solver<U> + 'static>(u: T) -> Goal<U> {
+    pub fn new<T: Solve<U> + 'static>(u: T) -> Goal<U> {
         Goal::Inner(Rc::new(u))
     }
 
@@ -57,7 +57,7 @@ where
 // A goal is a function which, given an input state, will give an output state (or infinite stream
 // of output states). It encapsulates a logic query that is evaluated as infinite stream of
 // states that solve the query at any given time.
-pub trait Solver<U = EmptyUser>: fmt::Debug
+pub trait Solve<U = EmptyUser>: fmt::Debug
 where
     U: User,
 {

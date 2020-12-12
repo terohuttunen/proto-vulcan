@@ -4,7 +4,7 @@
 ///
 /// [a0 AND a1 AND ...] OR
 /// [b0 AND b1 AND ...] OR ...
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
@@ -38,7 +38,7 @@ impl<U: User> Conda<U> {
     }
 }
 
-impl<U: User> Solver<U> for Conda<U> {
+impl<U: User> Solve<U> for Conda<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let mut stream = self.first.solve(state.clone());
 

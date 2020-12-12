@@ -1,4 +1,4 @@
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
@@ -24,7 +24,7 @@ impl<U: User> Diseq<U> {
     }
 }
 
-impl<U: User> Solver<U> for Diseq<U> {
+impl<U: User> Solve<U> for Diseq<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         // Return state where u and v are unified under s, or None if unification is not possible
         Stream::from(state.disunify(&self.u, &self.v))

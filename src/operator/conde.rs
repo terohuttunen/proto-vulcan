@@ -1,4 +1,4 @@
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
@@ -32,7 +32,7 @@ impl<U: User> Conde<U> {
     }
 }
 
-impl<U: User> Solver<U> for Conde<U> {
+impl<U: User> Solve<U> for Conde<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let mut stream = Stream::Empty;
 

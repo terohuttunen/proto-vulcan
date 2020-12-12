@@ -1,4 +1,4 @@
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
@@ -16,7 +16,7 @@ impl<U: User> Fresh<U> {
     }
 }
 
-impl<U: User> Solver<U> for Fresh<U> {
+impl<U: User> Solve<U> for Fresh<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let goal = self.body.clone();
         Stream::Lazy(LazyStream::from_goal(goal, state))

@@ -1,4 +1,4 @@
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::operator::all::All;
 use crate::operator::ProjectOperatorParam;
@@ -18,7 +18,7 @@ impl<U: User> Project<U> {
     }
 }
 
-impl<U: User> Solver<U> for Project<U> {
+impl<U: User> Solve<U> for Project<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         // Walk* each projected variable with the current substitution
         for v in self.variables.iter() {
@@ -56,7 +56,7 @@ mod tests {
         }
     }
 
-    impl<U: User> Solver<U> for SqEq<U> {
+    impl<U: User> Solve<U> for SqEq<U> {
         fn solve(&self, state: State<U>) -> Stream<U> {
             let u = self.u.clone();
             let v = self.v.clone();

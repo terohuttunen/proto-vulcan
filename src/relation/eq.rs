@@ -1,4 +1,4 @@
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
@@ -24,7 +24,7 @@ impl<U: User> Eq<U> {
     }
 }
 
-impl<U: User> Solver<U> for Eq<U> {
+impl<U: User> Solve<U> for Eq<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         Stream::from(state.unify(&self.u, &self.v))
     }

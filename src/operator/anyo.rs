@@ -1,4 +1,4 @@
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::operator::conde::conde;
 use crate::operator::OperatorParam;
@@ -17,7 +17,7 @@ impl<U: User> Anyo<U> {
     }
 }
 
-impl<U: User> Solver<U> for Anyo<U> {
+impl<U: User> Solve<U> for Anyo<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let g = self.g.clone();
         let g2 = self.g.clone();

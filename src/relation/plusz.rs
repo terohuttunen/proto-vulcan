@@ -1,5 +1,5 @@
 /// Constrains u + v = w
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, PlusZConstraint};
@@ -29,7 +29,7 @@ impl<U: User> PlusZ<U> {
     }
 }
 
-impl<U: User> Solver<U> for PlusZ<U> {
+impl<U: User> Solve<U> for PlusZ<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(PlusZConstraint::new(
             self.u.clone(),

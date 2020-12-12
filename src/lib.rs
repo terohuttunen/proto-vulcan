@@ -331,7 +331,7 @@ pub mod user;
 #[macro_use]
 pub mod query;
 
-pub use goal::{Goal, Solver};
+pub use goal::{Goal, Solve};
 pub use lterm::LTerm;
 pub use lvalue::LValue;
 pub use state::Constraint;

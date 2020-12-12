@@ -1,5 +1,5 @@
 /// Constrains u * v = w
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, TimesZConstraint};
@@ -29,7 +29,7 @@ impl<U: User> TimesZ<U> {
     }
 }
 
-impl<U: User> Solver<U> for TimesZ<U> {
+impl<U: User> Solve<U> for TimesZ<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(TimesZConstraint::new(
             self.u.clone(),

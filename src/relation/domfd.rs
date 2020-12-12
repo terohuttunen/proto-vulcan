@@ -1,5 +1,5 @@
 /// Constrains x in domain
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::FiniteDomain;
 use crate::state::State;
@@ -27,7 +27,7 @@ impl<U: User> DomFd<U> {
     }
 }
 
-impl<U: User> Solver<U> for DomFd<U> {
+impl<U: User> Solve<U> for DomFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let xwalk = state.smap_ref().walk(&self.x).clone();
         Stream::from(state.process_domain(&xwalk, Rc::clone(&self.domain) as Rc<FiniteDomain>))

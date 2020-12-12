@@ -1,5 +1,5 @@
 /// Less than or equal FD
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, LessThanOrEqualFdConstraint};
@@ -27,7 +27,7 @@ impl<U: User> LessThanOrEqualFd<U> {
     }
 }
 
-impl<U: User> Solver<U> for LessThanOrEqualFd<U> {
+impl<U: User> Solve<U> for LessThanOrEqualFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(LessThanOrEqualFdConstraint::new(
             self.u.clone(),

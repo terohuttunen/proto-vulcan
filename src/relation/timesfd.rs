@@ -1,5 +1,5 @@
 /// Constrains u * v = w finite domains
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, TimesFdConstraint};
@@ -29,7 +29,7 @@ impl<U: User> TimesFd<U> {
     }
 }
 
-impl<U: User> Solver<U> for TimesFd<U> {
+impl<U: User> Solve<U> for TimesFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let c = Rc::new(TimesFdConstraint::new(
             self.u.clone(),

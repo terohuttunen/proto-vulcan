@@ -1,4 +1,4 @@
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::operator::ClosureOperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
@@ -15,7 +15,7 @@ impl<U: User> Closure<U> {
     }
 }
 
-impl<U: User> Solver<U> for Closure<U> {
+impl<U: User> Solve<U> for Closure<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         (*self.f)().solve(state)
     }

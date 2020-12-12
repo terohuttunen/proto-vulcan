@@ -1,5 +1,5 @@
 /// Constrain disequality in finite domains
-use crate::goal::{Goal, Solver};
+use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::state::{BaseConstraint, DiseqFdConstraint};
@@ -27,7 +27,7 @@ impl<U: User> DiseqFd<U> {
     }
 }
 
-impl<U: User> Solver<U> for DiseqFd<U> {
+impl<U: User> Solve<U> for DiseqFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let u = self.u.clone();
         let v = self.v.clone();
