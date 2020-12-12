@@ -1,33 +1,5 @@
-use crate::goal::{Goal, Solver};
-use crate::state::State;
-use crate::stream::Stream;
+use crate::goal::Goal;
 use crate::user::User;
-use std::marker::PhantomData;
-
-#[derive(Derivative)]
-#[derivative(Debug)]
-pub struct Succeed<U: User> {
-    #[derivative(Debug = "ignore")]
-    _phantom: PhantomData<U>,
-}
-
-impl<U: User> Succeed<U> {
-    pub fn new() -> Goal<U> {
-        Goal::new(Succeed {
-            _phantom: PhantomData,
-        })
-    }
-}
-
-impl<U: User> Solver<U> for Succeed<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        Stream::from(state)
-    }
-
-    fn is_succeed(&self) -> bool {
-        true
-    }
-}
 
 /// A relation that succeeds.
 ///
@@ -49,5 +21,5 @@ impl<U: User> Solver<U> for Succeed<U> {
 /// }
 /// ```
 pub fn succeed<U: User>() -> Goal<U> {
-    Succeed::new()
+    Goal::succeed()
 }

@@ -6,11 +6,13 @@ use std::fmt;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub struct Goal<U = EmptyUser>
+pub enum Goal<U = EmptyUser>
 where
     U: User
 {
-    inner: Rc<dyn Solver<U>>,
+    Succeed,
+    Fail,
+    Inner(Rc<dyn Solver<U>>),
 }
 
 impl<U> Goal<U>
@@ -18,21 +20,37 @@ where
     U: User
 {
     pub fn new<T: Solver<U> + 'static>(u: T) -> Goal<U> {
-        Goal {
-            inner: Rc::new(u),
-        }
+        Goal::Inner(Rc::new(u))
+    }
+
+    pub fn succeed() -> Goal<U> {
+        Goal::Succeed
+    }
+
+    pub fn fail() -> Goal<U> {
+        Goal::Fail
     }
 
     pub fn solve(&self, state: State<U>) -> Stream<U> {
-        self.inner.solve(state)
+        match self {
+            Goal::Succeed => Stream::from(state),
+            Goal::Fail => Stream::empty(),
+            Goal::Inner(inner) => inner.solve(state),
+        }
     }
 
     pub fn is_succeed(&self) -> bool {
-        self.inner.is_succeed()
+        match self {
+            Goal::Succeed => true,
+            _ => false,
+        }
     }
 
     pub fn is_fail(&self) -> bool {
-        self.inner.is_fail()
+        match self {
+            Goal::Fail => true,
+            _ => false,
+        }
     }
 }
 
@@ -45,16 +63,4 @@ where
 {
     /// Generate a stream of solutions to the goal by applying it to some initial state.
     fn solve(&self, state: State<U>) -> Stream<U>;
-
-    /// A function that returns `true` only if the goal is `Succeed()`. This is used to
-    /// prune the search tree.
-    fn is_succeed(&self) -> bool {
-        false
-    }
-
-    /// A function that returns `true` only if the goal is `Fail()`. This is used to
-    /// prune the search tree.
-    fn is_fail(&self) -> bool {
-        false
-    }
 }
