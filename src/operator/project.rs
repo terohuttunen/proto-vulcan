@@ -5,7 +5,6 @@ use crate::operator::ProjectOperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Project<U: User> {
@@ -15,7 +14,7 @@ pub struct Project<U: User> {
 
 impl<U: User> Project<U> {
     pub fn new(variables: Vec<LTerm>, body: Goal<U>) -> Goal<U> {
-        Rc::new(Project { variables, body }) as Goal<U>
+        Goal::new(Project { variables, body }) as Goal<U>
     }
 }
 
@@ -49,7 +48,7 @@ mod tests {
 
     impl<U: User> SqEq<U> {
         pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
-            Rc::new(SqEq {
+            Goal::new(SqEq {
                 u,
                 v,
                 _phantom: PhantomData,

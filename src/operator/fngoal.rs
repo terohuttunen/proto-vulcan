@@ -4,7 +4,6 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::fmt;
-use std::rc::Rc;
 
 pub struct FnGoal<U: User> {
     f: Box<dyn Fn(State<U>) -> Stream<U>>,
@@ -12,7 +11,7 @@ pub struct FnGoal<U: User> {
 
 impl<U: User> FnGoal<U> {
     pub fn new(f: Box<dyn Fn(State<U>) -> Stream<U>>) -> Goal<U> {
-        Rc::new(FnGoal { f })
+        Goal::new(FnGoal { f })
     }
 }
 

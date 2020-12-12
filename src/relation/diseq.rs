@@ -4,7 +4,6 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -17,7 +16,7 @@ pub struct Diseq<U: User> {
 
 impl<U: User> Diseq<U> {
     pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
-        Rc::new(Diseq {
+        Goal::new(Diseq {
             u,
             v,
             _phantom: PhantomData,

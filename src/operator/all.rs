@@ -2,7 +2,6 @@ use crate::goal::{Goal, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct All<U: User> {
@@ -12,7 +11,7 @@ pub struct All<U: User> {
 
 impl<U: User> All<U> {
     pub fn new(goal_1: Goal<U>, goal_2: Goal<U>) -> Goal<U> {
-        Rc::new(All { goal_1, goal_2 })
+        Goal::new(All { goal_1, goal_2 })
     }
 
     pub fn from_vec(mut v: Vec<Goal<U>>) -> Goal<U> {
@@ -55,8 +54,8 @@ impl<U: User> All<U> {
 
 impl<U: User> Solver<U> for All<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let goal_1 = Rc::clone(&self.goal_1);
-        let goal_2 = Rc::clone(&self.goal_2);
+        let goal_1 = self.goal_1.clone();
+        let goal_2 = self.goal_2.clone();
         let stream = Stream::Lazy(LazyStream::from_goal(goal_1, state));
 
         Stream::bind(stream, goal_2)

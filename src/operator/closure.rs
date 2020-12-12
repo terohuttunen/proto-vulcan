@@ -4,7 +4,6 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::fmt;
-use std::rc::Rc;
 
 pub struct Closure<U: User> {
     f: Box<dyn Fn() -> Goal<U>>,
@@ -12,7 +11,7 @@ pub struct Closure<U: User> {
 
 impl<U: User> Closure<U> {
     pub fn new(param: ClosureOperatorParam<U>) -> Goal<U> {
-        Rc::new(Closure { f: param.f })
+        Goal::new(Closure { f: param.f })
     }
 }
 

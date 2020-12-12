@@ -18,7 +18,7 @@ pub struct DistinctFd<U: User> {
 
 impl<U: User> DistinctFd<U> {
     pub fn new(u: LTerm) -> Goal<U> {
-        Rc::new(DistinctFd {
+        Goal::new(DistinctFd {
             u,
             _phantom: PhantomData,
         })

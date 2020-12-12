@@ -5,7 +5,6 @@ use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Anyo<U: User> {
@@ -14,14 +13,14 @@ pub struct Anyo<U: User> {
 
 impl<U: User> Anyo<U> {
     pub fn new(g: Goal<U>) -> Goal<U> {
-        Rc::new(Anyo { g })
+        Goal::new(Anyo { g })
     }
 }
 
 impl<U: User> Solver<U> for Anyo<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let g = Rc::clone(&self.g);
-        let g2 = Rc::clone(&self.g);
+        let g = self.g.clone();
+        let g2 = self.g.clone();
         let goal = proto_vulcan!(
             conde {
                 g,

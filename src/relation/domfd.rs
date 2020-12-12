@@ -19,7 +19,7 @@ pub struct DomFd<U: User> {
 
 impl<U: User> DomFd<U> {
     pub fn new(x: LTerm, domain: FiniteDomain) -> Goal<U> {
-        Rc::new(DomFd {
+        Goal::new(DomFd {
             x,
             domain: Rc::new(domain),
             _phantom: PhantomData,

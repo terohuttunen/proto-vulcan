@@ -20,7 +20,7 @@ pub struct TimesZ<U: User> {
 
 impl<U: User> TimesZ<U> {
     pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
-        Rc::new(TimesZ {
+        Goal::new(TimesZ {
             u,
             v,
             w,

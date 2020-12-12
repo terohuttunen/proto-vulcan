@@ -19,7 +19,7 @@ pub struct DiseqFd<U: User> {
 
 impl<U: User> DiseqFd<U> {
     pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
-        Rc::new(DiseqFd {
+        Goal::new(DiseqFd {
             u,
             v,
             _phantom: PhantomData,

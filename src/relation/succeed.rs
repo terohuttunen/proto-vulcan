@@ -3,7 +3,6 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -14,7 +13,7 @@ pub struct Succeed<U: User> {
 
 impl<U: User> Succeed<U> {
     pub fn new() -> Goal<U> {
-        Rc::new(Succeed {
+        Goal::new(Succeed {
             _phantom: PhantomData,
         })
     }

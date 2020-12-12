@@ -3,7 +3,6 @@ use crate::operator::all::All;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Any<U: User> {
@@ -13,7 +12,7 @@ pub struct Any<U: User> {
 
 impl<U: User> Any<U> {
     pub fn new(goal_1: Goal<U>, goal_2: Goal<U>) -> Goal<U> {
-        Rc::new(Any { goal_1, goal_2 })
+        Goal::new(Any { goal_1, goal_2 })
     }
 
     pub fn from_vec(mut v: Vec<Goal<U>>) -> Goal<U> {

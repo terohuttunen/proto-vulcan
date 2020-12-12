@@ -11,7 +11,6 @@ use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Condu<U: User> {
@@ -33,7 +32,7 @@ impl<U: User> Condu<U> {
             if !clause.is_empty() {
                 let rest = All::from_vec(clause.split_off(1));
                 let first = clause.pop().unwrap();
-                next = Rc::new(Condu { first, rest, next });
+                next = Goal::new(Condu { first, rest, next });
             }
         }
         next
@@ -46,7 +45,7 @@ impl<U: User> Solver<U> for Condu<U> {
 
         // Take only first item from the stream of first goal by truncating the stream
         match stream.trunc() {
-            Some(_) => Stream::bind(stream, Rc::clone(&self.rest)),
+            Some(_) => Stream::bind(stream, self.rest.clone()),
             None => self.next.solve(state),
         }
     }

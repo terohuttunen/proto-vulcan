@@ -5,7 +5,36 @@ use crate::user::User;
 use std::fmt;
 use std::rc::Rc;
 
-pub type Goal<U = EmptyUser> = Rc<dyn Solver<U>>;
+#[derive(Clone, Debug)]
+pub struct Goal<U = EmptyUser>
+where
+    U: User
+{
+    inner: Rc<dyn Solver<U>>,
+}
+
+impl<U> Goal<U>
+where
+    U: User
+{
+    pub fn new<T: Solver<U> + 'static>(u: T) -> Goal<U> {
+        Goal {
+            inner: Rc::new(u),
+        }
+    }
+
+    pub fn solve(&self, state: State<U>) -> Stream<U> {
+        self.inner.solve(state)
+    }
+
+    pub fn is_succeed(&self) -> bool {
+        self.inner.is_succeed()
+    }
+
+    pub fn is_fail(&self) -> bool {
+        self.inner.is_fail()
+    }
+}
 
 // A goal is a function which, given an input state, will give an output state (or infinite stream
 // of output states). It encapsulates a logic query that is evaluated as infinite stream of

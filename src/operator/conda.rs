@@ -10,7 +10,6 @@ use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Conda<U: User> {
@@ -32,7 +31,7 @@ impl<U: User> Conda<U> {
             if !clause.is_empty() {
                 let rest = All::from_vec(clause.split_off(1));
                 let first = clause.pop().unwrap();
-                next = Rc::new(Conda { first, rest, next });
+                next = Goal::new(Conda { first, rest, next });
             }
         }
         next
@@ -44,7 +43,7 @@ impl<U: User> Solver<U> for Conda<U> {
         let mut stream = self.first.solve(state.clone());
 
         match stream.peek() {
-            Some(_) => Stream::bind(stream, Rc::clone(&self.rest)),
+            Some(_) => Stream::bind(stream, self.rest.clone()),
             None => self.next.solve(state),
         }
     }

@@ -4,7 +4,6 @@ use crate::operator::OperatorParam;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
-use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Conde<U: User> {
@@ -13,11 +12,11 @@ pub struct Conde<U: User> {
 
 impl<U: User> Conde<U> {
     pub fn from_vec(conjunctions: Vec<Goal<U>>) -> Goal<U> {
-        Rc::new(Conde { conjunctions })
+        Goal::new(Conde { conjunctions })
     }
 
     pub fn from_array(goals: &[Goal<U>]) -> Goal<U> {
-        Rc::new(Conde {
+        Goal::new(Conde {
             conjunctions: goals.to_vec(),
         })
     }

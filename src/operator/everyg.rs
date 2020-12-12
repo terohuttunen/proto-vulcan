@@ -6,7 +6,6 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::fmt::Debug;
-use std::rc::Rc;
 
 pub struct Everyg<U, T>
 where
@@ -36,7 +35,7 @@ where
     for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
 {
     fn new(coll: T, g: Box<dyn Fn(LTerm) -> Goal<U>>) -> Goal<U> {
-        Rc::new(Everyg { coll, g })
+        Goal::new(Everyg { coll, g })
     }
 }
 

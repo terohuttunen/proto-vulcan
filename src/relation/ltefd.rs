@@ -19,7 +19,7 @@ pub struct LessThanOrEqualFd<U: User> {
 
 impl<U: User> LessThanOrEqualFd<U> {
     pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
-        Rc::new(LessThanOrEqualFd {
+        Goal::new(LessThanOrEqualFd {
             u,
             v,
             _phantom: PhantomData,

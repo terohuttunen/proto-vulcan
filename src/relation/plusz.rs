@@ -20,7 +20,7 @@ pub struct PlusZ<U: User> {
 
 impl<U: User> PlusZ<U> {
     pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
-        Rc::new(PlusZ {
+        Goal::new(PlusZ {
             u,
             v,
             w,
