@@ -486,6 +486,7 @@ impl PartialEq<LTerm> for LValue {
     }
 }
 
+
 impl PartialEq<bool> for LTerm {
     fn eq(&self, other: &bool) -> bool {
         match self.as_ref() {
@@ -585,43 +586,36 @@ impl Default for LTerm {
 }
 
 impl FromIterator<LTerm> for LTerm {
-    // Because it is easier to build cons-list in reverse order, this inverts the order of
-    // the original iterator.
     fn from_iter<T: IntoIterator<Item = LTerm>>(iter: T) -> Self {
-        let mut c = LTerm::empty_list();
+        let mut list_head = LTerm::empty_list();
+        let mut list_tail = &mut list_head;
         for elem in iter {
-            c = LTerm::cons(elem, c);
+            let _ = std::mem::replace(list_tail.as_mut(), LTermInner::Cons(elem, LTerm::empty_list()));
+            list_tail = list_tail.tail_mut().unwrap();
         }
-        c
+        list_head
     }
 }
 
 impl Extend<LTerm> for LTerm {
-    fn extend<T: IntoIterator<Item = LTerm>>(&mut self, iter: T) {
+    fn extend<T: IntoIterator<Item = LTerm>>(&mut self, coll: T) {
         if !self.is_list() {
             panic!("Only list type (Empty or Cons) LTerms can be extended.");
         }
 
-        match self.as_mut() {
-            LTermInner::Cons(_, tail) => {
-                // Something to temporarily replace the tail with
-                let mut sentinel = LTerm::empty_list();
-
-                for elem in iter {
-                    // Replace tail with sentinel
-                    let t = std::mem::replace(tail, sentinel);
-
-                    // Create new LTerm with contains old tail and replace sentinel with the
-                    // new LTerm.
-                    let n = LTerm::cons(elem, t);
-                    sentinel = std::mem::replace(tail, n);
-                }
+        // Find tail of the list
+        let mut tail = self;
+        loop {
+            if tail.is_empty() {
+                break;
+            } else {
+                tail = tail.tail_mut().unwrap();
             }
-            LTermInner::Empty => {
-                *self = LTerm::from_iter(iter);
-            }
-            _ => unreachable!(),
         }
+
+        // Swap in extension as new tail.
+        let mut extension: LTerm = coll.into_iter().collect();
+        std::mem::swap(tail.as_mut(), extension.as_mut());
     }
 }
 
@@ -738,7 +732,7 @@ mod test {
     fn test_lterm_from_iter_1() {
         let v = vec![lterm!(1), lterm!(2), lterm!(3)];
         let u = LTerm::from_iter(v);
-        assert!(u == lterm!([3, 2, 1]));
+        assert!(u == lterm!([1, 2, 3]));
     }
 
     #[test]
@@ -746,7 +740,7 @@ mod test {
         let v = vec![lterm!(1), lterm!(2), lterm!(3)];
         let mut u = lterm!([]);
         u.extend(v);
-        assert!(u == lterm!([3, 2, 1]));
+        assert!(u == lterm!([1, 2, 3]));
     }
 
     #[test]
@@ -754,6 +748,6 @@ mod test {
         let v = vec![lterm!(1), lterm!(2), lterm!(3)];
         let mut u = lterm!([4, 5, 6]);
         u.extend(v);
-        assert!(u == lterm!([4, 3, 2, 1, 5, 6]));
+        assert!(u == lterm!([4, 5, 6, 1, 2, 3]));
     }
 }
