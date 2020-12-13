@@ -317,6 +317,20 @@ impl LTerm {
         }
     }
 
+    pub fn head_mut(&mut self) -> Option<&mut LTerm> {
+        match self.as_mut() {
+            LTermInner::Cons(head, _) => Some(head),
+            _ => None,
+        }
+    }
+
+    pub fn tail_mut(&mut self) -> Option<&mut LTerm> {
+        match self.as_mut() {
+            LTermInner::Cons(_, tail) => Some(tail),
+            _ => None,
+        }
+    }
+
     pub fn iter(&self) -> LTermIter<'_> {
         LTermIter::new(self)
     }
