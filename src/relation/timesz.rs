@@ -2,11 +2,10 @@
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
-use crate::state::{BaseConstraint, TimesZConstraint};
+use crate::state::TimesZConstraint;
 use crate::stream::Stream;
 use crate::user::User;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -31,11 +30,11 @@ impl<U: User> TimesZ<U> {
 
 impl<U: User> Solve<U> for TimesZ<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = Rc::new(TimesZConstraint::new(
+        let c = TimesZConstraint::new(
             self.u.clone(),
             self.v.clone(),
             self.w.clone(),
-        ));
+        );
         Stream::from(c.run(state))
     }
 }

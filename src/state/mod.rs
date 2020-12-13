@@ -340,7 +340,7 @@ impl<U: User> State<U> {
                 // Unification succeeded with extended substitution map. Instead of adding the
                 // substitutions to the state, we add corresponding constraint to disequality
                 // constraint store, against which later unifications will be verified.
-                let c = Rc::new(DisequalityConstraint::from(extension));
+                let c = DisequalityConstraint::new(extension);
                 Ok(self.with_constraint(c))
             }
         } else {

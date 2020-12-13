@@ -2,11 +2,10 @@
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
-use crate::state::{BaseConstraint, PlusZConstraint};
+use crate::state::PlusZConstraint;
 use crate::stream::Stream;
 use crate::user::User;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -31,11 +30,11 @@ impl<U: User> PlusZ<U> {
 
 impl<U: User> Solve<U> for PlusZ<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = Rc::new(PlusZConstraint::new(
+        let c = PlusZConstraint::new(
             self.u.clone(),
             self.v.clone(),
             self.w.clone(),
-        ));
+        );
         Stream::from(c.run(state))
     }
 }

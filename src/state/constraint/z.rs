@@ -14,11 +14,11 @@ pub struct TimesZConstraint {
 }
 
 impl TimesZConstraint {
-    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> TimesZConstraint {
+    pub fn new<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        TimesZConstraint { u, v, w }
+        Constraint::Z(Rc::new(TimesZConstraint { u, v, w }))
     }
 }
 
@@ -115,11 +115,11 @@ pub struct PlusZConstraint {
 }
 
 impl PlusZConstraint {
-    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> PlusZConstraint {
+    pub fn new<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        PlusZConstraint { u, v, w }
+        Constraint::Z(Rc::new(PlusZConstraint { u, v, w }))
     }
 }
 

@@ -277,10 +277,10 @@ pub struct LessThanOrEqualFdConstraint {
 }
 
 impl LessThanOrEqualFdConstraint {
-    pub fn new(u: LTerm, v: LTerm) -> LessThanOrEqualFdConstraint {
+    pub fn new<U: User>(u: LTerm, v: LTerm) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
-        LessThanOrEqualFdConstraint { u, v }
+        Constraint::FiniteDomain(Rc::new(LessThanOrEqualFdConstraint { u, v }))
     }
 }
 
@@ -376,11 +376,11 @@ pub struct PlusFdConstraint {
 }
 
 impl PlusFdConstraint {
-    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> PlusFdConstraint {
+    pub fn new<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        PlusFdConstraint { u, v, w }
+        Constraint::FiniteDomain(Rc::new(PlusFdConstraint { u, v, w }))
     }
 }
 
@@ -505,11 +505,11 @@ pub struct MinusFdConstraint {
 }
 
 impl MinusFdConstraint {
-    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> MinusFdConstraint {
+    pub fn new<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        MinusFdConstraint { u, v, w }
+        Constraint::FiniteDomain(Rc::new(MinusFdConstraint { u, v, w }))
     }
 }
 
@@ -637,11 +637,11 @@ pub struct TimesFdConstraint {
 }
 
 impl TimesFdConstraint {
-    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> TimesFdConstraint {
+    pub fn new<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        TimesFdConstraint { u, v, w }
+        Constraint::FiniteDomain(Rc::new(TimesFdConstraint { u, v, w }))
     }
 }
 
@@ -770,10 +770,10 @@ pub struct DiseqFdConstraint {
 }
 
 impl DiseqFdConstraint {
-    pub fn new(u: LTerm, v: LTerm) -> DiseqFdConstraint {
+    pub fn new<U: User>(u: LTerm, v: LTerm) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
-        DiseqFdConstraint { u, v }
+        Constraint::FiniteDomain(Rc::new(DiseqFdConstraint { u, v }))
     }
 }
 
@@ -867,9 +867,9 @@ pub struct DistinctFdConstraint {
 }
 
 impl DistinctFdConstraint {
-    pub fn new(u: LTerm) -> DistinctFdConstraint {
+    pub fn new<U: User>(u: LTerm) -> Constraint<U> {
         assert!(u.is_list());
-        DistinctFdConstraint { u }
+        Constraint::FiniteDomain(Rc::new(DistinctFdConstraint { u }))
     }
 }
 
@@ -916,7 +916,7 @@ impl<U: User> BaseConstraint<U> for DistinctFdConstraint {
                 if no_duplicates {
                     // There are no duplicate constant constraints. Create a new constraint
                     // to follow the fulfillment of the variable domain constraints.
-                    let c = Rc::new(DistinctFd2Constraint::new(self.u.clone(), x, n));
+                    let c = DistinctFd2Constraint::new(self.u.clone(), x, n);
                     Ok(state.with_constraint(c))
                 } else {
                     // If there are duplicate constants in the array, then the constraint is
@@ -958,10 +958,10 @@ struct DistinctFd2Constraint {
 }
 
 impl DistinctFd2Constraint {
-    pub fn new(u: LTerm, y: LTerm, n: Vec<isize>) -> DistinctFd2Constraint {
+    pub fn new<U: User>(u: LTerm, y: LTerm, n: Vec<isize>) -> Constraint<U> {
         assert!(u.is_list());
         assert!(y.is_list());
-        DistinctFd2Constraint { u, y, n }
+        Constraint::FiniteDomain(Rc::new(DistinctFd2Constraint { u, y, n }))
     }
 }
 

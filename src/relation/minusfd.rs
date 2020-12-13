@@ -2,11 +2,10 @@
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
-use crate::state::{BaseConstraint, MinusFdConstraint};
+use crate::state::MinusFdConstraint;
 use crate::stream::Stream;
 use crate::user::User;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -31,11 +30,11 @@ impl<U: User> MinusFd<U> {
 
 impl<U: User> Solve<U> for MinusFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = Rc::new(MinusFdConstraint::new(
+        let c = MinusFdConstraint::new(
             self.u.clone(),
             self.v.clone(),
             self.w.clone(),
-        ));
+        );
         Stream::from(c.run(state))
     }
 }

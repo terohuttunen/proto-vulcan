@@ -2,11 +2,10 @@
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
-use crate::state::{BaseConstraint, DiseqFdConstraint};
+use crate::state::DiseqFdConstraint;
 use crate::stream::Stream;
 use crate::user::User;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -31,7 +30,7 @@ impl<U: User> Solve<U> for DiseqFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let u = self.u.clone();
         let v = self.v.clone();
-        let c = Rc::new(DiseqFdConstraint::new(u, v));
+        let c = DiseqFdConstraint::new(u, v);
         Stream::from(c.run(state))
     }
 }

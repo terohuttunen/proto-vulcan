@@ -3,7 +3,6 @@ use crate::lterm::LTerm;
 use crate::state::constraint::{Constraint, DisequalityConstraint};
 use crate::state::User;
 use std::collections::HashSet;
-use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub struct ConstraintStore<U: User>(HashSet<Constraint<U>>);
@@ -43,7 +42,7 @@ impl<U: User> ConstraintStore<U> {
         for constraint in self.iter() {
             if let Constraint::Tree(tree_constraint) = constraint {
                 let ws = tree_constraint.walk_star(smap);
-                let c = Rc::new(DisequalityConstraint::from(ws));
+                let c = DisequalityConstraint::new(ws);
                 walked_cstore.insert(Constraint::from(c));
             }
         }

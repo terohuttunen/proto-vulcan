@@ -2,11 +2,10 @@
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
-use crate::state::{BaseConstraint, DistinctFdConstraint};
+use crate::state::DistinctFdConstraint;
 use crate::stream::Stream;
 use crate::user::User;
 use std::marker::PhantomData;
-use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -27,7 +26,7 @@ impl<U: User> DistinctFd<U> {
 
 impl<U: User> Solve<U> for DistinctFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = Rc::new(DistinctFdConstraint::new(self.u.clone()));
+        let c = DistinctFdConstraint::new(self.u.clone());
         Stream::from(c.run(state))
     }
 }

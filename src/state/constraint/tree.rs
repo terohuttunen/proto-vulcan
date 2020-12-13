@@ -9,14 +9,8 @@ use std::rc::Rc;
 pub struct DisequalityConstraint(SMap);
 
 impl DisequalityConstraint {
-    pub fn new() -> DisequalityConstraint {
-        DisequalityConstraint(SMap::new())
-    }
-}
-
-impl From<SMap> for DisequalityConstraint {
-    fn from(smap: SMap) -> DisequalityConstraint {
-        DisequalityConstraint(smap)
+    pub fn new<U: User>(smap: SMap) -> Constraint<U> {
+        Constraint::Tree(Rc::new(DisequalityConstraint(smap)))
     }
 }
 
@@ -33,7 +27,7 @@ impl<U: User> BaseConstraint<U> for DisequalityConstraint {
         if extension.is_empty() {
             Err(())
         } else {
-            let c = Rc::new(DisequalityConstraint::from(extension));
+            let c = DisequalityConstraint::new(extension);
             Ok(state.with_constraint(c))
         }
     }
@@ -107,10 +101,13 @@ mod tests {
         let mut smap = SMap::new();
         smap.extend(x.clone(), five.clone());
         smap.extend(y.clone(), six.clone());
-        let c0 = DisequalityConstraint::from(smap);
+        let c0 = DisequalityConstraint::new(smap);
         let mut smap = SMap::new();
         smap.extend(x.clone(), five.clone());
-        let c1 = DisequalityConstraint::from(smap);
-        assert!(TreeConstraint::<EmptyUser>::subsumes(&c1, &c0));
+        let c1 = DisequalityConstraint::new(smap);
+        match (c0, c1) {
+            (Constraint::Tree(t0), Constraint::Tree(t1)) => assert!(TreeConstraint::<EmptyUser>::subsumes(&*t1, &*t0)),
+            _=> assert!(false)
+        }
     }
 }
