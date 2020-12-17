@@ -77,6 +77,12 @@ impl LTerm {
         }
     }
 
+    pub fn user(u: Rc<dyn UserUnify>) -> LTerm {
+        LTerm {
+            inner: Rc::new(LTermInner::User(u)),
+        }
+    }
+
     /// Constructs an empty list
     ///
     pub fn empty_list() -> LTerm {
