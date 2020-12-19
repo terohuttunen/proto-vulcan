@@ -27,9 +27,18 @@ pub fn succeed<U: User>() -> Goal<U> {
 #[cfg(test)]
 mod test {
     use crate::*;
+    use super::succeed;
 
     #[test]
-    fn test_succeed() {
+    fn test_succeed_1() {
+        let query = proto_vulcan_query!(|q| {succeed()});
+        let mut iter = query.run();
+        assert!(iter.next().unwrap().q.is_any());
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_succeed_2() {
         let query = proto_vulcan_query!(|q| {true});
         let mut iter = query.run();
         assert!(iter.next().unwrap().q.is_any());

@@ -27,9 +27,17 @@ pub fn fail<U: User>() -> Goal<U> {
 #[cfg(test)]
 mod test {
     use crate::*;
+    use super::fail;
 
     #[test]
-    fn test_fail() {
+    fn test_fail_1() {
+        let query = proto_vulcan_query!(|q| {fail()});
+        let mut iter = query.run();
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_fail_2() {
         let query = proto_vulcan_query!(|q| {false});
         let mut iter = query.run();
         assert!(iter.next().is_none());
