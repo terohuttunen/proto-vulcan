@@ -135,6 +135,27 @@ impl PartialEq<LValue> for str {
     }
 }
 
+impl PartialEq<&str> for LValue {
+    fn eq(&self, other: &&str) -> bool {
+        match self {
+            LValue::String(x) => x == other,
+            _ => false,
+        }
+    }
+}
+
+
+impl PartialEq<LValue> for &str {
+    fn eq(&self, other: &LValue) -> bool {
+        match other {
+            LValue::String(x) => x == self,
+            _ => false,
+        }
+    }
+}
+
+
+
 impl Eq for LValue {}
 
 // The custom formatter prints values without the enum member specifiers
