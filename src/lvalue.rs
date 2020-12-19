@@ -192,15 +192,21 @@ mod test {
         assert!(u == true);
         assert!(true == u);
         assert!(u != 1);
+        assert!(1 != u);
         assert!(u != '1');
+        assert!('1' != u);
         assert!(u != "true");
+        assert!("true" != u);
 
         let v = LValue::from(&false);
         assert!(v == false);
         assert!(false == v);
         assert!(v != 0);
+        assert!(0 != 1);
         assert!(v != '0');
+        assert!('0' != v);
         assert!(v != "false");
+        assert!("false" != v);
 
         assert!(u == u);
         assert!(u != v);
@@ -212,14 +218,20 @@ mod test {
         assert!(u == 1);
         assert!(1 == u);
         assert!(u != true);
+        assert!(true != u);
         assert!(u != '1');
+        assert!('1' != u);
         assert!(u != "1");
+        assert!("1" != u);
 
         let v = LValue::from(&0);
         assert!(v == 0);
         assert!(v != '0');
+        assert!('0' != v);
         assert!(v != false);
+        assert!(false != v);
         assert!(v != "false");
+        assert!("false" != v);
 
         assert!(u == u);
         assert!(u != v);
@@ -231,15 +243,21 @@ mod test {
         assert!(u == '1');
         assert!('1' == u);
         assert!(u != 1);
+        assert!(1 != u);
         assert!(u != "1");
+        assert!("1" != u);
         assert!(u != true);
+        assert!(true != u);
 
         let v = LValue::from(&'0');
         assert!(v == '0');
         assert!('0' == v);
         assert!(v != 0);
+        assert!(0 != v);
         assert!(v != "0");
+        assert!("0" != v);
         assert!(v != false);
+        assert!(false != v);
 
         assert!(u == u);
         assert!(u != v);
@@ -251,8 +269,11 @@ mod test {
         assert!(u == "true");
         assert!("true" == u);
         assert!(u != true);
+        assert!(true != u);
         assert!(u != '1');
+        assert!('1' != u);
         assert!(u != 1);
+        assert!(1 != u);
 
         let s = String::from("false");
         let v = LValue::from(s);
