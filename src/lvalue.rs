@@ -181,3 +181,59 @@ impl fmt::Display for LValue {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_lvalue_bool() {
+        let v = LValue::from(true);
+        assert!(v == true);
+        assert!(true == v);
+        assert!(v != 1);
+        assert!(1 != v);
+
+        let v = LValue::from(false);
+        assert!(v == false);
+        assert!(false == v);
+        assert!(v != 1);
+        assert!(1 != v);
+    }
+
+    #[test]
+    fn test_lvalue_number() {
+        let v = LValue::from(1234);
+        assert!(v == 1234);
+        assert!(1234 == v);
+        assert!(v != 1235);
+        assert!(1235 != v);
+        assert!(v != "1234");
+    }
+
+    #[test]
+    fn test_lvalue_char() {
+        let v = LValue::from('1');
+        assert!(v == '1');
+        assert!('1' == v);
+        assert!('a' != v);
+        assert!(v != 'a');
+        assert!(v != "1");
+    }
+
+    #[test]
+    fn test_lvalue_string() {
+        let v = LValue::from("foobar");
+        assert!(v == "foobar");
+        assert!("foobar" == v);
+        assert!(v != "baz");
+        assert!("baz" != v);
+
+        let s = String::from("foobar");
+        let v = LValue::from(s);
+        assert!(v == "foobar");
+        assert!("foobar" == v);
+        assert!(v != "baz");
+        assert!("baz" != v);
+    }
+}
