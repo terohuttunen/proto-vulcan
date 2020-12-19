@@ -303,8 +303,6 @@
 //!
 //! [`miniKanren`]: http://minikanren.org
 
-#![feature(move_ref_pattern)]
-
 #[macro_use]
 extern crate proto_vulcan_macros;
 
