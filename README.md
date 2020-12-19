@@ -19,13 +19,9 @@
   <img src="https://img.shields.io/badge/docs-latest-blue.svg"
     alt="docs.rs docs" />
 </a>
-<a href='http://www.apache.org/licenses/LICENSE-2.0'>
-  <img src='https://img.shields.io/badge/license-APACHE-blue.svg'
-    alt='Coverage Status' />
-</a>
-<a href='http://opensource.org/licenses/MIT'>
-  <img src='https://img.shields.io/badge/license-MIT-red.svg'
-    alt='Coverage Status' />
+<a href=''>
+  <img src='https://img.shields.io/badge/license-MIT%2FAPACHE_2.0-yellow.svg'
+    alt='MIT/APACHE-2.0' />
 </a>
 
 A [`miniKanren`]-family relational logic programming language embedded in Rust.
