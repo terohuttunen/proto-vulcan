@@ -71,11 +71,8 @@ mod tests {
         // both v1 and v2 can walk to same variable id, therefore unification should be successful
         // with current substitution
         let mut extension = SMap::new();
-        if unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2) {
-            assert!(extension.is_empty());
-        } else {
-            assert!(false);
-        }
+        assert!(unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2));
+        assert!(extension.is_empty());
     }
 
     #[test]
@@ -92,11 +89,8 @@ mod tests {
 
         // both v1 and v2 can walk to different variable id, unify by substituting variables
         let mut extension = SMap::new();
-        if unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2) {
-            assert!(!extension.is_empty());
-        } else {
-            assert!(false);
-        }
+        assert!(unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2));
+        assert!(!extension.is_empty());
     }
 
     #[test]
@@ -114,13 +108,10 @@ mod tests {
         // v1 walks to variable 0, v2 walks to value => success and extended map from v0 to v2
         let mut smap = Rc::new(smap);
         let mut extension = SMap::new();
-        if unify_rec(&mut smap, &mut extension, &v1, &v2) {
-            assert!(!extension.is_empty());
-            let w = smap.walk(&v0);
-            assert!(LTerm::ptr_eq(&v3, &w));
-        } else {
-            assert!(false);
-        }
+        assert!(unify_rec(&mut smap, &mut extension, &v1, &v2));
+        assert!(!extension.is_empty());
+        let w = smap.walk(&v0);
+        assert!(LTerm::ptr_eq(&v3, &w));
     }
 
     #[test]
@@ -138,13 +129,10 @@ mod tests {
         // v1 walks to variable 0, v2 walks to value => success and extended map from v0 to v2
         let mut smap = Rc::new(smap);
         let mut extension = SMap::new();
-        if unify_rec(&mut smap, &mut extension, &v1, &v2) {
-            assert!(!extension.is_empty());
-            let w = smap.walk(&v0);
-            assert!(LTerm::ptr_eq(&v3, &w));
-        } else {
-            assert!(false);
-        }
+        assert!(unify_rec(&mut smap, &mut extension, &v1, &v2));
+        assert!(!extension.is_empty());
+        let w = smap.walk(&v0);
+        assert!(LTerm::ptr_eq(&v3, &w));
     }
 
     #[test]
@@ -162,13 +150,10 @@ mod tests {
         // v1 walks to variable 0, v2 walks to value => success and extended map from v0 to v2
         let mut smap = Rc::new(smap);
         let mut extension = SMap::new();
-        if unify_rec(&mut smap, &mut extension, &v1, &v2) {
-            assert!(!extension.is_empty());
-            let w = smap.walk(&v0);
-            assert!(LTerm::ptr_eq(&v3, &w));
-        } else {
-            assert!(false);
-        }
+        assert!(unify_rec(&mut smap, &mut extension, &v1, &v2));
+        assert!(!extension.is_empty());
+        let w = smap.walk(&v0);
+        assert!(LTerm::ptr_eq(&v3, &w));
     }
 
     #[test]
@@ -186,13 +171,10 @@ mod tests {
         // v1 walks to variable 0, v2 walks to value => success and extended map from v0 to v2
         let mut smap = Rc::new(smap);
         let mut extension = SMap::new();
-        if unify_rec(&mut smap, &mut extension, &v1, &v2) {
-            assert!(!extension.is_empty());
-            let w = smap.walk(&v0);
-            assert!(LTerm::ptr_eq(&v3, &w));
-        } else {
-            assert!(false);
-        }
+        assert!(unify_rec(&mut smap, &mut extension, &v1, &v2));
+        assert!(!extension.is_empty());
+        let w = smap.walk(&v0);
+        assert!(LTerm::ptr_eq(&v3, &w));
     }
 
     #[test]
@@ -209,11 +191,7 @@ mod tests {
 
         // v1 and v2 walk to identical values => success
         let mut extension = SMap::new();
-        if unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2) {
-            assert!(true);
-        } else {
-            assert!(false);
-        }
+        assert!(unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2));
     }
 
     #[test]
@@ -230,11 +208,7 @@ mod tests {
 
         // v1 and v2 walk to different values => failure
         let mut extension = SMap::new();
-        if unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2) {
-            assert!(false);
-        } else {
-            assert!(true);
-        }
+        assert!(!unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2));
     }
 
     #[test]
@@ -246,11 +220,8 @@ mod tests {
 
         // v0 and v1 are identical lists => success
         let mut extension = SMap::new();
-        if unify_rec(&mut smap, &mut extension, &v0, &v1) {
-            assert!(extension.is_empty());
-        } else {
-            assert!(false);
-        }
+        assert!(unify_rec(&mut smap, &mut extension, &v0, &v1));
+        assert!(extension.is_empty());
     }
 
     #[test]
@@ -267,11 +238,7 @@ mod tests {
 
         // v1 and v2 walk to different lists of same length => failure
         let mut extension = SMap::new();
-        if unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2) {
-            assert!(false);
-        } else {
-            assert!(true);
-        }
+        assert!(!unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2));
     }
 
     #[test]
@@ -288,10 +255,6 @@ mod tests {
 
         // v1 and v2 walk to different length lists with same values => failure
         let mut extension = SMap::new();
-        if unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2) {
-            assert!(false);
-        } else {
-            assert!(true);
-        }
+        assert!(!unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2));
     }
 }
