@@ -23,3 +23,15 @@ use crate::user::User;
 pub fn fail<U: User>() -> Goal<U> {
     Goal::fail()
 }
+
+#[cfg(test)]
+mod test {
+    use crate::*;
+
+    #[test]
+    fn test_fail() {
+        let query = proto_vulcan_query!(|q| {false});
+        let mut iter = query.run();
+        assert!(iter.next().is_none());
+    }
+}

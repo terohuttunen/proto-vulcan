@@ -23,3 +23,16 @@ use crate::user::User;
 pub fn succeed<U: User>() -> Goal<U> {
     Goal::succeed()
 }
+
+#[cfg(test)]
+mod test {
+    use crate::*;
+
+    #[test]
+    fn test_succeed() {
+        let query = proto_vulcan_query!(|q| {true});
+        let mut iter = query.run();
+        assert!(iter.next().unwrap().q.is_any());
+        assert!(iter.next().is_none());
+    }
+}
