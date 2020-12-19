@@ -19,7 +19,11 @@
   <img src="https://img.shields.io/badge/docs-latest-blue.svg"
     alt="docs.rs docs" />
 </a>
-
+<!-- coveralls.io coverage -->
+<a href='https://coveralls.io/github/terohuttunen/proto-vulcan'>
+  <img src='https://coveralls.io/repos/github/terohuttunen/proto-vulcan/badge.svg'
+    alt='Coverage Status' />
+</a>
 
 A [`miniKanren`]-family relational logic programming language embedded in Rust.
 
