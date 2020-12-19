@@ -341,6 +341,10 @@ impl LTerm {
         LTermIter::new(self)
     }
 
+    pub fn iter_mut(&mut self) -> LTermIterMut<'_> {
+        LTermIterMut::new(self)
+    }
+
     /// Recursively find all `any` variables referenced by the LTerm.
     pub fn anyvars(self: &LTerm) -> Vec<LTerm> {
         match self.as_ref() {
@@ -678,6 +682,59 @@ impl<'a> IntoIterator for &'a LTerm {
     }
 }
 
+#[derive(Debug)]
+pub struct LTermIterMut<'a> {
+    maybe_next: Option<&'a mut LTerm>,
+}
+
+impl<'a> LTermIterMut<'a> {
+    pub fn new(u: &'a mut LTerm) -> LTermIterMut<'a> {
+        LTermIterMut {
+            maybe_next: Some(u),
+        }
+    }
+}
+
+impl<'a> Iterator for LTermIterMut<'a> {
+    type Item = &'a mut LTerm;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Replace maybe_next in iterator with its tail and return head
+        match self.maybe_next.take().map(|x| x.as_mut()) {
+            Some(LTermInner::Cons(head, tail)) => {
+                if tail.is_empty() {
+                    // The iterator has finished the list after this one
+                    self.maybe_next = None;
+                } else {
+                    let _ = self.maybe_next.replace(tail);
+                }
+
+                Some(head)
+            },
+            Some(LTermInner::Empty) => {
+                self.maybe_next = None;
+                None
+            },
+            Some(_) => {
+                // If the list is improper, it ends in non-cons term.
+                self.maybe_next.take()
+            },
+            _ => None, // Iterator is finished
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a mut LTerm {
+    type Item = &'a mut LTerm;
+    type IntoIter = LTermIterMut<'a>;
+
+    fn into_iter(self) -> LTermIterMut<'a> {
+        LTermIterMut::new(self)
+    }
+}
+
+impl<'a> std::iter::FusedIterator for LTermIterMut<'a> {}
+
 impl<T> From<T> for LTerm
 where
     T: Into<LValue>,
@@ -731,6 +788,20 @@ mod test {
         assert_eq!(iter.next().unwrap(), &1);
         assert_eq!(iter.next().unwrap(), &2);
         assert_eq!(iter.next().unwrap(), &3);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_lterm_iter_mut_1() {
+        let mut u = lterm!([1, 2, 3]);
+        let iter = u.iter_mut();
+        for x in iter {
+            *x = lterm!(4);
+        }
+        let mut iter = u.iter();
+        assert_eq!(iter.next().unwrap(), &4);
+        assert_eq!(iter.next().unwrap(), &4);
+        assert_eq!(iter.next().unwrap(), &4);
         assert!(iter.next().is_none());
     }
 
