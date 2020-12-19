@@ -1,4 +1,27 @@
 # proto-vulcan
+<div align="center">
+  <!-- CI status -->
+  <a href="https://github.com/terohuttunen/proto-vulcan/actions">
+    <img src="https://github.com/terohuttunen/proto-vulcan/workflows/CI/badge.svg"
+      alt="CI Status" />
+  </a>
+  <!-- Crates version -->
+  <a href="https://crates.io/crates/proto-vulcan">
+    <img src="https://img.shields.io/crates/v/proto-vulcan.svg"
+      alt="Crates.io version" />
+  </a>
+  <!-- Downloads -->
+  <a href="https://crates.io/crates/proto-vulcan">
+    <img src="https://img.shields.io/crates/d/proto-vulcan.svg"
+      alt="Download" />
+  </a>
+  <!-- docs.rs docs -->
+  <a href="https://docs.rs/proto-vulcan">
+    <img src="https://img.shields.io/badge/docs-latest-blue.svg"
+      alt="docs.rs docs" />
+  </a>
+</div>
+
 A [`miniKanren`]-family relational logic programming language embedded in Rust.
 
 In addition to core miniKanren language, proto-vulcan currently provides support for:
