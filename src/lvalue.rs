@@ -188,52 +188,80 @@ mod test {
 
     #[test]
     fn test_lvalue_bool() {
-        let v = LValue::from(true);
-        assert!(v == true);
-        assert!(true == v);
-        assert!(v != 1);
-        assert!(1 != v);
+        let u = LValue::from(true);
+        assert!(u == true);
+        assert!(true == u);
+        assert!(u != 1);
+        assert!(u != '1');
+        assert!(u != "true");
 
-        let v = LValue::from(false);
+        let v = LValue::from(&false);
         assert!(v == false);
         assert!(false == v);
-        assert!(v != 1);
-        assert!(1 != v);
+        assert!(v != 0);
+        assert!(v != '0');
+        assert!(v != "false");
+
+        assert!(u == u);
+        assert!(u != v);
     }
 
     #[test]
     fn test_lvalue_number() {
-        let v = LValue::from(1234);
-        assert!(v == 1234);
-        assert!(1234 == v);
-        assert!(v != 1235);
-        assert!(1235 != v);
-        assert!(v != "1234");
+        let u = LValue::from(1);
+        assert!(u == 1);
+        assert!(1 == u);
+        assert!(u != true);
+        assert!(u != '1');
+        assert!(u != "1");
+
+        let v = LValue::from(&0);
+        assert!(v == 0);
+        assert!(v != '0');
+        assert!(v != false);
+        assert!(v != "false");
+
+        assert!(u == u);
+        assert!(u != v);
     }
 
     #[test]
     fn test_lvalue_char() {
-        let v = LValue::from('1');
-        assert!(v == '1');
-        assert!('1' == v);
-        assert!('a' != v);
-        assert!(v != 'a');
-        assert!(v != "1");
+        let u = LValue::from('1');
+        assert!(u == '1');
+        assert!('1' == u);
+        assert!(u != 1);
+        assert!(u != "1");
+        assert!(u != true);
+
+        let v = LValue::from(&'0');
+        assert!(v == '0');
+        assert!('0' == v);
+        assert!(v != 0);
+        assert!(v != "0");
+        assert!(v != false);
+
+        assert!(u == u);
+        assert!(u != v);
     }
 
     #[test]
     fn test_lvalue_string() {
-        let v = LValue::from("foobar");
-        assert!(v == "foobar");
-        assert!("foobar" == v);
-        assert!(v != "baz");
-        assert!("baz" != v);
+        let u = LValue::from("true");
+        assert!(u == "true");
+        assert!("true" == u);
+        assert!(u != true);
+        assert!(u != '1');
+        assert!(u != 1);
 
-        let s = String::from("foobar");
+        let s = String::from("false");
         let v = LValue::from(s);
-        assert!(v == "foobar");
-        assert!("foobar" == v);
-        assert!(v != "baz");
-        assert!("baz" != v);
+        assert!(v == "false");
+        assert!(v != false);
+        assert!(v != '1');
+        assert!(v != 0);
+
+        assert!(v == String::from("false"));
+        assert!(String::from("false") == v);
     }
 }
