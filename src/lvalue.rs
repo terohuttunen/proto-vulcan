@@ -21,9 +21,9 @@ impl From<isize> for LValue {
     }
 }
 
-impl From<&isize> for LValue {
-    fn from(u: &isize) -> LValue {
-        LValue::Number(*u)
+impl<T: Copy + Into<LValue>> From<&T> for LValue {
+    fn from(u: &T) -> LValue {
+        (*u).into()
     }
 }
 
