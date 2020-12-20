@@ -934,6 +934,24 @@ mod test {
         assert_eq!(1, lterm!(1));
         assert_ne!(2, lterm!(1));
         assert_ne!(true, lterm!(1));
+        assert_eq!(lterm!("proto-vulcan"), "proto-vulcan");
+        assert_ne!(lterm!(["proto-vulcan"]), "proto-vulcan");
+        assert_eq!("proto-vulcan", lterm!("proto-vulcan"));
+        assert_ne!("proto-vulcan", lterm!(["proto-vulcan"]));
+        assert_eq!(lterm!("proto-vulcan"), "proto-vulcan"[0..]);
+        assert_ne!(lterm!(["proto-vulcan"]), "proto-vulcan"[0..]);
+        assert_eq!("proto-vulcan"[0..], lterm!("proto-vulcan"));
+        assert_ne!("proto-vulcan"[0..], lterm!(["proto-vulcan"]));
+        assert_eq!(lterm!("proto-vulcan"), String::from("proto-vulcan"));
+        assert_ne!(lterm!(["proto-vulcan"]), String::from("proto-vulcan"));
+        assert_eq!(String::from("proto-vulcan"), lterm!("proto-vulcan"));
+        assert_ne!(String::from("proto-vulcan"), lterm!(["proto-vulcan"]));
+        assert_eq!(lterm!('a'), 'a');
+        assert_ne!('b', lterm!('a'));
+        assert_ne!(lterm!(['a']), 'a');
+        assert_ne!('a', lterm!(['a']));
+        assert_ne!(lterm!(1), lterm!([1]));
+        assert_ne!(lterm!([1]), lterm!(1));
     }
 
     #[test]
@@ -943,6 +961,8 @@ mod test {
         assert_ne!(lterm!(1), LValue::from(2));
         assert_eq!(LValue::from(1), lterm!(1));
         assert_ne!(LValue::from(2), lterm!(1));
+        assert_ne!(LValue::from(1), lterm!([1]));
+        assert_ne!(lterm!([1]), LValue::from(1));
     }
 
     #[test]
@@ -957,6 +977,15 @@ mod test {
     #[test]
     #[should_panic]
     fn test_lterm_projection_2() {
+        // Comparison with projection panics
+        let u = LTerm::var("x");
+        let v = LTerm::projection(u.clone());
+        assert_eq!(v, u);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lterm_projection_3() {
         // Hash of projection panics
         let mut t = HashMap::new();
         let u = LTerm::var("x");
