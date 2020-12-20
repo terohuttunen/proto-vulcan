@@ -52,3 +52,48 @@ impl<U: User> Solve<U> for Eq<U> {
 pub fn eq<U: User>(u: LTerm, v: LTerm) -> Goal<U> {
     Eq::new(u, v)
 }
+
+#[cfg(test)]
+mod test {
+    use crate::*;
+
+    #[test]
+    fn test_eq_1() {
+        let query = proto_vulcan_query!(|q| {q == 1234});
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().q, 1234);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_eq_2() {
+        let query = proto_vulcan_query!(|q| {
+            q == [1, 2, 3]
+        });
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().q, lterm!([1, 2, 3]));
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_eq_3() {
+        // Occurs-check 1
+        let query = proto_vulcan_query!(|q| {
+            q == [1, 2, 3, q]
+        });
+        let mut iter = query.run();
+        assert!(iter.next().is_none());
+
+
+    }
+
+    #[test]
+    fn test_eq_4() {
+        // Occurs-check 2
+        let query = proto_vulcan_query!(|q| {
+            [1, 2, 3, q] == q
+        });
+        let mut iter = query.run();
+        assert!(iter.next().is_none());
+    }
+}
