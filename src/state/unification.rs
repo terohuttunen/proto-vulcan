@@ -42,7 +42,6 @@ pub fn unify_rec(mut smap: &mut Rc<SMap>, extension: &mut SMap, u: &LTerm, v: &L
         (_, LTermInner::User(vuser)) => vuser.unify(&vwalk, &uwalk, smap, extension),
         (LTermInner::Empty, LTermInner::Empty) => true,
         (LTermInner::Cons(uhead, utail), LTermInner::Cons(vhead, vtail)) => {
-            println!("Recursive unification");
             if unify_rec(smap, extension, uhead, vhead) {
                 unify_rec(smap, extension, utail, vtail)
             } else {
