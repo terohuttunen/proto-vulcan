@@ -570,6 +570,24 @@ impl PartialEq<LTerm> for String {
     }
 }
 
+impl PartialEq<str> for LTerm {
+    fn eq(&self, other: &str) -> bool {
+        match self.as_ref() {
+            LTermInner::Val(LValue::String(x)) => x == other,
+            _ => false,
+        }
+    }
+}
+
+impl PartialEq<LTerm> for str {
+    fn eq(&self, other: &LTerm) -> bool {
+        match other.as_ref() {
+            LTermInner::Val(LValue::String(x)) => x == self,
+            _ => false,
+        }
+    }
+}
+
 impl PartialEq<&str> for LTerm {
     fn eq(&self, other: &&str) -> bool {
         match self.as_ref() {
