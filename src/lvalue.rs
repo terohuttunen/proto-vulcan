@@ -284,5 +284,22 @@ mod test {
 
         assert!(v == String::from("false"));
         assert!(String::from("false") == v);
+
+        let s2 = "true";
+        assert!(u == s2[0..]);
+        assert!(s2[0..] == u);
+
+        assert!(u == u);
+        assert!(u != v);
+    }
+
+    #[test]
+    fn test_lvalue_display() {
+        assert_eq!(format!("{}", LValue::from(true)), "true");
+        assert_eq!(format!("{}", LValue::from(false)), "false");
+        assert_eq!(format!("{}", LValue::from(1234)), "1234");
+        assert_eq!(format!("{}", LValue::from(-1234)), "-1234");
+        assert_eq!(format!("{}", LValue::from('a')), "'a'");
+        assert_eq!(format!("{}", LValue::from("Hello, world!")), "\"Hello, world!\"");
     }
 }
