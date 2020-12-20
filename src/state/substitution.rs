@@ -1,6 +1,6 @@
 use crate::lterm::{LTerm, LTermInner};
 use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 
 /// Substitution Map
 ///
@@ -171,24 +171,6 @@ impl Deref for SMap {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-impl DerefMut for SMap {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl AsRef<HashMap<LTerm, LTerm>> for SMap {
-    fn as_ref(&self) -> &HashMap<LTerm, LTerm> {
-        &self.0
-    }
-}
-
-impl AsMut<HashMap<LTerm, LTerm>> for SMap {
-    fn as_mut(&mut self) -> &mut HashMap<LTerm, LTerm> {
-        &mut self.0
     }
 }
 
