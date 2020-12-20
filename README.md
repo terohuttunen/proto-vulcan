@@ -20,7 +20,7 @@
     alt="docs.rs docs" />
 </a>
 <a href=''>
-  <img src='https://img.shields.io/badge/license-MIT%2FAPACHE_2.0-yellow.svg'
+  <img src='https://img.shields.io/badge/license-MIT%2FApache--2.0-inactive.svg'
     alt='MIT/APACHE-2.0' />
 </a>
 
