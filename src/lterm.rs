@@ -6,6 +6,7 @@ use std::iter::FromIterator;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::vec::Vec;
+use std::ops::{Index, IndexMut};
 
 pub use crate::lvalue::LValue;
 
@@ -763,11 +764,17 @@ where
     }
 }
 
-impl std::ops::Index<usize> for LTerm {
+impl Index<usize> for LTerm {
     type Output = LTerm;
 
     fn index(&self, index: usize) -> &Self::Output {
         self.iter().nth(index).unwrap()
+    }
+}
+
+impl IndexMut<usize> for LTerm {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.iter_mut().nth(index).unwrap()
     }
 }
 
@@ -996,6 +1003,17 @@ mod test {
     #[test]
     fn test_lterm_index_1() {
         let u = lterm!([1, [2], false]);
+        assert_eq!(u[0], 1);
+        assert_eq!(u[1], lterm!([2]));
+        assert_eq!(u[2], false);
+    }
+
+    #[test]
+    fn test_lterm_index_mut_1() {
+        let mut u = lterm!([0, 0, 0]);
+        u[0] = lterm!(1);
+        u[1] = lterm!([2]);
+        u[2] = lterm!(false);
         assert_eq!(u[0], 1);
         assert_eq!(u[1], lterm!([2]));
         assert_eq!(u[2], false);
