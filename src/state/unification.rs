@@ -26,7 +26,7 @@ pub fn unify_rec(mut smap: &mut Rc<SMap>, extension: &mut SMap, u: &LTerm, v: &L
         (_, LTermInner::Var(_, _)) => {
             // The term `v` is a variable and the term `u` is something else. The variable `v`
             // and the term `u` can be unified by extending the substitution map.
-            if smap.occurs_check(&uwalk, &vwalk) {
+            if smap.occurs_check(&vwalk, &uwalk) {
                 false
             } else {
                 extension.extend(vwalk.clone(), uwalk.clone());
@@ -42,6 +42,7 @@ pub fn unify_rec(mut smap: &mut Rc<SMap>, extension: &mut SMap, u: &LTerm, v: &L
         (_, LTermInner::User(vuser)) => vuser.unify(&vwalk, &uwalk, smap, extension),
         (LTermInner::Empty, LTermInner::Empty) => true,
         (LTermInner::Cons(uhead, utail), LTermInner::Cons(vhead, vtail)) => {
+            println!("Recursive unification");
             if unify_rec(smap, extension, uhead, vhead) {
                 unify_rec(smap, extension, utail, vtail)
             } else {
