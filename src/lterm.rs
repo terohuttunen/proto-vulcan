@@ -755,6 +755,64 @@ impl std::ops::Index<usize> for LTerm {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_lterm_var_1() {
+        let mut u = LTerm::var("x");
+        assert!(u.is_var());
+        assert!(!u.is_val());
+        assert!(!u.is_bool());
+        assert!(!u.is_list());
+        assert!(!u.is_empty());
+        assert!(!u.is_non_empty_list());
+        assert!(!u.is_user());
+        assert!(!u.is_projection());
+        assert!(u.tail().is_none());
+        assert!(u.head().is_none());
+        assert!(u.tail_mut().is_none());
+        assert!(u.head_mut().is_none());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lterm_var_2() {
+        let _ = LTerm::var("_");
+    }
+
+    #[test]
+    fn test_lterm_val_1() {
+        let mut u = lterm!(1);
+        assert!(u.is_val());
+        assert!(!u.is_var());
+        assert!(!u.is_bool());
+        assert!(!u.is_list());
+        assert!(!u.is_empty());
+        assert!(!u.is_non_empty_list());
+        assert!(!u.is_user());
+        assert!(!u.is_projection());
+        assert!(u.tail().is_none());
+        assert!(u.head().is_none());
+        assert!(u.tail_mut().is_none());
+        assert!(u.head_mut().is_none());
+    }
+
+    #[test]
+    fn test_lterm_val_2() {
+        let mut u = lterm!(true);
+        assert!(u.is_val());
+        assert!(!u.is_var());
+        assert!(u.is_bool());
+        assert!(!u.is_list());
+        assert!(!u.is_empty());
+        assert!(!u.is_non_empty_list());
+        assert!(!u.is_user());
+        assert!(!u.is_projection());
+        assert!(u.tail().is_none());
+        assert!(u.head().is_none());
+        assert!(u.tail_mut().is_none());
+        assert!(u.head_mut().is_none());
+    }
 
     #[test]
     fn test_lterm_iter_1() {
@@ -826,5 +884,72 @@ mod test {
         let mut u = lterm!([4, 5, 6]);
         u.extend(v);
         assert!(u == lterm!([4, 5, 6, 1, 2, 3]));
+    }
+
+    #[test]
+    fn test_lterm_eq_1() {
+        // LTerm vs. LTerm
+        assert_eq!(lterm!(1), lterm!(1));
+        assert_eq!(lterm!(true), lterm!(true));
+        assert_eq!(lterm!("foo"), lterm!("foo"));
+        assert_eq!(lterm!('a'), lterm!('a'));
+        assert_eq!(lterm!([1, 2, 3]), lterm!([1, 2, 3]));
+        assert_ne!(lterm!(1), lterm!(2));
+        assert_ne!(lterm!(1), lterm!(true));
+        assert_ne!(lterm!(1), lterm!('a'));
+        assert_ne!(lterm!(1), lterm!([]));
+        assert_ne!(lterm!(1), lterm!([1]));
+        assert_ne!(lterm!(1), lterm!("true"));
+        let u = LTerm::var("x");
+        let v = LTerm::var("x");
+        assert_eq!(u, u);
+        assert_ne!(u, v);
+    }
+
+    #[test]
+    fn test_lterm_eq_2() {
+        // LTerm vs. Rust constant
+        assert_eq!(lterm!(1), 1);
+        assert_ne!(lterm!(1), 2);
+        assert_ne!(lterm!(1), true);
+        assert_eq!(1, lterm!(1));
+        assert_ne!(2, lterm!(1));
+        assert_ne!(true, lterm!(1));
+    }
+
+    #[test]
+    fn test_lterm_eq_3() {
+        // LTerm vs. LValue
+        assert_eq!(lterm!(1), LValue::from(1));
+        assert_ne!(lterm!(1), LValue::from(2));
+        assert_eq!(LValue::from(1), lterm!(1));
+        assert_ne!(LValue::from(2), lterm!(1));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lterm_projection_1() {
+        // Comparison with projection panics
+        let u = LTerm::var("x");
+        let v = LTerm::projection(u.clone());
+        assert_eq!(u, v);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_lterm_projection_2() {
+        // Hash of projection panics
+        let mut t = HashMap::new();
+        let u = LTerm::var("x");
+        let v = LTerm::projection(u.clone());
+        t.insert(v, lterm!(1));
+    }
+
+    #[test]
+    fn test_lterm_index_1() {
+        let u = lterm!([1, [2], false]);
+        assert_eq!(u[0], 1);
+        assert_eq!(u[1], lterm!([2]));
+        assert_eq!(u[2], false);
     }
 }
