@@ -876,6 +876,16 @@ mod test {
     }
 
     #[test]
+    fn test_lterm_iter_5() {
+        let u = lterm!([1, 2, 3]);
+        let mut iter = IntoIterator::into_iter(&u);
+        assert_eq!(iter.next().unwrap(), &1);
+        assert_eq!(iter.next().unwrap(), &2);
+        assert_eq!(iter.next().unwrap(), &3);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
     fn test_lterm_iter_mut_1() {
         let mut u = lterm!([1, 2, 3]);
         let iter = u.iter_mut();
@@ -886,6 +896,19 @@ mod test {
         assert_eq!(iter.next().unwrap(), &4);
         assert_eq!(iter.next().unwrap(), &4);
         assert_eq!(iter.next().unwrap(), &4);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_lterm_iter_mut_2() {
+        let mut u = lterm!([1, 2, 3]);
+        for term in &mut u {
+            *term = lterm!(5);
+        }
+        let mut iter = u.iter();
+        assert_eq!(iter.next().unwrap(), &5);
+        assert_eq!(iter.next().unwrap(), &5);
+        assert_eq!(iter.next().unwrap(), &5);
         assert!(iter.next().is_none());
     }
 
@@ -1017,5 +1040,19 @@ mod test {
         assert_eq!(u[0], 1);
         assert_eq!(u[1], lterm!([2]));
         assert_eq!(u[2], false);
+    }
+
+    #[test]
+    fn test_lterm_display() {
+        assert_eq!(format!("{}", lterm!(1234)), "1234");
+        assert_eq!(format!("{}", lterm!(-1234)), "-1234");
+        assert_eq!(format!("{}", lterm!(true)), "true");
+        assert_eq!(format!("{}", lterm!(false)), "false");
+        assert_eq!(format!("{}", LTerm::var("x")), "x");
+        assert_eq!(format!("{}", lterm!([])), "[]");
+        assert_eq!(format!("{}", lterm!([1, [2], true, 'a'])), "[1, [2], true, 'a']");
+        assert_eq!(format!("{}", lterm!([1, 2 | 3])), "[1, 2 | 3]");
+        let u = LTerm::var("x");
+        assert_eq!(format!("{}", LTerm::projection(u)), "Projection(x)");
     }
 }
