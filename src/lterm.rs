@@ -469,6 +469,7 @@ impl PartialEq<LTerm> for LTerm {
                 Rc::ptr_eq(self_user, other_user)
             }
             (LTermInner::Projection(_), _) => panic!("Cannot compare LTerm::Projection."),
+            (_, LTermInner::Projection(_)) => panic!("Cannot compare LTerm::Projection."),
             (LTermInner::Empty, LTermInner::Empty) => true,
             (LTermInner::Cons(self_head, self_tail), LTermInner::Cons(other_head, other_tail)) => {
                 (self_head == other_head) & (self_tail == other_tail)
