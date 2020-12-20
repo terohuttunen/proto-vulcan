@@ -4,11 +4,12 @@
   <img src="https://github.com/terohuttunen/proto-vulcan/workflows/CI/badge.svg"
     alt="CI Status" />
 </a>
-<!-- coveralls.io coverage -->
-<a href='https://coveralls.io/github/terohuttunen/proto-vulcan'>
-  <img src='https://coveralls.io/repos/github/terohuttunen/proto-vulcan/badge.svg'
+<!-- Codecov.io coverage -->
+<a href="https://codecov.io/gh/terohuttunen/proto-vulcan">
+  <img src="https://codecov.io/gh/terohuttunen/proto-vulcan/branch/master/graph/badge.svg?token=MR666G7GE9"
     alt='Coverage Status' />
-</a>
+  
+</a>   
 <!-- Crates version -->
 <a href="https://crates.io/crates/proto-vulcan">
   <img src="https://img.shields.io/crates/v/proto-vulcan.svg"
@@ -16,11 +17,11 @@
 </a>
 <!-- docs.rs docs -->
 <a href="https://docs.rs/proto-vulcan">
-  <img src="https://img.shields.io/badge/docs-latest-blue.svg"
+  <img src="https://img.shields.io/badge/docs.rs-latest-informational.svg"
     alt="docs.rs docs" />
 </a>
 <a href=''>
-  <img src='https://img.shields.io/badge/license-MIT%2FApache--2.0-inactive.svg'
+  <img src='https://img.shields.io/badge/license-MIT%2FApache--2.0-informational.svg'
     alt='MIT/APACHE-2.0' />
 </a>
 
