@@ -19,7 +19,7 @@ pub fn unify_rec(mut smap: &mut Rc<SMap>, extension: &mut SMap, u: &LTerm, v: &L
                 false
             } else {
                 extension.extend(uwalk.clone(), vwalk.clone());
-                Rc::make_mut(&mut smap).extend(uwalk.clone(), vwalk.clone());
+                Rc::make_mut(&mut smap).extend(uwalk, vwalk);
                 true
             }
         }
@@ -30,7 +30,7 @@ pub fn unify_rec(mut smap: &mut Rc<SMap>, extension: &mut SMap, u: &LTerm, v: &L
                 false
             } else {
                 extension.extend(vwalk.clone(), uwalk.clone());
-                Rc::make_mut(&mut smap).extend(vwalk.clone(), uwalk.clone());
+                Rc::make_mut(&mut smap).extend(vwalk, uwalk);
                 true
             }
         }
