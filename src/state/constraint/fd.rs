@@ -72,8 +72,11 @@ impl FiniteDomain {
     pub fn drop_before<P: FnMut(&isize) -> bool>(&self, mut predicate: P) -> Option<FiniteDomain> {
         match self {
             FiniteDomain::Interval(r) => match r.clone().into_iter().find(predicate) {
-                Some(u) => Some(FiniteDomain::Interval(u.saturating_add(1)..=*r.end())),
-                None => Some(self.clone()),
+                Some(u) => {
+                    let r = u..=*r.end();
+                    Some(FiniteDomain::Interval(r))
+                },
+                None => None,
             },
             FiniteDomain::Sparse(v) => {
                 let v: Vec<isize> = v.iter().copied().skip_while(|u| !predicate(u)).collect();
