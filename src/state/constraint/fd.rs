@@ -220,6 +220,12 @@ impl FiniteDomain {
     }
 }
 
+impl PartialEq for FiniteDomain {
+    fn eq(&self, other: &FiniteDomain) -> bool {
+        self.diff(other).is_none()
+    }
+}
+
 pub enum FiniteDomainIter<'a> {
     IntervalIter(RangeInclusive<isize>),
     SparseIter(Iter<'a, isize>),
