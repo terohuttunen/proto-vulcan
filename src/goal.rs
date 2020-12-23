@@ -64,3 +64,43 @@ where
     /// Generate a stream of solutions to the goal by applying it to some initial state.
     fn solve(&self, state: State<U>) -> Stream<U>;
 }
+
+#[cfg(test)]
+mod test {
+    use crate::*;
+    use crate::stream::Stream;
+    use crate::state::State;
+    use super::Solve;
+    use crate::query::EmptyUser;
+
+    #[test]
+    fn test_goal_succeed() {
+        let g = Goal::<EmptyUser>::succeed();
+        assert!(g.is_succeed());
+        assert!(!g.is_fail());
+    }
+
+    #[test]
+    fn test_goal_fail() {
+        let g = Goal::<EmptyUser>::fail();
+        assert!(g.is_fail());
+        assert!(!g.is_succeed());
+    }
+
+    #[derive(Debug)]
+    struct TestGoal {
+    }
+
+    impl<U: User> Solve<U> for TestGoal {
+        fn solve(&self, _state: State<U>) -> Stream<U> {
+            Stream::empty()
+        }
+    }
+
+    #[test]
+    fn test_goal_inner() {
+        let g = Goal::<EmptyUser>::new(TestGoal {});
+        assert!(!g.is_succeed());
+        assert!(!g.is_fail());
+    }
+}
