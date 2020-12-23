@@ -48,7 +48,14 @@ impl FiniteDomain {
     pub fn copy_before<P: FnMut(&isize) -> bool>(&self, mut predicate: P) -> Option<FiniteDomain> {
         match self {
             FiniteDomain::Interval(r) => match r.clone().into_iter().find(predicate) {
-                Some(u) => Some(FiniteDomain::Interval(*r.start()..=u.saturating_sub(1))),
+                Some(u) => {
+                    let r = *r.start()..=u.saturating_sub(1);
+                    if r.is_empty() {
+                        None
+                    } else {
+                        Some(FiniteDomain::Interval(r))
+                    }
+                },
                 None => Some(self.clone()),
             },
             FiniteDomain::Sparse(v) => {
