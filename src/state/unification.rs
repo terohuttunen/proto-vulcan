@@ -257,4 +257,28 @@ mod tests {
         let mut extension = SMap::new();
         assert!(!unify_rec(&mut Rc::new(smap), &mut extension, &v1, &v2));
     }
+
+    #[test]
+    fn test_unify_12() {
+        // Occurs check 1
+        let smap = SMap::new();
+        let u = LTerm::var("u");
+        let v = lterm!([1, 2, 3, u]);
+
+        // term `v` cannot unify with `u`, because it contains `u`
+        let mut extension = SMap::new();
+        assert!(!unify_rec(&mut Rc::new(smap), &mut extension, &u, &v));
+    }
+
+       #[test]
+    fn test_unify_13() {
+        // Occurs check 2
+        let smap = SMap::new();
+        let u = LTerm::var("u");
+        let v = lterm!([1, 2, 3, u]);
+
+        // term `v` cannot unify with `u`, because it contains `u`
+        let mut extension = SMap::new();
+        assert!(!unify_rec(&mut Rc::new(smap), &mut extension, &v, &u));
+    }
 }
