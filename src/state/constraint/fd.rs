@@ -1075,8 +1075,6 @@ mod test {
 
         // If the predicate is never true in the finite domain, copy all
         let before = fd.copy_before(|x| *x < 0).unwrap();
-        assert_eq!(before.min(), 1);
-        assert_eq!(before.max(), 8);
         assert_eq!(before, fd);
 
         // If the predicate is always true, then copy none
@@ -1093,8 +1091,6 @@ mod test {
 
         // If the predicate is never true in the finite domain, copy all
         let before = fd.copy_before(|x| *x < 0).unwrap();
-        assert_eq!(before.min(), 1);
-        assert_eq!(before.max(), 8);
         assert_eq!(before, fd);
 
         // If the predicate is always true, then copy none
@@ -1114,8 +1110,6 @@ mod test {
 
         // If the predicate is always true, then copy all
         let after = fd.drop_before(|x| *x > 0).unwrap();
-        assert_eq!(after.min(), 1);
-        assert_eq!(after.max(), 8);
         assert_eq!(after, fd);
     }
 
@@ -1132,8 +1126,40 @@ mod test {
 
         // If the predicate is always true, then copy all
         let after = fd.drop_before(|x| *x > 0).unwrap();
-        assert_eq!(after.min(), 1);
-        assert_eq!(after.max(), 8);
         assert_eq!(after, fd);
+    }
+
+    #[test]
+    fn test_finitedomain_6() {
+        // intersect interval with interval
+        let a = FiniteDomain::from(1..=6);
+        let b = FiniteDomain::from(4..=8);
+        let c = FiniteDomain::from(10..=12);
+
+        // Intersection of overlapping intervals is an interval
+        let isect = a.intersect(&b).unwrap();
+        assert_eq!(isect, FiniteDomain::from(4..=6));
+
+        // Intesection of disjoint intervals is None
+        assert!(a.intersect(&c).is_none());
+    }
+
+    #[test]
+    fn test_finitedomain_7() {
+        // intersect interval with sparse
+        let a = FiniteDomain::from(1..=6);
+        let b = FiniteDomain::from(vec![4, 5, 6, 7, 8]);
+        let c = FiniteDomain::from(vec![10, 11, 12]);
+
+        // Intersection of overlapping interval and sparse is a sparse
+        let isect = a.intersect(&b).unwrap();
+        assert_eq!(isect, FiniteDomain::from(vec![4, 5, 6]));
+
+        let isect = b.intersect(&a).unwrap();
+        assert_eq!(isect, FiniteDomain::from(vec![4, 5, 6]));
+
+        // Intesection of disjoint intervals is None
+        assert!(a.intersect(&c).is_none());
+        assert!(c.intersect(&a).is_none());
     }
 }
