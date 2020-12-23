@@ -1162,4 +1162,19 @@ mod test {
         assert!(a.intersect(&c).is_none());
         assert!(c.intersect(&a).is_none());
     }
+
+    #[test]
+    fn test_finitedomain_8() {
+        // intersect sparse with sparse
+        let a = FiniteDomain::from(vec![1, 2, 3, 4, 5, 6]);
+        let b = FiniteDomain::from(vec![4, 5, 6, 7, 8]);
+        let c = FiniteDomain::from(vec![10, 11, 12]);
+
+        // Intersection of overlapping sparse domains is a sparse
+        let isect = a.intersect(&b).unwrap();
+        assert_eq!(isect, FiniteDomain::from(vec![4, 5, 6]));
+
+        // Intesection of disjoint intervals is None
+        assert!(a.intersect(&c).is_none());
+    }
 }
