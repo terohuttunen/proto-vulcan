@@ -1048,3 +1048,92 @@ impl<U: User> From<Rc<DistinctFd2Constraint>> for Constraint<U> {
         Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_finitedomain_1() {
+        // min, max
+        let fd = FiniteDomain::from(vec![-1, 2, 3, 4]);
+        assert_eq!(fd.min(), -1);
+        assert_eq!(fd.max(), 4);
+
+        let fd = FiniteDomain::from(0);
+        assert_eq!(fd.min(), 0);
+        assert_eq!(fd.max(), 0);
+    }
+
+    #[test]
+    fn test_finitedomain_2() {
+        // copy_before interval
+        let fd = FiniteDomain::from(1..=8);
+        let before = fd.copy_before(|x| *x > 6).unwrap();
+        assert_eq!(before.min(), 1);
+        assert_eq!(before.max(), 6);
+
+        // If the predicate is never true in the finite domain, copy all
+        let before = fd.copy_before(|x| *x < 0).unwrap();
+        assert_eq!(before.min(), 1);
+        assert_eq!(before.max(), 8);
+        assert_eq!(before, fd);
+
+        // If the predicate is always true, then copy none
+        assert!(fd.copy_before(|x| *x > -1).is_none());
+    }
+
+    #[test]
+    fn test_finitedomain_3() {
+        // copy_before sparse
+        let fd = FiniteDomain::from(vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        let before = fd.copy_before(|x| *x > 6).unwrap();
+        assert_eq!(before.min(), 1);
+        assert_eq!(before.max(), 6);
+
+        // If the predicate is never true in the finite domain, copy all
+        let before = fd.copy_before(|x| *x < 0).unwrap();
+        assert_eq!(before.min(), 1);
+        assert_eq!(before.max(), 8);
+        assert_eq!(before, fd);
+
+        // If the predicate is always true, then copy none
+        assert!(fd.copy_before(|x| *x > -1).is_none());
+    }
+
+    #[test]
+    fn test_finitedomain_4() {
+        // drop_before interval
+        let fd = FiniteDomain::from(1..=8);
+        let before = fd.drop_before(|x| *x > 6).unwrap();
+        assert_eq!(before.min(), 7);
+        assert_eq!(before.max(), 8);
+
+        // If the predicate is never true in the finite domain, copy none
+        assert!(fd.drop_before(|x| *x > 10).is_none());
+
+        // If the predicate is always true, then copy all
+        let after = fd.drop_before(|x| *x > 0).unwrap();
+        assert_eq!(after.min(), 1);
+        assert_eq!(after.max(), 8);
+        assert_eq!(after, fd);
+    }
+
+    #[test]
+    fn test_finitedomain_5() {
+        // drop_before sparse
+        let fd = FiniteDomain::from(vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        let before = fd.drop_before(|x| *x > 6).unwrap();
+        assert_eq!(before.min(), 7);
+        assert_eq!(before.max(), 8);
+
+        // If the predicate is never true in the finite domain, copy none
+        assert!(fd.drop_before(|x| *x > 10).is_none());
+
+        // If the predicate is always true, then copy all
+        let after = fd.drop_before(|x| *x > 0).unwrap();
+        assert_eq!(after.min(), 1);
+        assert_eq!(after.max(), 8);
+        assert_eq!(after, fd);
+    }
+}
