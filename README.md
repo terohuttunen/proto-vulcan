@@ -9,7 +9,7 @@
   <img src="https://codecov.io/gh/terohuttunen/proto-vulcan/branch/master/graph/badge.svg?token=MR666G7GE9"
     alt='Coverage Status' />
   
-</a>   
+</a>
 <!-- Crates version -->
 <a href="https://crates.io/crates/proto-vulcan">
   <img src="https://img.shields.io/crates/v/proto-vulcan.svg"
@@ -23,6 +23,11 @@
 <a href=''>
   <img src='https://img.shields.io/badge/license-MIT%2FApache--2.0-informational.svg'
     alt='MIT/APACHE-2.0' />
+</a>
+<!-- rustc version -->
+<a href=''>
+  <img src='https://img.shields.io/badge/rustc-1.49.0+-informational.svg'
+    alt='Required rustc minimum version' />
 </a>
 
 A [`miniKanren`]-family relational logic programming language embedded in Rust.
