@@ -144,7 +144,6 @@ impl PartialEq<&str> for LValue {
     }
 }
 
-
 impl PartialEq<LValue> for &str {
     fn eq(&self, other: &LValue) -> bool {
         match other {
@@ -153,8 +152,6 @@ impl PartialEq<LValue> for &str {
         }
     }
 }
-
-
 
 impl Eq for LValue {}
 
@@ -300,6 +297,9 @@ mod test {
         assert_eq!(format!("{}", LValue::from(1234)), "1234");
         assert_eq!(format!("{}", LValue::from(-1234)), "-1234");
         assert_eq!(format!("{}", LValue::from('a')), "'a'");
-        assert_eq!(format!("{}", LValue::from("Hello, world!")), "\"Hello, world!\"");
+        assert_eq!(
+            format!("{}", LValue::from("Hello, world!")),
+            "\"Hello, world!\""
+        );
     }
 }

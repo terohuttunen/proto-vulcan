@@ -18,7 +18,7 @@ impl<U: User> ConstraintStore<U> {
     /// substitution map. Unassociated variables can be Var(_) or Any. Associated variables are
     /// already fully constrained by the values they are associated with, whereas unassociated
     /// variables are constrained by the constraints.
-    pub fn purify(self, r: &SMap) -> ConstraintStore<U> {
+    pub fn purify(self, r: &SMap<U>) -> ConstraintStore<U> {
         let mut purified_cstore = ConstraintStore::new();
         for constraint in self.0.into_iter() {
             if let Constraint::Tree(ref tree_constraint) = constraint {
@@ -37,7 +37,7 @@ impl<U: User> ConstraintStore<U> {
     }
 
     /// Do walk_star for each substitution of each constraint
-    pub fn walk_star(&self, smap: &SMap) -> ConstraintStore<U> {
+    pub fn walk_star(&self, smap: &SMap<U>) -> ConstraintStore<U> {
         let mut walked_cstore = ConstraintStore::new();
         for constraint in self.iter() {
             if let Constraint::Tree(tree_constraint) = constraint {
@@ -96,7 +96,7 @@ impl<U: User> ConstraintStore<U> {
     /// Iterate over constraints that refer to terms in `u`
     pub fn relevant<'a>(
         &'a self,
-        relevant_operands: &Vec<LTerm>,
+        relevant_operands: &Vec<LTerm<U>>,
     ) -> impl Iterator<Item = &'a Constraint<U>> {
         let relevant_operands = relevant_operands.clone();
         self.iter().filter(move |c| {
@@ -106,7 +106,7 @@ impl<U: User> ConstraintStore<U> {
         })
     }
 
-    pub fn display_relevant(&self, u: &LTerm, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    pub fn display_relevant(&self, u: &LTerm<U>, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let anyvars = u.anyvars();
         let mut count = 0;
         for storec in self.relevant(&anyvars) {

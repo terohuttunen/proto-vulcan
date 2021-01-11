@@ -1,45 +1,32 @@
 /// Constrains u + v = w
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
-use crate::state::State;
 use crate::state::PlusZConstraint;
+use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::marker::PhantomData;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct PlusZ<U: User> {
-    u: LTerm,
-    v: LTerm,
-    w: LTerm,
-    #[derivative(Debug = "ignore")]
-    _phantom: PhantomData<U>,
+    u: LTerm<U>,
+    v: LTerm<U>,
+    w: LTerm<U>,
 }
 
 impl<U: User> PlusZ<U> {
-    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
-        Goal::new(PlusZ {
-            u,
-            v,
-            w,
-            _phantom: PhantomData,
-        })
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
+        Goal::new(PlusZ { u, v, w })
     }
 }
 
 impl<U: User> Solve<U> for PlusZ<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = PlusZConstraint::new(
-            self.u.clone(),
-            self.v.clone(),
-            self.w.clone(),
-        );
+        let c = PlusZConstraint::new(self.u.clone(), self.v.clone(), self.w.clone());
         Stream::from(c.run(state))
     }
 }
 
-pub fn plusz<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
+pub fn plusz<U: User>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
     PlusZ::new(u, v, w)
 }
 

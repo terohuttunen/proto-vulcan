@@ -8,12 +8,12 @@ use crate::user::User;
 
 #[derive(Debug)]
 pub struct Project<U: User> {
-    variables: Vec<LTerm>,
+    variables: Vec<LTerm<U>>,
     body: Goal<U>,
 }
 
 impl<U: User> Project<U> {
-    pub fn new(variables: Vec<LTerm>, body: Goal<U>) -> Goal<U> {
+    pub fn new(variables: Vec<LTerm<U>>, body: Goal<U>) -> Goal<U> {
         Goal::new(Project { variables, body }) as Goal<U>
     }
 }
@@ -35,24 +35,18 @@ pub fn project<U: User>(param: ProjectOperatorParam<U>) -> Goal<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::*;
-    use std::marker::PhantomData;
     use crate::lterm::LTermInner;
+    use crate::*;
 
     #[derive(Debug)]
     pub struct SqEq<U: User> {
-        u: LTerm,
-        v: LTerm,
-        _phantom: PhantomData<U>,
+        u: LTerm<U>,
+        v: LTerm<U>,
     }
 
     impl<U: User> SqEq<U> {
-        pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
-            Goal::new(SqEq {
-                u,
-                v,
-                _phantom: PhantomData,
-            })
+        pub fn new(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+            Goal::new(SqEq { u, v })
         }
     }
 
@@ -76,7 +70,7 @@ mod tests {
         }
     }
 
-    fn sqeq<U: User>(u: LTerm, v: LTerm) -> Goal<U> {
+    fn sqeq<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
         SqEq::new(u, v)
     }
 

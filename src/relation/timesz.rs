@@ -5,41 +5,28 @@ use crate::state::State;
 use crate::state::TimesZConstraint;
 use crate::stream::Stream;
 use crate::user::User;
-use std::marker::PhantomData;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct TimesZ<U: User> {
-    u: LTerm,
-    v: LTerm,
-    w: LTerm,
-    #[derivative(Debug = "ignore")]
-    _phantom: PhantomData<U>,
+    u: LTerm<U>,
+    v: LTerm<U>,
+    w: LTerm<U>,
 }
 
 impl<U: User> TimesZ<U> {
-    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
-        Goal::new(TimesZ {
-            u,
-            v,
-            w,
-            _phantom: PhantomData,
-        })
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
+        Goal::new(TimesZ { u, v, w })
     }
 }
 
 impl<U: User> Solve<U> for TimesZ<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = TimesZConstraint::new(
-            self.u.clone(),
-            self.v.clone(),
-            self.w.clone(),
-        );
+        let c = TimesZConstraint::new(self.u.clone(), self.v.clone(), self.w.clone());
         Stream::from(c.run(state))
     }
 }
 
-pub fn timesz<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
+pub fn timesz<U: User>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
     TimesZ::new(u, v, w)
 }
 

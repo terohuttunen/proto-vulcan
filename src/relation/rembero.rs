@@ -16,7 +16,7 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]));
 /// }
 /// ```
-pub fn rembero<U: User>(x: LTerm, ls: LTerm, out: LTerm) -> Goal<U> {
+pub fn rembero<U: User>(x: LTerm<U>, ls: LTerm<U>, out: LTerm<U>) -> Goal<U> {
     proto_vulcan_closure!(
         match [ls, out] {
             [[], []] => ,

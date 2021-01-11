@@ -3,7 +3,7 @@ use crate::lterm::LTerm;
 use crate::user::User;
 
 /// A relation which guarantees that all elements of `l` are distinct from each other.
-pub fn distincto<U: User>(l: LTerm) -> Goal<U> {
+pub fn distincto<U: User>(l: LTerm<U>) -> Goal<U> {
     proto_vulcan_closure!(
         match l {
             [] | [_] => ,

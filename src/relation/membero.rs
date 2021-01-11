@@ -20,7 +20,7 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn membero<U: User>(x: LTerm, l: LTerm) -> Goal<U> {
+pub fn membero<U: User>(x: LTerm<U>, l: LTerm<U>) -> Goal<U> {
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
         [_ | rest] => membero(x, rest),

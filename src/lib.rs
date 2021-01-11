@@ -86,7 +86,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::*;
-//! pub fn membero<U: User>(x: LTerm, l: LTerm) -> Goal<U> {
+//! pub fn membero<U: User>(x: LTerm<U>, l: LTerm<U>) -> Goal<U> {
 //!     proto_vulcan_closure!(match l {
 //!         [head | _] => head == x,
 //!         [_ | rest] => membero(x, rest),
@@ -160,7 +160,7 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::*;
 //!
-//! pub fn emptyo<U: User>(s: LTerm) -> Goal<U> {
+//! pub fn emptyo<U: User>(s: LTerm<U>) -> Goal<U> {
 //!     proto_vulcan!([] == s)
 //! }
 //! # fn main() {}
@@ -333,7 +333,7 @@ pub use goal::{Goal, Solve};
 pub use lterm::LTerm;
 pub use lvalue::LValue;
 pub use state::Constraint;
-pub use user::{User, UserUnify};
+pub use user::{EmptyUser, User};
 
 // conde is the only non-built-in operator exported by default.
 pub use crate::operator::conde::conde;

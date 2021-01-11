@@ -1,14 +1,13 @@
-use crate::query::EmptyUser;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
+use crate::user::{EmptyUser, User};
 use std::fmt;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
 pub enum Goal<U = EmptyUser>
 where
-    U: User
+    U: User,
 {
     Succeed,
     Fail,
@@ -17,7 +16,7 @@ where
 
 impl<U> Goal<U>
 where
-    U: User
+    U: User,
 {
     pub fn new<T: Solve<U> + 'static>(u: T) -> Goal<U> {
         Goal::Inner(Rc::new(u))
@@ -67,11 +66,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::*;
-    use crate::stream::Stream;
-    use crate::state::State;
     use super::Solve;
-    use crate::query::EmptyUser;
+    use crate::state::State;
+    use crate::stream::Stream;
+    use crate::user::EmptyUser;
+    use crate::*;
 
     #[test]
     fn test_goal_succeed() {
@@ -88,8 +87,7 @@ mod test {
     }
 
     #[derive(Debug)]
-    struct TestGoal {
-    }
+    struct TestGoal {}
 
     impl<U: User> Solve<U> for TestGoal {
         fn solve(&self, _state: State<U>) -> Stream<U> {

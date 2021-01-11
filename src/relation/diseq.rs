@@ -3,24 +3,16 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::marker::PhantomData;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct Diseq<U: User> {
-    u: LTerm,
-    v: LTerm,
-    #[derivative(Debug = "ignore")]
-    _phantom: PhantomData<U>,
+    u: LTerm<U>,
+    v: LTerm<U>,
 }
 
 impl<U: User> Diseq<U> {
-    pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
-        Goal::new(Diseq {
-            u,
-            v,
-            _phantom: PhantomData,
-        })
+    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+        Goal::new(Diseq { u, v })
     }
 }
 
@@ -54,7 +46,7 @@ impl<U: User> Solve<U> for Diseq<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn diseq<U: User>(u: LTerm, v: LTerm) -> Goal<U> {
+pub fn diseq<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
     Diseq::new(u, v)
 }
 

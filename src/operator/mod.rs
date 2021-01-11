@@ -23,7 +23,7 @@ pub struct PatternMatchOperatorParam<'a, U: User> {
 
 // project |x, y, ...| { <body> }
 pub struct ProjectOperatorParam<'a, U: User> {
-    pub var_list: Vec<LTerm>,
+    pub var_list: Vec<LTerm<U>>,
     pub body: &'a [&'a [Goal<U>]],
 }
 
@@ -42,12 +42,12 @@ pub struct ForOperatorParam<U, T>
 where
     U: User,
     T: Debug + 'static,
-    for<'b> &'b T: IntoIterator<Item = &'b LTerm>,
+    for<'b> &'b T: IntoIterator<Item = &'b LTerm<U>>,
 {
     pub coll: T,
     // Goal generator: generates a goal for each cycle of the "loop" given element from the
     // collection.
-    pub g: Box<dyn Fn(LTerm) -> Goal<U>>,
+    pub g: Box<dyn Fn(LTerm<U>) -> Goal<U>>,
 }
 
 #[doc(hidden)]

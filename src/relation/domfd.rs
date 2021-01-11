@@ -5,24 +5,19 @@ use crate::state::FiniteDomain;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::marker::PhantomData;
 use std::rc::Rc;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct DomFd<U: User> {
-    x: LTerm,
+    x: LTerm<U>,
     domain: Rc<FiniteDomain>,
-    #[derivative(Debug = "ignore")]
-    _phantom: PhantomData<U>,
 }
 
 impl<U: User> DomFd<U> {
-    pub fn new(x: LTerm, domain: FiniteDomain) -> Goal<U> {
+    pub fn new(x: LTerm<U>, domain: FiniteDomain) -> Goal<U> {
         Goal::new(DomFd {
             x,
             domain: Rc::new(domain),
-            _phantom: PhantomData,
         })
     }
 }

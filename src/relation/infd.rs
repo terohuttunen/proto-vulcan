@@ -7,7 +7,7 @@ use crate::user::User;
 use std::ops::RangeInclusive;
 
 /// Associates the same domain to multiple variables
-pub fn infd<U: User>(u: LTerm, domain: &[isize]) -> Goal<U> {
+pub fn infd<U: User>(u: LTerm<U>, domain: &[isize]) -> Goal<U> {
     if u.is_list() {
         let goals = u
             .iter()
@@ -19,7 +19,7 @@ pub fn infd<U: User>(u: LTerm, domain: &[isize]) -> Goal<U> {
     }
 }
 
-pub fn infdrange<U: User>(u: LTerm, domain: &RangeInclusive<isize>) -> Goal<U> {
+pub fn infdrange<U: User>(u: LTerm<U>, domain: &RangeInclusive<isize>) -> Goal<U> {
     if u.is_list() {
         let goals = u
             .iter()

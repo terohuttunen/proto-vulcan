@@ -1,8 +1,7 @@
 use crate::goal::Goal;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
-use std::fmt;
+use crate::user::{EmptyUser, User};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -60,7 +59,11 @@ impl<V: ReifyQuery<R, U>, R, U: User> FusedIterator for ResultIterator<V, R, U> 
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct Query<V: ReifyQuery<R, U>, R, U: User> {
+pub struct Query<V, R, U = EmptyUser>
+where
+    V: ReifyQuery<R, U>,
+    U: User,
+{
     variables: Rc<V>,
     goal: Goal<U>,
     #[derivative(Debug = "ignore")]
@@ -82,23 +85,6 @@ impl<V: ReifyQuery<R, U>, R, U: User> Query<V, R, U> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct EmptyUser {}
-
-impl EmptyUser {
-    fn new() -> EmptyUser {
-        EmptyUser {}
-    }
-}
-
-impl fmt::Display for EmptyUser {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "")
-    }
-}
-
-impl User for EmptyUser {}
-
 impl<V: ReifyQuery<R, EmptyUser>, R> Query<V, R, EmptyUser> {
     pub fn run(&self) -> ResultIterator<V, R, EmptyUser> {
         let user_state = EmptyUser::new();
@@ -111,15 +97,18 @@ impl<V: ReifyQuery<R, EmptyUser>, R> Query<V, R, EmptyUser> {
 macro_rules! proto_vulcan_query {
     (| $($query:ident),+ | { $( $body:tt )* } ) => {{
         use $crate::state::State;
-        use $crate::user::User;
+        use $crate::user::{User, EmptyUser};
         use std::fmt;
         use std::rc::Rc;
         use $crate::lresult::LResult;
         use $crate::lterm::LTerm;
-        use $crate::query::ReifyQuery;
+        use $crate::query::{ReifyQuery};
 
         #[derive(Clone, Debug)]
-        struct QueryResult<U: User> {
+        struct QueryResult<U = EmptyUser>
+        where
+            U: User,
+        {
             $( $query: LResult<U>, )+
         }
 
@@ -135,12 +124,15 @@ macro_rules! proto_vulcan_query {
         /* The query variables */
         $(let $query = LTerm::var(stringify!($query));)+
         #[derive(Debug)]
-        struct QueryVariables<R> {
-            $( $query: LTerm, )+
+        struct QueryVariables<R, U = EmptyUser>
+        where
+            U: User,
+        {
+            $( $query: LTerm<U>, )+
             _phantom: ::std::marker::PhantomData<R>,
         }
 
-        impl<U: User> ReifyQuery<QueryResult<U>, U> for QueryVariables<QueryResult<U>> {
+        impl<U: User> ReifyQuery<QueryResult<U>, U> for QueryVariables<QueryResult<U>, U> {
             fn reify(&self, state: &State<U>) -> QueryResult<U> {
                 let smap = state.smap_ref();
                 let purified_cstore = state.cstore_ref().clone().purify(smap).normalize();

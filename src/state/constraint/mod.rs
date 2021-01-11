@@ -26,7 +26,7 @@ pub trait BaseConstraint<U: User>: fmt::Debug + fmt::Display {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U>;
 
     /// Get list of operands
-    fn operands(&self) -> Vec<LTerm>;
+    fn operands(&self) -> Vec<LTerm<U>>;
 
     fn reify(&self, _state: &mut State<U>) {}
 }
@@ -36,9 +36,9 @@ pub trait TreeConstraint<U: User>: BaseConstraint<U> {
     fn subsumes(&self, other: &dyn TreeConstraint<U>) -> bool;
 
     // Returns substitution map if subsumable
-    fn smap_ref(&self) -> &SMap;
+    fn smap_ref(&self) -> &SMap<U>;
 
-    fn walk_star(&self, smap: &SMap) -> SMap;
+    fn walk_star(&self, smap: &SMap<U>) -> SMap<U>;
 }
 
 pub trait FiniteDomainConstraint<U: User>: BaseConstraint<U> {}
@@ -87,7 +87,7 @@ impl<U: User> Constraint<U> {
     }
 
     /// Get list of operands
-    pub fn operands(&self) -> Vec<LTerm> {
+    pub fn operands(&self) -> Vec<LTerm<U>> {
         match self {
             Constraint::Tree(constraint) => constraint.operands(),
             Constraint::FiniteDomain(constraint) => constraint.operands(),

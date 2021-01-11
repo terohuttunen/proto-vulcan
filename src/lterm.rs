@@ -1,12 +1,12 @@
-use crate::user::UserUnify;
+use crate::user::{EmptyUser, User};
 use std::borrow::Borrow;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::iter::FromIterator;
+use std::ops::{Index, IndexMut};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::vec::Vec;
-use std::ops::{Index, IndexMut};
 
 pub use crate::lvalue::LValue;
 
@@ -30,7 +30,10 @@ impl fmt::Display for VarID {
 
 /// Logic Term
 #[derive(Clone, Debug)]
-pub enum LTermInner {
+pub enum LTermInner<U = EmptyUser>
+where
+    U: User,
+{
     /// Literal value
     Val(LValue),
 
@@ -38,31 +41,34 @@ pub enum LTermInner {
     Var(VarID, &'static str),
 
     // Unifiable user defined item. PartialEq and Hash are derived from the Rc pointer.
-    User(Rc<dyn UserUnify>),
+    User(<U as User>::UserTerm),
 
     // Empty list
     Empty,
 
     /// Non-empty list
-    Cons(LTerm, LTerm),
+    Cons(LTerm<U>, LTerm<U>),
 
     // Projection variable. A Projection variable will cause panic if it is tested for equality
     // or a hash is computed. To use in substitutions, it must be projected first to non-Projection
     // kind LTerm.
-    Projection(LTerm),
+    Projection(LTerm<U>),
 }
 
 #[derive(Clone)]
-pub struct LTerm {
-    inner: Rc<LTermInner>,
+pub struct LTerm<U = EmptyUser>
+where
+    U: User,
+{
+    inner: Rc<LTermInner<U>>,
 }
 
-impl LTerm {
-    pub fn ptr_eq(this: &LTerm, other: &LTerm) -> bool {
+impl<U: User> LTerm<U> {
+    pub fn ptr_eq(this: &LTerm<U>, other: &LTerm<U>) -> bool {
         Rc::ptr_eq(&this.inner, &other.inner)
     }
 
-    pub fn var(name: &'static str) -> LTerm {
+    pub fn var(name: &'static str) -> LTerm<U> {
         if name == "_" {
             panic!("Error: Invalid variable name. Name \"_\" is reserved for any-variables.")
         }
@@ -72,13 +78,13 @@ impl LTerm {
         }
     }
 
-    pub fn any() -> LTerm {
+    pub fn any() -> LTerm<U> {
         LTerm {
             inner: Rc::new(LTermInner::Var(VarID::new(), "_")),
         }
     }
 
-    pub fn user(u: Rc<dyn UserUnify>) -> LTerm {
+    pub fn user(u: U::UserTerm) -> LTerm<U> {
         LTerm {
             inner: Rc::new(LTermInner::User(u)),
         }
@@ -86,7 +92,7 @@ impl LTerm {
 
     /// Constructs an empty list
     ///
-    pub fn empty_list() -> LTerm {
+    pub fn empty_list() -> LTerm<U> {
         LTerm {
             inner: Rc::new(LTermInner::Empty),
         }
@@ -94,13 +100,13 @@ impl LTerm {
 
     /// Constructs a LTerm list with a single element
     ///
-    pub fn singleton(u: LTerm) -> LTerm {
+    pub fn singleton(u: LTerm<U>) -> LTerm<U> {
         LTerm {
             inner: Rc::new(LTermInner::Cons(u, LTerm::empty_list())),
         }
     }
 
-    pub fn projection(u: LTerm) -> LTerm {
+    pub fn projection(u: LTerm<U>) -> LTerm<U> {
         match u.as_ref() {
             LTermInner::Var(_, _) => LTerm {
                 inner: Rc::new(LTermInner::Projection(u)),
@@ -113,14 +119,14 @@ impl LTerm {
     /// that is applied to the projection variable.
     pub fn project<F>(&self, f: F)
     where
-        F: FnOnce(&LTerm) -> LTerm,
+        F: FnOnce(&LTerm<U>) -> LTerm<U>,
     {
         match self.as_ref() {
             LTermInner::Projection(p) => {
-                let ptr: *const LTermInner = self.inner.as_ref();
+                let ptr: *const LTermInner<U> = self.inner.as_ref();
                 let projected = f(p).into_inner();
                 let _ = unsafe {
-                    let mut_ptr = ptr as *mut LTermInner;
+                    let mut_ptr = ptr as *mut LTermInner<U>;
                     std::ptr::replace(mut_ptr, projected.as_ref().clone())
                 };
             }
@@ -128,18 +134,18 @@ impl LTerm {
         }
     }
 
-    pub fn into_inner(self) -> Rc<LTermInner> {
+    pub fn into_inner(self) -> Rc<LTermInner<U>> {
         self.inner
     }
 
     /// Construct a list cell
-    pub fn cons(head: LTerm, tail: LTerm) -> LTerm {
+    pub fn cons(head: LTerm<U>, tail: LTerm<U>) -> LTerm<U> {
         LTerm {
             inner: Rc::new(LTermInner::Cons(head, tail)),
         }
     }
 
-    pub fn from_vec(l: Vec<LTerm>) -> LTerm {
+    pub fn from_vec(l: Vec<LTerm<U>>) -> LTerm<U> {
         if l.is_empty() {
             LTerm::empty_list()
         } else {
@@ -151,7 +157,7 @@ impl LTerm {
         }
     }
 
-    pub fn from_array(a: &[LTerm]) -> LTerm {
+    pub fn from_array(a: &[LTerm<U>]) -> LTerm<U> {
         if a.is_empty() {
             LTerm::empty_list()
         } else {
@@ -163,7 +169,7 @@ impl LTerm {
         }
     }
 
-    pub fn improper_from_vec(mut h: Vec<LTerm>) -> LTerm {
+    pub fn improper_from_vec(mut h: Vec<LTerm<U>>) -> LTerm<U> {
         if h.is_empty() {
             panic!("Improper list must have at least one element");
         } else {
@@ -175,7 +181,7 @@ impl LTerm {
         }
     }
 
-    pub fn improper_from_array(h: &[LTerm]) -> LTerm {
+    pub fn improper_from_array(h: &[LTerm<U>]) -> LTerm<U> {
         let mut h = h.to_vec();
         if h.is_empty() {
             panic!("Improper list must have at least one element");
@@ -188,7 +194,7 @@ impl LTerm {
         }
     }
 
-    pub fn contains<T: Borrow<LTerm>>(&self, v: &T) -> bool {
+    pub fn contains<T: Borrow<LTerm<U>>>(&self, v: &T) -> bool {
         let v = v.borrow();
         self.iter().any(|u| u == v)
     }
@@ -230,7 +236,7 @@ impl LTerm {
 
     pub fn is_var(&self) -> bool {
         match self.as_ref() {
-            LTermInner::Var(_, _) => true,
+            LTermInner::<U>::Var(_, _) => true,
             _ => false,
         }
     }
@@ -249,7 +255,7 @@ impl LTerm {
         }
     }
 
-    pub fn get_user(&self) -> Option<&Rc<dyn UserUnify>> {
+    pub fn get_user(&self) -> Option<&U::UserTerm> {
         match self.as_ref() {
             LTermInner::User(u) => Some(u),
             _ => None,
@@ -263,7 +269,7 @@ impl LTerm {
         }
     }
 
-    pub fn get_projection(&self) -> Option<&LTerm> {
+    pub fn get_projection(&self) -> Option<&LTerm<U>> {
         match self.as_ref() {
             LTermInner::Projection(p) => Some(p),
             _ => None,
@@ -310,44 +316,44 @@ impl LTerm {
         }
     }
 
-    pub fn head(&self) -> Option<&LTerm> {
+    pub fn head(&self) -> Option<&LTerm<U>> {
         match self.as_ref() {
             LTermInner::Cons(head, _) => Some(head),
             _ => None,
         }
     }
 
-    pub fn tail(&self) -> Option<&LTerm> {
+    pub fn tail(&self) -> Option<&LTerm<U>> {
         match self.as_ref() {
             LTermInner::Cons(_, tail) => Some(tail),
             _ => None,
         }
     }
 
-    pub fn head_mut(&mut self) -> Option<&mut LTerm> {
+    pub fn head_mut(&mut self) -> Option<&mut LTerm<U>> {
         match self.as_mut() {
             LTermInner::Cons(head, _) => Some(head),
             _ => None,
         }
     }
 
-    pub fn tail_mut(&mut self) -> Option<&mut LTerm> {
+    pub fn tail_mut(&mut self) -> Option<&mut LTerm<U>> {
         match self.as_mut() {
             LTermInner::Cons(_, tail) => Some(tail),
             _ => None,
         }
     }
 
-    pub fn iter(&self) -> LTermIter<'_> {
+    pub fn iter(&self) -> LTermIter<'_, U> {
         LTermIter::new(self)
     }
 
-    pub fn iter_mut(&mut self) -> LTermIterMut<'_> {
+    pub fn iter_mut(&mut self) -> LTermIterMut<'_, U> {
         LTermIterMut::new(self)
     }
 
     /// Recursively find all `any` variables referenced by the LTerm.
-    pub fn anyvars(self: &LTerm) -> Vec<LTerm> {
+    pub fn anyvars(self: &LTerm<U>) -> Vec<LTerm<U>> {
         match self.as_ref() {
             LTermInner::Cons(head, tail) => {
                 let mut vars = head.anyvars();
@@ -368,27 +374,27 @@ impl LTerm {
     }
 }
 
-impl From<LTermInner> for LTerm {
-    fn from(inner: LTermInner) -> LTerm {
+impl<U: User> From<LTermInner<U>> for LTerm<U> {
+    fn from(inner: LTermInner<U>) -> LTerm<U> {
         LTerm {
             inner: Rc::new(inner),
         }
     }
 }
 
-impl AsRef<LTermInner> for LTerm {
-    fn as_ref(&self) -> &LTermInner {
+impl<U: User> AsRef<LTermInner<U>> for LTerm<U> {
+    fn as_ref(&self) -> &LTermInner<U> {
         &self.inner
     }
 }
 
-impl AsMut<LTermInner> for LTerm {
-    fn as_mut(&mut self) -> &mut LTermInner {
+impl<U: User> AsMut<LTermInner<U>> for LTerm<U> {
+    fn as_mut(&mut self) -> &mut LTermInner<U> {
         Rc::make_mut(&mut self.inner)
     }
 }
 
-impl fmt::Debug for LTerm {
+impl<U: User> fmt::Debug for LTerm<U> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.as_ref() {
             LTermInner::Val(val) => write!(f, "{:?}", val),
@@ -401,7 +407,7 @@ impl fmt::Debug for LTerm {
     }
 }
 
-impl fmt::Display for LTerm {
+impl<U: User> fmt::Display for LTerm<U> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.as_ref() {
             LTermInner::Val(val) => write!(f, "{}", val),
@@ -445,12 +451,12 @@ impl fmt::Display for LTerm {
     }
 }
 
-impl Hash for LTerm {
+impl<U: User> Hash for LTerm<U> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self.as_ref() {
             LTermInner::Val(val) => val.hash(state),
             LTermInner::Var(uid, _) => uid.hash(state),
-            LTermInner::User(user) => Rc::as_ptr(user).hash(state),
+            LTermInner::User(user) => user.hash(state),
             LTermInner::Projection(_) => panic!("Cannot compute hash for LTerm::Projection."),
             LTermInner::Empty => ().hash(state),
             LTermInner::Cons(head, tail) => {
@@ -461,14 +467,12 @@ impl Hash for LTerm {
     }
 }
 
-impl PartialEq<LTerm> for LTerm {
+impl<U: User> PartialEq<LTerm<U>> for LTerm<U> {
     fn eq(&self, other: &Self) -> bool {
         match (self.as_ref(), other.as_ref()) {
             (LTermInner::Var(self_uid, _), LTermInner::Var(other_uid, _)) => self_uid == other_uid,
             (LTermInner::Val(self_val), LTermInner::Val(other_val)) => self_val == other_val,
-            (LTermInner::User(self_user), LTermInner::User(other_user)) => {
-                Rc::ptr_eq(self_user, other_user)
-            }
+            (LTermInner::User(self_user), LTermInner::User(other_user)) => self_user == other_user,
             (LTermInner::Projection(_), _) => panic!("Cannot compare LTerm::Projection."),
             (_, LTermInner::Projection(_)) => panic!("Cannot compare LTerm::Projection."),
             (LTermInner::Empty, LTermInner::Empty) => true,
@@ -480,7 +484,7 @@ impl PartialEq<LTerm> for LTerm {
     }
 }
 
-impl PartialEq<LValue> for LTerm {
+impl<U: User> PartialEq<LValue> for LTerm<U> {
     fn eq(&self, other: &LValue) -> bool {
         match self.as_ref() {
             LTermInner::Val(v) => v == other,
@@ -489,8 +493,8 @@ impl PartialEq<LValue> for LTerm {
     }
 }
 
-impl PartialEq<LTerm> for LValue {
-    fn eq(&self, other: &LTerm) -> bool {
+impl<U: User> PartialEq<LTerm<U>> for LValue {
+    fn eq(&self, other: &LTerm<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(v) => v == self,
             _ => false,
@@ -498,8 +502,7 @@ impl PartialEq<LTerm> for LValue {
     }
 }
 
-
-impl PartialEq<bool> for LTerm {
+impl<U: User> PartialEq<bool> for LTerm<U> {
     fn eq(&self, other: &bool) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::Bool(x)) => x == other,
@@ -508,8 +511,8 @@ impl PartialEq<bool> for LTerm {
     }
 }
 
-impl PartialEq<LTerm> for bool {
-    fn eq(&self, other: &LTerm) -> bool {
+impl<U: User> PartialEq<LTerm<U>> for bool {
+    fn eq(&self, other: &LTerm<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::Bool(x)) => x == self,
             _ => false,
@@ -517,7 +520,7 @@ impl PartialEq<LTerm> for bool {
     }
 }
 
-impl PartialEq<isize> for LTerm {
+impl<U: User> PartialEq<isize> for LTerm<U> {
     fn eq(&self, other: &isize) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::Number(x)) => x == other,
@@ -526,8 +529,8 @@ impl PartialEq<isize> for LTerm {
     }
 }
 
-impl PartialEq<LTerm> for isize {
-    fn eq(&self, other: &LTerm) -> bool {
+impl<U: User> PartialEq<LTerm<U>> for isize {
+    fn eq(&self, other: &LTerm<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::Number(x)) => x == self,
             _ => false,
@@ -535,7 +538,7 @@ impl PartialEq<LTerm> for isize {
     }
 }
 
-impl PartialEq<char> for LTerm {
+impl<U: User> PartialEq<char> for LTerm<U> {
     fn eq(&self, other: &char) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::Char(x)) => x == other,
@@ -544,8 +547,8 @@ impl PartialEq<char> for LTerm {
     }
 }
 
-impl PartialEq<LTerm> for char {
-    fn eq(&self, other: &LTerm) -> bool {
+impl<U: User> PartialEq<LTerm<U>> for char {
+    fn eq(&self, other: &LTerm<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::Char(x)) => x == self,
             _ => false,
@@ -553,7 +556,7 @@ impl PartialEq<LTerm> for char {
     }
 }
 
-impl PartialEq<String> for LTerm {
+impl<U: User> PartialEq<String> for LTerm<U> {
     fn eq(&self, other: &String) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == other,
@@ -562,8 +565,8 @@ impl PartialEq<String> for LTerm {
     }
 }
 
-impl PartialEq<LTerm> for String {
-    fn eq(&self, other: &LTerm) -> bool {
+impl<U: User> PartialEq<LTerm<U>> for String {
+    fn eq(&self, other: &LTerm<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == self,
             _ => false,
@@ -571,7 +574,7 @@ impl PartialEq<LTerm> for String {
     }
 }
 
-impl PartialEq<str> for LTerm {
+impl<U: User> PartialEq<str> for LTerm<U> {
     fn eq(&self, other: &str) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == other,
@@ -580,8 +583,8 @@ impl PartialEq<str> for LTerm {
     }
 }
 
-impl PartialEq<LTerm> for str {
-    fn eq(&self, other: &LTerm) -> bool {
+impl<U: User> PartialEq<LTerm<U>> for str {
+    fn eq(&self, other: &LTerm<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == self,
             _ => false,
@@ -589,7 +592,7 @@ impl PartialEq<LTerm> for str {
     }
 }
 
-impl PartialEq<&str> for LTerm {
+impl<U: User> PartialEq<&str> for LTerm<U> {
     fn eq(&self, other: &&str) -> bool {
         match self.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == other,
@@ -598,8 +601,8 @@ impl PartialEq<&str> for LTerm {
     }
 }
 
-impl PartialEq<LTerm> for &str {
-    fn eq(&self, other: &LTerm) -> bool {
+impl<U: User> PartialEq<LTerm<U>> for &str {
+    fn eq(&self, other: &LTerm<U>) -> bool {
         match other.as_ref() {
             LTermInner::Val(LValue::String(x)) => x == self,
             _ => false,
@@ -607,28 +610,31 @@ impl PartialEq<LTerm> for &str {
     }
 }
 
-impl Eq for LTerm {}
+impl<U: User> Eq for LTerm<U> {}
 
-impl Default for LTerm {
+impl<U: User> Default for LTerm<U> {
     fn default() -> Self {
         LTerm::from(LTermInner::Empty)
     }
 }
 
-impl FromIterator<LTerm> for LTerm {
-    fn from_iter<T: IntoIterator<Item = LTerm>>(iter: T) -> Self {
+impl<U: User> FromIterator<LTerm<U>> for LTerm<U> {
+    fn from_iter<T: IntoIterator<Item = LTerm<U>>>(iter: T) -> Self {
         let mut list_head = LTerm::empty_list();
         let mut list_tail = &mut list_head;
         for elem in iter {
-            let _ = std::mem::replace(list_tail.as_mut(), LTermInner::Cons(elem, LTerm::empty_list()));
+            let _ = std::mem::replace(
+                list_tail.as_mut(),
+                LTermInner::Cons(elem, LTerm::empty_list()),
+            );
             list_tail = list_tail.tail_mut().unwrap();
         }
         list_head
     }
 }
 
-impl Extend<LTerm> for LTerm {
-    fn extend<T: IntoIterator<Item = LTerm>>(&mut self, coll: T) {
+impl<U: User> Extend<LTerm<U>> for LTerm<U> {
+    fn extend<T: IntoIterator<Item = LTerm<U>>>(&mut self, coll: T) {
         if !self.is_list() {
             panic!("Only list type (Empty or Cons) LTerms can be extended.");
         }
@@ -644,26 +650,26 @@ impl Extend<LTerm> for LTerm {
         }
 
         // Swap in extension as new tail.
-        let mut extension: LTerm = coll.into_iter().collect();
+        let mut extension: LTerm<U> = coll.into_iter().collect();
         std::mem::swap(tail.as_mut(), extension.as_mut());
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct LTermIter<'a> {
-    maybe_next: Option<&'a LTerm>,
+pub struct LTermIter<'a, U: User> {
+    maybe_next: Option<&'a LTerm<U>>,
 }
 
-impl<'a> LTermIter<'a> {
-    pub fn new(u: &'a LTerm) -> LTermIter<'a> {
+impl<'a, U: User> LTermIter<'a, U> {
+    pub fn new(u: &'a LTerm<U>) -> LTermIter<'a, U> {
         LTermIter {
             maybe_next: Some(u),
         }
     }
 }
 
-impl<'a> Iterator for LTermIter<'a> {
-    type Item = &'a LTerm;
+impl<'a, U: User> Iterator for LTermIter<'a, U> {
+    type Item = &'a LTerm<U>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Replace maybe_next in iterator with its tail and return head
@@ -677,46 +683,46 @@ impl<'a> Iterator for LTermIter<'a> {
                 }
 
                 Some(head)
-            },
+            }
             Some(LTermInner::Empty) => {
                 self.maybe_next = None;
                 None
-            },
+            }
             Some(_) => {
                 // If the list is improper, it ends in non-cons term.
                 self.maybe_next.take()
-            },
+            }
             _ => None, // Iterator is finished
         }
     }
 }
 
-impl<'a> std::iter::FusedIterator for LTermIter<'a> {}
+impl<'a, U: User> std::iter::FusedIterator for LTermIter<'a, U> {}
 
-impl<'a> IntoIterator for &'a LTerm {
-    type Item = &'a LTerm;
-    type IntoIter = LTermIter<'a>;
+impl<'a, U: User> IntoIterator for &'a LTerm<U> {
+    type Item = &'a LTerm<U>;
+    type IntoIter = LTermIter<'a, U>;
 
-    fn into_iter(self) -> LTermIter<'a> {
+    fn into_iter(self) -> LTermIter<'a, U> {
         LTermIter::new(self)
     }
 }
 
 #[derive(Debug)]
-pub struct LTermIterMut<'a> {
-    maybe_next: Option<&'a mut LTerm>,
+pub struct LTermIterMut<'a, U: User> {
+    maybe_next: Option<&'a mut LTerm<U>>,
 }
 
-impl<'a> LTermIterMut<'a> {
-    pub fn new(u: &'a mut LTerm) -> LTermIterMut<'a> {
+impl<'a, U: User> LTermIterMut<'a, U> {
+    pub fn new(u: &'a mut LTerm<U>) -> LTermIterMut<'a, U> {
         LTermIterMut {
             maybe_next: Some(u),
         }
     }
 }
 
-impl<'a> Iterator for LTermIterMut<'a> {
-    type Item = &'a mut LTerm;
+impl<'a, U: User> Iterator for LTermIterMut<'a, U> {
+    type Item = &'a mut LTerm<U>;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Replace maybe_next in iterator with its tail and return head
@@ -730,49 +736,49 @@ impl<'a> Iterator for LTermIterMut<'a> {
                 }
 
                 Some(head)
-            },
+            }
             Some(LTermInner::Empty) => {
                 self.maybe_next = None;
                 None
-            },
+            }
             Some(_) => {
                 // If the list is improper, it ends in non-cons term.
                 self.maybe_next.take()
-            },
+            }
             _ => None, // Iterator is finished
         }
     }
 }
 
-impl<'a> IntoIterator for &'a mut LTerm {
-    type Item = &'a mut LTerm;
-    type IntoIter = LTermIterMut<'a>;
+impl<'a, U: User> IntoIterator for &'a mut LTerm<U> {
+    type Item = &'a mut LTerm<U>;
+    type IntoIter = LTermIterMut<'a, U>;
 
-    fn into_iter(self) -> LTermIterMut<'a> {
+    fn into_iter(self) -> LTermIterMut<'a, U> {
         LTermIterMut::new(self)
     }
 }
 
-impl<'a> std::iter::FusedIterator for LTermIterMut<'a> {}
+impl<'a, U: User> std::iter::FusedIterator for LTermIterMut<'a, U> {}
 
-impl<T> From<T> for LTerm
+impl<T, U: User> From<T> for LTerm<U>
 where
     T: Into<LValue>,
 {
-    fn from(u: T) -> LTerm {
+    fn from(u: T) -> LTerm<U> {
         LTerm::from(LTermInner::Val(u.into()))
     }
 }
 
-impl Index<usize> for LTerm {
-    type Output = LTerm;
+impl<U: User> Index<usize> for LTerm<U> {
+    type Output = LTerm<U>;
 
     fn index(&self, index: usize) -> &Self::Output {
         self.iter().nth(index).unwrap()
     }
 }
 
-impl IndexMut<usize> for LTerm {
+impl<U: User> IndexMut<usize> for LTerm<U> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         self.iter_mut().nth(index).unwrap()
     }
@@ -785,7 +791,7 @@ mod test {
 
     #[test]
     fn test_lterm_var_1() {
-        let mut u = LTerm::var("x");
+        let mut u = LTerm::<EmptyUser>::var("x");
         assert!(u.is_var());
         assert!(!u.is_val());
         assert!(!u.is_bool());
@@ -803,12 +809,12 @@ mod test {
     #[test]
     #[should_panic]
     fn test_lterm_var_2() {
-        let _ = LTerm::var("_");
+        let _ = LTerm::<EmptyUser>::var("_");
     }
 
     #[test]
     fn test_lterm_val_1() {
-        let mut u = lterm!(1);
+        let mut u: LTerm<EmptyUser> = lterm!(1);
         assert!(u.is_val());
         assert!(!u.is_var());
         assert!(!u.is_bool());
@@ -825,7 +831,7 @@ mod test {
 
     #[test]
     fn test_lterm_val_2() {
-        let mut u = lterm!(true);
+        let mut u: LTerm<EmptyUser> = lterm!(true);
         assert!(u.is_val());
         assert!(!u.is_var());
         assert!(u.is_bool());
@@ -842,14 +848,14 @@ mod test {
 
     #[test]
     fn test_lterm_iter_1() {
-        let u = lterm!([]);
+        let u: LTerm<EmptyUser> = lterm!([]);
         let mut iter = u.iter();
         assert!(iter.next().is_none());
     }
 
     #[test]
     fn test_lterm_iter_2() {
-        let u = lterm!([1]);
+        let u: LTerm<EmptyUser> = lterm!([1]);
         let mut iter = u.iter();
         assert_eq!(iter.next().unwrap(), &1);
         assert!(iter.next().is_none());
@@ -857,7 +863,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_3() {
-        let u = lterm!([1, 2, 3]);
+        let u: LTerm<EmptyUser> = lterm!([1, 2, 3]);
         let mut iter = u.iter();
         assert_eq!(iter.next().unwrap(), &1);
         assert_eq!(iter.next().unwrap(), &2);
@@ -867,7 +873,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_4() {
-        let u = lterm!([1, 2 | 3]);
+        let u: LTerm<EmptyUser> = lterm!([1, 2 | 3]);
         let mut iter = u.iter();
         assert_eq!(iter.next().unwrap(), &1);
         assert_eq!(iter.next().unwrap(), &2);
@@ -877,7 +883,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_5() {
-        let u = lterm!([1, 2, 3]);
+        let u: LTerm<EmptyUser> = lterm!([1, 2, 3]);
         let mut iter = IntoIterator::into_iter(&u);
         assert_eq!(iter.next().unwrap(), &1);
         assert_eq!(iter.next().unwrap(), &2);
@@ -887,7 +893,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_mut_1() {
-        let mut u = lterm!([1, 2, 3]);
+        let mut u: LTerm<EmptyUser> = lterm!([1, 2, 3]);
         let iter = u.iter_mut();
         for x in iter {
             *x = lterm!(4);
@@ -901,7 +907,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_mut_2() {
-        let mut u = lterm!([1, 2, 3]);
+        let mut u: LTerm<EmptyUser> = lterm!([1, 2, 3]);
         for term in &mut u {
             *term = lterm!(5);
         }
@@ -914,15 +920,15 @@ mod test {
 
     #[test]
     fn test_lterm_from_iter_1() {
-        let v = vec![lterm!(1), lterm!(2), lterm!(3)];
-        let u = LTerm::from_iter(v);
+        let v: Vec<LTerm<EmptyUser>> = vec![lterm!(1), lterm!(2), lterm!(3)];
+        let u: LTerm<EmptyUser> = LTerm::from_iter(v);
         assert!(u == lterm!([1, 2, 3]));
     }
 
     #[test]
     fn test_lterm_extend_1() {
         let v = vec![lterm!(1), lterm!(2), lterm!(3)];
-        let mut u = lterm!([]);
+        let mut u: LTerm<EmptyUser> = lterm!([]);
         u.extend(v);
         assert!(u == lterm!([1, 2, 3]));
     }
@@ -930,7 +936,7 @@ mod test {
     #[test]
     fn test_lterm_extend_2() {
         let v = vec![lterm!(1), lterm!(2), lterm!(3)];
-        let mut u = lterm!([4, 5, 6]);
+        let mut u: LTerm<EmptyUser> = lterm!([4, 5, 6]);
         u.extend(v);
         assert!(u == lterm!([4, 5, 6, 1, 2, 3]));
     }
@@ -938,19 +944,19 @@ mod test {
     #[test]
     fn test_lterm_eq_1() {
         // LTerm vs. LTerm
-        assert_eq!(lterm!(1), lterm!(1));
-        assert_eq!(lterm!(true), lterm!(true));
-        assert_eq!(lterm!("foo"), lterm!("foo"));
-        assert_eq!(lterm!('a'), lterm!('a'));
-        assert_eq!(lterm!([1, 2, 3]), lterm!([1, 2, 3]));
-        assert_ne!(lterm!(1), lterm!(2));
-        assert_ne!(lterm!(1), lterm!(true));
-        assert_ne!(lterm!(1), lterm!('a'));
-        assert_ne!(lterm!(1), lterm!([]));
-        assert_ne!(lterm!(1), lterm!([1]));
-        assert_ne!(lterm!(1), lterm!("true"));
-        let u = LTerm::var("x");
-        let v = LTerm::var("x");
+        assert_eq!(lterm!(1) as LTerm<EmptyUser>, lterm!(1));
+        assert_eq!(lterm!(true) as LTerm<EmptyUser>, lterm!(true));
+        assert_eq!(lterm!("foo") as LTerm<EmptyUser>, lterm!("foo"));
+        assert_eq!(lterm!('a') as LTerm<EmptyUser>, lterm!('a'));
+        assert_eq!(lterm!([1, 2, 3]) as LTerm<EmptyUser>, lterm!([1, 2, 3]));
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!(2));
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!(true));
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!('a'));
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!([]));
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!([1]));
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!("true"));
+        let u: LTerm<EmptyUser> = LTerm::var("x");
+        let v: LTerm<EmptyUser> = LTerm::var("x");
         assert_eq!(u, u);
         assert_ne!(u, v);
     }
@@ -958,48 +964,72 @@ mod test {
     #[test]
     fn test_lterm_eq_2() {
         // LTerm vs. Rust constant
-        assert_eq!(lterm!(1), 1);
-        assert_ne!(lterm!(1), 2);
-        assert_ne!(lterm!(1), true);
-        assert_eq!(1, lterm!(1));
-        assert_ne!(2, lterm!(1));
-        assert_ne!(true, lterm!(1));
-        assert_eq!(lterm!("proto-vulcan"), "proto-vulcan");
-        assert_ne!(lterm!(["proto-vulcan"]), "proto-vulcan");
-        assert_eq!("proto-vulcan", lterm!("proto-vulcan"));
-        assert_ne!("proto-vulcan", lterm!(["proto-vulcan"]));
-        assert_eq!(lterm!("proto-vulcan"), "proto-vulcan"[0..]);
-        assert_ne!(lterm!(["proto-vulcan"]), "proto-vulcan"[0..]);
-        assert_eq!("proto-vulcan"[0..], lterm!("proto-vulcan"));
-        assert_ne!("proto-vulcan"[0..], lterm!(["proto-vulcan"]));
-        assert_eq!(lterm!("proto-vulcan"), String::from("proto-vulcan"));
-        assert_ne!(lterm!(["proto-vulcan"]), String::from("proto-vulcan"));
-        assert_eq!(String::from("proto-vulcan"), lterm!("proto-vulcan"));
-        assert_ne!(String::from("proto-vulcan"), lterm!(["proto-vulcan"]));
-        assert_eq!(lterm!('a'), 'a');
-        assert_ne!('b', lterm!('a'));
-        assert_ne!(lterm!(['a']), 'a');
-        assert_ne!('a', lterm!(['a']));
-        assert_ne!(lterm!(1), lterm!([1]));
-        assert_ne!(lterm!([1]), lterm!(1));
+        assert_eq!(lterm!(1) as LTerm<EmptyUser>, 1);
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, 2);
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, true);
+        assert_eq!(1, lterm!(1) as LTerm<EmptyUser>);
+        assert_ne!(2, lterm!(1) as LTerm<EmptyUser>);
+        assert_ne!(true, lterm!(1) as LTerm<EmptyUser>);
+        assert_eq!(lterm!("proto-vulcan") as LTerm<EmptyUser>, "proto-vulcan");
+        assert_ne!(lterm!(["proto-vulcan"]) as LTerm<EmptyUser>, "proto-vulcan");
+        assert_eq!("proto-vulcan", lterm!("proto-vulcan") as LTerm<EmptyUser>);
+        assert_ne!("proto-vulcan", lterm!(["proto-vulcan"]) as LTerm<EmptyUser>);
+        assert_eq!(
+            lterm!("proto-vulcan") as LTerm<EmptyUser>,
+            "proto-vulcan"[0..]
+        );
+        assert_ne!(
+            lterm!(["proto-vulcan"]) as LTerm<EmptyUser>,
+            "proto-vulcan"[0..]
+        );
+        assert_eq!(
+            "proto-vulcan"[0..],
+            lterm!("proto-vulcan") as LTerm<EmptyUser>
+        );
+        assert_ne!(
+            "proto-vulcan"[0..],
+            lterm!(["proto-vulcan"]) as LTerm<EmptyUser>
+        );
+        assert_eq!(
+            lterm!("proto-vulcan") as LTerm<EmptyUser>,
+            String::from("proto-vulcan")
+        );
+        assert_ne!(
+            lterm!(["proto-vulcan"]) as LTerm<EmptyUser>,
+            String::from("proto-vulcan")
+        );
+        assert_eq!(
+            String::from("proto-vulcan"),
+            lterm!("proto-vulcan") as LTerm<EmptyUser>
+        );
+        assert_ne!(
+            String::from("proto-vulcan"),
+            lterm!(["proto-vulcan"]) as LTerm<EmptyUser>
+        );
+        assert_eq!(lterm!('a') as LTerm<EmptyUser>, 'a');
+        assert_ne!('b', lterm!('a') as LTerm<EmptyUser>);
+        assert_ne!(lterm!(['a']) as LTerm<EmptyUser>, 'a');
+        assert_ne!('a', lterm!(['a']) as LTerm<EmptyUser>);
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!([1]));
+        assert_ne!(lterm!([1]), lterm!(1) as LTerm<EmptyUser>);
     }
 
     #[test]
     fn test_lterm_eq_3() {
         // LTerm vs. LValue
-        assert_eq!(lterm!(1), LValue::from(1));
-        assert_ne!(lterm!(1), LValue::from(2));
-        assert_eq!(LValue::from(1), lterm!(1));
-        assert_ne!(LValue::from(2), lterm!(1));
-        assert_ne!(LValue::from(1), lterm!([1]));
-        assert_ne!(lterm!([1]), LValue::from(1));
+        assert_eq!(lterm!(1) as LTerm<EmptyUser>, LValue::from(1));
+        assert_ne!(lterm!(1) as LTerm<EmptyUser>, LValue::from(2));
+        assert_eq!(LValue::from(1), lterm!(1) as LTerm<EmptyUser>);
+        assert_ne!(LValue::from(2), lterm!(1) as LTerm<EmptyUser>);
+        assert_ne!(LValue::from(1), lterm!([1]) as LTerm<EmptyUser>);
+        assert_ne!(lterm!([1]) as LTerm<EmptyUser>, LValue::from(1));
     }
 
     #[test]
     #[should_panic]
     fn test_lterm_projection_1() {
         // Comparison with projection panics
-        let u = LTerm::var("x");
+        let u: LTerm<EmptyUser> = LTerm::var("x");
         let v = LTerm::projection(u.clone());
         assert_eq!(u, v);
     }
@@ -1008,7 +1038,7 @@ mod test {
     #[should_panic]
     fn test_lterm_projection_2() {
         // Comparison with projection panics
-        let u = LTerm::var("x");
+        let u: LTerm<EmptyUser> = LTerm::var("x");
         let v = LTerm::projection(u.clone());
         assert_eq!(v, u);
     }
@@ -1018,14 +1048,14 @@ mod test {
     fn test_lterm_projection_3() {
         // Hash of projection panics
         let mut t = HashMap::new();
-        let u = LTerm::var("x");
+        let u: LTerm<EmptyUser> = LTerm::var("x");
         let v = LTerm::projection(u.clone());
-        t.insert(v, lterm!(1));
+        t.insert(v, lterm!(1) as LTerm<EmptyUser>);
     }
 
     #[test]
     fn test_lterm_index_1() {
-        let u = lterm!([1, [2], false]);
+        let u: LTerm<EmptyUser> = lterm!([1, [2], false]);
         assert_eq!(u[0], 1);
         assert_eq!(u[1], lterm!([2]));
         assert_eq!(u[2], false);
@@ -1033,7 +1063,7 @@ mod test {
 
     #[test]
     fn test_lterm_index_mut_1() {
-        let mut u = lterm!([0, 0, 0]);
+        let mut u: LTerm<EmptyUser> = lterm!([0, 0, 0]);
         u[0] = lterm!(1);
         u[1] = lterm!([2]);
         u[2] = lterm!(false);
@@ -1044,15 +1074,24 @@ mod test {
 
     #[test]
     fn test_lterm_display() {
-        assert_eq!(format!("{}", lterm!(1234)), "1234");
-        assert_eq!(format!("{}", lterm!(-1234)), "-1234");
-        assert_eq!(format!("{}", lterm!(true)), "true");
-        assert_eq!(format!("{}", lterm!(false)), "false");
-        assert_eq!(format!("{}", LTerm::var("x")), "x");
-        assert_eq!(format!("{}", lterm!([])), "[]");
-        assert_eq!(format!("{}", lterm!([1, [2], true, 'a'])), "[1, [2], true, 'a']");
-        assert_eq!(format!("{}", lterm!([1, 2 | 3])), "[1, 2 | 3]");
+        assert_eq!(format!("{}", lterm!(1234) as LTerm<EmptyUser>), "1234");
+        assert_eq!(format!("{}", lterm!(-1234) as LTerm<EmptyUser>), "-1234");
+        assert_eq!(format!("{}", lterm!(true) as LTerm<EmptyUser>), "true");
+        assert_eq!(format!("{}", lterm!(false) as LTerm<EmptyUser>), "false");
+        assert_eq!(format!("{}", LTerm::var("x") as LTerm<EmptyUser>), "x");
+        assert_eq!(format!("{}", lterm!([]) as LTerm<EmptyUser>), "[]");
+        assert_eq!(
+            format!("{}", lterm!([1, [2], true, 'a']) as LTerm<EmptyUser>),
+            "[1, [2], true, 'a']"
+        );
+        assert_eq!(
+            format!("{}", lterm!([1, 2 | 3]) as LTerm<EmptyUser>),
+            "[1, 2 | 3]"
+        );
         let u = LTerm::var("x");
-        assert_eq!(format!("{}", LTerm::projection(u)), "Projection(x)");
+        assert_eq!(
+            format!("{}", LTerm::projection(u) as LTerm<EmptyUser>),
+            "Projection(x)"
+        );
     }
 }

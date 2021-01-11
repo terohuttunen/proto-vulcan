@@ -7,14 +7,14 @@ use std::rc::Rc;
 
 /// Product
 #[derive(Debug, Clone)]
-pub struct TimesZConstraint {
-    u: LTerm,
-    v: LTerm,
-    w: LTerm,
+pub struct TimesZConstraint<U: User> {
+    u: LTerm<U>,
+    v: LTerm<U>,
+    w: LTerm<U>,
 }
 
-impl TimesZConstraint {
-    pub fn new<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Constraint<U> {
+impl<U: User> TimesZConstraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
@@ -22,7 +22,7 @@ impl TimesZConstraint {
     }
 }
 
-impl<U: User> BaseConstraint<U> for TimesZConstraint {
+impl<U: User> BaseConstraint<U> for TimesZConstraint<U> {
     fn run(self: Rc<Self>, mut state: State<U>) -> SResult<U> {
         let uwalk = state.smap_ref().walk(&self.u).clone();
         let vwalk = state.smap_ref().walk(&self.v).clone();
@@ -87,35 +87,35 @@ impl<U: User> BaseConstraint<U> for TimesZConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<LTerm> {
+    fn operands(&self) -> Vec<LTerm<U>> {
         vec![self.u.clone(), self.v.clone(), self.w.clone()]
     }
 }
 
-impl std::fmt::Display for TimesZConstraint {
+impl<U: User> std::fmt::Display for TimesZConstraint<U> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }
 }
 
-impl<U: User> ZConstraint<U> for TimesZConstraint {}
+impl<U: User> ZConstraint<U> for TimesZConstraint<U> {}
 
-impl<U: User> From<Rc<TimesZConstraint>> for Constraint<U> {
-    fn from(c: Rc<TimesZConstraint>) -> Constraint<U> {
+impl<U: User> From<Rc<TimesZConstraint<U>>> for Constraint<U> {
+    fn from(c: Rc<TimesZConstraint<U>>) -> Constraint<U> {
         Constraint::Z(c as Rc<dyn ZConstraint<U>>)
     }
 }
 
 /// Sum
 #[derive(Debug, Clone)]
-pub struct PlusZConstraint {
-    u: LTerm,
-    v: LTerm,
-    w: LTerm,
+pub struct PlusZConstraint<U: User> {
+    u: LTerm<U>,
+    v: LTerm<U>,
+    w: LTerm<U>,
 }
 
-impl PlusZConstraint {
-    pub fn new<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Constraint<U> {
+impl<U: User> PlusZConstraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Constraint<U> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
@@ -123,7 +123,7 @@ impl PlusZConstraint {
     }
 }
 
-impl<U: User> BaseConstraint<U> for PlusZConstraint {
+impl<U: User> BaseConstraint<U> for PlusZConstraint<U> {
     fn run(self: Rc<Self>, mut state: State<U>) -> SResult<U> {
         let uwalk = state.smap_ref().walk(&self.u).clone();
         let vwalk = state.smap_ref().walk(&self.v).clone();
@@ -188,21 +188,21 @@ impl<U: User> BaseConstraint<U> for PlusZConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<LTerm> {
+    fn operands(&self) -> Vec<LTerm<U>> {
         vec![self.u.clone(), self.v.clone(), self.w.clone()]
     }
 }
 
-impl std::fmt::Display for PlusZConstraint {
+impl<U: User> std::fmt::Display for PlusZConstraint<U> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }
 }
 
-impl<U: User> ZConstraint<U> for PlusZConstraint {}
+impl<U: User> ZConstraint<U> for PlusZConstraint<U> {}
 
-impl<U: User> From<Rc<PlusZConstraint>> for Constraint<U> {
-    fn from(c: Rc<PlusZConstraint>) -> Constraint<U> {
+impl<U: User> From<Rc<PlusZConstraint<U>>> for Constraint<U> {
+    fn from(c: Rc<PlusZConstraint<U>>) -> Constraint<U> {
         Constraint::Z(c as Rc<dyn ZConstraint<U>>)
     }
 }

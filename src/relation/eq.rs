@@ -3,24 +3,16 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::marker::PhantomData;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct Eq<U: User> {
-    u: LTerm,
-    v: LTerm,
-    #[derivative(Debug = "ignore")]
-    _phantom: PhantomData<U>,
+    u: LTerm<U>,
+    v: LTerm<U>,
 }
 
 impl<U: User> Eq<U> {
-    pub fn new(u: LTerm, v: LTerm) -> Goal<U> {
-        Goal::new(Eq {
-            u,
-            v,
-            _phantom: PhantomData,
-        })
+    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+        Goal::new(Eq { u, v })
     }
 }
 
@@ -49,7 +41,7 @@ impl<U: User> Solve<U> for Eq<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn eq<U: User>(u: LTerm, v: LTerm) -> Goal<U> {
+pub fn eq<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
     Eq::new(u, v)
 }
 
@@ -59,7 +51,7 @@ mod test {
 
     #[test]
     fn test_eq_1() {
-        let query = proto_vulcan_query!(|q| {q == 1234});
+        let query = proto_vulcan_query!(|q| { q == 1234 });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, 1234);
         assert!(iter.next().is_none());
@@ -67,9 +59,7 @@ mod test {
 
     #[test]
     fn test_eq_2() {
-        let query = proto_vulcan_query!(|q| {
-            q == [1, 2, 3]
-        });
+        let query = proto_vulcan_query!(|q| { q == [1, 2, 3] });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, lterm!([1, 2, 3]));
         assert!(iter.next().is_none());
@@ -78,21 +68,15 @@ mod test {
     #[test]
     fn test_eq_3() {
         // Occurs-check 1
-        let query = proto_vulcan_query!(|q| {
-            q == [1, 2, 3, q]
-        });
+        let query = proto_vulcan_query!(|q| { q == [1, 2, 3, q] });
         let mut iter = query.run();
         assert!(iter.next().is_none());
-
-
     }
 
     #[test]
     fn test_eq_4() {
         // Occurs-check 2
-        let query = proto_vulcan_query!(|q| {
-            [1, 2, 3, q] == q
-        });
+        let query = proto_vulcan_query!(|q| { [1, 2, 3, q] == q });
         let mut iter = query.run();
         assert!(iter.next().is_none());
     }

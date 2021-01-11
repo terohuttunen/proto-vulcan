@@ -54,12 +54,16 @@ fn rule3(answers: LTerm) -> Goal {
 // reservation at 5:00pm, the mascarpone enthusiast, and the Vogue
 // subscriber.
 fn rule4(answers: LTerm) -> Goal {
-    proto_vulcan!(
-        permuteo(
-            [[_, "fortune", _, _], ["landon", _, _, _], [_, _, _, "5:00pm"], [_, _, "mascarpone", _], [_, "vogue", _, _]],
-            answers,
-        )
-    )
+    proto_vulcan!(permuteo(
+        [
+            [_, "fortune", _, _],
+            ["landon", _, _, _],
+            [_, _, _, "5:00pm"],
+            [_, _, "mascarpone", _],
+            [_, "vogue", _, _]
+        ],
+        answers,
+    ))
 }
 
 // The person with a reservation at 5:00pm didn't subscribe to Time.

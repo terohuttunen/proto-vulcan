@@ -6,15 +6,15 @@ use std::rc::Rc;
 
 // Disequality constraint
 #[derive(Clone, Debug)]
-pub struct DisequalityConstraint(SMap);
+pub struct DisequalityConstraint<U: User>(SMap<U>);
 
-impl DisequalityConstraint {
-    pub fn new<U: User>(smap: SMap) -> Constraint<U> {
+impl<U: User> DisequalityConstraint<U> {
+    pub fn new(smap: SMap<U>) -> Constraint<U> {
         Constraint::Tree(Rc::new(DisequalityConstraint(smap)))
     }
 }
 
-impl<U: User> BaseConstraint<U> for DisequalityConstraint {
+impl<U: User> BaseConstraint<U> for DisequalityConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let mut extension = SMap::new();
         let mut smap = Rc::new(state.smap_ref().clone());
@@ -32,12 +32,12 @@ impl<U: User> BaseConstraint<U> for DisequalityConstraint {
         }
     }
 
-    fn operands(&self) -> Vec<LTerm> {
+    fn operands(&self) -> Vec<LTerm<U>> {
         self.0.operands()
     }
 }
 
-impl std::fmt::Display for DisequalityConstraint {
+impl<U: User> std::fmt::Display for DisequalityConstraint<U> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for (u, v) in self.0.iter() {
             write!(f, "{} != {},", u, v)?;
@@ -46,7 +46,7 @@ impl std::fmt::Display for DisequalityConstraint {
     }
 }
 
-impl<U: User> TreeConstraint<U> for DisequalityConstraint {
+impl<U: User> TreeConstraint<U> for DisequalityConstraint<U> {
     /// If the `self` subsumes the `other`.
     ///
     /// A constraint is subsumed by another constraint if unifying the constraint in the
@@ -63,11 +63,11 @@ impl<U: User> TreeConstraint<U> for DisequalityConstraint {
         extension.is_empty()
     }
 
-    fn smap_ref(&self) -> &SMap {
+    fn smap_ref(&self) -> &SMap<U> {
         &self.0
     }
 
-    fn walk_star(&self, smap: &SMap) -> SMap {
+    fn walk_star(&self, smap: &SMap<U>) -> SMap<U> {
         let mut n = SMap::new();
         for (k, v) in TreeConstraint::<U>::smap_ref(self).iter() {
             let kwalk = smap.walk_star(k);
@@ -79,8 +79,8 @@ impl<U: User> TreeConstraint<U> for DisequalityConstraint {
     }
 }
 
-impl<U: User> From<Rc<DisequalityConstraint>> for Constraint<U> {
-    fn from(c: Rc<DisequalityConstraint>) -> Constraint<U> {
+impl<U: User> From<Rc<DisequalityConstraint<U>>> for Constraint<U> {
+    fn from(c: Rc<DisequalityConstraint<U>>) -> Constraint<U> {
         Constraint::Tree(c as Rc<dyn TreeConstraint<U>>)
     }
 }
@@ -88,7 +88,7 @@ impl<U: User> From<Rc<DisequalityConstraint>> for Constraint<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::EmptyUser;
+    use crate::user::EmptyUser;
     use crate::*;
 
     #[test]
@@ -106,8 +106,10 @@ mod tests {
         smap.extend(x.clone(), five.clone());
         let c1 = DisequalityConstraint::new(smap);
         match (c0, c1) {
-            (Constraint::Tree(t0), Constraint::Tree(t1)) => assert!(TreeConstraint::<EmptyUser>::subsumes(&*t1, &*t0)),
-            _=> assert!(false)
+            (Constraint::Tree(t0), Constraint::Tree(t1)) => {
+                assert!(TreeConstraint::<EmptyUser>::subsumes(&*t1, &*t0))
+            }
+            _ => assert!(false),
         }
     }
 }

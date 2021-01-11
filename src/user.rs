@@ -1,12 +1,29 @@
 use crate::lterm::LTerm;
 use crate::state::{SMap, SResult, State};
+use std::fmt;
 use std::fmt::Debug;
-use std::rc::Rc;
+use std::hash::Hash;
 
 pub trait User: Debug + Clone + 'static {
+    type UserTerm: Debug + Clone + Hash + PartialEq + Eq;
+
     /// Process extension to substitution map.
-    fn process_extension(state: State<Self>, _extension: &SMap) -> SResult<Self> {
+    fn process_extension(state: State<Self>, _extension: &SMap<Self>) -> SResult<Self> {
         Ok(state)
+    }
+
+    // User unification.
+    fn unify(
+        mut state: State<Self>,
+        extension: &mut SMap<Self>,
+        u: &LTerm<Self>,
+        v: &LTerm<Self>,
+    ) -> SResult<Self> {
+        if crate::state::unify_rec(&mut state.smap, extension, u, v) {
+            Ok(state)
+        } else {
+            Err(())
+        }
     }
 
     fn finalize(_state: &mut State<Self>) {}
@@ -14,14 +31,21 @@ pub trait User: Debug + Clone + 'static {
     fn reify(_state: &mut State<Self>) {}
 }
 
-pub trait UserUnify: Debug {
-    /// Return Some(smap) if the terms can be unified, and None if not.
-    fn unify<'a>(
-        &self,
-        this: &LTerm,
-        other: &LTerm,
-        smap: &mut Rc<SMap>,
-        // Note: Extensions to `smap` must be added also to `extension`.
-        extension: &mut SMap,
-    ) -> bool;
+#[derive(Debug, Clone)]
+pub struct EmptyUser {}
+
+impl EmptyUser {
+    pub fn new() -> EmptyUser {
+        EmptyUser {}
+    }
+}
+
+impl fmt::Display for EmptyUser {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "")
+    }
+}
+
+impl User for EmptyUser {
+    type UserTerm = ();
 }

@@ -5,7 +5,7 @@ use crate::relation::diseqfd::diseqfd;
 use crate::relation::ltefd::ltefd;
 use crate::user::User;
 
-pub fn ltfd<U: User>(u: LTerm, v: LTerm) -> Goal<U> {
+pub fn ltfd<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
     proto_vulcan!([diseqfd(u, v), ltefd(u, v)])
 }
 

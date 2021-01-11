@@ -18,7 +18,7 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([]));
 /// }
 /// ```
-pub fn emptyo<U: User>(s: LTerm) -> Goal<U> {
+pub fn emptyo<U: User>(s: LTerm<U>) -> Goal<U> {
     proto_vulcan!([] == s)
 }
 

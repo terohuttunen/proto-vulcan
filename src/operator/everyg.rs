@@ -11,17 +11,17 @@ pub struct Everyg<U, T>
 where
     U: User,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
 {
     coll: T,
-    g: Box<dyn Fn(LTerm) -> Goal<U>>,
+    g: Box<dyn Fn(LTerm<U>) -> Goal<U>>,
 }
 
 impl<U, T> Debug for Everyg<U, T>
 where
     U: User,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Everyg()")
@@ -32,9 +32,9 @@ impl<U, T> Everyg<U, T>
 where
     U: User,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
 {
-    fn new(coll: T, g: Box<dyn Fn(LTerm) -> Goal<U>>) -> Goal<U> {
+    fn new(coll: T, g: Box<dyn Fn(LTerm<U>) -> Goal<U>>) -> Goal<U> {
         Goal::new(Everyg { coll, g })
     }
 }
@@ -43,7 +43,7 @@ impl<U, T> Solve<U> for Everyg<U, T>
 where
     U: User,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
 {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let term_iter = IntoIterator::into_iter(&self.coll);
@@ -56,7 +56,7 @@ pub fn everyg<U, T>(param: ForOperatorParam<U, T>) -> Goal<U>
 where
     U: User,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
 {
     Everyg::new(param.coll, param.g)
 }

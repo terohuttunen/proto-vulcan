@@ -8,14 +8,14 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub struct LResult<U: User>(pub LTerm, pub Rc<ConstraintStore<U>>);
+pub struct LResult<U: User>(pub LTerm<U>, pub Rc<ConstraintStore<U>>);
 
 impl<U: User> LResult<U> {
     /// Check if the wrapped LTerm is an Any-variable with constraints such that it cannot be
     /// the `exception`.
     pub fn is_any_except<T>(&self, exception: &T) -> bool
     where
-        T: PartialEq<LTerm>,
+        T: PartialEq<LTerm<U>>,
     {
         if self.0.is_any() {
             // result is an `any` variable, see if it has the expected constraint
@@ -46,9 +46,9 @@ impl<U: User> LResult<U> {
 }
 
 impl<U: User> Deref for LResult<U> {
-    type Target = LTerm;
+    type Target = LTerm<U>;
 
-    fn deref(&self) -> &LTerm {
+    fn deref(&self) -> &LTerm<U> {
         &self.0
     }
 }
@@ -66,13 +66,13 @@ impl<U: User> fmt::Display for LResult<U> {
     }
 }
 
-impl<U: User> PartialEq<LTerm> for LResult<U> {
-    fn eq(&self, other: &LTerm) -> bool {
+impl<U: User> PartialEq<LTerm<U>> for LResult<U> {
+    fn eq(&self, other: &LTerm<U>) -> bool {
         &self.0 == other
     }
 }
 
-impl<U: User> PartialEq<LResult<U>> for LTerm {
+impl<U: User> PartialEq<LResult<U>> for LTerm<U> {
     fn eq(&self, other: &LResult<U>) -> bool {
         &other.0 == self
     }

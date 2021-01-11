@@ -1,45 +1,32 @@
 /// Constrains u + v = w finite domains
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
-use crate::state::State;
 use crate::state::PlusFdConstraint;
+use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::marker::PhantomData;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct PlusFd<U: User> {
-    u: LTerm,
-    v: LTerm,
-    w: LTerm,
-    #[derivative(Debug = "ignore")]
-    _phantom: PhantomData<U>,
+    u: LTerm<U>,
+    v: LTerm<U>,
+    w: LTerm<U>,
 }
 
 impl<U: User> PlusFd<U> {
-    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
-        Goal::new(PlusFd {
-            u,
-            v,
-            w,
-            _phantom: PhantomData,
-        })
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
+        Goal::new(PlusFd { u, v, w })
     }
 }
 
 impl<U: User> Solve<U> for PlusFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = PlusFdConstraint::new(
-            self.u.clone(),
-            self.v.clone(),
-            self.w.clone(),
-        );
+        let c = PlusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone());
         Stream::from(c.run(state))
     }
 }
 
-pub fn plusfd<U: User>(u: LTerm, v: LTerm, w: LTerm) -> Goal<U> {
+pub fn plusfd<U: User>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
     PlusFd::new(u, v, w)
 }
 

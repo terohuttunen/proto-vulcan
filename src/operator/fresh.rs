@@ -6,12 +6,12 @@ use crate::user::User;
 
 #[derive(Debug)]
 pub struct Fresh<U: User> {
-    variables: Vec<LTerm>,
+    variables: Vec<LTerm<U>>,
     body: Goal<U>,
 }
 
 impl<U: User> Fresh<U> {
-    pub fn new(variables: Vec<LTerm>, body: Goal<U>) -> Goal<U> {
+    pub fn new(variables: Vec<LTerm<U>>, body: Goal<U>) -> Goal<U> {
         Goal::new(Fresh { variables, body }) as Goal<U>
     }
 }

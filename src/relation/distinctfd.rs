@@ -1,26 +1,19 @@
 /// distinctfd finite domain constraint
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
-use crate::state::State;
 use crate::state::DistinctFdConstraint;
+use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
-use std::marker::PhantomData;
 
-#[derive(Derivative)]
-#[derivative(Debug)]
+#[derive(Debug)]
 pub struct DistinctFd<U: User> {
-    u: LTerm,
-    #[derivative(Debug = "ignore")]
-    _phantom: PhantomData<U>,
+    u: LTerm<U>,
 }
 
 impl<U: User> DistinctFd<U> {
-    pub fn new(u: LTerm) -> Goal<U> {
-        Goal::new(DistinctFd {
-            u,
-            _phantom: PhantomData,
-        })
+    pub fn new(u: LTerm<U>) -> Goal<U> {
+        Goal::new(DistinctFd { u })
     }
 }
 
@@ -31,7 +24,7 @@ impl<U: User> Solve<U> for DistinctFd<U> {
     }
 }
 
-pub fn distinctfd<U: User>(u: LTerm) -> Goal<U> {
+pub fn distinctfd<U: User>(u: LTerm<U>) -> Goal<U> {
     DistinctFd::new(u)
 }
 

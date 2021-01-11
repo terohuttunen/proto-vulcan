@@ -17,7 +17,7 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([2, 3]));
 /// }
 /// ```
-pub fn resto<U: User>(list: LTerm, rest: LTerm) -> Goal<U> {
+pub fn resto<U: User>(list: LTerm<U>, rest: LTerm<U>) -> Goal<U> {
     proto_vulcan!(|first| { conso(first, rest, list) })
 }
 

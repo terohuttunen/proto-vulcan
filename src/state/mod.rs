@@ -9,7 +9,7 @@ mod substitution;
 pub use substitution::SMap;
 
 mod unification;
-use unification::unify_rec;
+pub use unification::unify_rec;
 
 pub mod constraint;
 pub use constraint::{
@@ -40,13 +40,13 @@ pub type SResult<U> = Result<State<U>, ()>;
 #[derive(Debug, Clone)]
 pub struct State<U: User> {
     /// The substitution map
-    smap: Rc<SMap>,
+    pub smap: Rc<SMap<U>>,
 
     /// The constraint store
     cstore: Rc<ConstraintStore<U>>,
 
     /// The domain store
-    dstore: Rc<HashMap<LTerm, Rc<FiniteDomain>>>,
+    dstore: Rc<HashMap<LTerm<U>, Rc<FiniteDomain>>>,
 
     pub user_state: U,
 }
@@ -62,16 +62,16 @@ impl<U: User> State<U> {
     }
 
     /// Return a reference to the substition map of the state
-    pub fn smap_ref(&self) -> &SMap {
+    pub fn smap_ref(&self) -> &SMap<U> {
         self.smap.as_ref()
     }
 
-    pub fn smap_to_mut(&mut self) -> &mut SMap {
+    pub fn smap_to_mut(&mut self) -> &mut SMap<U> {
         Rc::make_mut(&mut self.smap)
     }
 
     /// Returns the state with replaced substitution map
-    pub fn with_smap(self, smap: SMap) -> State<U> {
+    pub fn with_smap(self, smap: SMap<U>) -> State<U> {
         State {
             smap: Rc::new(smap),
             ..self
@@ -79,7 +79,7 @@ impl<U: User> State<U> {
     }
 
     /// Get a cloned reference to the substitution map of the state
-    pub fn get_smap(&self) -> Rc<SMap> {
+    pub fn get_smap(&self) -> Rc<SMap<U>> {
         Rc::clone(&self.smap)
     }
 
@@ -105,15 +105,15 @@ impl<U: User> State<U> {
     }
 
     /// Return a reference to the domain store of the state
-    pub fn dstore_ref(&self) -> &HashMap<LTerm, Rc<FiniteDomain>> {
+    pub fn dstore_ref(&self) -> &HashMap<LTerm<U>, Rc<FiniteDomain>> {
         self.dstore.as_ref()
     }
 
-    pub fn dstore_to_mut(&mut self) -> &mut HashMap<LTerm, Rc<FiniteDomain>> {
+    pub fn dstore_to_mut(&mut self) -> &mut HashMap<LTerm<U>, Rc<FiniteDomain>> {
         Rc::make_mut(&mut self.dstore)
     }
 
-    pub fn with_dstore(self, dstore: HashMap<LTerm, Rc<FiniteDomain>>) -> State<U> {
+    pub fn with_dstore(self, dstore: HashMap<LTerm<U>, Rc<FiniteDomain>>) -> State<U> {
         State {
             dstore: Rc::new(dstore),
             ..self
@@ -121,7 +121,7 @@ impl<U: User> State<U> {
     }
 
     /// Get a cloned reference to the domain store fo the state
-    pub fn get_dstore(&self) -> Rc<HashMap<LTerm, Rc<FiniteDomain>>> {
+    pub fn get_dstore(&self) -> Rc<HashMap<LTerm<U>, Rc<FiniteDomain>>> {
         Rc::clone(&self.dstore)
     }
 
@@ -144,7 +144,7 @@ impl<U: User> State<U> {
     /// Adds a new domain constraint for a variable `x`; or if the term is a value, then
     /// checks that the value is within the domain. If new domain constraint is added for a
     /// variable, it is updated to the domain store.
-    pub fn process_domain(self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult<U> {
+    pub fn process_domain(self, x: &LTerm<U>, domain: Rc<FiniteDomain>) -> SResult<U> {
         match x.as_ref() {
             LTermInner::Var(_, _) => self.update_var_domain(x, domain),
             LTermInner::Val(LValue::Number(v)) if domain.contains(*v) => Ok(self),
@@ -162,7 +162,7 @@ impl<U: User> State<U> {
     ///
     /// Note: if domains are resolved into singletons, then they are converted into value
     ///       kind LTerms.
-    fn update_var_domain(self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult<U> {
+    fn update_var_domain(self, x: &LTerm<U>, domain: Rc<FiniteDomain>) -> SResult<U> {
         assert!(x.is_var());
         match self.dstore.get(x) {
             Some(old_domain) => match old_domain.intersect(domain.as_ref()) {
@@ -179,7 +179,7 @@ impl<U: User> State<U> {
     /// If the domain is a singleton, i.e. a single value, it is converted into a constant value
     /// instead, by creating a new constant from the singleton value and extending the
     /// substitution to map from the variable `x` to the newly created constant.
-    fn resolve_storable_domain(mut self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult<U> {
+    fn resolve_storable_domain(mut self, x: &LTerm<U>, domain: Rc<FiniteDomain>) -> SResult<U> {
         assert!(x.is_var());
         match domain.singleton_value() {
             Some(n) => {
@@ -200,7 +200,7 @@ impl<U: User> State<U> {
         }
     }
 
-    pub fn remove_domain(mut self, x: &LTerm) -> SResult<U> {
+    pub fn remove_domain(mut self, x: &LTerm<U>) -> SResult<U> {
         match self.dstore_to_mut().remove(x) {
             Some(_) => Ok(self),
             None => Err(()),
@@ -208,7 +208,7 @@ impl<U: User> State<U> {
     }
 
     // Removes domain `exclude` from the domain of all variables in list `x`.
-    pub fn exclude_from_domain(mut self, x: &LTerm, exclude: Rc<FiniteDomain>) -> SResult<U> {
+    pub fn exclude_from_domain(mut self, x: &LTerm<U>, exclude: Rc<FiniteDomain>) -> SResult<U> {
         assert!(x.is_list());
         let dstore = self.get_dstore();
         for y in x {
@@ -251,7 +251,7 @@ impl<U: User> State<U> {
     }
 
     /// Processes extension for disequality constraints.
-    fn process_extension_diseq(self, _extension: &SMap) -> SResult<U> {
+    fn process_extension_diseq(self, _extension: &SMap<U>) -> SResult<U> {
         self.run_constraints()
     }
 
@@ -267,7 +267,7 @@ impl<U: User> State<U> {
     ///
     /// If the resulting intersection domain is non-zero, the
     /// substitution is not possible, the constraint fails and `None` is returned.
-    fn process_extension_fd(mut self, extension: &SMap) -> SResult<U> {
+    fn process_extension_fd(mut self, extension: &SMap<U>) -> SResult<U> {
         let dstore = self.get_dstore();
         for (x, v) in extension.iter() {
             match dstore.get(x) {
@@ -285,7 +285,7 @@ impl<U: User> State<U> {
         Ok(self)
     }
 
-    fn process_extension_user(self, extension: &SMap) -> SResult<U> {
+    fn process_extension_user(self, extension: &SMap<U>) -> SResult<U> {
         User::process_extension(self, extension)
     }
 
@@ -294,7 +294,7 @@ impl<U: User> State<U> {
     /// The extension to substitution consists of all substitutions added in a single
     /// unification. It consists of the substitutions had to be added in order to unify
     /// the two terms.
-    fn process_extension(self, extension: SMap) -> SResult<U> {
+    fn process_extension(self, extension: SMap<U>) -> SResult<U> {
         self.process_extension_diseq(&extension)?
             .process_extension_fd(&extension)?
             .process_extension_user(&extension)
@@ -316,35 +316,31 @@ impl<U: User> State<U> {
         }
     }
 
-    pub fn unify(mut self, u: &LTerm, v: &LTerm) -> SResult<U> {
+    pub fn unify(self, u: &LTerm<U>, v: &LTerm<U>) -> SResult<U> {
         // Extension will contain all substitutions added in the recursive unification of the terms
         let mut extension = SMap::new();
-        if unify_rec(&mut self.smap, &mut extension, u, v) {
-            self.process_extension(extension)
-        } else {
-            Err(())
-        }
+        U::unify(self, &mut extension, u, v)?.process_extension(extension)
     }
 
     /// Add disequality constraint
-    pub fn disunify(self, u: &LTerm, v: &LTerm) -> SResult<U> {
+    pub fn disunify(self, u: &LTerm<U>, v: &LTerm<U>) -> SResult<U> {
         // Disunification is implemented in terms of unification
         let mut extension = SMap::new();
-        let mut state = self.clone();
-        if unify_rec(&mut state.smap, &mut extension, u, v) {
-            if extension.is_empty() {
-                // Unification succeeded without extending the current substitution, therefore
-                // disequality constraint fails.
-                Err(())
-            } else {
-                // Unification succeeded with extended substitution map. Instead of adding the
-                // substitutions to the state, we add corresponding constraint to disequality
-                // constraint store, against which later unifications will be verified.
-                let c = DisequalityConstraint::new(extension);
-                Ok(self.with_constraint(c))
+        match U::unify(self.clone(), &mut extension, u, v) {
+            Ok(_) => {
+                if extension.is_empty() {
+                    // Unification succeeded without extending the current substitution, therefore
+                    // disequality constraint fails.
+                    Err(())
+                } else {
+                    // Unification succeeded with extended substitution map. Instead of adding the
+                    // substitutions to the state, we add corresponding constraint to disequality
+                    // constraint store, against which later unifications will be verified.
+                    let c = DisequalityConstraint::new(extension);
+                    Ok(self.with_constraint(c))
+                }
             }
-        } else {
-            Ok(self)
+            Err(_) => Ok(self),
         }
     }
 

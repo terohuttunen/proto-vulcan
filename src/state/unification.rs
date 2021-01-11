@@ -1,9 +1,15 @@
 use super::substitution::SMap;
 use crate::lterm::{LTerm, LTermInner};
+use crate::user::User;
 use std::rc::Rc;
 
 /// Recursive unification of tree terms
-pub fn unify_rec(mut smap: &mut Rc<SMap>, extension: &mut SMap, u: &LTerm, v: &LTerm) -> bool {
+pub fn unify_rec<U: User>(
+    mut smap: &mut Rc<SMap<U>>,
+    extension: &mut SMap<U>,
+    u: &LTerm<U>,
+    v: &LTerm<U>,
+) -> bool {
     let uwalk = smap.walk(u).clone();
     let vwalk = smap.walk(v).clone();
     match (uwalk.as_ref(), vwalk.as_ref()) {
@@ -38,8 +44,6 @@ pub fn unify_rec(mut smap: &mut Rc<SMap>, extension: &mut SMap, u: &LTerm, v: &L
             // If both terms walk to identical values, then they are already unified.
             true
         }
-        (LTermInner::User(uuser), _) => uuser.unify(&uwalk, &vwalk, smap, extension),
-        (_, LTermInner::User(vuser)) => vuser.unify(&vwalk, &uwalk, smap, extension),
         (LTermInner::Empty, LTermInner::Empty) => true,
         (LTermInner::Cons(uhead, utail), LTermInner::Cons(vhead, vtail)) => {
             if unify_rec(smap, extension, uhead, vhead) {
@@ -60,7 +64,7 @@ mod tests {
     #[test]
     fn test_unify_1() {
         // 1. var == var
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -78,7 +82,7 @@ mod tests {
     #[test]
     fn test_unify_2() {
         // 2. var != var
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -96,7 +100,7 @@ mod tests {
     #[test]
     fn test_unify_3() {
         // 3. var == val
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -117,7 +121,7 @@ mod tests {
     #[test]
     fn test_unify_4() {
         // 4. var == list
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -138,7 +142,7 @@ mod tests {
     #[test]
     fn test_unify_5() {
         // 5. val == var
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -159,7 +163,7 @@ mod tests {
     #[test]
     fn test_unify_6() {
         // 6. list == var
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -180,7 +184,7 @@ mod tests {
     #[test]
     fn test_unify_7() {
         // 7. val == val
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(1);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -197,7 +201,7 @@ mod tests {
     #[test]
     fn test_unify_8() {
         // 8. val != val
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(1);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -214,20 +218,20 @@ mod tests {
     #[test]
     fn test_unify_9() {
         // 9. list[N] == list[N]
-        let mut smap = Rc::new(SMap::new());
+        let smap = SMap::<EmptyUser>::new();
         let v0 = lterm!([1]);
         let v1 = lterm!([1]);
 
         // v0 and v1 are identical lists => success
         let mut extension = SMap::new();
-        assert!(unify_rec(&mut smap, &mut extension, &v0, &v1));
+        assert!(unify_rec(&mut Rc::new(smap), &mut extension, &v0, &v1));
         assert!(extension.is_empty());
     }
 
     #[test]
     fn test_unify_10() {
         // 10. list[N] != list[N]
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!([1]);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -244,7 +248,7 @@ mod tests {
     #[test]
     fn test_unify_11() {
         // 11. list[N] != list[M] where N != M
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!([1 | 1]);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -261,7 +265,7 @@ mod tests {
     #[test]
     fn test_unify_12() {
         // Occurs check 1
-        let smap = SMap::new();
+        let smap = SMap::<EmptyUser>::new();
         let u = LTerm::var("u");
         let v = lterm!([1, 2, 3, u]);
 
@@ -270,10 +274,10 @@ mod tests {
         assert!(!unify_rec(&mut Rc::new(smap), &mut extension, &u, &v));
     }
 
-       #[test]
+    #[test]
     fn test_unify_13() {
         // Occurs check 2
-        let smap = SMap::new();
+        let smap = SMap::<EmptyUser>::new();
         let u = LTerm::var("u");
         let v = lterm!([1, 2, 3, u]);
 

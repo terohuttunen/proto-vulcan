@@ -4,7 +4,7 @@ use crate::relation::conso;
 use crate::user::User;
 
 /// A relation such that the `first` is the first element of `list`.
-pub fn firsto<U: User>(list: LTerm, first: LTerm) -> Goal<U> {
+pub fn firsto<U: User>(list: LTerm<U>, first: LTerm<U>) -> Goal<U> {
     proto_vulcan!(|rest| { conso(first, rest, list) })
 }
 

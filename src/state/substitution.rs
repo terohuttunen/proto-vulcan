@@ -1,4 +1,5 @@
 use crate::lterm::{LTerm, LTermInner};
+use crate::user::{EmptyUser, User};
 use std::collections::HashMap;
 use std::ops::Deref;
 
@@ -6,16 +7,18 @@ use std::ops::Deref;
 ///
 /// Substitution maps track the binding of variables to terms.
 #[derive(Clone, Debug)]
-pub struct SMap(HashMap<LTerm, LTerm>);
+pub struct SMap<U = EmptyUser>(HashMap<LTerm<U>, LTerm<U>>)
+where
+    U: User;
 
-impl SMap {
+impl<U: User> SMap<U> {
     /// Construct an an empty substitution map with no substitutions
-    pub fn new() -> SMap {
+    pub fn new() -> SMap<U> {
         SMap(HashMap::new())
     }
 
     /// Extend substitution map with a new substitution
-    pub fn extend(&mut self, k: LTerm, v: LTerm) {
+    pub fn extend(&mut self, k: LTerm<U>, v: LTerm<U>) {
         self.0.insert(k, v);
     }
 
@@ -27,7 +30,7 @@ impl SMap {
     ///
     /// Walking the substitution map recursively traverses the map until no next term is found,
     /// or the term found is a non-variable.
-    pub fn walk<'a>(&'a self, mut k: &'a LTerm) -> &'a LTerm {
+    pub fn walk<'a>(&'a self, mut k: &'a LTerm<U>) -> &'a LTerm<U> {
         loop {
             match k.as_ref() {
                 LTermInner::Var(_, _) => {
@@ -43,7 +46,7 @@ impl SMap {
 
     /// Alternative walk of the substitution map that does not bind the return value lifetime
     /// to lifetime of the input variable `k`.
-    pub fn walk_if<'a, 'b>(&'a self, k: &'b LTerm) -> Option<&'a LTerm> {
+    pub fn walk_if<'a, 'b>(&'a self, k: &'b LTerm<U>) -> Option<&'a LTerm<U>> {
         if k.is_var() {
             // First step
             let mut step = match self.0.get(k) {
@@ -71,7 +74,7 @@ impl SMap {
     /// Walks the substitution map recursively like `walk()`, but does not stop at lists, and
     /// instead recurses to do the deep walk also for the list elements. Returns a term which
     /// is a tree where all leaves are walked terms.
-    pub fn walk_star(&self, v: &LTerm) -> LTerm {
+    pub fn walk_star(&self, v: &LTerm<U>) -> LTerm<U> {
         let v = self.walk(v);
         match v.as_ref() {
             LTermInner::Cons(head, tail) => LTerm::cons(self.walk_star(head), self.walk_star(tail)),
@@ -83,7 +86,7 @@ impl SMap {
     ///
     /// Occurs check is used to prevent unification of terms that would cause the variable to
     /// be contained in itself.
-    pub fn occurs_check(&self, x: &LTerm, v: &LTerm) -> bool {
+    pub fn occurs_check(&self, x: &LTerm<U>, v: &LTerm<U>) -> bool {
         match self.walk(v).as_ref() {
             LTermInner::Var(vvar, _) => match x.as_ref() {
                 LTermInner::Var(xvar, _) => *vvar == *xvar,
@@ -105,7 +108,7 @@ impl SMap {
     ///
     /// This is typically used to generate a reifying substitution map from an empty map. The
     /// reifying map maps free variables to reified names. See State::reify().
-    pub fn reify(&self, v: &LTerm) -> SMap {
+    pub fn reify(&self, v: &LTerm<U>) -> SMap<U> {
         let walkv = self.walk(v);
         match walkv.as_ref() {
             LTermInner::Var(_, _) => {
@@ -121,7 +124,7 @@ impl SMap {
     }
 
     /// Check if the given logic term refers to any unassociated variables
-    pub fn is_anyvar(&self, v: &LTerm) -> bool {
+    pub fn is_anyvar(&self, v: &LTerm<U>) -> bool {
         match v.as_ref() {
             LTermInner::Var(_, _) if self.contains_key(v) => {
                 let walkv = self.walk(&v);
@@ -133,7 +136,7 @@ impl SMap {
     }
 
     /// Returns a list of variables referenced by the substitution map
-    pub fn get_vars(&self) -> Vec<&LTerm> {
+    pub fn get_vars(&self) -> Vec<&LTerm<U>> {
         let mut vars = vec![];
         for (k, v) in self.0.iter() {
             vars.push(k);
@@ -145,7 +148,7 @@ impl SMap {
     }
 
     /// Returns a set of variables operands referencesd by the substitution
-    pub fn operands(&self) -> Vec<LTerm> {
+    pub fn operands(&self) -> Vec<LTerm<U>> {
         let mut operands = vec![];
         for (k, v) in self.0.iter() {
             operands.push(k.clone());
@@ -157,17 +160,17 @@ impl SMap {
     }
 }
 
-impl IntoIterator for SMap {
-    type Item = (LTerm, LTerm);
-    type IntoIter = ::std::collections::hash_map::IntoIter<LTerm, LTerm>;
+impl<U: User> IntoIterator for SMap<U> {
+    type Item = (LTerm<U>, LTerm<U>);
+    type IntoIter = ::std::collections::hash_map::IntoIter<LTerm<U>, LTerm<U>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl Deref for SMap {
-    type Target = HashMap<LTerm, LTerm>;
+impl<U: User> Deref for SMap<U> {
+    type Target = HashMap<LTerm<U>, LTerm<U>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -181,14 +184,14 @@ mod tests {
 
     #[test]
     fn test_smap_new() {
-        let smap = SMap::new();
+        let smap = SMap::<EmptyUser>::new();
         // A newly created SMap is empty
         assert!(smap.is_empty());
     }
 
     #[test]
     fn test_smap_extend() {
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v = lterm!(_);
         let t = lterm!(1234);
 
@@ -204,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_smap_occurs_check_1() {
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -223,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_smap_occurs_check_2() {
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -245,7 +248,7 @@ mod tests {
     #[test]
     fn test_smap_walk_1() {
         // 1. Variable not found in map => input returned back as it is impossible to walk
-        let smap = SMap::new();
+        let smap = SMap::<EmptyUser>::new();
         let v = lterm!(_);
         let w = smap.walk(&v);
         assert!(LTerm::ptr_eq(&v, &w));
@@ -254,7 +257,7 @@ mod tests {
     #[test]
     fn test_smap_walk_2() {
         // 2. Variable found => walked until no more variables: ends in last variable
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -269,7 +272,7 @@ mod tests {
     #[test]
     fn test_smap_walk_3() {
         // 2. Variable found => walked until no more variables: ends in last value
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -287,7 +290,7 @@ mod tests {
     fn test_smap_walk_4() {
         // 2. Variable found => walked until no more variables: ends in last list and does not
         //    recurse into the list.
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -307,7 +310,7 @@ mod tests {
     #[test]
     fn test_smap_walk_star_1() {
         // 1. Variable not found in map => input returned back as it is impossible to walk
-        let smap = SMap::new();
+        let smap = SMap::<EmptyUser>::new();
         let v = lterm!(_);
         let w = smap.walk_star(&v);
         assert!(LTerm::ptr_eq(&v, &w));
@@ -316,7 +319,7 @@ mod tests {
     #[test]
     fn test_smap_walk_star_2() {
         // 2. Variable found => walked until no more variables: ends in last variable
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -331,7 +334,7 @@ mod tests {
     #[test]
     fn test_smap_walk_star_3() {
         // 2. Variable found => walked until no more variables: ends in last value
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -349,7 +352,7 @@ mod tests {
     fn test_smap_walk_star_4() {
         // 2. Variable found => walked until no more variables: ends in last list and does
         //    recurse into the list.
-        let mut smap = SMap::new();
+        let mut smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -373,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_smap_reify() {
-        let smap = SMap::new();
+        let smap = SMap::<EmptyUser>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v = LTerm::cons(v0.clone(), LTerm::singleton(v1.clone()));
