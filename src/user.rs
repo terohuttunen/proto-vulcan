@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Debug;
 use std::hash::Hash;
 
-pub trait User: Debug + Clone + 'static {
+pub trait User: Debug + Clone + Default + 'static {
     type UserTerm: Debug + Clone + Hash + PartialEq + Eq;
 
     /// Process extension to substitution map.
@@ -14,16 +14,12 @@ pub trait User: Debug + Clone + 'static {
 
     // User unification.
     fn unify(
-        mut state: State<Self>,
+        state: State<Self>,
         extension: &mut SMap<Self>,
         u: &LTerm<Self>,
         v: &LTerm<Self>,
     ) -> SResult<Self> {
-        if crate::state::unify_rec(&mut state.smap, extension, u, v) {
-            Ok(state)
-        } else {
-            Err(())
-        }
+        crate::state::unify_rec(state, extension, u, v)
     }
 
     fn finalize(_state: &mut State<Self>) {}
@@ -43,6 +39,12 @@ impl EmptyUser {
 impl fmt::Display for EmptyUser {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "")
+    }
+}
+
+impl Default for EmptyUser {
+    fn default() -> EmptyUser {
+        EmptyUser {}
     }
 }
 

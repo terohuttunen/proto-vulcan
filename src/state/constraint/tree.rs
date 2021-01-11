@@ -17,10 +17,11 @@ impl<U: User> DisequalityConstraint<U> {
 impl<U: User> BaseConstraint<U> for DisequalityConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let mut extension = SMap::new();
-        let mut smap = Rc::new(state.smap_ref().clone());
+        let mut test_state = state.clone();
         for (u, v) in self.0.iter() {
-            if !unify_rec(&mut smap, &mut extension, &u, &v) {
-                return Ok(state);
+            match unify_rec(test_state, &mut extension, &u, &v) {
+                Err(_) => return Ok(state),
+                Ok(new_state) => test_state = new_state,
             }
         }
 
@@ -53,10 +54,11 @@ impl<U: User> TreeConstraint<U> for DisequalityConstraint<U> {
     /// substitution of the another constraint does not extend the constraint.
     fn subsumes(&self, other: &dyn TreeConstraint<U>) -> bool {
         let mut extension = SMap::new();
-        let mut smap = Rc::new(other.smap_ref().clone());
+        let mut state = State::new(Default::default()).with_smap(other.smap_ref().clone());
         for (u, v) in self.0.iter() {
-            if !unify_rec(&mut smap, &mut extension, &u, &v) {
-                return false;
+            match unify_rec(state, &mut extension, &u, &v) {
+                Err(()) => return false,
+                Ok(s) => state = s,
             }
         }
 
