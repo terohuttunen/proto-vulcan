@@ -314,13 +314,12 @@ extern crate derivative;
 #[macro_use]
 pub mod lterm;
 pub mod goal;
+pub mod state;
 pub mod stream;
 
 pub mod lvalue;
 pub mod operator;
 pub mod relation;
-
-pub mod state;
 
 pub mod lresult;
 

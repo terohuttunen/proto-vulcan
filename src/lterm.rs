@@ -40,7 +40,7 @@ where
     /// Variable (uid, name)
     Var(VarID, &'static str),
 
-    // Unifiable user defined item. PartialEq and Hash are derived from the Rc pointer.
+    // User defined item
     User(<U as User>::UserTerm),
 
     // Empty list

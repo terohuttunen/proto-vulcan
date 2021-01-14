@@ -1,5 +1,5 @@
 /// CLP(Z)
-use super::{BaseConstraint, Constraint, ZConstraint};
+use super::Constraint;
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{SResult, State, User};
@@ -14,15 +14,15 @@ pub struct TimesZConstraint<U: User> {
 }
 
 impl<U: User> TimesZConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        Constraint::Z(Rc::new(TimesZConstraint { u, v, w }))
+        Rc::new(TimesZConstraint { u, v, w })
     }
 }
 
-impl<U: User> BaseConstraint<U> for TimesZConstraint<U> {
+impl<U: User> Constraint<U> for TimesZConstraint<U> {
     fn run(self: Rc<Self>, mut state: State<U>) -> SResult<U> {
         let uwalk = state.smap_ref().walk(&self.u).clone();
         let vwalk = state.smap_ref().walk(&self.v).clone();
@@ -98,14 +98,6 @@ impl<U: User> std::fmt::Display for TimesZConstraint<U> {
     }
 }
 
-impl<U: User> ZConstraint<U> for TimesZConstraint<U> {}
-
-impl<U: User> From<Rc<TimesZConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<TimesZConstraint<U>>) -> Constraint<U> {
-        Constraint::Z(c as Rc<dyn ZConstraint<U>>)
-    }
-}
-
 /// Sum
 #[derive(Debug, Clone)]
 pub struct PlusZConstraint<U: User> {
@@ -115,15 +107,15 @@ pub struct PlusZConstraint<U: User> {
 }
 
 impl<U: User> PlusZConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        Constraint::Z(Rc::new(PlusZConstraint { u, v, w }))
+        Rc::new(PlusZConstraint { u, v, w })
     }
 }
 
-impl<U: User> BaseConstraint<U> for PlusZConstraint<U> {
+impl<U: User> Constraint<U> for PlusZConstraint<U> {
     fn run(self: Rc<Self>, mut state: State<U>) -> SResult<U> {
         let uwalk = state.smap_ref().walk(&self.u).clone();
         let vwalk = state.smap_ref().walk(&self.v).clone();
@@ -196,13 +188,5 @@ impl<U: User> BaseConstraint<U> for PlusZConstraint<U> {
 impl<U: User> std::fmt::Display for PlusZConstraint<U> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
-    }
-}
-
-impl<U: User> ZConstraint<U> for PlusZConstraint<U> {}
-
-impl<U: User> From<Rc<PlusZConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<PlusZConstraint<U>>) -> Constraint<U> {
-        Constraint::Z(c as Rc<dyn ZConstraint<U>>)
     }
 }

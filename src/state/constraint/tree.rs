@@ -1,5 +1,5 @@
 use crate::lterm::LTerm;
-use crate::state::constraint::{BaseConstraint, Constraint, TreeConstraint};
+use crate::state::constraint::Constraint;
 use crate::state::{SMap, SResult, State, User};
 use std::rc::Rc;
 
@@ -8,12 +8,49 @@ use std::rc::Rc;
 pub struct DisequalityConstraint<U: User>(SMap<U>);
 
 impl<U: User> DisequalityConstraint<U> {
-    pub fn new(smap: SMap<U>) -> Constraint<U> {
-        Constraint::Tree(Rc::new(DisequalityConstraint(smap)))
+    pub fn new(smap: SMap<U>) -> Rc<dyn Constraint<U>> {
+        Rc::new(DisequalityConstraint(smap))
+    }
+
+    /// If the `self` subsumes the `other`.
+    ///
+    /// A constraint is subsumed by another constraint if unifying the constraint in the
+    /// substitution of the another constraint does not extend the constraint.
+    pub fn subsumes(&self, other: &dyn Constraint<U>) -> bool {
+        match other.downcast_ref::<Self>() {
+            Some(other) => {
+                let mut extension = SMap::new();
+                let mut state = State::new(Default::default()).with_smap(other.smap_ref().clone());
+                for (u, v) in self.0.iter() {
+                    match U::unify(state, &mut extension, &u, &v) {
+                        Err(()) => return false,
+                        Ok(s) => state = s,
+                    }
+                }
+
+                extension.is_empty()
+            }
+            None => false,
+        }
+    }
+
+    pub fn smap_ref(&self) -> &SMap<U> {
+        &self.0
+    }
+
+    pub fn walk_star(&self, smap: &SMap<U>) -> SMap<U> {
+        let mut n = SMap::new();
+        for (k, v) in self.smap_ref().iter() {
+            let kwalk = smap.walk_star(k);
+            let vwalk = smap.walk_star(v);
+            assert!(kwalk.is_var());
+            n.extend(kwalk, vwalk);
+        }
+        n
     }
 }
 
-impl<U: User> BaseConstraint<U> for DisequalityConstraint<U> {
+impl<U: User> Constraint<U> for DisequalityConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let mut extension = SMap::new();
         let mut test_state = state.clone();
@@ -46,46 +83,6 @@ impl<U: User> std::fmt::Display for DisequalityConstraint<U> {
     }
 }
 
-impl<U: User> TreeConstraint<U> for DisequalityConstraint<U> {
-    /// If the `self` subsumes the `other`.
-    ///
-    /// A constraint is subsumed by another constraint if unifying the constraint in the
-    /// substitution of the another constraint does not extend the constraint.
-    fn subsumes(&self, other: &dyn TreeConstraint<U>) -> bool {
-        let mut extension = SMap::new();
-        let mut state = State::new(Default::default()).with_smap(other.smap_ref().clone());
-        for (u, v) in self.0.iter() {
-            match U::unify(state, &mut extension, &u, &v) {
-                Err(()) => return false,
-                Ok(s) => state = s,
-            }
-        }
-
-        extension.is_empty()
-    }
-
-    fn smap_ref(&self) -> &SMap<U> {
-        &self.0
-    }
-
-    fn walk_star(&self, smap: &SMap<U>) -> SMap<U> {
-        let mut n = SMap::new();
-        for (k, v) in TreeConstraint::<U>::smap_ref(self).iter() {
-            let kwalk = smap.walk_star(k);
-            let vwalk = smap.walk_star(v);
-            assert!(kwalk.is_var());
-            n.extend(kwalk, vwalk);
-        }
-        n
-    }
-}
-
-impl<U: User> From<Rc<DisequalityConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<DisequalityConstraint<U>>) -> Constraint<U> {
-        Constraint::Tree(c as Rc<dyn TreeConstraint<U>>)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,9 +103,12 @@ mod tests {
         let mut smap = SMap::new();
         smap.extend(x.clone(), five.clone());
         let c1 = DisequalityConstraint::new(smap);
-        match (c0, c1) {
-            (Constraint::Tree(t0), Constraint::Tree(t1)) => {
-                assert!(TreeConstraint::<EmptyUser>::subsumes(&*t1, &*t0))
+        match (
+            c0.downcast_ref::<DisequalityConstraint<EmptyUser>>(),
+            c1.downcast_ref::<DisequalityConstraint<EmptyUser>>(),
+        ) {
+            (Some(t0), Some(t1)) => {
+                assert!(t1.subsumes(&*t0))
             }
             _ => assert!(false),
         }

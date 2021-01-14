@@ -1,8 +1,7 @@
 /// distinctfd finite domain constraint
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
-use crate::state::DistinctFdConstraint;
-use crate::state::State;
+use crate::state::{DistinctFdConstraint, State};
 use crate::stream::Stream;
 use crate::user::User;
 

@@ -13,9 +13,9 @@ pub use unification::unify_rec;
 
 pub mod constraint;
 pub use constraint::{
-    BaseConstraint, Constraint, DiseqFdConstraint, DisequalityConstraint, DistinctFdConstraint,
-    FiniteDomain, LessThanOrEqualFdConstraint, MinusFdConstraint, PlusFdConstraint,
-    PlusZConstraint, TimesFdConstraint, TimesZConstraint, TreeConstraint, UserConstraint,
+    Constraint, DiseqFdConstraint, DisequalityConstraint, DistinctFdConstraint, FiniteDomain,
+    IsFiniteDomain, LessThanOrEqualFdConstraint, MinusFdConstraint, PlusFdConstraint,
+    PlusZConstraint, TimesFdConstraint, TimesZConstraint,
 };
 
 use constraint::store::ConstraintStore;
@@ -126,15 +126,15 @@ impl<U: User> State<U> {
     }
 
     /// Return the state with a new constraint
-    pub fn with_constraint<T: Into<Constraint<U>>>(mut self, constraint: T) -> State<U> {
-        self.cstore_to_mut().push_and_normalize(constraint.into());
+    pub fn with_constraint(mut self, constraint: Rc<dyn Constraint<U>>) -> State<U> {
+        self.cstore_to_mut().push_and_normalize(constraint);
         self
     }
 
     pub fn take_constraint(
         mut self,
-        constraint: &Constraint<U>,
-    ) -> (State<U>, Option<Constraint<U>>) {
+        constraint: &Rc<dyn Constraint<U>>,
+    ) -> (State<U>, Option<Rc<dyn Constraint<U>>>) {
         match self.cstore_to_mut().take(constraint) {
             Some(constraint) => (self, Some(constraint)),
             None => (self, None),
@@ -230,7 +230,11 @@ impl<U: User> State<U> {
     /// constraints fail, `None` is returned. Otherwise the state is returned with an updated
     /// constraint store.
     pub fn run_constraints(mut self) -> SResult<U> {
-        let mut constraints = self.cstore.iter().cloned().collect::<Vec<Constraint<U>>>();
+        let mut constraints = self
+            .cstore
+            .iter()
+            .cloned()
+            .collect::<Vec<Rc<dyn Constraint<U>>>>();
 
         // Each constraint is first removed from the store and then run against the state.
         // If the constraint does not want to be removed from the store, it adds itself

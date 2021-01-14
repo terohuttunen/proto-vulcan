@@ -1,4 +1,4 @@
-use super::{BaseConstraint, Constraint, FiniteDomainConstraint};
+use super::Constraint;
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{SResult, State, User};
@@ -293,14 +293,14 @@ pub struct LessThanOrEqualFdConstraint<U: User> {
 }
 
 impl<U: User> LessThanOrEqualFdConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
-        Constraint::FiniteDomain(Rc::new(LessThanOrEqualFdConstraint { u, v }))
+        Rc::new(LessThanOrEqualFdConstraint { u, v })
     }
 }
 
-impl<U: User> BaseConstraint<U> for LessThanOrEqualFdConstraint<U> {
+impl<U: User> Constraint<U> for LessThanOrEqualFdConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -376,14 +376,6 @@ impl<U: User> std::fmt::Display for LessThanOrEqualFdConstraint<U> {
     }
 }
 
-impl<U: User> FiniteDomainConstraint<U> for LessThanOrEqualFdConstraint<U> {}
-
-impl<U: User> From<Rc<LessThanOrEqualFdConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<LessThanOrEqualFdConstraint<U>>) -> Constraint<U> {
-        Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
-    }
-}
-
 #[derive(Debug)]
 pub struct PlusFdConstraint<U: User> {
     u: LTerm<U>,
@@ -392,15 +384,15 @@ pub struct PlusFdConstraint<U: User> {
 }
 
 impl<U: User> PlusFdConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        Constraint::FiniteDomain(Rc::new(PlusFdConstraint { u, v, w }))
+        Rc::new(PlusFdConstraint { u, v, w })
     }
 }
 
-impl<U: User> BaseConstraint<U> for PlusFdConstraint<U> {
+impl<U: User> Constraint<U> for PlusFdConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -505,14 +497,6 @@ impl<U: User> std::fmt::Display for PlusFdConstraint<U> {
     }
 }
 
-impl<U: User> FiniteDomainConstraint<U> for PlusFdConstraint<U> {}
-
-impl<U: User> From<Rc<PlusFdConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<PlusFdConstraint<U>>) -> Constraint<U> {
-        Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
-    }
-}
-
 #[derive(Debug)]
 pub struct MinusFdConstraint<U: User> {
     u: LTerm<U>,
@@ -521,15 +505,15 @@ pub struct MinusFdConstraint<U: User> {
 }
 
 impl<U: User> MinusFdConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        Constraint::FiniteDomain(Rc::new(MinusFdConstraint { u, v, w }))
+        Rc::new(MinusFdConstraint { u, v, w })
     }
 }
 
-impl<U: User> BaseConstraint<U> for MinusFdConstraint<U> {
+impl<U: User> Constraint<U> for MinusFdConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -637,14 +621,6 @@ impl<U: User> std::fmt::Display for MinusFdConstraint<U> {
     }
 }
 
-impl<U: User> FiniteDomainConstraint<U> for MinusFdConstraint<U> {}
-
-impl<U: User> From<Rc<MinusFdConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<MinusFdConstraint<U>>) -> Constraint<U> {
-        Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
-    }
-}
-
 #[derive(Debug)]
 pub struct TimesFdConstraint<U: User> {
     u: LTerm<U>,
@@ -653,15 +629,15 @@ pub struct TimesFdConstraint<U: User> {
 }
 
 impl<U: User> TimesFdConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        Constraint::FiniteDomain(Rc::new(TimesFdConstraint { u, v, w }))
+        Rc::new(TimesFdConstraint { u, v, w })
     }
 }
 
-impl<U: User> BaseConstraint<U> for TimesFdConstraint<U> {
+impl<U: User> Constraint<U> for TimesFdConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -771,14 +747,6 @@ impl<U: User> std::fmt::Display for TimesFdConstraint<U> {
     }
 }
 
-impl<U: User> FiniteDomainConstraint<U> for TimesFdConstraint<U> {}
-
-impl<U: User> From<Rc<TimesFdConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<TimesFdConstraint<U>>) -> Constraint<U> {
-        Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
-    }
-}
-
 #[derive(Debug)]
 pub struct DiseqFdConstraint<U: User> {
     u: LTerm<U>,
@@ -786,14 +754,14 @@ pub struct DiseqFdConstraint<U: User> {
 }
 
 impl<U: User> DiseqFdConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
-        Constraint::FiniteDomain(Rc::new(DiseqFdConstraint { u, v }))
+        Rc::new(DiseqFdConstraint { u, v })
     }
 }
 
-impl<U: User> BaseConstraint<U> for DiseqFdConstraint<U> {
+impl<U: User> Constraint<U> for DiseqFdConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -869,27 +837,19 @@ impl<U: User> std::fmt::Display for DiseqFdConstraint<U> {
     }
 }
 
-impl<U: User> FiniteDomainConstraint<U> for DiseqFdConstraint<U> {}
-
-impl<U: User> From<Rc<DiseqFdConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<DiseqFdConstraint<U>>) -> Constraint<U> {
-        Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
-    }
-}
-
 #[derive(Debug)]
 pub struct DistinctFdConstraint<U: User> {
     u: LTerm<U>,
 }
 
 impl<U: User> DistinctFdConstraint<U> {
-    pub fn new(u: LTerm<U>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_list());
-        Constraint::FiniteDomain(Rc::new(DistinctFdConstraint { u }))
+        Rc::new(DistinctFdConstraint { u })
     }
 }
 
-impl<U: User> BaseConstraint<U> for DistinctFdConstraint<U> {
+impl<U: User> Constraint<U> for DistinctFdConstraint<U> {
     fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
 
@@ -958,14 +918,6 @@ impl<U: User> std::fmt::Display for DistinctFdConstraint<U> {
     }
 }
 
-impl<U: User> FiniteDomainConstraint<U> for DistinctFdConstraint<U> {}
-
-impl<U: User> From<Rc<DistinctFdConstraint<U>>> for Constraint<U> {
-    fn from(c: Rc<DistinctFdConstraint<U>>) -> Constraint<U> {
-        Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
-    }
-}
-
 #[derive(Debug, Clone)]
 struct DistinctFd2Constraint<U: User> {
     u: LTerm<U>,
@@ -974,14 +926,14 @@ struct DistinctFd2Constraint<U: User> {
 }
 
 impl<U: User> DistinctFd2Constraint<U> {
-    pub fn new(u: LTerm<U>, y: LTerm<U>, n: Vec<isize>) -> Constraint<U> {
+    pub fn new(u: LTerm<U>, y: LTerm<U>, n: Vec<isize>) -> Rc<dyn Constraint<U>> {
         assert!(u.is_list());
         assert!(y.is_list());
-        Constraint::FiniteDomain(Rc::new(DistinctFd2Constraint { u, y, n }))
+        Rc::new(DistinctFd2Constraint { u, y, n })
     }
 }
 
-impl<U: User> BaseConstraint<U> for DistinctFd2Constraint<U> {
+impl<U: User> Constraint<U> for DistinctFd2Constraint<U> {
     fn run(mut self: Rc<Self>, state: State<U>) -> SResult<U> {
         let smap = state.get_smap();
 
@@ -1041,11 +993,19 @@ impl<U: User> std::fmt::Display for DistinctFd2Constraint<U> {
     }
 }
 
-impl<U: User> FiniteDomainConstraint<U> for DistinctFd2Constraint<U> {}
+pub trait IsFiniteDomain {
+    fn is_finite_domain(&self) -> bool;
+}
 
-impl<U: User> From<Rc<DistinctFd2Constraint<U>>> for Constraint<U> {
-    fn from(c: Rc<DistinctFd2Constraint<U>>) -> Constraint<U> {
-        Constraint::FiniteDomain(c as Rc<dyn FiniteDomainConstraint<U>>)
+impl<U: User> IsFiniteDomain for dyn Constraint<U> {
+    fn is_finite_domain(&self) -> bool {
+        self.is::<LessThanOrEqualFdConstraint<U>>()
+            || self.is::<PlusFdConstraint<U>>()
+            || self.is::<MinusFdConstraint<U>>()
+            || self.is::<TimesFdConstraint<U>>()
+            || self.is::<DiseqFdConstraint<U>>()
+            || self.is::<DistinctFdConstraint<U>>()
+            || self.is::<DistinctFd2Constraint<U>>()
     }
 }
 

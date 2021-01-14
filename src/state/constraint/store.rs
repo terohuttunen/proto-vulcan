@@ -3,9 +3,10 @@ use crate::lterm::LTerm;
 use crate::state::constraint::{Constraint, DisequalityConstraint};
 use crate::state::User;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 #[derive(Clone, Debug)]
-pub struct ConstraintStore<U: User>(HashSet<Constraint<U>>);
+pub struct ConstraintStore<U: User>(HashSet<Rc<dyn Constraint<U>>>);
 
 impl<U: User> ConstraintStore<U> {
     pub fn new() -> ConstraintStore<U> {
@@ -21,7 +22,7 @@ impl<U: User> ConstraintStore<U> {
     pub fn purify(self, r: &SMap<U>) -> ConstraintStore<U> {
         let mut purified_cstore = ConstraintStore::new();
         for constraint in self.0.into_iter() {
-            if let Constraint::Tree(ref tree_constraint) = constraint {
+            if let Some(tree_constraint) = constraint.downcast_ref::<DisequalityConstraint<U>>() {
                 if tree_constraint
                     .smap_ref()
                     .iter()
@@ -40,23 +41,23 @@ impl<U: User> ConstraintStore<U> {
     pub fn walk_star(&self, smap: &SMap<U>) -> ConstraintStore<U> {
         let mut walked_cstore = ConstraintStore::new();
         for constraint in self.iter() {
-            if let Constraint::Tree(tree_constraint) = constraint {
+            if let Some(tree_constraint) = constraint.downcast_ref::<DisequalityConstraint<U>>() {
                 let ws = tree_constraint.walk_star(smap);
                 let c = DisequalityConstraint::new(ws);
-                walked_cstore.insert(Constraint::from(c));
+                walked_cstore.insert(c);
             }
         }
         walked_cstore
     }
 
     /// Add new constraint `c` while keeping the store normalized
-    pub fn push_and_normalize(&mut self, newc: Constraint<U>) {
-        if let Constraint::Tree(ref tree_newc) = newc {
+    pub fn push_and_normalize(&mut self, newc: Rc<dyn Constraint<U>>) {
+        if let Some(tree_newc) = newc.downcast_ref::<DisequalityConstraint<U>>() {
             let mut normalized = HashSet::new();
             for storec in self.0.drain() {
                 // All non-subsumable constraints are always carried along
-                if let Constraint::Tree(ref tree_storec) = storec {
-                    if !tree_storec.subsumes(&**tree_newc) && !tree_newc.subsumes(&**tree_storec) {
+                if let Some(tree_storec) = storec.downcast_ref::<DisequalityConstraint<U>>() {
+                    if !tree_storec.subsumes(tree_newc) && !tree_newc.subsumes(tree_storec) {
                         normalized.insert(storec);
                     }
                 } else {
@@ -77,7 +78,7 @@ impl<U: User> ConstraintStore<U> {
         normalized_store
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Constraint<U>> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = &Rc<dyn Constraint<U>>> + '_ {
         self.0.iter()
     }
 
@@ -85,19 +86,19 @@ impl<U: User> ConstraintStore<U> {
         self.0.is_empty()
     }
 
-    pub fn take(&mut self, u: &Constraint<U>) -> Option<Constraint<U>> {
+    pub fn take(&mut self, u: &Rc<dyn Constraint<U>>) -> Option<Rc<dyn Constraint<U>>> {
         self.0.take(u)
     }
 
-    pub fn insert<T: Into<Constraint<U>>>(&mut self, key: T) -> bool {
-        self.0.insert(key.into())
+    pub fn insert(&mut self, key: Rc<dyn Constraint<U>>) -> bool {
+        self.0.insert(key)
     }
 
     /// Iterate over constraints that refer to terms in `u`
     pub fn relevant<'a>(
         &'a self,
         relevant_operands: &Vec<LTerm<U>>,
-    ) -> impl Iterator<Item = &'a Constraint<U>> {
+    ) -> impl Iterator<Item = &'a Rc<dyn Constraint<U>>> {
         let relevant_operands = relevant_operands.clone();
         self.iter().filter(move |c| {
             c.operands()
@@ -110,7 +111,7 @@ impl<U: User> ConstraintStore<U> {
         let anyvars = u.anyvars();
         let mut count = 0;
         for storec in self.relevant(&anyvars) {
-            if let Constraint::Tree(treec) = storec {
+            if let Some(treec) = storec.downcast_ref::<DisequalityConstraint<U>>() {
                 // Tree-disequality constraint has a substitution map that may have
                 // multiple disequality sub-constraints. Each disequality is printed
                 // here separately if it is relevant to the given operands.

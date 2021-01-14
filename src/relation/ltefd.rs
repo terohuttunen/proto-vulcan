@@ -1,8 +1,7 @@
 /// Less than or equal FD
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
-use crate::state::LessThanOrEqualFdConstraint;
-use crate::state::State;
+use crate::state::{LessThanOrEqualFdConstraint, State};
 use crate::stream::Stream;
 use crate::user::User;
 

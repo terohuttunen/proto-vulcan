@@ -1,8 +1,7 @@
 /// Constrains u + v = w finite domains
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
-use crate::state::PlusFdConstraint;
-use crate::state::State;
+use crate::state::{PlusFdConstraint, State};
 use crate::stream::Stream;
 use crate::user::User;
 

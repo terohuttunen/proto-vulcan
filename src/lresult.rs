@@ -1,7 +1,7 @@
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::constraint::store::ConstraintStore;
-use crate::state::constraint::Constraint;
+use crate::state::constraint::{Constraint, DisequalityConstraint};
 use crate::user::User;
 use std::fmt;
 use std::ops::Deref;
@@ -20,7 +20,7 @@ impl<U: User> LResult<U> {
         if self.0.is_any() {
             // result is an `any` variable, see if it has the expected constraint
             for constraint in self.constraints() {
-                if let Constraint::Tree(tree) = constraint {
+                if let Some(tree) = constraint.downcast_ref::<DisequalityConstraint<U>>() {
                     for (cu, cv) in tree.smap_ref().iter() {
                         if &self.0 == cu && exception == cv || &self.0 == cv && exception == cu {
                             return true;
@@ -39,7 +39,7 @@ impl<U: User> LResult<U> {
     }
 
     /// Returns iterator to constraints that refer to the wrapped LTerm.
-    pub fn constraints<'a>(&'a self) -> impl Iterator<Item = &'a Constraint<U>> {
+    pub fn constraints<'a>(&'a self) -> impl Iterator<Item = &'a Rc<dyn Constraint<U>>> {
         let anyvars = self.0.anyvars();
         self.1.relevant(&anyvars)
     }
