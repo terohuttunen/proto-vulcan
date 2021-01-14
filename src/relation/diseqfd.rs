@@ -1,9 +1,11 @@
 /// Constrain disequality in finite domains
 use crate::goal::{Goal, Solve};
-use crate::lterm::LTerm;
-use crate::state::{DiseqFdConstraint, State};
+use crate::lterm::{LTerm, LTermInner};
+use crate::lvalue::LValue;
+use crate::state::{Constraint, FiniteDomain, SResult, State};
 use crate::stream::Stream;
 use crate::user::User;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct DiseqFd<U: User> {
@@ -21,8 +23,7 @@ impl<U: User> Solve<U> for DiseqFd<U> {
     fn solve(&self, state: State<U>) -> Stream<U> {
         let u = self.u.clone();
         let v = self.v.clone();
-        let c = DiseqFdConstraint::new(u, v);
-        Stream::from(c.run(state))
+        Stream::from(DiseqFdConstraint::new(u, v).run(state))
     }
 }
 
@@ -52,6 +53,96 @@ impl<U: User> Solve<U> for DiseqFd<U> {
 /// ```
 pub fn diseqfd<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
     DiseqFd::new(u, v)
+}
+
+#[derive(Debug)]
+pub struct DiseqFdConstraint<U: User> {
+    u: LTerm<U>,
+    v: LTerm<U>,
+}
+
+impl<U: User> DiseqFdConstraint<U> {
+    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Rc<dyn Constraint<U>> {
+        assert!(u.is_var() || u.is_number());
+        assert!(v.is_var() || v.is_number());
+        Rc::new(DiseqFdConstraint { u, v })
+    }
+}
+
+impl<U: User> Constraint<U> for DiseqFdConstraint<U> {
+    fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
+        let smap = state.get_smap();
+        let dstore = state.get_dstore();
+
+        let u = self.u.clone();
+        let uwalk = smap.walk(&u);
+        let singleton_udomain;
+        let maybe_udomain = match uwalk.as_ref() {
+            LTermInner::Var(_, _) => dstore.get(uwalk),
+            LTermInner::Val(LValue::Number(u)) => {
+                singleton_udomain = Rc::new(FiniteDomain::from(*u));
+                Some(&singleton_udomain)
+            }
+            _ => None,
+        };
+
+        let v = self.v.clone();
+        let vwalk = smap.walk(&v);
+        let singleton_vdomain;
+        let maybe_vdomain = match vwalk.as_ref() {
+            LTermInner::Var(_, _) => dstore.get(vwalk),
+            LTermInner::Val(LValue::Number(v)) => {
+                singleton_vdomain = Rc::new(FiniteDomain::from(*v));
+                Some(&singleton_vdomain)
+            }
+            _ => None,
+        };
+
+        match (maybe_udomain, maybe_vdomain) {
+            (Some(udomain), Some(vdomain)) if udomain.is_singleton() && vdomain.is_singleton() => {
+                // Both variables have singleton domains. If values are same, the constraint
+                // fails in the current state and is dropped; if the values are different, the constraint
+                // succeeds and is dropped.
+                if udomain.min() == vdomain.min() {
+                    Err(())
+                } else {
+                    Ok(state)
+                }
+            }
+            (Some(udomain), Some(vdomain)) if udomain.is_disjoint(vdomain.as_ref()) => {
+                // When the domains are disjoint, the constraint can never be violated.
+                // Constraint can be dropped.
+                Ok(state)
+            }
+            (Some(udomain), Some(vdomain)) => {
+                // The domains are not both singleton or disjoint. The constraints are kept
+                // until they can be resolved into singleton, or until they become disjoint.
+                let state = state.with_constraint(self);
+                if udomain.is_singleton() {
+                    state.process_domain(vwalk, Rc::new(vdomain.diff(udomain.as_ref()).ok_or(())?))
+                } else if vdomain.is_singleton() {
+                    state.process_domain(uwalk, Rc::new(udomain.diff(vdomain.as_ref()).ok_or(())?))
+                } else {
+                    Ok(state)
+                }
+            }
+            _ => {
+                // One or both of the variables do not yet have domains. Keep the constraint
+                // for later.
+                Ok(state.with_constraint(self))
+            }
+        }
+    }
+
+    fn operands(&self) -> Vec<LTerm<U>> {
+        vec![self.u.clone(), self.v.clone()]
+    }
+}
+
+impl<U: User> std::fmt::Display for DiseqFdConstraint<U> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "")
+    }
 }
 
 #[cfg(test)]

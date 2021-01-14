@@ -1,5 +1,6 @@
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
+use crate::relation::diseq::DisequalityConstraint;
 use crate::user::User;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -12,11 +13,10 @@ mod unification;
 pub use unification::unify_rec;
 
 pub mod constraint;
-pub use constraint::{
-    Constraint, DiseqFdConstraint, DisequalityConstraint, DistinctFdConstraint, FiniteDomain,
-    IsFiniteDomain, LessThanOrEqualFdConstraint, MinusFdConstraint, PlusFdConstraint,
-    PlusZConstraint, TimesFdConstraint, TimesZConstraint,
-};
+pub use constraint::Constraint;
+
+pub mod fd;
+pub use fd::FiniteDomain;
 
 use constraint::store::ConstraintStore;
 
@@ -304,10 +304,24 @@ impl<U: User> State<U> {
             .process_extension_user(&extension)
     }
 
+    fn is_finite_domain(constraint: &Rc<dyn Constraint<U>>) -> bool {
+        constraint.is::<crate::relation::ltefd::LessThanOrEqualFdConstraint<U>>()
+            || constraint.is::<crate::relation::plusfd::PlusFdConstraint<U>>()
+            || constraint.is::<crate::relation::minusfd::MinusFdConstraint<U>>()
+            || constraint.is::<crate::relation::timesfd::TimesFdConstraint<U>>()
+            || constraint.is::<crate::relation::diseqfd::DiseqFdConstraint<U>>()
+            || constraint.is::<crate::relation::distinctfd::DistinctFdConstraint<U>>()
+            || constraint.is::<crate::relation::distinctfd::DistinctFd2Constraint<U>>()
+    }
+
     /// Verifies that all variables constrained by domain constraints have domains
     /// associated with them.
     pub fn verify_all_bound(&self) {
-        for constraint in self.cstore_ref().iter().filter(|c| c.is_finite_domain()) {
+        for constraint in self
+            .cstore_ref()
+            .iter()
+            .filter(|c| State::is_finite_domain(c))
+        {
             for u in &constraint.operands() {
                 let uwalk = self.smap_ref().walk(u);
                 if uwalk.is_var() && !self.dstore_ref().contains_key(uwalk) {

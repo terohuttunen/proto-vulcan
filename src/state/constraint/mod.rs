@@ -7,18 +7,6 @@ use std::hash::{Hash, Hasher};
 use std::ptr;
 use std::rc::Rc;
 
-mod tree;
-pub use tree::DisequalityConstraint;
-
-mod fd;
-pub use fd::{
-    DiseqFdConstraint, DistinctFdConstraint, FiniteDomain, IsFiniteDomain,
-    LessThanOrEqualFdConstraint, MinusFdConstraint, PlusFdConstraint, TimesFdConstraint,
-};
-
-mod z;
-pub use z::{PlusZConstraint, TimesZConstraint};
-
 pub mod store;
 
 pub trait Constraint<U: User>: Debug + Display + AnyConstraint<U> {

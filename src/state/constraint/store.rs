@@ -1,6 +1,7 @@
 use super::SMap;
 use crate::lterm::LTerm;
-use crate::state::constraint::{Constraint, DisequalityConstraint};
+use crate::relation::diseq::DisequalityConstraint;
+use crate::state::constraint::Constraint;
 use crate::state::User;
 use std::collections::HashSet;
 use std::rc::Rc;

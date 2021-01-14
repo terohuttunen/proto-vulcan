@@ -1,7 +1,8 @@
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
+use crate::relation::diseq::DisequalityConstraint;
 use crate::state::constraint::store::ConstraintStore;
-use crate::state::constraint::{Constraint, DisequalityConstraint};
+use crate::state::constraint::Constraint;
 use crate::user::User;
 use std::fmt;
 use std::ops::Deref;
