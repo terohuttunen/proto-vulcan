@@ -93,11 +93,15 @@ impl<U: User> State<U> {
     }
 
     /// Returns the state with replaced with a new constraint store. The old store is dropped.
-    pub fn with_cstore(self, cstore: ConstraintStore<U>) -> State<U> {
-        State {
-            cstore: Rc::new(cstore),
-            ..self
+    pub fn with_cstore(mut self, cstore: ConstraintStore<U>) -> State<U> {
+        let old_cstore = self.get_cstore();
+        for c in old_cstore.iter() {
+            self = self.take_constraint(c).0;
         }
+        for c in cstore.into_iter() {
+            self = self.with_constraint(c)
+        }
+        self
     }
 
     pub fn get_cstore(&self) -> Rc<ConstraintStore<U>> {
@@ -127,6 +131,7 @@ impl<U: User> State<U> {
 
     /// Return the state with a new constraint
     pub fn with_constraint(mut self, constraint: Rc<dyn Constraint<U>>) -> State<U> {
+        U::with_constraint(&mut self, &constraint);
         self.cstore_to_mut().push_and_normalize(constraint);
         self
     }
@@ -136,7 +141,10 @@ impl<U: User> State<U> {
         constraint: &Rc<dyn Constraint<U>>,
     ) -> (State<U>, Option<Rc<dyn Constraint<U>>>) {
         match self.cstore_to_mut().take(constraint) {
-            Some(constraint) => (self, Some(constraint)),
+            Some(constraint) => {
+                U::take_constraint(&mut self, &constraint);
+                (self, Some(constraint))
+            }
             None => (self, None),
         }
     }

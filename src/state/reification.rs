@@ -83,7 +83,11 @@ fn enforce_constraints_fd<U: User>(x: LTerm<U>) -> Goal<U> {
 ///
 /// For disequality constraints this is a no-op.
 fn enforce_constraints<U: User>(x: LTerm<U>) -> Goal<U> {
-    proto_vulcan!([enforce_constraints_diseq(x), enforce_constraints_fd(x)])
+    proto_vulcan!([
+        enforce_constraints_diseq(x),
+        enforce_constraints_fd(x),
+        U::enforce_constraints(x)
+    ])
 }
 
 pub fn reify<U: User>(x: LTerm<U>) -> Goal<U> {

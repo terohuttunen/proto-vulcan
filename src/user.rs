@@ -1,8 +1,11 @@
+use crate::goal::Goal;
 use crate::lterm::LTerm;
+use crate::state::constraint::Constraint;
 use crate::state::{SMap, SResult, State};
 use std::fmt;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::rc::Rc;
 
 pub trait User: Debug + Clone + Default + 'static {
     type UserTerm: Debug + Clone + Hash + PartialEq + Eq;
@@ -20,6 +23,18 @@ pub trait User: Debug + Clone + Default + 'static {
         v: &LTerm<Self>,
     ) -> SResult<Self> {
         crate::state::unify_rec(state, extension, u, v)
+    }
+
+    /// Called before the constraint is added to the state
+    fn with_constraint(_state: &mut State<Self>, _constraint: &Rc<dyn Constraint<Self>>) {}
+
+    /// Called after the constraint has been removed from the state
+    fn take_constraint(_state: &mut State<Self>, _constraint: &Rc<dyn Constraint<Self>>) {}
+
+    /// Called in reification when constraints are finalized. For example finite domain
+    /// constraints are converted to sequences of integers.
+    fn enforce_constraints(_x: LTerm<Self>) -> Goal<Self> {
+        proto_vulcan!(true)
     }
 
     fn finalize(_state: &mut State<Self>) {}

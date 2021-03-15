@@ -83,6 +83,10 @@ impl<U: User> ConstraintStore<U> {
         self.0.iter()
     }
 
+    pub fn into_iter(self) -> impl Iterator<Item = Rc<dyn Constraint<U>>> {
+        self.0.into_iter()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
