@@ -1,32 +1,52 @@
+use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::operator::FnOperatorParam;
 use crate::state::State;
-use crate::stream::Stream;
 use crate::user::User;
 use std::fmt;
 
-pub struct FnGoal<U: User> {
-    f: Box<dyn Fn(State<U>) -> Stream<U>>,
+pub struct FnGoal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    f: Box<dyn Fn(&E, State<U>) -> E::Stream>,
 }
 
-impl<U: User> FnGoal<U> {
-    pub fn new(f: Box<dyn Fn(State<U>) -> Stream<U>>) -> Goal<U> {
+impl<U, E> FnGoal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(f: Box<dyn Fn(&E, State<U>) -> E::Stream>) -> Goal<U, E> {
         Goal::new(FnGoal { f })
     }
 }
 
-impl<U: User> Solve<U> for FnGoal<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        (*self.f)(state)
+impl<U, E> Solve<U, E> for FnGoal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        (*self.f)(engine, state)
     }
 }
 
-impl<U: User> fmt::Debug for FnGoal<U> {
+impl<U, E> fmt::Debug for FnGoal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn fmt(&self, fm: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(fm, "FnGoal()")
     }
 }
 
-pub fn fngoal<U: User>(param: FnOperatorParam<U>) -> Goal<U> {
+pub fn fngoal<U, E>(param: FnOperatorParam<U, E>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     FnGoal::new(param.f)
 }

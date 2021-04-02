@@ -1,3 +1,4 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::user::User;
 
@@ -20,7 +21,11 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn succeed<U: User>() -> Goal<U> {
+pub fn succeed<U, E>() -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     Goal::succeed()
 }
 

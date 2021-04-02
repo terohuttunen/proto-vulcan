@@ -1,21 +1,29 @@
+use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
-use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 
 #[derive(Debug)]
-pub struct Conde<U: User> {
-    conjunctions: Vec<Goal<U>>,
+pub struct Conde<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    conjunctions: Vec<Goal<U, E>>,
 }
 
-impl<U: User> Conde<U> {
-    pub fn from_vec(conjunctions: Vec<Goal<U>>) -> Goal<U> {
+impl<U, E> Conde<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn from_vec(conjunctions: Vec<Goal<U, E>>) -> Goal<U, E> {
         Goal::new(Conde { conjunctions })
     }
 
-    pub fn from_array(goals: &[Goal<U>]) -> Goal<U> {
+    pub fn from_array(goals: &[Goal<U, E>]) -> Goal<U, E> {
         Goal::new(Conde {
             conjunctions: goals.to_vec(),
         })
@@ -23,7 +31,7 @@ impl<U: User> Conde<U> {
 
     // The parameter is a list of conjunctions, and the resulting goal is a disjunction
     // of conjunctions.
-    pub fn from_conjunctions(goals: &[&[Goal<U>]]) -> Goal<U> {
+    pub fn from_conjunctions(goals: &[&[Goal<U, E>]]) -> Goal<U, E> {
         let mut conjunctions = vec![];
         for conjunction_goals in goals {
             conjunctions.push(All::from_array(conjunction_goals));
@@ -32,9 +40,13 @@ impl<U: User> Conde<U> {
     }
 }
 
-impl<U: User> Solve<U> for Conde<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        let mut stream = Stream::Empty;
+impl<U, E> Solve<U, E> for Conde<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        let mut stream = engine.mzero();
 
         // Process first element separately to avoid one extra clone of `state`.
         if self.conjunctions.len() > 1 {
@@ -44,14 +56,14 @@ impl<U: User> Solve<U> for Conde<U> {
                 .rev()
                 .take(self.conjunctions.len() - 1)
             {
-                let new_stream = conjunction.solve(state.clone());
-                stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
+                let new_stream = conjunction.solve(engine, state.clone());
+                stream = engine.mplus(new_stream, engine.delay(stream));
             }
         }
 
         if self.conjunctions.len() > 0 {
-            let new_stream = self.conjunctions[0].solve(state);
-            stream = Stream::mplus(new_stream, LazyStream::from_stream(stream));
+            let new_stream = self.conjunctions[0].solve(engine, state);
+            stream = engine.mplus(new_stream, engine.delay(stream));
         }
 
         stream
@@ -103,7 +115,11 @@ impl<U: User> Solve<U> for Conde<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn conde<U: User>(param: OperatorParam<U>) -> Goal<U> {
+pub fn conde<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     Conde::from_conjunctions(param.body)
 }
 

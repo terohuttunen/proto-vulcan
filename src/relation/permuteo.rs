@@ -1,10 +1,15 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::relation::rembero;
 use crate::user::User;
 
 /// A relation that will permute xl into yl.
-pub fn permuteo<U: User>(xl: LTerm<U>, yl: LTerm<U>) -> Goal<U> {
+pub fn permuteo<U, E>(xl: LTerm<U>, yl: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     proto_vulcan_closure!(
         match [xl, yl] {
             [[], []] => ,

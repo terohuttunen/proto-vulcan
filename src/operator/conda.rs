@@ -1,3 +1,4 @@
+use crate::engine::Engine;
 /// Conditional ?
 ///
 /// Returns stream from first clause [x0 AND x1 AND ...] whose first (a0, b0, ...) goal succeeds
@@ -8,23 +9,30 @@ use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
-use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
-pub struct Conda<U: User> {
+pub struct Conda<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     // First goal of this conda clause
-    first: Goal<U>,
+    first: Goal<U, E>,
 
     // Rest of the goals of this conda clause
-    rest: Goal<U>,
+    rest: Goal<U, E>,
 
     // Next conda clause
-    next: Goal<U>,
+    next: Goal<U, E>,
 }
 
-impl<U: User> Conda<U> {
-    pub fn from_conjunctions(body: &[&[Goal<U>]]) -> Goal<U> {
+impl<U, E> Conda<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn from_conjunctions(body: &[&[Goal<U, E>]]) -> Goal<U, E> {
         let mut next = proto_vulcan!(false);
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
@@ -38,19 +46,27 @@ impl<U: User> Conda<U> {
     }
 }
 
-impl<U: User> Solve<U> for Conda<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        let mut stream = self.first.solve(state.clone());
+impl<U, E> Solve<U, E> for Conda<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        let mut stream = self.first.solve(engine, state.clone());
 
-        match stream.peek() {
-            Some(_) => Stream::bind(stream, self.rest.clone()),
-            None => self.next.solve(state),
+        match engine.peek(&mut stream) {
+            Some(_) => engine.mbind(stream, self.rest.clone()),
+            None => self.next.solve(engine, state),
         }
     }
 }
 
 /// Soft cut operator.
-pub fn conda<U: User>(param: OperatorParam<U>) -> Goal<U> {
+pub fn conda<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     Conda::from_conjunctions(param.body)
 }
 

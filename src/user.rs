@@ -1,3 +1,4 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::state::constraint::Constraint;
@@ -33,7 +34,7 @@ pub trait User: Debug + Clone + Default + 'static {
 
     /// Called in reification when constraints are finalized. For example finite domain
     /// constraints are converted to sequences of integers.
-    fn enforce_constraints(_x: LTerm<Self>) -> Goal<Self> {
+    fn enforce_constraints<E: Engine<Self>>(_x: LTerm<Self>) -> Goal<Self, E> {
         proto_vulcan!(true)
     }
 

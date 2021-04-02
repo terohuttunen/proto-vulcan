@@ -79,6 +79,7 @@ struct FnGoal {
     fngoal: Ident,
     m: Option<Token![move]>,
     or1_token: Token![|],
+    engine: Ident,
     state: Ident,
     or2_token: Token![|],
     body: syn::Block,
@@ -98,6 +99,8 @@ impl Parse for FnGoal {
         };
 
         let or1_token: Token![|] = input.parse()?;
+        let engine: Ident = input.parse()?;
+        let _: Token![,] = input.parse()?;
         let state: Ident = input.parse()?;
         let or2_token: Token![|] = input.parse()?;
 
@@ -105,6 +108,7 @@ impl Parse for FnGoal {
             fngoal,
             m,
             or1_token,
+            engine,
             state,
             or2_token,
             body: input.parse()?,
@@ -115,10 +119,11 @@ impl Parse for FnGoal {
 impl ToTokens for FnGoal {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let m = &self.m;
+        let engine = &self.engine;
         let state = &self.state;
         let body: &syn::Block = &self.body;
         let output = quote! {{
-            crate::operator::fngoal::FnGoal::new(Box::new(#m |#state| { #body } ))
+            crate::operator::fngoal::FnGoal::new(Box::new(#m |#engine, #state| { #body } ))
         }};
         output.to_tokens(tokens);
     }

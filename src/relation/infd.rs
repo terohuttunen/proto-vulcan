@@ -1,3 +1,4 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::operator::all::All;
@@ -7,7 +8,11 @@ use crate::user::User;
 use std::ops::RangeInclusive;
 
 /// Associates the same domain to multiple variables
-pub fn infd<U: User>(u: LTerm<U>, domain: &[isize]) -> Goal<U> {
+pub fn infd<U, E>(u: LTerm<U>, domain: &[isize]) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     if u.is_list() {
         let goals = u
             .iter()
@@ -19,7 +24,11 @@ pub fn infd<U: User>(u: LTerm<U>, domain: &[isize]) -> Goal<U> {
     }
 }
 
-pub fn infdrange<U: User>(u: LTerm<U>, domain: &RangeInclusive<isize>) -> Goal<U> {
+pub fn infdrange<U, E>(u: LTerm<U>, domain: &RangeInclusive<isize>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     if u.is_list() {
         let goals = u
             .iter()

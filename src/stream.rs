@@ -1,5 +1,6 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
-use crate::state::{SResult, State};
+use crate::state::State;
 use crate::user::User;
 use std::fmt;
 
@@ -8,11 +9,11 @@ pub enum Thunk<U: User> {
     Stream(Stream<U>),
 
     /// The goal is applied to the state to generate a delayed stream.
-    Goal(Goal<U>, State<U>),
+    Goal(Goal<U, StreamEngine<U>>, State<U>),
 
     /// Interleaving operations
     MPlus(LazyStream<U>, LazyStream<U>),
-    Bind(LazyStream<U>, Goal<U>),
+    Bind(LazyStream<U>, Goal<U, StreamEngine<U>>),
 
     /// Generic closure. This cannot be serialized.
     Closure(Box<dyn FnOnce() -> Stream<U>>),
@@ -20,24 +21,24 @@ pub enum Thunk<U: User> {
 
 impl<U: User> Thunk<U> {
     /// Evaluates the thunk.
-    pub fn call(self) -> Stream<U> {
+    pub fn call(self, engine: &StreamEngine<U>) -> Stream<U> {
         match self {
             Thunk::Stream(stream) => stream,
-            Thunk::Goal(goal, state) => goal.solve(state),
-            Thunk::MPlus(lazy, lazy_hat) => Stream::mplus(lazy.eval(), lazy_hat),
-            Thunk::Bind(lazy, goal) => Stream::bind(lazy.eval(), goal),
+            Thunk::Goal(goal, state) => goal.solve(engine, state),
+            Thunk::MPlus(lazy, lazy_hat) => engine.mplus(engine.force(lazy), lazy_hat),
+            Thunk::Bind(lazy, goal) => engine.mbind(engine.force(lazy), goal),
             Thunk::Closure(f) => f(),
         }
     }
 
     /// Returns a reference to next element in the stream, if any. The thunk is
     /// evaluated if necessary.
-    pub fn peek(&mut self) -> Option<&Box<State<U>>> {
-        let thunk = std::mem::replace(self, Thunk::Stream(Stream::Empty));
-        let stream = thunk.call();
+    pub fn peek<'a>(&mut self, engine: &'a StreamEngine<U>) -> Option<&Box<State<U>>> {
+        let thunk = std::mem::replace(self, Thunk::Stream(engine.mzero()));
+        let stream = thunk.call(engine);
         let _ = std::mem::replace(self, Thunk::Stream(stream));
         if let Thunk::Stream(stream) = self {
-            stream.peek()
+            engine.peek(stream)
         } else {
             unreachable!();
         }
@@ -45,12 +46,12 @@ impl<U: User> Thunk<U> {
 
     /// Truncates the stream leaving at most one element, and returns a reference to
     /// the remaining element if any. The thunk is evaluated if necessary.
-    pub fn trunc(&mut self) -> Option<&Box<State<U>>> {
-        let thunk = std::mem::replace(self, Thunk::Stream(Stream::Empty));
-        let stream = thunk.call();
+    pub fn trunc<'a>(&mut self, engine: &'a StreamEngine<U>) -> Option<&Box<State<U>>> {
+        let thunk = std::mem::replace(self, Thunk::Stream(engine.mzero()));
+        let stream = thunk.call(engine);
         let _ = std::mem::replace(self, Thunk::Stream(stream));
         if let Thunk::Stream(stream) = self {
-            stream.trunc()
+            engine.trunc(stream)
         } else {
             unreachable!();
         }
@@ -92,7 +93,7 @@ impl<U: User> LazyStream<U> {
         }
     }
 
-    pub fn from_goal(goal: Goal<U>, state: State<U>) -> LazyStream<U> {
+    pub fn from_goal(goal: Goal<U, StreamEngine<U>>, state: State<U>) -> LazyStream<U> {
         if goal.is_fail() {
             LazyStream::Empty
         } else {
@@ -114,7 +115,7 @@ impl<U: User> LazyStream<U> {
         }
     }
 
-    pub fn bind(lazy: LazyStream<U>, goal: Goal<U>) -> LazyStream<U> {
+    pub fn bind(lazy: LazyStream<U>, goal: Goal<U, StreamEngine<U>>) -> LazyStream<U> {
         if goal.is_succeed() {
             lazy
         } else if goal.is_fail() {
@@ -145,7 +146,7 @@ impl<U: User> LazyStream<U> {
     }
 
     /// Evaluates a stream from lazy stream.
-    pub fn eval(mut self) -> Stream<U> {
+    pub fn eval(mut self, engine: &StreamEngine<U>) -> Stream<U> {
         match self {
             LazyStream::Empty => Stream::Empty,
             LazyStream::Thunk {
@@ -159,25 +160,25 @@ impl<U: User> LazyStream<U> {
                         thunk,
                     });
                 }
-                thunk.call()
+                thunk.call(engine)
             }
         }
     }
 
     /// Returns a reference to next element in the stream, if any.
-    pub fn peek(&mut self) -> Option<&Box<State<U>>> {
+    pub fn peek<'a>(&mut self, engine: &'a StreamEngine<U>) -> Option<&Box<State<U>>> {
         match self {
             LazyStream::Empty => None,
-            LazyStream::Thunk { delay: _, thunk } => thunk.peek(),
+            LazyStream::Thunk { delay: _, thunk } => thunk.peek(engine),
         }
     }
 
     /// Truncates the stream leaving at most one element, and returns a reference to
     /// the remaining element if any.
-    pub fn trunc(&mut self) -> Option<&Box<State<U>>> {
+    pub fn trunc<'a>(&mut self, engine: &'a StreamEngine<U>) -> Option<&Box<State<U>>> {
         match self {
             LazyStream::Empty => None,
-            LazyStream::Thunk { delay: _, thunk } => thunk.trunc(),
+            LazyStream::Thunk { delay: _, thunk } => thunk.trunc(engine),
         }
     }
 }
@@ -203,80 +204,113 @@ impl<U: User> Stream<U> {
         Stream::Lazy(LazyStream::from_stream(self).with_delay(n))
     }
 
-    /// Create empty stream.
-    pub fn empty() -> Stream<U> {
-        Stream::Empty
-    }
-
-    /// Create stream with single element.
-    pub fn unit(mut u: Box<State<U>>) -> Stream<U> {
-        U::finalize(u.as_mut());
-        Stream::Unit(u)
-    }
-
     pub fn cons(mut a: Box<State<U>>, lazy: LazyStream<U>) -> Stream<U> {
         U::finalize(a.as_mut());
         Stream::Cons(a, lazy)
     }
 
-    pub fn from_goal(goal: Goal<U>, mut state: State<U>) -> Stream<U> {
+    pub fn from_goal(
+        engine: &StreamEngine<U>,
+        goal: Goal<U, StreamEngine<U>>,
+        mut state: State<U>,
+    ) -> Stream<U> {
         U::finalize(&mut state);
-        goal.solve(state)
-    }
-
-    pub fn mplus(stream: Stream<U>, lazy: LazyStream<U>) -> Stream<U> {
-        match stream {
-            Stream::Empty => lazy.eval(),
-            Stream::Lazy(lazy_hat) => Stream::lazy_mplus(lazy, lazy_hat),
-            Stream::Unit(a) => Stream::cons(a, lazy),
-            Stream::Cons(head, lazy_hat) => Stream::cons(head, LazyStream::mplus(lazy, lazy_hat)),
-        }
+        goal.solve(engine, state)
     }
 
     pub fn lazy_mplus(lazy: LazyStream<U>, lazy_hat: LazyStream<U>) -> Stream<U> {
         Stream::Lazy(LazyStream::mplus(lazy, lazy_hat))
     }
 
-    pub fn bind(stream: Stream<U>, goal: Goal<U>) -> Stream<U> {
+    pub fn lazy_bind(lazy: LazyStream<U>, goal: Goal<U, StreamEngine<U>>) -> Stream<U> {
+        if goal.is_succeed() {
+            Stream::Lazy(lazy)
+        } else if goal.is_fail() {
+            Stream::Empty
+        } else {
+            Stream::Lazy(LazyStream::bind(lazy, goal))
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct StreamEngine<U: User> {
+    _phantom: std::marker::PhantomData<U>,
+}
+
+impl<U: User> Engine<U> for StreamEngine<U> {
+    type LazyStream = LazyStream<U>;
+    type Stream = Stream<U>;
+
+    fn new() -> Self {
+        StreamEngine {
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    // Identity for mplus, i.e. empty stream
+    fn mzero(&self) -> Self::Stream {
+        Stream::Empty
+    }
+
+    // Stream with single element
+    fn munit(&self, state: State<U>) -> Self::Stream {
+        Stream::Unit(Box::new(state))
+    }
+
+    fn is_empty(&self, stream: &Self::Stream) -> bool {
+        match stream {
+            Stream::Empty => true,
+            Stream::Lazy(lazy) => lazy.is_empty(),
+            _ => false,
+        }
+    }
+
+    // Returns a stream of solutions from solving `goal` in each solution of `stream`.
+    // Conjunction. Each application of the `goal` to states of the stream may result in
+    // failure with zero solutions, or success with any non-zero number of solutions.
+    fn mbind(&self, stream: Self::Stream, goal: Goal<U, Self>) -> Self::Stream {
         if goal.is_succeed() {
             stream
         } else if goal.is_fail() {
-            Stream::empty()
+            Stream::Empty
         } else {
             match stream {
-                Stream::Empty => Stream::empty(),
+                Stream::Empty => Stream::Empty,
                 Stream::Lazy(lazy) => Stream::lazy_bind(lazy, goal),
-                Stream::Unit(a) => goal.solve(*a),
+                Stream::Unit(a) => goal.solve(self, *a),
                 Stream::Cons(head, lazy) => {
-                    Stream::mplus(goal.solve(*head), LazyStream::bind(lazy, goal))
+                    self.mplus(goal.solve(self, *head), LazyStream::bind(lazy, goal))
                 }
             }
         }
     }
 
-    pub fn lazy_bind(lazy: LazyStream<U>, goal: Goal<U>) -> Stream<U> {
-        if goal.is_succeed() {
-            Stream::Lazy(lazy)
-        } else if goal.is_fail() {
-            Stream::empty()
-        } else {
-            Stream::Lazy(LazyStream::bind(lazy, goal))
+    fn mplus(&self, stream: Self::Stream, lazy: Self::LazyStream) -> Self::Stream {
+        match stream {
+            Stream::Empty => self.force(lazy),
+            Stream::Lazy(lazy_hat) => Stream::lazy_mplus(lazy, lazy_hat),
+            Stream::Unit(a) => Stream::cons(a, lazy),
+            Stream::Cons(head, lazy_hat) => Stream::cons(head, LazyStream::mplus(lazy, lazy_hat)),
         }
     }
 
-    /// Returns the next element from the stream.
-    pub fn next(&mut self) -> Option<Box<State<U>>> {
+    fn lazy(&self, goal: Goal<U, Self>, state: State<U>) -> Self::LazyStream {
+        LazyStream::from_goal(goal, state)
+    }
+
+    fn next(&self, stream: &mut Self::Stream) -> Option<Box<State<U>>> {
         loop {
-            match std::mem::replace(self, Stream::Empty) {
+            match std::mem::replace(stream, Stream::Empty) {
                 Stream::Empty => return None,
                 Stream::Lazy(lazy) => {
-                    let _ = std::mem::replace(self, lazy.eval());
+                    let _ = std::mem::replace(stream, lazy.eval(self));
                 }
                 Stream::Unit(a) => {
                     return Some(a);
                 }
                 Stream::Cons(a, lazy) => {
-                    let _ = std::mem::replace(self, lazy.eval());
+                    let _ = std::mem::replace(stream, lazy.eval(self));
                     return Some(a);
                 }
             }
@@ -284,10 +318,10 @@ impl<U: User> Stream<U> {
     }
 
     /// Returns a reference to next element in the stream, if any.
-    pub fn peek(&mut self) -> Option<&Box<State<U>>> {
-        match self {
+    fn peek<'a>(&self, stream: &'a mut Self::Stream) -> Option<&'a Box<State<U>>> {
+        match stream {
             Stream::Empty => None,
-            Stream::Lazy(lazy) => lazy.peek(),
+            Stream::Lazy(lazy) => lazy.peek(self),
             Stream::Unit(a) => Some(a),
             Stream::Cons(a, _) => Some(a),
         }
@@ -295,42 +329,33 @@ impl<U: User> Stream<U> {
 
     /// Truncates the stream leaving at most one element, and returns a reference to
     /// the remaining element if any.
-    pub fn trunc(&mut self) -> Option<&Box<State<U>>> {
-        match self {
+    fn trunc<'a>(&self, stream: &'a mut Self::Stream) -> Option<&'a Box<State<U>>> {
+        match stream {
             Stream::Empty => None,
-            Stream::Lazy(lazy) => lazy.trunc(),
+            Stream::Lazy(lazy) => lazy.trunc(self),
             Stream::Unit(a) => Some(a),
             Stream::Cons(_, _) => {
-                if let Stream::Cons(a, _) = std::mem::replace(self, Stream::Empty) {
-                    let _ = std::mem::replace(self, Stream::Unit(a));
-                    self.peek()
+                if let Stream::Cons(a, _) = std::mem::replace(stream, Stream::Empty) {
+                    let _ = std::mem::replace(stream, Stream::Unit(a));
+                    self.peek(stream)
                 } else {
                     unreachable!();
                 }
             }
         }
     }
-}
 
-impl<U: User> Iterator for Stream<U> {
-    type Item = Box<State<U>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next()
+    fn delay(&self, stream: Self::Stream) -> Self::LazyStream {
+        LazyStream::from_stream(stream)
     }
-}
 
-impl<U: User> From<SResult<U>> for Stream<U> {
-    fn from(u: SResult<U>) -> Stream<U> {
-        match u {
-            Ok(u) => Stream::unit(Box::new(u)),
-            Err(_) => Stream::empty(),
-        }
+    // Packs lazy stream into stream without evaluating it
+    fn inc(&self, lazy: Self::LazyStream) -> Self::Stream {
+        Stream::Lazy(lazy)
     }
-}
 
-impl<U: User> From<State<U>> for Stream<U> {
-    fn from(u: State<U>) -> Stream<U> {
-        Stream::unit(Box::new(u))
+    // Evaluate lazy stream
+    fn force(&self, lazy: Self::LazyStream) -> Self::Stream {
+        lazy.eval(self)
     }
 }

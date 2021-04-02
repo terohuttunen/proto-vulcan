@@ -1,9 +1,9 @@
+use crate::engine::Engine;
 /// distinctfd finite domain constraint
 use crate::goal::{Goal, Solve};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{Constraint, FiniteDomain, SResult, State};
-use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -13,19 +13,30 @@ pub struct DistinctFd<U: User> {
 }
 
 impl<U: User> DistinctFd<U> {
-    pub fn new(u: LTerm<U>) -> Goal<U> {
+    pub fn new<E: Engine<U>>(u: LTerm<U>) -> Goal<U, E> {
         Goal::new(DistinctFd { u })
     }
 }
 
-impl<U: User> Solve<U> for DistinctFd<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
+impl<U, E> Solve<U, E> for DistinctFd<U>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
         let u = self.u.clone();
-        Stream::from(DistinctFdConstraint::new(u).run(state))
+        match DistinctFdConstraint::new(u).run(state) {
+            Ok(state) => engine.munit(state),
+            Err(_) => engine.mzero(),
+        }
     }
 }
 
-pub fn distinctfd<U: User>(u: LTerm<U>) -> Goal<U> {
+pub fn distinctfd<U, E>(u: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     DistinctFd::new(u)
 }
 

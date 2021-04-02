@@ -198,7 +198,7 @@
 //! use proto_vulcan::operator::condu;
 //! use proto_vulcan::operator::OperatorParam;
 //!
-//! pub fn onceo<U: User>(param: OperatorParam<U>) -> Goal<U> {
+//! pub fn onceo<U: User, E: Engine<U>>(param: OperatorParam<U, E>) -> Goal<U, E> {
 //!    let g = crate::operator::all::All::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }
@@ -277,9 +277,9 @@
 //! # use proto_vulcan::*;
 //! fn example() -> Goal {
 //!     proto_vulcan!(
-//!         fngoal |state| {
+//!         fngoal |engine, state| {
 //!             // There could be more Rust here modifying the `state`
-//!             proto_vulcan!(true).solve(state)
+//!             proto_vulcan!(true).solve(engine, state)
 //!         }
 //!     )
 //! }
@@ -325,9 +325,12 @@ pub mod lresult;
 
 pub mod user;
 
+pub mod engine;
+
 #[macro_use]
 pub mod query;
 
+pub use engine::Engine;
 pub use goal::{Goal, Solve};
 pub use lterm::LTerm;
 pub use lvalue::LValue;

@@ -1,7 +1,7 @@
+use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::{Constraint, SMap, SResult, State};
-use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -12,15 +12,22 @@ pub struct Diseq<U: User> {
 }
 
 impl<U: User> Diseq<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E> {
         Goal::new(Diseq { u, v })
     }
 }
 
-impl<U: User> Solve<U> for Diseq<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
+impl<U, E> Solve<U, E> for Diseq<U>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
         // Return state where u and v are unified under s, or None if unification is not possible
-        Stream::from(state.disunify(&self.u, &self.v))
+        match state.disunify(&self.u, &self.v) {
+            Ok(state) => engine.munit(state),
+            Err(_) => engine.mzero(),
+        }
     }
 }
 
@@ -47,7 +54,11 @@ impl<U: User> Solve<U> for Diseq<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn diseq<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+pub fn diseq<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     Diseq::new(u, v)
 }
 

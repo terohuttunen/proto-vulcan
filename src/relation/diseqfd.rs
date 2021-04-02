@@ -1,9 +1,9 @@
+use crate::engine::Engine;
 /// Constrain disequality in finite domains
 use crate::goal::{Goal, Solve};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{Constraint, FiniteDomain, SResult, State};
-use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -14,16 +14,23 @@ pub struct DiseqFd<U: User> {
 }
 
 impl<U: User> DiseqFd<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E> {
         Goal::new(DiseqFd { u, v })
     }
 }
 
-impl<U: User> Solve<U> for DiseqFd<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
+impl<U, E> Solve<U, E> for DiseqFd<U>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
         let u = self.u.clone();
         let v = self.v.clone();
-        Stream::from(DiseqFdConstraint::new(u, v).run(state))
+        match DiseqFdConstraint::new(u, v).run(state) {
+            Ok(state) => engine.munit(state),
+            Err(_) => engine.mzero(),
+        }
     }
 }
 
@@ -51,7 +58,11 @@ impl<U: User> Solve<U> for DiseqFd<U> {
 ///     assert!(iter.next().is_none())
 /// }
 /// ```
-pub fn diseqfd<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+pub fn diseqfd<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     DiseqFd::new(u, v)
 }
 

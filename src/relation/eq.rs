@@ -1,7 +1,7 @@
+use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
-use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
@@ -11,14 +11,21 @@ pub struct Eq<U: User> {
 }
 
 impl<U: User> Eq<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E> {
         Goal::new(Eq { u, v })
     }
 }
 
-impl<U: User> Solve<U> for Eq<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        Stream::from(state.unify(&self.u, &self.v))
+impl<U, E> Solve<U, E> for Eq<U>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        match state.unify(&self.u, &self.v) {
+            Ok(state) => engine.munit(state),
+            Err(_) => engine.mzero(),
+        }
     }
 }
 
@@ -41,7 +48,11 @@ impl<U: User> Solve<U> for Eq<U> {
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn eq<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+pub fn eq<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     Eq::new(u, v)
 }
 

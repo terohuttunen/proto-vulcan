@@ -1,9 +1,9 @@
+use crate::engine::Engine;
 /// Constrains u + v = w
 use crate::goal::{Goal, Solve};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{Constraint, SResult, State};
-use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -15,19 +15,29 @@ pub struct PlusZ<U: User> {
 }
 
 impl<U: User> PlusZ<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
+    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U, E> {
         Goal::new(PlusZ { u, v, w })
     }
 }
 
-impl<U: User> Solve<U> for PlusZ<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = PlusZConstraint::new(self.u.clone(), self.v.clone(), self.w.clone());
-        Stream::from(c.run(state))
+impl<U, E> Solve<U, E> for PlusZ<U>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        match PlusZConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
+            Ok(state) => engine.munit(state),
+            Err(_) => engine.mzero(),
+        }
     }
 }
 
-pub fn plusz<U: User>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
+pub fn plusz<U, E>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     PlusZ::new(u, v, w)
 }
 

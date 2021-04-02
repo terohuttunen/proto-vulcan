@@ -1,9 +1,14 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::User;
 
 /// A relation which guarantees that all elements of `l` are distinct from each other.
-pub fn distincto<U: User>(l: LTerm<U>) -> Goal<U> {
+pub fn distincto<U, E>(l: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     proto_vulcan_closure!(
         match l {
             [] | [_] => ,

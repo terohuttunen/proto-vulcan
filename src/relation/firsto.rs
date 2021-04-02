@@ -1,10 +1,15 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::relation::conso;
 use crate::user::User;
 
 /// A relation such that the `first` is the first element of `list`.
-pub fn firsto<U: User>(list: LTerm<U>, first: LTerm<U>) -> Goal<U> {
+pub fn firsto<U, E>(list: LTerm<U>, first: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     proto_vulcan!(|rest| { conso(first, rest, list) })
 }
 

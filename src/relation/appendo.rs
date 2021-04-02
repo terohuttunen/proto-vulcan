@@ -1,3 +1,4 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::User;
@@ -15,7 +16,11 @@ use crate::user::User;
 ///     });
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3, 4, 5]));
 /// }
-pub fn appendo<U: User>(l: LTerm<U>, s: LTerm<U>, ls: LTerm<U>) -> Goal<U> {
+pub fn appendo<U, E>(l: LTerm<U>, s: LTerm<U>, ls: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     proto_vulcan_closure!(
         match [l, s, ls] {
             [[], x, x] => ,

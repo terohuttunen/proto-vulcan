@@ -1,11 +1,16 @@
 // Less-than finite domain constraint
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::relation::diseqfd::diseqfd;
 use crate::relation::ltefd::ltefd;
 use crate::user::User;
 
-pub fn ltfd<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+pub fn ltfd<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     proto_vulcan!([diseqfd(u, v), ltefd(u, v)])
 }
 

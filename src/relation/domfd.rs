@@ -1,9 +1,9 @@
+use crate::engine::Engine;
 /// Constrains x in domain
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::FiniteDomain;
 use crate::state::State;
-use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -14,7 +14,7 @@ pub struct DomFd<U: User> {
 }
 
 impl<U: User> DomFd<U> {
-    pub fn new(x: LTerm<U>, domain: FiniteDomain) -> Goal<U> {
+    pub fn new<E: Engine<U>>(x: LTerm<U>, domain: FiniteDomain) -> Goal<U, E> {
         Goal::new(DomFd {
             x,
             domain: Rc::new(domain),
@@ -22,9 +22,16 @@ impl<U: User> DomFd<U> {
     }
 }
 
-impl<U: User> Solve<U> for DomFd<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
+impl<U, E> Solve<U, E> for DomFd<U>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
         let xwalk = state.smap_ref().walk(&self.x).clone();
-        Stream::from(state.process_domain(&xwalk, Rc::clone(&self.domain) as Rc<FiniteDomain>))
+        match state.process_domain(&xwalk, Rc::clone(&self.domain) as Rc<FiniteDomain>) {
+            Ok(state) => engine.munit(state),
+            Err(_) => engine.mzero(),
+        }
     }
 }

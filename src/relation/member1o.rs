@@ -1,3 +1,4 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::User;
@@ -18,7 +19,11 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn member1o<U: User>(x: LTerm<U>, l: LTerm<U>) -> Goal<U> {
+pub fn member1o<U, E>(x: LTerm<U>, l: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
         [head | rest] => [head != x, member1o(x, rest)],

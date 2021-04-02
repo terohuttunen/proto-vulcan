@@ -1,3 +1,4 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::User;
@@ -17,7 +18,11 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3]));
 /// }
 /// ```
-pub fn conso<U: User>(first: LTerm<U>, rest: LTerm<U>, out: LTerm<U>) -> Goal<U> {
+pub fn conso<U, E>(first: LTerm<U>, rest: LTerm<U>, out: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     proto_vulcan!([first | rest] == out)
 }
 

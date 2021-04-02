@@ -1,13 +1,13 @@
+use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::state::State;
-use crate::stream::Stream;
 use crate::user::User;
 use std::fmt::Debug;
 
 // operator { <body> }
-pub struct OperatorParam<'a, U: User> {
-    pub body: &'a [&'a [Goal<U>]],
+pub struct OperatorParam<'a, U: User, E: Engine<U>> {
+    pub body: &'a [&'a [Goal<U, E>]],
 }
 
 // operator <term> {
@@ -16,30 +16,31 @@ pub struct OperatorParam<'a, U: User> {
 //    ...
 //    _ => <body_default>,
 // }
-pub struct PatternMatchOperatorParam<'a, U: User> {
+pub struct PatternMatchOperatorParam<'a, U: User, E: Engine<U>> {
     // First goal of each arm is the match-goal
-    pub arms: &'a [&'a [Goal<U>]],
+    pub arms: &'a [&'a [Goal<U, E>]],
 }
 
 // project |x, y, ...| { <body> }
-pub struct ProjectOperatorParam<'a, U: User> {
+pub struct ProjectOperatorParam<'a, U: User, E: Engine<U>> {
     pub var_list: Vec<LTerm<U>>,
-    pub body: &'a [&'a [Goal<U>]],
+    pub body: &'a [&'a [Goal<U, E>]],
 }
 
-// fngoal [move]* |state| { <rust> }
-pub struct FnOperatorParam<U: User> {
-    pub f: Box<dyn Fn(State<U>) -> Stream<U>>,
+// fngoal [move]* |engine, state| { <rust> }
+pub struct FnOperatorParam<U: User, E: Engine<U>> {
+    pub f: Box<dyn Fn(&E, State<U>) -> E::Stream>,
 }
 
 // closure { <body> }
-pub struct ClosureOperatorParam<U: User> {
-    pub f: Box<dyn Fn() -> Goal<U>>,
+pub struct ClosureOperatorParam<U: User, E: Engine<U>> {
+    pub f: Box<dyn Fn() -> Goal<U, E>>,
 }
 
 // for x in coll { <body> }
-pub struct ForOperatorParam<U, T>
+pub struct ForOperatorParam<T, U, E>
 where
+    E: Engine<U>,
     U: User,
     T: Debug + 'static,
     for<'b> &'b T: IntoIterator<Item = &'b LTerm<U>>,
@@ -47,7 +48,7 @@ where
     pub coll: T,
     // Goal generator: generates a goal for each cycle of the "loop" given element from the
     // collection.
-    pub g: Box<dyn Fn(LTerm<U>) -> Goal<U>>,
+    pub g: Box<dyn Fn(LTerm<U>) -> Goal<U, E>>,
 }
 
 #[doc(hidden)]

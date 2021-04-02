@@ -1,24 +1,24 @@
+use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
-use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 
 #[derive(Debug)]
-pub struct Fresh<U: User> {
+pub struct Fresh<E: Engine<U>, U: User> {
     variables: Vec<LTerm<U>>,
-    body: Goal<U>,
+    body: Goal<U, E>,
 }
 
-impl<U: User> Fresh<U> {
-    pub fn new(variables: Vec<LTerm<U>>, body: Goal<U>) -> Goal<U> {
-        Goal::new(Fresh { variables, body }) as Goal<U>
+impl<E: Engine<U>, U: User> Fresh<E, U> {
+    pub fn new(variables: Vec<LTerm<U>>, body: Goal<U, E>) -> Goal<U, E> {
+        Goal::new(Fresh { variables, body }) as Goal<U, E>
     }
 }
 
-impl<U: User> Solve<U> for Fresh<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
+impl<E: Engine<U>, U: User> Solve<U, E> for Fresh<E, U> {
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
         let goal = self.body.clone();
-        Stream::Lazy(LazyStream::from_goal(goal, state))
+        engine.inc(engine.lazy(goal, state))
     }
 }

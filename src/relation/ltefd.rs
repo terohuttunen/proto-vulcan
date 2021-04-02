@@ -1,8 +1,8 @@
+use crate::engine::Engine;
 /// Less than or equal FD
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::{Constraint, SResult, State};
-use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -13,19 +13,29 @@ pub struct LessThanOrEqualFd<U: User> {
 }
 
 impl<U: User> LessThanOrEqualFd<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E> {
         Goal::new(LessThanOrEqualFd { u, v })
     }
 }
 
-impl<U: User> Solve<U> for LessThanOrEqualFd<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = LessThanOrEqualFdConstraint::new(self.u.clone(), self.v.clone());
-        Stream::from(c.run(state))
+impl<U, E> Solve<U, E> for LessThanOrEqualFd<U>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        match LessThanOrEqualFdConstraint::new(self.u.clone(), self.v.clone()).run(state) {
+            Ok(state) => engine.munit(state),
+            Err(_) => engine.mzero(),
+        }
     }
 }
 
-pub fn ltefd<U: User>(u: LTerm<U>, v: LTerm<U>) -> Goal<U> {
+pub fn ltefd<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     LessThanOrEqualFd::new(u, v)
 }
 

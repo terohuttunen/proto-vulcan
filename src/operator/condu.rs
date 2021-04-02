@@ -1,3 +1,4 @@
+use crate::engine::Engine;
 /// Conditional ?
 ///
 /// Returns stream from first clause [x0 AND x1 AND ...] whose first (a0, b0, ...) goal succeeds.
@@ -9,23 +10,30 @@ use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
-use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
-pub struct Condu<U: User> {
+pub struct Condu<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     // First goal of this condu clause
-    first: Goal<U>,
+    first: Goal<U, E>,
 
     // Rest of the goals of this condu clause
-    rest: Goal<U>,
+    rest: Goal<U, E>,
 
     // Next condu clause
-    next: Goal<U>,
+    next: Goal<U, E>,
 }
 
-impl<U: User> Condu<U> {
-    pub fn from_conjunctions(body: &[&[Goal<U>]]) -> Goal<U> {
+impl<U, E> Condu<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn from_conjunctions(body: &[&[Goal<U, E>]]) -> Goal<U, E> {
         let mut next = proto_vulcan!(false);
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
@@ -39,20 +47,28 @@ impl<U: User> Condu<U> {
     }
 }
 
-impl<U: User> Solve<U> for Condu<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        let mut stream = self.first.solve(state.clone());
+impl<U, E> Solve<U, E> for Condu<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        let mut stream = self.first.solve(engine, state.clone());
 
         // Take only first item from the stream of first goal by truncating the stream
-        match stream.trunc() {
-            Some(_) => Stream::bind(stream, self.rest.clone()),
-            None => self.next.solve(state),
+        match engine.trunc(&mut stream) {
+            Some(_) => engine.mbind(stream, self.rest.clone()),
+            None => self.next.solve(engine, state),
         }
     }
 }
 
 /// Committed choice operator.
-pub fn condu<U: User>(param: OperatorParam<U>) -> Goal<U> {
+pub fn condu<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     Condu::from_conjunctions(param.body)
 }
 

@@ -1,9 +1,9 @@
+use crate::engine::Engine;
 /// Constrains u - v = w finite domains
 use crate::goal::{Goal, Solve};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{Constraint, FiniteDomain, SResult, State};
-use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -15,19 +15,29 @@ pub struct MinusFd<U: User> {
 }
 
 impl<U: User> MinusFd<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
+    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U, E> {
         Goal::new(MinusFd { u, v, w })
     }
 }
 
-impl<U: User> Solve<U> for MinusFd<U> {
-    fn solve(&self, state: State<U>) -> Stream<U> {
-        let c = MinusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone());
-        Stream::from(c.run(state))
+impl<U, E> Solve<U, E> for MinusFd<U>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        match MinusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
+            Ok(state) => engine.munit(state),
+            Err(_) => engine.mzero(),
+        }
     }
 }
 
-pub fn minusfd<U: User>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U> {
+pub fn minusfd<U, E>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     MinusFd::new(u, v, w)
 }
 
