@@ -170,8 +170,8 @@ impl<U: User> std::fmt::Display for TimesFdConstraint<U> {
 #[cfg(test)]
 mod tests {
     use super::timesfd;
+    use crate::prelude::*;
     use crate::relation::infd::infdrange;
-    use crate::*;
 
     #[test]
     fn test_timesfd_1() {

@@ -39,7 +39,7 @@ where
 /// Note: The built-in syntax `x != y` does not work with finite domains.
 /// ```rust
 /// extern crate proto_vulcan;
-/// use proto_vulcan::*;
+/// use proto_vulcan::prelude::*;
 /// use proto_vulcan::relation::diseqfd;
 /// use proto_vulcan::relation::infd;
 /// fn main() {
@@ -159,8 +159,8 @@ impl<U: User> std::fmt::Display for DiseqFdConstraint<U> {
 #[cfg(test)]
 mod tests {
     use super::diseqfd;
+    use crate::prelude::*;
     use crate::relation::infd::infd;
-    use crate::*;
 
     #[test]
     fn test_diseqfd_1() {

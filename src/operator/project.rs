@@ -53,7 +53,7 @@ mod tests {
     use super::*;
     use crate::engine::Engine;
     use crate::lterm::LTermInner;
-    use crate::*;
+    use crate::prelude::*;
 
     #[derive(Debug)]
     pub struct SqEq<U: User> {

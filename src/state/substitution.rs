@@ -180,7 +180,6 @@ impl<U: User> Deref for SMap<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::*;
 
     #[test]
     fn test_smap_new() {

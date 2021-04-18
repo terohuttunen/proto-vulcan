@@ -85,7 +85,7 @@
 //! miniKanren `matche`. Matche, matchu, and matcha are also available.
 //! ```rust
 //! # extern crate proto_vulcan;
-//! # use proto_vulcan::*;
+//! # use proto_vulcan::prelude::*;
 //! pub fn membero<U: User>(x: LTerm<U>, l: LTerm<U>) -> Goal<U> {
 //!     proto_vulcan_closure!(match l {
 //!         [head | _] => head == x,
@@ -127,7 +127,7 @@
 //! being equal to `1`, `2` or `3`.
 //! ```rust
 //! extern crate proto_vulcan;
-//! use proto_vulcan::*;
+//! use proto_vulcan::prelude::*;
 //!
 //! fn main() {
 //!     let query = proto_vulcan_query!(|q| {
@@ -158,7 +158,7 @@
 //! implements a relation that succeeds when argument `s` is an empty list is declared as:
 //! ```rust
 //! extern crate proto_vulcan;
-//! use proto_vulcan::*;
+//! use proto_vulcan::prelude::*;
 //!
 //! pub fn emptyo<U: User>(s: LTerm<U>) -> Goal<U> {
 //!     proto_vulcan!([] == s)
@@ -172,7 +172,7 @@
 //! operators, respectively.
 //! ```rust
 //! # extern crate proto_vulcan;
-//! # use proto_vulcan::*;
+//! # use proto_vulcan::prelude::*;
 //! pub struct OperatorParam<'a, U: User> {
 //!     pub body: &'a [&'a [Goal<U>]],
 //! }
@@ -194,12 +194,12 @@
 //! For example `onceo` can be implemented as:
 //! ```rust
 //! extern crate proto_vulcan;
-//! use proto_vulcan::*;
+//! use proto_vulcan::prelude::*;
 //! use proto_vulcan::operator::condu;
 //! use proto_vulcan::operator::OperatorParam;
 //!
 //! pub fn onceo<U: User, E: Engine<U>>(param: OperatorParam<U, E>) -> Goal<U, E> {
-//!    let g = crate::operator::all::All::from_conjunctions(param.body);
+//!    let g = proto_vulcan::operator::all::All::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }
 //! # fn main() {}
@@ -213,7 +213,7 @@
 //! puts the function calls and necessary context into a closure that will be evaluated later.
 //! ```rust
 //! extern crate proto_vulcan;
-//! use proto_vulcan::*;
+//! use proto_vulcan::prelude::*;
 //!
 //! pub fn appendo(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
 //!     proto_vulcan_closure!(
@@ -233,7 +233,7 @@
 //! # Example
 //! ```rust
 //! extern crate proto_vulcan;
-//! use proto_vulcan::*;
+//! use proto_vulcan::prelude::*;
 //! fn main() {
 //!     let query = proto_vulcan_query!(|x, y| {
 //!         [x, 1] != [2, y],
@@ -274,7 +274,7 @@
 //! returned goal to the input state. For example, a goal that always succeeds, can be written as:
 //! ```rust
 //! # extern crate proto_vulcan;
-//! # use proto_vulcan::*;
+//! # use proto_vulcan::prelude::*;
 //! fn example() -> Goal {
 //!     proto_vulcan!(
 //!         fngoal |engine, state| {
@@ -303,6 +303,8 @@
 //!
 //! [`miniKanren`]: http://minikanren.org
 
+extern crate self as proto_vulcan;
+
 #[macro_use]
 extern crate proto_vulcan_macros;
 
@@ -328,12 +330,17 @@ pub mod engine;
 
 pub mod query;
 
-pub use engine::Engine;
-pub use goal::{Goal, Solve};
-pub use lterm::LTerm;
-pub use lvalue::LValue;
-pub use state::Constraint;
-pub use user::{EmptyUser, User};
+pub mod prelude {
 
-// conde is the only non-built-in operator exported by default.
-pub use crate::operator::conde::conde;
+    pub use proto_vulcan_macros::{lterm, proto_vulcan, proto_vulcan_closure, proto_vulcan_query};
+
+    pub use crate::engine::Engine;
+    pub use crate::goal::{Goal, Solve};
+    pub use crate::lterm::LTerm;
+    pub use crate::lvalue::LValue;
+    pub use crate::state::Constraint;
+    pub use crate::user::{EmptyUser, User};
+
+    // conde is the only non-built-in operator exported by default.
+    pub use crate::operator::conde::conde;
+}

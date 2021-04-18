@@ -137,7 +137,7 @@ impl<U: User> std::fmt::Display for PlusZConstraint<U> {
 #[cfg(test)]
 mod test {
     use super::plusz;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_plusz_1() {

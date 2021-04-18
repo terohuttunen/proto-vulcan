@@ -8,7 +8,7 @@ use crate::user::User;
 /// # Example
 /// ```rust
 /// extern crate proto_vulcan;
-/// use proto_vulcan::*;
+/// use proto_vulcan::prelude::*;
 /// use proto_vulcan::relation::emptyo;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
@@ -31,7 +31,7 @@ where
 mod test {
     use super::emptyo;
     use crate::operator::conde::conde;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_emptyo_1() {

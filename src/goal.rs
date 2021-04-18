@@ -81,9 +81,9 @@ where
 mod test {
     use super::Solve;
     use crate::engine::Engine;
+    use crate::prelude::*;
     use crate::state::State;
     use crate::user::EmptyUser;
-    use crate::*;
 
     #[test]
     fn test_goal_succeed() {

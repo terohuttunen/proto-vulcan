@@ -38,7 +38,7 @@ where
 /// # Example
 /// ```rust
 /// extern crate proto_vulcan;
-/// use proto_vulcan::*;
+/// use proto_vulcan::prelude::*;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
 ///         q == 5,
@@ -58,7 +58,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_eq_1() {

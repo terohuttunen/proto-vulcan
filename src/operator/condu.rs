@@ -75,8 +75,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::condu;
+    use crate::prelude::*;
     use crate::relation::membero::membero;
-    use crate::*;
 
     #[test]
     fn test_conda_1() {

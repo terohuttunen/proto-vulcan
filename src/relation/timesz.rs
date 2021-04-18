@@ -136,7 +136,7 @@ impl<U: User> std::fmt::Display for TimesZConstraint<U> {
 #[cfg(test)]
 mod test {
     use super::timesz;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_timesz_1() {

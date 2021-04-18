@@ -58,7 +58,7 @@ pub fn unify_rec<U: User>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_unify_1() {

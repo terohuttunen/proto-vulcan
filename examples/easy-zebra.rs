@@ -1,6 +1,6 @@
 extern crate proto_vulcan;
+use proto_vulcan::prelude::*;
 use proto_vulcan::relation::membero;
-use proto_vulcan::*;
 use std::time::Instant;
 
 fn righto(x: LTerm, y: LTerm, l: LTerm) -> Goal {

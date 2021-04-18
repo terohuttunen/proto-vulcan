@@ -8,7 +8,7 @@ use crate::user::User;
 /// # Example
 /// ```rust
 /// extern crate proto_vulcan;
-/// use proto_vulcan::*;
+/// use proto_vulcan::prelude::*;
 /// use proto_vulcan::relation::appendo;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
@@ -32,7 +32,7 @@ where
 #[cfg(test)]
 mod test {
     use super::appendo;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_appendo_1() {

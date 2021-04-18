@@ -1,9 +1,9 @@
 extern crate proto_vulcan;
 use itertools::izip;
 use proto_vulcan::lterm::LTerm;
+use proto_vulcan::prelude::*;
 use proto_vulcan::relation::membero;
 use proto_vulcan::relation::permuteo;
-use proto_vulcan::*;
 use std::time::Instant;
 
 fn lefto(x: LTerm, y: LTerm, l: LTerm) -> Goal {

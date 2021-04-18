@@ -8,7 +8,7 @@ use crate::user::User;
 ///
 /// ```rust
 /// extern crate proto_vulcan;
-/// use proto_vulcan::*;
+/// use proto_vulcan::prelude::*;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
 ///         conde {
@@ -32,7 +32,7 @@ where
 #[cfg(test)]
 mod test {
     use super::fail;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_fail_1() {

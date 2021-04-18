@@ -16,7 +16,7 @@ where
 #[cfg(test)]
 mod test {
     use super::firsto;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_firsto_1() {

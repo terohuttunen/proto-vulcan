@@ -24,7 +24,7 @@ where
 #[cfg(test)]
 mod test {
     use super::distincto;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_distincto_1() {

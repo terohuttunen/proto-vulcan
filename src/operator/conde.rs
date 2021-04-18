@@ -92,7 +92,7 @@ where
 /// `membero`-relations, are interleaved by the `conde`-operator:
 /// ```rust
 /// extern crate proto_vulcan;
-/// use proto_vulcan::*;
+/// use proto_vulcan::prelude::*;
 /// use proto_vulcan::relation::membero;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
@@ -126,8 +126,8 @@ where
 #[cfg(test)]
 mod test {
     use super::conde;
+    use crate::prelude::*;
     use crate::relation::membero::membero;
-    use crate::*;
 
     #[test]
     fn test_conde_1() {

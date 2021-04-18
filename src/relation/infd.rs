@@ -43,7 +43,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::infd;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_infd_1() {

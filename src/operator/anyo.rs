@@ -52,7 +52,7 @@ where
 /// In this example the conde-operator would be tried unbounded number of times.
 /// ```rust
 /// extern crate proto_vulcan;
-/// use proto_vulcan::*;
+/// use proto_vulcan::prelude::*;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
 ///         loop {
@@ -84,7 +84,7 @@ where
 mod tests {
     use super::anyo;
     use crate::operator::conde::conde;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_anyo_1() {

@@ -1,5 +1,5 @@
 extern crate proto_vulcan;
-use proto_vulcan::*;
+use proto_vulcan::prelude::*;
 
 fn main() {
     let query = proto_vulcan_query!(|q| {

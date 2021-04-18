@@ -133,8 +133,8 @@ impl<U: User> std::fmt::Display for LessThanOrEqualFdConstraint<U> {
 #[cfg(test)]
 mod tests {
     use super::ltefd;
+    use crate::prelude::*;
     use crate::relation::infd::{infd, infdrange};
-    use crate::*;
 
     #[test]
     fn test_ltefd_1() {

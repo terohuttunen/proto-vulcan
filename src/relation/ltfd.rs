@@ -17,9 +17,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::ltfd;
+    use crate::prelude::*;
     use crate::relation::diseqfd::diseqfd;
     use crate::relation::infd::infd;
-    use crate::*;
 
     #[test]
     fn test_ltfd_1() {

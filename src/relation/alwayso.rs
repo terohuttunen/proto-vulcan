@@ -17,7 +17,7 @@ where
 mod tests {
     use super::alwayso;
     use crate::operator::conde::conde;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_alwayso_1() {

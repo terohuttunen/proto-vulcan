@@ -24,7 +24,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_permuteo_1() {

@@ -199,10 +199,10 @@ impl<U: User> std::fmt::Display for DistinctFd2Constraint<U> {
 #[cfg(test)]
 mod tests {
     use super::distinctfd;
+    use crate::prelude::*;
     use crate::relation::diseqfd::diseqfd;
     use crate::relation::infd::{infd, infdrange};
     use crate::relation::ltefd::ltefd;
-    use crate::*;
 
     #[test]
     fn test_distinctfd_1() {

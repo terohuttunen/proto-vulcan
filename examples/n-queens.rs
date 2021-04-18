@@ -1,10 +1,9 @@
 extern crate proto_vulcan;
-use proto_vulcan::proto_vulcan;
+use proto_vulcan::prelude::*;
 use proto_vulcan::relation::diseqfd;
 use proto_vulcan::relation::distinctfd;
 use proto_vulcan::relation::infdrange;
 use proto_vulcan::relation::plusfd;
-use proto_vulcan::*;
 use std::ops::RangeInclusive;
 
 fn diago(qi: LTerm, qj: LTerm, d: LTerm, range: &RangeInclusive<isize>) -> Goal {

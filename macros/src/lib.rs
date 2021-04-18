@@ -63,8 +63,8 @@ impl ToTokens for Project {
         let variables: Vec<&Ident> = self.variables.iter().collect();
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            #( let #variables = crate::lterm::LTerm::projection(::std::clone::Clone::clone(&#variables)); )*
-            crate::operator::project::project(crate::operator::ProjectOperatorParam {
+            #( let #variables = ::proto_vulcan::lterm::LTerm::projection(::std::clone::Clone::clone(&#variables)); )*
+            ::proto_vulcan::operator::project::project(::proto_vulcan::operator::ProjectOperatorParam {
                 var_list: vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
                 body: &[ #( &[ #body  ] ),* ],
             })
@@ -123,7 +123,7 @@ impl ToTokens for FnGoal {
         let state = &self.state;
         let body: &syn::Block = &self.body;
         let output = quote! {{
-            crate::operator::fngoal::FnGoal::new(Box::new(#m |#engine, #state| { #body } ))
+            ::proto_vulcan::operator::fngoal::FnGoal::new(Box::new(#m |#engine, #state| { #body } ))
         }};
         output.to_tokens(tokens);
     }
@@ -173,9 +173,9 @@ impl ToTokens for Fresh {
         let variables: Vec<&Ident> = self.variables.iter().collect();
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            #( let #variables = crate::lterm::LTerm::var(stringify!(#variables)); )*
-            crate::operator::fresh::Fresh::new(vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
-                crate::operator::all::All::from_array(&[ #( #body ),* ]))
+            #( let #variables = ::proto_vulcan::lterm::LTerm::var(stringify!(#variables)); )*
+            ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
+                ::proto_vulcan::operator::all::All::from_array(&[ #( #body ),* ]))
         }};
         output.to_tokens(tokens);
     }
@@ -251,7 +251,7 @@ impl ToTokens for Argument {
                 expr.to_tokens(tokens);
             }
             Argument::Expr(expr) => {
-                let output = quote! { crate::lterm::LTerm::from(#expr) };
+                let output = quote! { ::proto_vulcan::lterm::LTerm::from(#expr) };
                 output.to_tokens(tokens);
             }
         }
@@ -318,7 +318,7 @@ impl ToTokens for Closure {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            crate::operator::closure::Closure::new(crate::operator::ClosureOperatorParam {f: Box::new(move || crate::operator::all::All::from_array( &[ #( #body ),* ] ) )})
+            ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam {f: Box::new(move || ::proto_vulcan::operator::all::All::from_array( &[ #( #body ),* ] ) )})
         }};
         output.to_tokens(tokens);
     }
@@ -348,7 +348,7 @@ impl ToTokens for Loop {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output = quote! {{
-            crate::operator::anyo::anyo(crate::operator::OperatorParam { body: &[ #( #body ),* ] })
+            ::proto_vulcan::operator::anyo::anyo(::proto_vulcan::operator::OperatorParam { body: &[ #( #body ),* ] })
         }};
         output.to_tokens(tokens);
     }
@@ -377,7 +377,8 @@ impl ToTokens for Operator {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let name = &self.name;
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
-        let output = quote! { #name ( crate::operator::OperatorParam { body: &[ #( #body ),* ] } )};
+        let output =
+            quote! { #name ( ::proto_vulcan::operator::OperatorParam { body: &[ #( #body ),* ] } )};
         output.to_tokens(tokens);
     }
 }
@@ -494,27 +495,27 @@ impl ToTokens for PatternMatchOperator {
 
         let output = if name.to_string() == "match" {
             quote! {
-                crate::operator::matche ( crate::operator::PatternMatchOperatorParam {
+                ::proto_vulcan::operator::matche ( ::proto_vulcan::operator::PatternMatchOperatorParam {
                     arms: &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
                         let __term__ = #term;
                         // Define new variables found in the pattern
                         #( let #vars = LTerm::var(stringify!(#vars)); )*
-                        [crate::relation::eq(__term__, #patterns), #clauses ]
+                        [::proto_vulcan::relation::eq(__term__, #patterns), #clauses ]
                     } ),* ],
                 })
             }
         } else {
             quote! {
-                #name ( crate::operator::PatternMatchOperatorParam {
+                #name ( ::proto_vulcan::operator::PatternMatchOperatorParam {
                     arms: &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
                         let __term__ = #term;
                         // Define new variables found in the pattern
                         #( let #vars = LTerm::var(stringify!(#vars)); )*
-                        [crate::relation::eq(__term__, #patterns), #clauses ]
+                        [::proto_vulcan::relation::eq(__term__, #patterns), #clauses ]
                     } ),* ],
                 })
             }
@@ -559,9 +560,9 @@ impl ToTokens for For {
         let coll = &self.coll;
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output = quote!({
-            crate::operator::everyg(crate::operator::ForOperatorParam {
+            ::proto_vulcan::operator::everyg(::proto_vulcan::operator::ForOperatorParam {
                 coll: ::std::clone::Clone::clone(#coll),
-                g: Box::new(|#pattern| crate::operator::all::All::from_conjunctions(&[ #( #body ),* ])),
+                g: Box::new(|#pattern| ::proto_vulcan::operator::all::All::from_conjunctions(&[ #( #body ),* ])),
             })
         });
         output.to_tokens(tokens);
@@ -627,7 +628,7 @@ impl ToTokens for InnerTreeTerm {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match &self.0 {
             TreeTerm::Value(value) => {
-                let output = quote! { crate::lterm::LTerm::from(#value) };
+                let output = quote! { ::proto_vulcan::lterm::LTerm::from(#value) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Var(ident) => {
@@ -636,18 +637,18 @@ impl ToTokens for InnerTreeTerm {
                 output.to_tokens(tokens);
             }
             TreeTerm::Any(_) => {
-                let output = quote! { crate::lterm::LTerm::any() };
+                let output = quote! { ::proto_vulcan::lterm::LTerm::any() };
                 output.to_tokens(tokens);
             }
             TreeTerm::ImproperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
-                let output =
-                    quote! { crate::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
+                let output = quote! { ::proto_vulcan::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
             }
             TreeTerm::ProperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
-                let output = quote! { crate::lterm::LTerm::from_array( &[ #(#items),* ] ) };
+                let output =
+                    quote! { ::proto_vulcan::lterm::LTerm::from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
             }
         }
@@ -742,7 +743,7 @@ impl ToTokens for TreeTerm {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match self {
             TreeTerm::Value(value) => {
-                let output = quote! { crate::lterm::LTerm::from(#value) };
+                let output = quote! { ::proto_vulcan::lterm::LTerm::from(#value) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Var(ident) => {
@@ -750,18 +751,18 @@ impl ToTokens for TreeTerm {
                 output.to_tokens(tokens);
             }
             TreeTerm::Any(_) => {
-                let output = quote! { crate::lterm::LTerm::any() };
+                let output = quote! { ::proto_vulcan::lterm::LTerm::any() };
                 output.to_tokens(tokens);
             }
             TreeTerm::ImproperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
-                let output =
-                    quote! { crate::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
+                let output = quote! { ::proto_vulcan::lterm::LTerm::improper_from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
             }
             TreeTerm::ProperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
-                let output = quote! { crate::lterm::LTerm::from_array( &[ #(#items),* ] ) };
+                let output =
+                    quote! { ::proto_vulcan::lterm::LTerm::from_array( &[ #(#items),* ] ) };
                 output.to_tokens(tokens);
             }
         }
@@ -790,7 +791,7 @@ impl ToTokens for Eq {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let left = &self.left;
         let right = &self.right;
-        let output = quote! { crate::relation::eq::eq ( #left, #right ) };
+        let output = quote! { ::proto_vulcan::relation::eq::eq ( #left, #right ) };
         output.to_tokens(tokens)
     }
 }
@@ -817,7 +818,7 @@ impl ToTokens for Diseq {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let left = &self.left;
         let right = &self.right;
-        let output = quote! { crate::relation::diseq::diseq ( #left, #right ) };
+        let output = quote! { ::proto_vulcan::relation::diseq::diseq ( #left, #right ) };
         output.to_tokens(tokens)
     }
 }
@@ -942,17 +943,18 @@ impl ToTokens for Clause {
                 diseq.to_tokens(tokens);
             }
             Clause::Succeed(_) => {
-                let output = quote! { crate::relation::succeed() };
+                let output = quote! { ::proto_vulcan::relation::succeed() };
                 output.to_tokens(tokens);
             }
             Clause::Fail(_) => {
-                let output = quote! { crate::relation::fail() };
+                let output = quote! { ::proto_vulcan::relation::fail() };
                 output.to_tokens(tokens);
             }
             Clause::Conjunction(conjunction) => {
                 // When conjunction is not inside a non-conjunction an operator we can construct
                 // an All-goal from it.
-                let output = quote! { crate::operator::all::All::from_array( #conjunction ) };
+                let output =
+                    quote! { ::proto_vulcan::operator::all::All::from_array( #conjunction ) };
                 output.to_tokens(tokens);
             }
             Clause::Relation(relation) => {
@@ -1015,11 +1017,11 @@ impl ToTokens for ClauseInOperator {
                 output.to_tokens(tokens);
             }
             Clause::Succeed(_) => {
-                let output = quote! { &[ crate::relation::succeed() ] };
+                let output = quote! { &[ ::proto_vulcan::relation::succeed() ] };
                 output.to_tokens(tokens);
             }
             Clause::Fail(_) => {
-                let output = quote! { &[ crate::relation::fail() ] };
+                let output = quote! { &[ ::proto_vulcan::relation::fail() ] };
                 output.to_tokens(tokens);
             }
             Clause::Conjunction(conjunction) => {
@@ -1137,35 +1139,31 @@ impl ToTokens for Query {
             let __vars__ = vec![ #( #query.clone() ),* ];
 
             let goal = {
-                let __query__ = crate::lterm::LTerm::var("__query__");
-                crate::operator::fresh::Fresh::new(
+                let __query__ = proto_vulcan::lterm::LTerm::var("__query__");
+                proto_vulcan::operator::fresh::Fresh::new(
                     vec![::std::clone::Clone::clone(&__query__)],
-                    crate::operator::all::All::from_array(&[
-                        crate::relation::eq::eq(
+                    proto_vulcan::operator::all::All::from_array(&[
+                        proto_vulcan::relation::eq::eq(
                             ::std::clone::Clone::clone(&__query__),
-                            crate::lterm::LTerm::from_array(&[#(::std::clone::Clone::clone(&#query)),*]),
+                            proto_vulcan::lterm::LTerm::from_array(&[#(::std::clone::Clone::clone(&#query)),*]),
                      ),
-                     crate::operator::all::All::from_array(&[
+                     proto_vulcan::operator::all::All::from_array(&[
                         #( #body ),*
                      ]),
-                     crate::state::reify(::std::clone::Clone::clone(&__query__)),
+                     proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
                     ]),
                 )
             };
 
-            use crate::user::User;
             use std::fmt;
-            use crate::lresult::LResult;
-            use crate::lterm::LTerm;
-            use crate::query::QueryResult;
 
             #[derive(Clone, Debug)]
-            struct QResult<U: User> {
-                #( #query: LResult<U>, )*
+            struct QResult<U: proto_vulcan::user::User> {
+                #( #query: proto_vulcan::lresult::LResult<U>, )*
             }
 
-            impl<U: User> QueryResult<U> for QResult<U> {
-                fn from_vec(v: Vec<LResult<U>>) -> QResult<U> {
+            impl<U: proto_vulcan::user::User> proto_vulcan::query::QueryResult<U> for QResult<U> {
+                fn from_vec(v: Vec<proto_vulcan::lresult::LResult<U>>) -> QResult<U> {
                     let mut vi = v.into_iter();
                     QResult {
                         #( #query: vi.next().unwrap(), )*
@@ -1175,14 +1173,14 @@ impl ToTokens for Query {
 
             impl<U: User> fmt::Display for QResult<U> {
                 #[allow(unused_variables, unused_assignments)]
-                fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                     let mut count = 0;
                     #( if count > 0 { writeln!(f, "")?; }  write!(f, "{}: {}", stringify!(#query), self.#query)?; count += 1; )*
                     write!(f, "")
                 }
             }
 
-            crate::query::Query::<QResult<_>>::new(__vars__, goal)
+            proto_vulcan::query::Query::<QResult<_>>::new(__vars__, goal)
         };
 
         output.to_tokens(tokens);

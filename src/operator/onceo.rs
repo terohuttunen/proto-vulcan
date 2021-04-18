@@ -3,6 +3,7 @@ use crate::goal::Goal;
 use crate::operator::condu;
 use crate::operator::OperatorParam;
 use crate::user::User;
+use proto_vulcan::prelude::*;
 
 /// Once operator
 ///

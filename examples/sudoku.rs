@@ -1,7 +1,7 @@
 extern crate proto_vulcan;
+use proto_vulcan::prelude::*;
 use proto_vulcan::relation::distinctfd;
 use proto_vulcan::relation::infdrange;
-use proto_vulcan::*;
 
 fn main() {
     const BOARD_SIZE: usize = 9;

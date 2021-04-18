@@ -165,9 +165,9 @@ impl<U: User> std::fmt::Display for PlusFdConstraint<U> {
 #[cfg(test)]
 mod tests {
     use super::plusfd;
+    use crate::prelude::*;
     use crate::relation::diseqfd::diseqfd;
     use crate::relation::infd::infdrange;
-    use crate::*;
 
     #[test]
     fn test_plusfd_1() {

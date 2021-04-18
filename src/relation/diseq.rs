@@ -42,7 +42,7 @@ where
 /// # Example
 /// ```rust
 /// extern crate proto_vulcan;
-/// use proto_vulcan::*;
+/// use proto_vulcan::prelude::*;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|x, y| {
 ///         [x, 1] != [2, y],
@@ -145,7 +145,7 @@ impl<U: User> std::fmt::Display for DisequalityConstraint<U> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::*;
+    use crate::prelude::*;
 
     #[test]
     fn test_subsumes_1() {
