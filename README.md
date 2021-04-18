@@ -49,7 +49,7 @@ into Rust.
 # Example
 ```rust
 extern crate proto_vulcan;
-use proto_vulcan::*;
+use proto_vulcan::prelude::*;
 
 fn main() {
     let query = proto_vulcan_query!(|q| {
@@ -78,7 +78,7 @@ evaluated immediately, whereas expressions within `proto_vulcan_closure!`
 are stored into a closure and evaluated later. Recursive relations must
 use the latter variant.
 ```rust
-use proto_vulcan::*;
+use proto_vulcan::prelude::*;
 
 pub fn appendo(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
     proto_vulcan_closure!(
