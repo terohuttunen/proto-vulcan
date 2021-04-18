@@ -235,16 +235,16 @@ impl<U: User> Stream<U> {
 
 #[derive(Debug)]
 pub struct StreamEngine<U: User> {
-    _phantom: std::marker::PhantomData<U>,
+    user_globals: U::UserGlobals,
 }
 
 impl<U: User> Engine<U> for StreamEngine<U> {
     type LazyStream = LazyStream<U>;
     type Stream = Stream<U>;
 
-    fn new() -> Self {
+    fn new(user_globals: U::UserGlobals) -> Self {
         StreamEngine {
-            _phantom: std::marker::PhantomData,
+            user_globals: user_globals,
         }
     }
 
@@ -357,5 +357,9 @@ impl<U: User> Engine<U> for StreamEngine<U> {
     // Evaluate lazy stream
     fn force(&self, lazy: Self::LazyStream) -> Self::Stream {
         lazy.eval(self)
+    }
+
+    fn user_globals(&self) -> &U::UserGlobals {
+        &self.user_globals
     }
 }

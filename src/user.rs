@@ -11,6 +11,10 @@ use std::rc::Rc;
 pub trait User: Debug + Clone + Default + 'static {
     type UserTerm: Debug + Clone + Hash + PartialEq + Eq;
 
+    /// Type of data-structure stored in the Engine-instance. Retrievable
+    /// with Engine::user_globals().
+    type UserGlobals: Debug;
+
     /// Process extension to substitution map.
     fn process_extension(state: State<Self>, _extension: &SMap<Self>) -> SResult<Self> {
         Ok(state)
@@ -66,4 +70,5 @@ impl Default for EmptyUser {
 
 impl User for EmptyUser {
     type UserTerm = ();
+    type UserGlobals = ();
 }

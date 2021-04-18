@@ -109,7 +109,8 @@ where
 {
     pub fn run(&self) -> ResultIterator<R, EmptyUser, E> {
         let user_state = EmptyUser::new();
-        self.run_with_user(user_state)
+        let user_globals = ();
+        self.run_with_user(user_state, user_globals)
     }
 }
 
@@ -127,9 +128,14 @@ where
         }
     }
 
-    pub fn run_with_user(&self, user_state: U) -> ResultIterator<R, U, E> {
+    pub fn run_with_user(
+        &self,
+        user_state: U,
+        user_globals: U::UserGlobals,
+    ) -> ResultIterator<R, U, E> {
         let initial_state = State::new(user_state);
-        let engine = E::new();
+        let user_globals = user_globals;
+        let engine = E::new(user_globals);
         ResultIterator::new(
             engine,
             self.variables.clone(),

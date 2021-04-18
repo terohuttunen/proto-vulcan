@@ -17,7 +17,7 @@ where
     type LazyStream;
     type Stream;
 
-    fn new() -> Self;
+    fn new(user_globals: U::UserGlobals) -> Self;
 
     // Identity for mplus, i.e. empty stream
     fn mzero(&self) -> Self::Stream;
@@ -51,4 +51,6 @@ where
 
     // Evaluate lazy stream
     fn force(&self, lazy: Self::LazyStream) -> Self::Stream;
+
+    fn user_globals(&self) -> &U::UserGlobals;
 }
