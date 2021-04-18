@@ -1085,3 +1085,115 @@ pub fn lterm(input: TokenStream) -> TokenStream {
     };
     output.into()
 }
+
+#[allow(dead_code)]
+#[derive(Clone)]
+struct Query {
+    or1_token: Token![|],
+    variables: Punctuated<Ident, Token![,]>,
+    or2_token: Token![|],
+    brace_token: Brace,
+    body: Punctuated<Clause, Token![,]>,
+}
+
+impl Parse for Query {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let or1_token: Token![|] = input.parse()?;
+        let mut variables = Punctuated::new();
+        loop {
+            if input.peek(Token![|]) {
+                break;
+            }
+            let var: Ident = input.parse()?;
+            variables.push_value(var);
+            if input.peek(Token![|]) {
+                break;
+            }
+            let punct: Token![,] = input.parse()?;
+            variables.push_punct(punct);
+        }
+
+        let or2_token: Token![|] = input.parse()?;
+
+        let content;
+        Ok(Query {
+            or1_token,
+            variables,
+            or2_token,
+            brace_token: braced!(content in input),
+            body: content.parse_terminated(Clause::parse)?,
+        })
+    }
+}
+
+impl ToTokens for Query {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let query: Vec<&Ident> = self.variables.iter().collect();
+        let body: Vec<&Clause> = self.body.iter().collect();
+
+        let output = quote! {
+            #(let #query = LTerm::var(stringify!(#query));)*
+
+            let __vars__ = vec![ #( #query.clone() ),* ];
+
+            let goal = {
+                let __query__ = crate::lterm::LTerm::var("__query__");
+                crate::operator::fresh::Fresh::new(
+                    vec![::std::clone::Clone::clone(&__query__)],
+                    crate::operator::all::All::from_array(&[
+                        crate::relation::eq::eq(
+                            ::std::clone::Clone::clone(&__query__),
+                            crate::lterm::LTerm::from_array(&[#(::std::clone::Clone::clone(&#query)),*]),
+                     ),
+                     crate::operator::all::All::from_array(&[
+                        #( #body ),*
+                     ]),
+                     crate::state::reify(::std::clone::Clone::clone(&__query__)),
+                    ]),
+                )
+            };
+
+            use crate::user::User;
+            use std::fmt;
+            use crate::lresult::LResult;
+            use crate::lterm::LTerm;
+            use crate::query::QueryResult;
+
+            #[derive(Clone, Debug)]
+            struct QResult<U: User> {
+                #( #query: LResult<U>, )*
+            }
+
+            impl<U: User> QueryResult<U> for QResult<U> {
+                fn from_vec(v: Vec<LResult<U>>) -> QResult<U> {
+                    let mut vi = v.into_iter();
+                    QResult {
+                        #( #query: vi.next().unwrap(), )*
+                    }
+                }
+            }
+
+            impl<U: User> fmt::Display for QResult<U> {
+                #[allow(unused_variables, unused_assignments)]
+                fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    let mut count = 0;
+                    #( if count > 0 { writeln!(f, "")?; }  write!(f, "{}: {}", stringify!(#query), self.#query)?; count += 1; )*
+                    write!(f, "")
+                }
+            }
+
+            crate::query::Query::<QResult<_>>::new(__vars__, goal)
+        };
+
+        output.to_tokens(tokens);
+    }
+}
+
+#[proc_macro]
+pub fn proto_vulcan_query(input: TokenStream) -> TokenStream {
+    let query = parse_macro_input!(input as Query);
+    let output = quote! {{
+        #query
+    }};
+    output.into()
+}

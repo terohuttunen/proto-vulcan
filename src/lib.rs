@@ -306,14 +306,13 @@
 #[macro_use]
 extern crate proto_vulcan_macros;
 
-pub use proto_vulcan_macros::{lterm, proto_vulcan, proto_vulcan_closure};
+pub use proto_vulcan_macros::{lterm, proto_vulcan, proto_vulcan_closure, proto_vulcan_query};
 
 #[macro_use]
 extern crate derivative;
 
-#[macro_use]
-pub mod lterm;
 pub mod goal;
+pub mod lterm;
 pub mod state;
 pub mod stream;
 
@@ -327,7 +326,6 @@ pub mod user;
 
 pub mod engine;
 
-#[macro_use]
 pub mod query;
 
 pub use engine::Engine;
