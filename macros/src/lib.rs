@@ -1139,18 +1139,18 @@ impl ToTokens for Query {
             let __vars__ = vec![ #( #query.clone() ),* ];
 
             let goal = {
-                let __query__ = proto_vulcan::lterm::LTerm::var("__query__");
-                proto_vulcan::operator::fresh::Fresh::new(
+                let __query__ = ::proto_vulcan::lterm::LTerm::var("__query__");
+                ::proto_vulcan::operator::fresh::Fresh::new(
                     vec![::std::clone::Clone::clone(&__query__)],
-                    proto_vulcan::operator::all::All::from_array(&[
-                        proto_vulcan::relation::eq::eq(
+                    ::proto_vulcan::operator::all::All::from_array(&[
+                        ::proto_vulcan::relation::eq::eq(
                             ::std::clone::Clone::clone(&__query__),
-                            proto_vulcan::lterm::LTerm::from_array(&[#(::std::clone::Clone::clone(&#query)),*]),
+                            ::proto_vulcan::lterm::LTerm::from_array(&[#(::std::clone::Clone::clone(&#query)),*]),
                      ),
-                     proto_vulcan::operator::all::All::from_array(&[
+                     ::proto_vulcan::operator::all::All::from_array(&[
                         #( #body ),*
                      ]),
-                     proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
+                     ::proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
                     ]),
                 )
             };
@@ -1158,12 +1158,12 @@ impl ToTokens for Query {
             use std::fmt;
 
             #[derive(Clone, Debug)]
-            struct QResult<U: proto_vulcan::user::User> {
-                #( #query: proto_vulcan::lresult::LResult<U>, )*
+            struct QResult<U: ::proto_vulcan::user::User> {
+                #( #query: ::proto_vulcan::lresult::LResult<U>, )*
             }
 
-            impl<U: proto_vulcan::user::User> proto_vulcan::query::QueryResult<U> for QResult<U> {
-                fn from_vec(v: Vec<proto_vulcan::lresult::LResult<U>>) -> QResult<U> {
+            impl<U: ::proto_vulcan::user::User> ::proto_vulcan::query::QueryResult<U> for QResult<U> {
+                fn from_vec(v: Vec<::proto_vulcan::lresult::LResult<U>>) -> QResult<U> {
                     let mut vi = v.into_iter();
                     QResult {
                         #( #query: vi.next().unwrap(), )*
@@ -1180,7 +1180,7 @@ impl ToTokens for Query {
                 }
             }
 
-            proto_vulcan::query::Query::<QResult<_>>::new(__vars__, goal)
+            ::proto_vulcan::query::Query::<QResult<_>>::new(__vars__, goal)
         };
 
         output.to_tokens(tokens);
