@@ -601,6 +601,33 @@ impl ToTokens for Value {
     }
 }
 
+#[derive(Clone, Debug)]
+struct FieldAccess {
+    field: Punctuated<Ident, Token![.]>,
+}
+
+impl Parse for FieldAccess {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut field = Punctuated::new();
+        loop {
+            if let Ok(p) = input.parse() {
+                field.push_value(p);
+            } else {
+                let p: Token![self] = input.parse()?;
+                field.push_value(Ident::new("self", p.span))
+            }
+
+            if !input.peek(Token![.]) {
+                break;
+            }
+            let punct: Token![.] = input.parse()?;
+            field.push_punct(punct);
+        }
+
+        Ok(FieldAccess { field })
+    }
+}
+
 /// TreeTerm within a TreeTerm
 #[derive(Clone, Debug)]
 struct InnerTreeTerm(TreeTerm);
@@ -636,6 +663,11 @@ impl ToTokens for InnerTreeTerm {
                 let output = quote! { ::std::clone::Clone::clone(&#ident) };
                 output.to_tokens(tokens);
             }
+            TreeTerm::Field(field_access) => {
+                let field = &field_access.field;
+                let output = quote! { ::std::clone::Clone::clone(&#field) };
+                output.to_tokens(tokens);
+            }
             TreeTerm::Any(_) => {
                 let output = quote! { ::proto_vulcan::lterm::LTerm::any() };
                 output.to_tokens(tokens);
@@ -660,6 +692,7 @@ impl ToTokens for InnerTreeTerm {
 enum TreeTerm {
     Value(Value),
     Var(Ident),
+    Field(FieldAccess),
     Any(Token![_]),
     ImproperList { items: Vec<InnerTreeTerm> },
     ProperList { items: Vec<InnerTreeTerm> },
@@ -670,6 +703,7 @@ impl TreeTerm {
         match self {
             TreeTerm::Value(_) => vec![],
             TreeTerm::Var(ident) => vec![ident.clone()],
+            TreeTerm::Field(_) => vec![],
             TreeTerm::Any(_) => vec![],
             TreeTerm::ImproperList { items } => {
                 let mut variables = vec![];
@@ -698,6 +732,9 @@ impl Parse for TreeTerm {
         if input.peek(Token![_]) {
             let us: Token![_] = input.parse()?;
             Ok(TreeTerm::Any(us))
+        } else if (input.peek(Token![self]) || input.peek(Ident)) && input.peek2(Token![.]) {
+            let field_access: FieldAccess = input.parse()?;
+            Ok(TreeTerm::Field(field_access))
         } else if input.peek(Ident) {
             let id: Ident = input.parse()?;
             Ok(TreeTerm::Var(id))
@@ -748,6 +785,11 @@ impl ToTokens for TreeTerm {
             }
             TreeTerm::Var(ident) => {
                 let output = quote! { ::std::clone::Clone::clone(&#ident) };
+                output.to_tokens(tokens);
+            }
+            TreeTerm::Field(field_access) => {
+                let field = &field_access.field;
+                let output = quote! { ::std::clone::Clone::clone(&#field) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Any(_) => {
@@ -888,10 +930,10 @@ impl Parse for Clause {
         } else if input.peek(Token![|]) {
             let fresh: Fresh = input.parse()?;
             Ok(Clause::Fresh(fresh))
-        } else if input.peek2(Token![==]) {
+        } else if let Ok(_) = Eq::parse(&input.fork()) {
             let eq: Eq = input.parse()?;
             Ok(Clause::Eq(eq))
-        } else if input.peek2(Token![!=]) {
+        } else if let Ok(_) = Diseq::parse(&input.fork()) {
             let diseq: Diseq = input.parse()?;
             Ok(Clause::Diseq(diseq))
         } else if input.peek(syn::LitBool) {
