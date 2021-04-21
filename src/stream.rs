@@ -235,17 +235,15 @@ impl<U: User> Stream<U> {
 
 #[derive(Debug)]
 pub struct StreamEngine<U: User> {
-    user_globals: U::UserGlobals,
+    context: U::UserContext,
 }
 
 impl<U: User> Engine<U> for StreamEngine<U> {
     type LazyStream = LazyStream<U>;
     type Stream = Stream<U>;
 
-    fn new(user_globals: U::UserGlobals) -> Self {
-        StreamEngine {
-            user_globals: user_globals,
-        }
+    fn new(context: U::UserContext) -> Self {
+        StreamEngine { context }
     }
 
     // Identity for mplus, i.e. empty stream
@@ -359,7 +357,7 @@ impl<U: User> Engine<U> for StreamEngine<U> {
         lazy.eval(self)
     }
 
-    fn user_globals(&self) -> &U::UserGlobals {
-        &self.user_globals
+    fn context(&self) -> &U::UserContext {
+        &self.context
     }
 }

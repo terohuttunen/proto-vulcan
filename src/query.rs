@@ -131,7 +131,7 @@ where
     pub fn run_with_user(
         &self,
         user_state: U,
-        user_globals: U::UserGlobals,
+        user_globals: U::UserContext,
     ) -> ResultIterator<R, U, E> {
         let initial_state = State::new(user_state);
         let user_globals = user_globals;
