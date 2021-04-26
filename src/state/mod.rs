@@ -345,14 +345,14 @@ impl<U: User> State<U> {
     pub fn unify(self, u: &LTerm<U>, v: &LTerm<U>) -> SResult<U> {
         // Extension will contain all substitutions added in the recursive unification of the terms
         let mut extension = SMap::new();
-        U::unify(self, &mut extension, u, v)?.process_extension(extension)
+        unify_rec(self, &mut extension, u, v)?.process_extension(extension)
     }
 
     /// Add disequality constraint
     pub fn disunify(self, u: &LTerm<U>, v: &LTerm<U>) -> SResult<U> {
         // Disunification is implemented in terms of unification
         let mut extension = SMap::new();
-        match U::unify(self.clone(), &mut extension, u, v) {
+        match unify_rec(self.clone(), &mut extension, u, v) {
             Ok(_) => {
                 if extension.is_empty() {
                     // Unification succeeded without extending the current substitution, therefore

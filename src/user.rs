@@ -22,12 +22,12 @@ pub trait User: Debug + Clone + Default + 'static {
 
     // User unification.
     fn unify(
-        state: State<Self>,
-        extension: &mut SMap<Self>,
-        u: &LTerm<Self>,
-        v: &LTerm<Self>,
+        _state: State<Self>,
+        _extension: &mut SMap<Self>,
+        _uwalk: LTerm<Self>,
+        _vwalk: LTerm<Self>,
     ) -> SResult<Self> {
-        crate::state::unify_rec(state, extension, u, v)
+        Err(())
     }
 
     /// Called before the constraint is added to the state

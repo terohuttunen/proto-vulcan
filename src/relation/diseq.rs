@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
-use crate::state::{Constraint, SMap, SResult, State};
+use crate::state::{unify_rec, Constraint, SMap, SResult, State};
 use crate::user::User;
 use std::rc::Rc;
 
@@ -81,7 +81,7 @@ impl<U: User> DisequalityConstraint<U> {
                 let mut extension = SMap::new();
                 let mut state = State::new(Default::default()).with_smap(other.smap_ref().clone());
                 for (u, v) in self.0.iter() {
-                    match U::unify(state, &mut extension, &u, &v) {
+                    match unify_rec(state, &mut extension, &u, &v) {
                         Err(()) => return false,
                         Ok(s) => state = s,
                     }
@@ -114,7 +114,7 @@ impl<U: User> Constraint<U> for DisequalityConstraint<U> {
         let mut extension = SMap::new();
         let mut test_state = state.clone();
         for (u, v) in self.0.iter() {
-            match U::unify(test_state, &mut extension, &u, &v) {
+            match unify_rec(test_state, &mut extension, &u, &v) {
                 Err(_) => return Ok(state),
                 Ok(new_state) => test_state = new_state,
             }

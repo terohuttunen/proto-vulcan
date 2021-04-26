@@ -44,10 +44,13 @@ pub fn unify_rec<U: User>(
             // If both terms walk to identical values, then they are already unified.
             Ok(state)
         }
+        (LTermInner::User(_), _) | (_, LTermInner::User(_)) => {
+            U::unify(state, extension, uwalk, vwalk)
+        }
         (LTermInner::Empty, LTermInner::Empty) => Ok(state),
         (LTermInner::Cons(uhead, utail), LTermInner::Cons(vhead, vtail)) => {
-            match U::unify(state, extension, uhead, vhead) {
-                Ok(state) => U::unify(state, extension, utail, vtail),
+            match unify_rec(state, extension, uhead, vhead) {
+                Ok(state) => unify_rec(state, extension, utail, vtail),
                 Err(err) => Err(err),
             }
         }
