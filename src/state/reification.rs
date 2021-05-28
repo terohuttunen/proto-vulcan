@@ -3,6 +3,7 @@ use crate::goal::Goal;
 use crate::lterm::{LTerm, LTermInner};
 use crate::operator::onceo;
 use crate::state::State;
+use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 
 fn enforce_constraints_diseq<U: User, E: Engine<U>>(_x: LTerm<U>) -> Goal<U, E> {
@@ -14,25 +15,25 @@ fn map_sum<U, E, F, T>(
     state: State<U>,
     mut f: F,
     iter: impl DoubleEndedIterator<Item = T>,
-) -> E::Stream
+) -> Stream<U, E>
 where
     U: User,
     E: Engine<U>,
     F: FnMut(T) -> Goal<U, E>,
 {
     let mut iter = iter.rev().peekable();
-    let mut stream = engine.mzero();
+    let mut stream = Stream::empty();
     loop {
         match iter.next() {
             Some(d) => {
                 if iter.peek().is_none() {
                     // If this is last value in the domain, no need to clone `state`.
                     let new_stream = f(d).solve(engine, state);
-                    stream = engine.mplus(new_stream, engine.delay(stream));
+                    stream = Stream::mplus(new_stream, LazyStream::delay(stream));
                     break;
                 } else {
                     let new_stream = f(d).solve(engine, state.clone());
-                    stream = engine.mplus(new_stream, engine.delay(stream));
+                    stream = Stream::mplus(new_stream, LazyStream::delay(stream));
                 }
             }
             None => {
@@ -107,7 +108,7 @@ pub fn reify<U: User, E: Engine<U>>(x: LTerm<U>) -> Goal<U, E> {
             let v = smap.walk_star(&x);
             let r = smap.reify(&v);
             let cstore = state.get_cstore().walk_star(&smap);
-            engine.munit(state.with_smap(r).with_cstore(cstore))
+            Stream::unit(Box::new(state.with_smap(r).with_cstore(cstore)))
         }
     ])
 }

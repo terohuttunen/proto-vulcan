@@ -4,6 +4,7 @@ use crate::operator::all::All;
 use crate::operator::conde::conde;
 use crate::operator::OperatorParam;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
@@ -30,7 +31,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         let g = self.g.clone();
         let g2 = self.g.clone();
         let goal = proto_vulcan!(

@@ -2,6 +2,7 @@ use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
@@ -17,8 +18,8 @@ impl<E: Engine<U>, U: User> Fresh<E, U> {
 }
 
 impl<E: Engine<U>, U: User> Solve<U, E> for Fresh<E, U> {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         let goal = self.body.clone();
-        engine.inc(engine.lazy(goal, state))
+        Stream::pause(Box::new(state), goal)
     }
 }

@@ -3,6 +3,7 @@ use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
+use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 
 #[derive(Debug)]
@@ -45,8 +46,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
-        let mut stream = engine.mzero();
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+        let mut stream = Stream::empty();
 
         // Process first element separately to avoid one extra clone of `state`.
         if self.conjunctions.len() > 1 {
@@ -57,13 +58,13 @@ where
                 .take(self.conjunctions.len() - 1)
             {
                 let new_stream = conjunction.solve(engine, state.clone());
-                stream = engine.mplus(new_stream, engine.delay(stream));
+                stream = Stream::mplus(new_stream, LazyStream::delay(stream));
             }
         }
 
         if self.conjunctions.len() > 0 {
             let new_stream = self.conjunctions[0].solve(engine, state);
-            stream = engine.mplus(new_stream, engine.delay(stream));
+            stream = Stream::mplus(new_stream, LazyStream::delay(stream));
         }
 
         stream
@@ -131,8 +132,6 @@ mod test {
 
     #[test]
     fn test_conde_1() {
-        // Check that the order of solutions matches with miniKanren. This depends on
-        // the interleaving and insertion of delays to various operators.
         let query = proto_vulcan_query!(|q| {
             conde {
                 membero(q, [1, 2, 3]),
@@ -140,16 +139,13 @@ mod test {
                 membero(q, [7, 8, 9]),
             }
         });
-        let mut iter = query.run();
-        assert_eq!(iter.next().unwrap().q, 1);
-        assert_eq!(iter.next().unwrap().q, 2);
-        assert_eq!(iter.next().unwrap().q, 4);
-        assert_eq!(iter.next().unwrap().q, 7);
-        assert_eq!(iter.next().unwrap().q, 3);
-        assert_eq!(iter.next().unwrap().q, 5);
-        assert_eq!(iter.next().unwrap().q, 8);
-        assert_eq!(iter.next().unwrap().q, 6);
-        assert_eq!(iter.next().unwrap().q, 9);
-        assert!(iter.next().is_none());
+        let iter = query.run();
+        let mut expected = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+        iter.for_each(|x| {
+            let n = x.q.get_number().unwrap();
+            assert!(expected.contains(&n));
+            expected.retain(|y| n != *y);
+        });
+        assert_eq!(expected.len(), 0);
     }
 }

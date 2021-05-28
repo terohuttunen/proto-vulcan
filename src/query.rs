@@ -3,6 +3,7 @@ use crate::goal::Goal;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::{EmptyUser, User};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
@@ -23,7 +24,7 @@ where
 {
     engine: E,
     variables: Vec<LTerm<U>>,
-    stream: E::Stream,
+    stream: Stream<U, E>,
     _phantom: PhantomData<R>,
 }
 
@@ -60,7 +61,7 @@ where
     type Item = R;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.engine.next(&mut self.stream) {
+        match self.stream.next(&self.engine) {
             Some(state) => {
                 // At this point the state has already gone through initial reification
                 // process

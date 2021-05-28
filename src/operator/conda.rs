@@ -9,6 +9,7 @@ use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
@@ -51,11 +52,11 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         let mut stream = self.first.solve(engine, state.clone());
 
-        match engine.peek(&mut stream) {
-            Some(_) => engine.mbind(stream, self.rest.clone()),
+        match stream.peek(engine) {
+            Some(_) => Stream::bind(stream, self.rest.clone()),
             None => self.next.solve(engine, state),
         }
     }

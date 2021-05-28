@@ -2,6 +2,7 @@ use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::operator::all::All;
 use crate::state::State;
+use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 
 #[derive(Debug)]
@@ -10,8 +11,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    goal_1: Goal<U, E>,
-    goal_2: Goal<U, E>,
+    pub goal_1: Goal<U, E>,
+    pub goal_2: Goal<U, E>,
 }
 
 impl<U, E> Any<U, E>
@@ -21,6 +22,10 @@ where
 {
     pub fn new(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
         Goal::new(Any { goal_1, goal_2 })
+    }
+
+    pub fn new_raw(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Any<U, E> {
+        Any { goal_1, goal_2 }
     }
 
     pub fn from_vec(mut v: Vec<Goal<U, E>>) -> Goal<U, E> {
@@ -55,9 +60,9 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         let stream = self.goal_1.solve(engine, state.clone());
-        let lazy = engine.lazy(self.goal_2.clone(), state);
-        engine.mplus(stream, lazy)
+        let lazy = LazyStream::pause(Box::new(state), self.goal_2.clone());
+        Stream::mplus(stream, lazy)
     }
 }

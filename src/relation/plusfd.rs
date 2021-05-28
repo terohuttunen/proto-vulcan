@@ -4,6 +4,7 @@ use crate::goal::{Goal, Solve};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{Constraint, FiniteDomain, SResult, State};
+use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -25,10 +26,10 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         match PlusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
-            Ok(state) => engine.munit(state),
-            Err(_) => engine.mzero(),
+            Ok(state) => Stream::unit(Box::new(state)),
+            Err(_) => Stream::empty(),
         }
     }
 }
@@ -196,17 +197,24 @@ mod tests {
                 plusfd(x, y, z),
             }
         });
-        let mut iter = query.run();
-        assert_eq!(iter.next().unwrap().q, lterm!([0, 0, 0]));
-        assert_eq!(iter.next().unwrap().q, lterm!([0, 1, 1]));
-        assert_eq!(iter.next().unwrap().q, lterm!([0, 2, 2]));
-        assert_eq!(iter.next().unwrap().q, lterm!([1, 0, 1]));
-        assert_eq!(iter.next().unwrap().q, lterm!([0, 3, 3]));
-        assert_eq!(iter.next().unwrap().q, lterm!([3, 0, 3]));
-        assert_eq!(iter.next().unwrap().q, lterm!([1, 1, 2]));
-        assert_eq!(iter.next().unwrap().q, lterm!([1, 2, 3]));
-        assert_eq!(iter.next().unwrap().q, lterm!([2, 0, 2]));
-        assert_eq!(iter.next().unwrap().q, lterm!([2, 1, 3]));
-        assert!(iter.next().is_none());
+        let iter = query.run();
+        let mut expected = vec![
+            lterm!([0, 0, 0]),
+            lterm!([0, 1, 1]),
+            lterm!([0, 2, 2]),
+            lterm!([1, 0, 1]),
+            lterm!([0, 3, 3]),
+            lterm!([3, 0, 3]),
+            lterm!([1, 1, 2]),
+            lterm!([1, 2, 3]),
+            lterm!([2, 0, 2]),
+            lterm!([2, 1, 3]),
+        ];
+        iter.for_each(|x| {
+            let n = x.q.clone();
+            assert!(expected.contains(&n));
+            expected.retain(|y| &n != y);
+        });
+        assert_eq!(expected.len(), 0);
     }
 }

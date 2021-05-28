@@ -3,6 +3,7 @@ use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::{Constraint, SResult, State};
+use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -23,10 +24,10 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
         match LessThanOrEqualFdConstraint::new(self.u.clone(), self.v.clone()).run(state) {
-            Ok(state) => engine.munit(state),
-            Err(_) => engine.mzero(),
+            Ok(state) => Stream::unit(Box::new(state)),
+            Err(_) => Stream::empty(),
         }
     }
 }
@@ -200,16 +201,23 @@ mod tests {
                 ltefd(x, y),
             }
         });
-        let mut iter = query.run();
-        assert_eq!(iter.next().unwrap().q, lterm!([1, 1]));
-        assert_eq!(iter.next().unwrap().q, lterm!([1, 2]));
-        assert_eq!(iter.next().unwrap().q, lterm!([1, 3]));
-        assert_eq!(iter.next().unwrap().q, lterm!([2, 2]));
-        assert_eq!(iter.next().unwrap().q, lterm!([1, 4]));
-        assert_eq!(iter.next().unwrap().q, lterm!([3, 3]));
-        assert_eq!(iter.next().unwrap().q, lterm!([3, 4]));
-        assert_eq!(iter.next().unwrap().q, lterm!([2, 3]));
-        assert_eq!(iter.next().unwrap().q, lterm!([2, 4]));
-        assert!(iter.next().is_none());
+        let iter = query.run();
+        let mut expected = vec![
+            lterm!([1, 1]),
+            lterm!([1, 2]),
+            lterm!([1, 3]),
+            lterm!([2, 2]),
+            lterm!([1, 4]),
+            lterm!([3, 3]),
+            lterm!([3, 4]),
+            lterm!([2, 3]),
+            lterm!([2, 4]),
+        ];
+        iter.for_each(|x| {
+            let n = x.q.clone();
+            assert!(expected.contains(&n));
+            expected.retain(|y| &n != y);
+        });
+        assert_eq!(expected.len(), 0);
     }
 }

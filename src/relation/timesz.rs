@@ -4,6 +4,7 @@ use crate::goal::{Goal, Solve};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::state::{Constraint, SResult, State};
+use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -25,10 +26,10 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         match TimesZConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
-            Ok(state) => engine.munit(state),
-            Err(_) => engine.mzero(),
+            Ok(state) => Stream::unit(Box::new(state)),
+            Err(_) => Stream::empty(),
         }
     }
 }

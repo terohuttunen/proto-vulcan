@@ -4,6 +4,7 @@ use crate::lterm::LTerm;
 use crate::operator::all::All;
 use crate::operator::ProjectOperatorParam;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
@@ -31,7 +32,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         // Walk* each projected variable with the current substitution
         for v in self.variables.iter() {
             v.project(|x| state.smap_ref().walk_star(x));
@@ -72,7 +73,7 @@ mod tests {
         U: User,
         E: Engine<U>,
     {
-        fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+        fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
             let u = self.u.clone();
             let v = self.v.clone();
             let g: Goal<U, E> = proto_vulcan!(fngoal move |engine, state| {
@@ -81,9 +82,9 @@ mod tests {
                     // integer value to succeed.
                     LTermInner::Val(LValue::Number(u)) => {
                         let sq = LTerm::from(u * u);
-                        engine.munit(state.unify(&sq, &v).unwrap())
+                        Stream::unit(Box::new(state.unify(&sq, &v).unwrap()))
                     }
-                    _ => engine.mzero(),
+                    _ => Stream::empty(),
                 }
             });
             g.solve(engine, state)

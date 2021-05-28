@@ -2,6 +2,7 @@ use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::operator::FnOperatorParam;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::User;
 use std::fmt;
 
@@ -10,7 +11,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    f: Box<dyn Fn(&E, State<U>) -> E::Stream>,
+    f: Box<dyn Fn(&E, State<U>) -> Stream<U, E>>,
 }
 
 impl<U, E> FnGoal<U, E>
@@ -18,7 +19,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(f: Box<dyn Fn(&E, State<U>) -> E::Stream>) -> Goal<U, E> {
+    pub fn new(f: Box<dyn Fn(&E, State<U>) -> Stream<U, E>>) -> Goal<U, E> {
         Goal::new(FnGoal { f })
     }
 }
@@ -28,7 +29,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         (*self.f)(engine, state)
     }
 }

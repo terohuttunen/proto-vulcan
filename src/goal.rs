@@ -1,5 +1,8 @@
 use crate::engine::{DefaultEngine, Engine};
+use crate::operator::all::All;
+use crate::operator::any::Any;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::{EmptyUser, User};
 use std::fmt;
 use std::rc::Rc;
@@ -12,6 +15,8 @@ where
 {
     Succeed,
     Fail,
+    Disj(Rc<Any<U, E>>),
+    Conj(Rc<All<U, E>>),
     Inner(Rc<dyn Solve<U, E>>),
 }
 
@@ -24,6 +29,14 @@ where
         Goal::Inner(Rc::new(u))
     }
 
+    pub fn new_disj(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
+        Goal::Disj(Rc::new(Any::new_raw(goal_1, goal_2)))
+    }
+
+    pub fn new_conj(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
+        Goal::Conj(Rc::new(All::new_raw(goal_1, goal_2)))
+    }
+
     pub fn succeed() -> Goal<U, E> {
         Goal::Succeed
     }
@@ -32,10 +45,12 @@ where
         Goal::Fail
     }
 
-    pub fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    pub fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         match self {
-            Goal::Succeed => engine.munit(state),
-            Goal::Fail => engine.mzero(),
+            Goal::Succeed => Stream::unit(Box::new(state)),
+            Goal::Fail => Stream::empty(),
+            Goal::Disj(g) => g.solve(engine, state),
+            Goal::Conj(g) => g.solve(engine, state),
             Goal::Inner(inner) => inner.solve(engine, state),
         }
     }
@@ -60,6 +75,8 @@ impl<U: User, E: Engine<U>> Clone for Goal<U, E> {
         match self {
             Goal::Succeed => Goal::Succeed,
             Goal::Fail => Goal::Fail,
+            Goal::Disj(g) => Goal::Disj(Rc::clone(g)),
+            Goal::Conj(g) => Goal::Conj(Rc::clone(g)),
             Goal::Inner(inner) => Goal::Inner(Rc::clone(inner)),
         }
     }
@@ -74,7 +91,7 @@ where
     E: Engine<U>,
 {
     /// Generate a stream of solutions to the goal by applying it to some initial state.
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream;
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E>;
 }
 
 #[cfg(test)]
@@ -83,6 +100,7 @@ mod test {
     use crate::engine::Engine;
     use crate::prelude::*;
     use crate::state::State;
+    use crate::stream::Stream;
     use crate::user::EmptyUser;
 
     #[test]
@@ -103,8 +121,8 @@ mod test {
     struct TestGoal {}
 
     impl<E: Engine<U>, U: User> Solve<U, E> for TestGoal {
-        fn solve(&self, engine: &E, _state: State<U>) -> E::Stream {
-            engine.mzero()
+        fn solve(&self, engine: &E, _state: State<U>) -> Stream<U, E> {
+            Stream::empty()
         }
     }
 

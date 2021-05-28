@@ -4,6 +4,7 @@ use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::FiniteDomain;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -27,11 +28,11 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         let xwalk = state.smap_ref().walk(&self.x).clone();
         match state.process_domain(&xwalk, Rc::clone(&self.domain) as Rc<FiniteDomain>) {
-            Ok(state) => engine.munit(state),
-            Err(_) => engine.mzero(),
+            Ok(state) => Stream::unit(Box::new(state)),
+            Err(_) => Stream::empty(),
         }
     }
 }

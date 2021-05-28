@@ -2,6 +2,7 @@ use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::State;
+use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
@@ -21,10 +22,10 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         match state.unify(&self.u, &self.v) {
-            Ok(state) => engine.munit(state),
-            Err(_) => engine.mzero(),
+            Ok(state) => Stream::unit(Box::new(state)),
+            Err(_) => Stream::empty(),
         }
     }
 }

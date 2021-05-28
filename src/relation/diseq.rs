@@ -2,6 +2,7 @@ use crate::engine::Engine;
 use crate::goal::{Goal, Solve};
 use crate::lterm::LTerm;
 use crate::state::{unify_rec, Constraint, SMap, SResult, State};
+use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
@@ -22,11 +23,11 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> E::Stream {
+    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
         // Return state where u and v are unified under s, or None if unification is not possible
         match state.disunify(&self.u, &self.v) {
-            Ok(state) => engine.munit(state),
-            Err(_) => engine.mzero(),
+            Ok(state) => Stream::unit(Box::new(state)),
+            Err(_) => Stream::empty(),
         }
     }
 }
