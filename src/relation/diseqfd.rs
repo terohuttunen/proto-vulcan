@@ -53,10 +53,13 @@ where
 ///         }
 ///     });
 ///     let mut iter = query.run();
-///     assert!(iter.next().unwrap().q == lterm!([2, 3]));
-///     assert!(iter.next().unwrap().q == lterm!([1, 2]));
-///     assert!(iter.next().unwrap().q == lterm!([1, 3]));
-///     assert!(iter.next().is_none())
+///     let mut expected = vec![lterm!([2, 3]), lterm!([1, 2]), lterm!([1, 3])];
+///     iter.for_each(|x| {
+///         let n = x.q.clone();
+///         assert!(expected.contains(&n));
+///         expected.retain(|y| &n != y);
+///     });
+///     assert_eq!(expected.len(), 0);
 /// }
 /// ```
 pub fn diseqfd<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>

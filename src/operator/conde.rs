@@ -104,16 +104,13 @@ where
 ///         }
 ///     });
 ///     let mut iter = query.run();
-///     assert_eq!(iter.next().unwrap().q, 1);
-///     assert_eq!(iter.next().unwrap().q, 2);
-///     assert_eq!(iter.next().unwrap().q, 4);
-///     assert_eq!(iter.next().unwrap().q, 7);
-///     assert_eq!(iter.next().unwrap().q, 3);
-///     assert_eq!(iter.next().unwrap().q, 5);
-///     assert_eq!(iter.next().unwrap().q, 8);
-///     assert_eq!(iter.next().unwrap().q, 6);
-///     assert_eq!(iter.next().unwrap().q, 9);
-///     assert!(iter.next().is_none());
+///     let mut expected = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+///     iter.for_each(|x| {
+///         let n = x.q.get_number().unwrap();
+///         assert!(expected.contains(&n));
+///         expected.retain(|y| n != *y);
+///     });
+///     assert_eq!(expected.len(), 0);
 /// }
 /// ```
 pub fn conde<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
