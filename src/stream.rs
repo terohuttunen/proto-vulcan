@@ -9,7 +9,6 @@ pub enum Lazy<U: User, E: Engine<U>> {
     MPlus(LazyStream<U, E>, LazyStream<U, E>),
     Pause(Box<State<U>>, Goal<U, E>),
     Delay(Stream<U, E>),
-    Closure(Box<dyn FnOnce() -> Stream<U, E>>),
 }
 
 impl<U: User, E: Engine<U>> fmt::Debug for Lazy<U, E> {
@@ -21,7 +20,6 @@ impl<U: User, E: Engine<U>> fmt::Debug for Lazy<U, E> {
             }
             Lazy::Bind(lazy, goal) => fm.debug_tuple("Bind").field(lazy).field(goal).finish(),
             Lazy::Delay(stream) => fm.debug_tuple("Stream").field(stream).finish(),
-            Lazy::Closure(_) => fm.debug_tuple("Closure").finish(),
         }
     }
 }
@@ -245,7 +243,6 @@ impl<U: User> Engine<U> for StreamEngine<U> {
                 Stream::bind(stream, goal)
             }
             Lazy::Delay(stream) => stream,
-            Lazy::Closure(f) => f(),
         }
     }
 
