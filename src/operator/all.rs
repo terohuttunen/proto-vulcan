@@ -3,6 +3,7 @@ use crate::goal::{Goal, Solve};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct All<U, E>
@@ -20,7 +21,14 @@ where
     E: Engine<U>,
 {
     pub fn new(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
-        Goal::new(All { goal_1, goal_2 })
+        if goal_1.is_succeed() && goal_2.is_succeed() {
+            return Goal::Succeed;
+        }
+        if goal_1.is_fail() || goal_2.is_fail() {
+            return Goal::Fail;
+        }
+
+        Goal::Conj(Rc::new(All { goal_1, goal_2 }))
     }
 
     pub fn new_raw(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> All<U, E> {

@@ -4,6 +4,7 @@ use crate::operator::all::All;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct Any<U, E>
@@ -21,7 +22,7 @@ where
     E: Engine<U>,
 {
     pub fn new(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
-        Goal::new(Any { goal_1, goal_2 })
+        Goal::Disj(Rc::new(Any { goal_1, goal_2 }))
     }
 
     pub fn new_raw(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Any<U, E> {
