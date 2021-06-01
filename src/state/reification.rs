@@ -49,11 +49,11 @@ where
 /// the domain.
 fn force_ans<U: User, E: Engine<U>>(x: LTerm<U>) -> Goal<U, E> {
     proto_vulcan!(fngoal move |engine, state| {
-        let xwalk = state.smap_ref().walk(&x).clone();
+        let xwalk: LTerm<U> = state.smap_ref().walk(&x).clone();
         let maybe_xdomain = state.dstore_ref().get(&xwalk).cloned();
 
         match (xwalk.as_ref(), maybe_xdomain) {
-            (LTermInner::Var(_, _), Some(xdomain)) => {
+            (LTermInner::<U>::Var(_, _), Some(xdomain)) => {
                 // Stream of solutions where xwalk can equal any value of xdomain
                 map_sum(engine, state, |d| {
                     let dterm = LTerm::from(d);
@@ -61,10 +61,12 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U>) -> Goal<U, E> {
                 }, xdomain.iter())
 
             }
-            (LTermInner::Cons(head, tail), _) => {
+            (LTermInner::<U>::Cons(head, tail), _) => {
+                let head: LTerm<U> = head.clone();
+                let tail: LTerm<U> = tail.clone();
                 proto_vulcan!([
                     force_ans(head),
-                    force_ans(tail)
+                    force_ans(tail),
                 ]).solve(engine, state)
             },
             (_, _) => proto_vulcan!(true).solve(engine, state),

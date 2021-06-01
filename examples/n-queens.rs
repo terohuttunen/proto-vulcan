@@ -29,7 +29,7 @@ fn diagonalso(n: isize, i: isize, j: isize, s: LTerm, r: LTerm) -> Goal {
             [qi | _] => {
                 |qj, tail| {
                     s == [qj | tail],
-                    diago(qi, qj, (j - i), #&(0..=2 * n)),
+                    diago(qi, qj, #LTerm::from(j - i), #&(0..=2 * n)),
                     diagonalso(#n, #i, #j + 1, tail, r),
                 }
             }

@@ -1,3 +1,4 @@
+use crate::compound::CompoundObject;
 use crate::lterm::{LTerm, LTermInner};
 use crate::user::{EmptyUser, User};
 use std::collections::HashMap;
@@ -78,8 +79,17 @@ impl<U: User> SMap<U> {
         let v = self.walk(v);
         match v.as_ref() {
             LTermInner::Cons(head, tail) => LTerm::cons(self.walk_star(head), self.walk_star(tail)),
+            LTermInner::Compound(compound) => compound.walk_star(self),
             _ => v.clone(),
         }
+    }
+
+    /// Check that the variable `x` is not contained in the compound object `compound`.
+    fn occurs_check_compound(&self, x: &LTerm<U>, compound: &dyn CompoundObject<U>) -> bool {
+        compound.children().any(|child| match child.as_term() {
+            Some(v) => self.occurs_check(x, v),
+            None => self.occurs_check_compound(x, child),
+        })
     }
 
     /// Check that the variable `x` is not contained in the term `v`.
@@ -95,8 +105,20 @@ impl<U: User> SMap<U> {
             LTermInner::Cons(head, tail) => {
                 self.occurs_check(x, head) || self.occurs_check(x, tail)
             }
+            LTermInner::Compound(compound) => self.occurs_check_compound(x, compound.as_ref()),
             _ => false,
         }
+    }
+
+    fn reify_compound(&self, compound: &dyn CompoundObject<U>) -> SMap<U> {
+        let mut smap = self.clone();
+        for child in compound.children() {
+            match child.as_term() {
+                Some(v) => smap = smap.reify(v),
+                None => smap = smap.reify_compound(child),
+            }
+        }
+        smap
     }
 
     /// Reify substitution map
@@ -119,8 +141,16 @@ impl<U: User> SMap<U> {
                 c
             }
             LTermInner::Cons(head, tail) => self.reify(head).reify(tail),
+            LTermInner::Compound(compound) => self.reify_compound(compound.as_ref()),
             _ => self.clone(),
         }
+    }
+
+    fn is_anyvar_compound(&self, compound: &dyn CompoundObject<U>) -> bool {
+        compound.children().any(|child| match child.as_term() {
+            Some(v) => self.is_anyvar(v),
+            None => self.is_anyvar_compound(child),
+        })
     }
 
     /// Check if the given logic term refers to any unassociated variables
@@ -131,6 +161,7 @@ impl<U: User> SMap<U> {
                 walkv.is_var()
             }
             LTermInner::Cons(u, v) => self.is_anyvar(u) || self.is_anyvar(v),
+            LTermInner::Compound(compound) => self.is_anyvar_compound(compound.as_ref()),
             _ => false,
         }
     }

@@ -1,3 +1,4 @@
+use crate::compound::CompoundObject;
 use crate::user::{EmptyUser, User};
 use std::borrow::Borrow;
 use std::fmt;
@@ -28,7 +29,7 @@ impl fmt::Display for VarID {
     }
 }
 
-/// Logic Term
+/// Logic Term.
 #[derive(Clone, Debug)]
 pub enum LTermInner<U = EmptyUser>
 where
@@ -53,6 +54,9 @@ where
     // or a hash is computed. To use in substitutions, it must be projected first to non-Projection
     // kind LTerm.
     Projection(LTerm<U>),
+
+    // Compound object
+    Compound(Rc<dyn CompoundObject<U>>),
 }
 
 #[derive(Clone)]
@@ -374,6 +378,18 @@ impl<U: User> LTerm<U> {
     }
 }
 
+impl<U: User> From<Rc<dyn CompoundObject<U>>> for LTerm<U> {
+    fn from(u: Rc<dyn CompoundObject<U>>) -> LTerm<U> {
+        LTerm::from(LTermInner::Compound(u))
+    }
+}
+
+impl<U: User> From<&LTerm<U>> for LTerm<U> {
+    fn from(reference: &LTerm<U>) -> LTerm<U> {
+        reference.clone()
+    }
+}
+
 impl<U: User> From<LTermInner<U>> for LTerm<U> {
     fn from(inner: LTermInner<U>) -> LTerm<U> {
         LTerm {
@@ -382,9 +398,45 @@ impl<U: User> From<LTermInner<U>> for LTerm<U> {
     }
 }
 
+impl<U: User> From<isize> for LTerm<U> {
+    fn from(u: isize) -> LTerm<U> {
+        LTerm::from(LTermInner::Val(LValue::Number(u)))
+    }
+}
+
+impl<U: User> From<bool> for LTerm<U> {
+    fn from(u: bool) -> LTerm<U> {
+        LTerm::from(LTermInner::Val(LValue::Bool(u)))
+    }
+}
+
+impl<U: User> From<&str> for LTerm<U> {
+    fn from(u: &str) -> LTerm<U> {
+        LTerm::from(LTermInner::Val(LValue::String(String::from(u))))
+    }
+}
+
+impl<U: User> From<String> for LTerm<U> {
+    fn from(u: String) -> LTerm<U> {
+        LTerm::from(LTermInner::Val(LValue::String(u)))
+    }
+}
+
+impl<U: User> From<char> for LTerm<U> {
+    fn from(u: char) -> LTerm<U> {
+        LTerm::from(LTermInner::Val(LValue::Char(u)))
+    }
+}
+
 impl<U: User> AsRef<LTermInner<U>> for LTerm<U> {
     fn as_ref(&self) -> &LTermInner<U> {
         &self.inner
+    }
+}
+
+impl<U: User> AsRef<LTerm<U>> for LTerm<U> {
+    fn as_ref(&self) -> &LTerm<U> {
+        self
     }
 }
 
@@ -403,6 +455,7 @@ impl<U: User> fmt::Debug for LTerm<U> {
             LTermInner::Projection(p) => write!(f, "Projection({:?})", p),
             LTermInner::Empty => write!(f, "Empty"),
             LTermInner::Cons(head, tail) => write!(f, "({:?}, {:?})", head, tail),
+            LTermInner::Compound(cf) => write!(f, "{:?}", cf),
         }
     }
 }
@@ -447,6 +500,7 @@ impl<U: User> fmt::Display for LTerm<U> {
                     write!(f, "]")
                 }
             }
+            LTermInner::Compound(compound_term) => write!(f, "{:?}", compound_term),
         }
     }
 }
@@ -463,6 +517,7 @@ impl<U: User> Hash for LTerm<U> {
                 head.hash(state);
                 tail.hash(state);
             }
+            LTermInner::Compound(cf) => cf.compound_hash(state),
         }
     }
 }
@@ -478,6 +533,9 @@ impl<U: User> PartialEq<LTerm<U>> for LTerm<U> {
             (LTermInner::Empty, LTermInner::Empty) => true,
             (LTermInner::Cons(self_head, self_tail), LTermInner::Cons(other_head, other_tail)) => {
                 (self_head == other_head) & (self_tail == other_tail)
+            }
+            (LTermInner::Compound(self_cf), LTermInner::Compound(other_cf)) => {
+                self_cf.compound_eq(other_cf.as_object())
             }
             _ => false,
         }
@@ -760,15 +818,6 @@ impl<'a, U: User> IntoIterator for &'a mut LTerm<U> {
 }
 
 impl<'a, U: User> std::iter::FusedIterator for LTermIterMut<'a, U> {}
-
-impl<T, U: User> From<T> for LTerm<U>
-where
-    T: Into<LValue>,
-{
-    fn from(u: T) -> LTerm<U> {
-        LTerm::from(LTermInner::Val(u.into()))
-    }
-}
 
 impl<U: User> Index<usize> for LTerm<U> {
     type Output = LTerm<U>;

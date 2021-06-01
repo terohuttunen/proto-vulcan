@@ -4,8 +4,10 @@ extern crate quote;
 extern crate syn;
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
+use std::collections::HashSet;
 use syn::parse::{Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
+use syn::spanned::Spanned;
 use syn::token::{Brace, Bracket, Paren};
 use syn::{braced, bracketed, parenthesized, parse_macro_input, Error, Ident, Token};
 
@@ -129,11 +131,31 @@ impl ToTokens for FnGoal {
     }
 }
 
+#[derive(Clone)]
+struct TypedVariable {
+    name: Ident,
+    path: syn::Path,
+}
+
+impl Parse for TypedVariable {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let name = input.parse()?;
+        let path;
+        if input.peek(Token![:]) {
+            let _: Token![:] = input.parse()?;
+            path = input.parse()?;
+        } else {
+            path = syn::parse_quote!(::proto_vulcan::lterm::LTerm);
+        }
+        Ok(TypedVariable { name, path })
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Clone)]
 struct Fresh {
     or1_token: Token![|],
-    variables: Punctuated<Ident, Token![,]>,
+    variables: Punctuated<TypedVariable, Token![,]>,
     or2_token: Token![|],
     brace_token: Brace,
     body: Punctuated<Clause, Token![,]>,
@@ -147,7 +169,7 @@ impl Parse for Fresh {
             if input.peek(Token![|]) {
                 break;
             }
-            let var: Ident = input.parse()?;
+            let var: TypedVariable = input.parse()?;
             variables.push_value(var);
             if input.peek(Token![|]) {
                 break;
@@ -170,11 +192,13 @@ impl Parse for Fresh {
 
 impl ToTokens for Fresh {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let variables: Vec<&Ident> = self.variables.iter().collect();
+        let variables: Vec<Ident> = self.variables.iter().map(|x| &x.name).cloned().collect();
+        let variable_types: Vec<syn::Path> =
+            self.variables.iter().map(|x| &x.path).cloned().collect();
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            #( let #variables = ::proto_vulcan::lterm::LTerm::var(stringify!(#variables)); )*
-            ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
+            #( let #variables: #variable_types <_>= ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
+            ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::proto_vulcan::Upcast::to_super(&#variables) ),* ],
                 ::proto_vulcan::operator::all::All::from_array(&[ #( #body ),* ]))
         }};
         output.to_tokens(tokens);
@@ -206,9 +230,254 @@ impl ToTokens for Conjunction {
     }
 }
 
+#[derive(Clone, Debug)]
+struct UnnamedCompoundConstructorArgument {
+    pattern: Pattern,
+}
+
+impl Parse for UnnamedCompoundConstructorArgument {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(UnnamedCompoundConstructorArgument {
+            pattern: input.parse()?,
+        })
+    }
+}
+
+impl ToTokens for UnnamedCompoundConstructorArgument {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match &self.pattern {
+            Pattern::Term(treeterm) => match treeterm {
+                TreeTerm::Var(x) => {
+                    let output = quote! { ::proto_vulcan::Upcast::to_super(&#x) };
+                    output.to_tokens(tokens);
+                }
+                TreeTerm::Any(_) => {
+                    let output = quote! { ::proto_vulcan::compound::CompoundTerm::new_wildcard() };
+                    output.to_tokens(tokens);
+                }
+                _ => treeterm.to_tokens(tokens),
+            },
+            _ => self.pattern.to_tokens(tokens),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct NamedCompoundConstructorArgument {
+    ident: Ident,
+    colon_token: Token![:],
+    pattern: Pattern,
+}
+
+impl Parse for NamedCompoundConstructorArgument {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ident;
+        let colon_token;
+        let pattern;
+        if input.peek(Ident) && input.peek2(Token![:]) {
+            ident = input.parse()?;
+            colon_token = input.parse()?;
+            pattern = input.parse()?;
+        } else {
+            pattern = input.parse()?;
+            match pattern {
+                Pattern::Term(TreeTerm::Var(ref var_ident)) => {
+                    ident = var_ident.clone();
+                    colon_token = syn::parse_quote!(:);
+                }
+                _ => return Err(input.error("Expected variable identifier for unnamed field.")),
+            }
+        }
+
+        Ok(NamedCompoundConstructorArgument {
+            ident,
+            colon_token,
+            pattern,
+        })
+    }
+}
+
+impl ToTokens for NamedCompoundConstructorArgument {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = &self.ident;
+        let colon_token = &self.colon_token;
+        match &self.pattern {
+            Pattern::Term(treeterm) => match treeterm {
+                TreeTerm::Var(x) => {
+                    // No Into::into() for compound pattern arguments to constrain type.
+                    let output =
+                        quote! { #ident #colon_token ::proto_vulcan::Upcast::to_super(&#x) };
+                    output.to_tokens(tokens);
+                }
+                TreeTerm::Any(_) => {
+                    let output = quote! { #ident #colon_token ::proto_vulcan::compound::CompoundTerm::new_wildcard() };
+                    output.to_tokens(tokens);
+                }
+                _ => {
+                    let output = quote! { #ident #colon_token #treeterm };
+                    output.to_tokens(tokens);
+                }
+            },
+            _ => {
+                let pattern = &self.pattern;
+                let output = quote! { #ident #colon_token #pattern };
+                output.to_tokens(tokens);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct TupleCompoundConstructorArgument {
+    pattern: Pattern,
+}
+
+impl Parse for TupleCompoundConstructorArgument {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(TupleCompoundConstructorArgument {
+            pattern: input.parse()?,
+        })
+    }
+}
+
+impl ToTokens for TupleCompoundConstructorArgument {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match &self.pattern {
+            Pattern::Term(treeterm) => match treeterm {
+                TreeTerm::Var(x) => {
+                    let output = quote! { ::proto_vulcan::Upcast::to_super(&#x) };
+                    output.to_tokens(tokens);
+                }
+                TreeTerm::Any(_) => {
+                    let output = quote! { ::proto_vulcan::compound::CompoundTerm::new_wildcard() };
+                    output.to_tokens(tokens);
+                }
+                _ => treeterm.to_tokens(tokens),
+            },
+            _ => self.pattern.to_tokens(tokens),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct UnnamedCompoundConstructor {
+    compound_path: CompoundPath,
+    paren_token: Option<Paren>,
+    arguments: Option<Punctuated<UnnamedCompoundConstructorArgument, Token![,]>>,
+}
+
+impl ToTokens for UnnamedCompoundConstructor {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let compound_path = &self.compound_path;
+        let output;
+        if self.arguments.is_some() {
+            let arguments: Vec<UnnamedCompoundConstructorArgument> =
+                self.arguments.as_ref().unwrap().iter().cloned().collect();
+            output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( #compound_path (  #( #arguments ),* ) ) )};
+        } else {
+            output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( #compound_path ) )};
+        }
+        output.to_tokens(tokens);
+    }
+}
+
+#[derive(Clone, Debug)]
+struct NamedCompoundConstructor {
+    compound_path: CompoundPath,
+    brace_token: Option<Brace>,
+    arguments: Option<Punctuated<NamedCompoundConstructorArgument, Token![,]>>,
+}
+
+impl ToTokens for NamedCompoundConstructor {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let compound_path = &self.compound_path;
+        let output;
+        if self.arguments.is_some() {
+            let arguments: Vec<NamedCompoundConstructorArgument> =
+                self.arguments.as_ref().unwrap().iter().cloned().collect();
+            output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( #compound_path {  #( #arguments ),* } ) )};
+        } else {
+            output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( #compound_path { } ) )};
+        }
+        output.to_tokens(tokens);
+    }
+}
+
+#[derive(Clone, Debug)]
+struct TupleCompoundConstructor {
+    paren_token: Paren,
+    arguments: Punctuated<TupleCompoundConstructorArgument, Token![,]>,
+}
+
+impl ToTokens for TupleCompoundConstructor {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let arguments: Vec<TupleCompoundConstructorArgument> =
+            self.arguments.iter().cloned().collect();
+        let output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( (  #( #arguments ),* ) ) )};
+        output.to_tokens(tokens);
+    }
+}
+
+#[derive(Clone, Debug)]
+enum CompoundConstructor {
+    Unnamed(UnnamedCompoundConstructor),
+    Named(NamedCompoundConstructor),
+    Tuple(TupleCompoundConstructor),
+}
+
+impl Parse for CompoundConstructor {
+    fn parse(input: ParseStream) -> Result<Self> {
+        // Handle Tuple-constructor first
+        if input.peek(Paren) {
+            let content;
+            return Ok(CompoundConstructor::Tuple(TupleCompoundConstructor {
+                paren_token: parenthesized!(content in input),
+                arguments: content.parse_terminated(TupleCompoundConstructorArgument::parse)?,
+            }));
+        }
+
+        let compound_path: CompoundPath = input.parse()?;
+
+        if input.peek(Brace) {
+            let content;
+            Ok(CompoundConstructor::Named(NamedCompoundConstructor {
+                compound_path,
+                brace_token: Some(braced!(content in input)),
+                arguments: Some(content.parse_terminated(NamedCompoundConstructorArgument::parse)?),
+            }))
+        } else if input.peek(Paren) {
+            let content;
+            Ok(CompoundConstructor::Unnamed(UnnamedCompoundConstructor {
+                compound_path,
+                paren_token: Some(parenthesized!(content in input)),
+                arguments: Some(
+                    content.parse_terminated(UnnamedCompoundConstructorArgument::parse)?,
+                ),
+            }))
+        } else {
+            Ok(CompoundConstructor::Unnamed(UnnamedCompoundConstructor {
+                compound_path,
+                paren_token: None,
+                arguments: None,
+            }))
+        }
+    }
+}
+
+impl ToTokens for CompoundConstructor {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            CompoundConstructor::Unnamed(pattern) => pattern.to_tokens(tokens),
+            CompoundConstructor::Named(pattern) => pattern.to_tokens(tokens),
+            CompoundConstructor::Tuple(pattern) => pattern.to_tokens(tokens),
+        }
+    }
+}
+
 #[derive(Clone)]
 enum Argument {
     TreeTerm(TreeTerm),
+    Compound(CompoundConstructor),
     Quoted(syn::Expr),
     Expr(syn::Expr),
 }
@@ -221,8 +490,14 @@ impl Parse for Argument {
             let expr: syn::Expr = input.parse()?;
             Ok(Argument::Quoted(expr))
         } else {
-            // Try parsing TreeTerm
-            if let Ok(term) = input.parse() {
+            if (input.peek(syn::token::Colon2) && input.peek2(Ident))
+                || (input.peek(Ident) && (input.peek2(syn::token::Colon2) || input.peek2(Paren))
+                    || input.peek(Paren))
+            {
+                let compound: CompoundConstructor = input.parse()?;
+                Ok(Argument::Compound(compound))
+            } else if let Ok(term) = input.parse() {
+                // Try parsing TreeTerm
                 Ok(Argument::TreeTerm(term))
             } else {
                 // By parsing parenthesises away if any, we avoid unused parenthesis warnings
@@ -245,6 +520,10 @@ impl ToTokens for Argument {
         match self {
             Argument::TreeTerm(term) => {
                 let output = quote! { #term };
+                output.to_tokens(tokens);
+            }
+            Argument::Compound(compound_term) => {
+                let output = quote! { #compound_term };
                 output.to_tokens(tokens);
             }
             Argument::Quoted(expr) => {
@@ -383,9 +662,450 @@ impl ToTokens for Operator {
     }
 }
 
+struct PatternVariableSet {
+    idents: HashSet<Ident>,
+
+    // The `compound` flags affects the variable builder selection and how the
+    // variable is accessed in the compound pattern arguments.
+    //
+    //  * When variable is at compound pattern argument position, then the type
+    //    of the argument is derived from the compound term builder. Therefore,
+    //    at compound argument position the variable is accessed by only cloning
+    //    a reference, without the enclosing Into::into()-call.
+    //
+    // Compound flag      let #x =                      Access
+    //     true           CompoundTerm::new_wildcard()  Clone::clone(&#x)
+    //     false          LTerm::var(#x)                Into::into(Clone::clone(&#x))
+    is_compound: HashSet<Ident>,
+}
+
+impl PatternVariableSet {
+    fn new() -> PatternVariableSet {
+        PatternVariableSet {
+            idents: HashSet::new(),
+            is_compound: HashSet::new(),
+        }
+    }
+
+    fn set_compound(&mut self, ident: &Ident) {
+        self.is_compound.insert(ident.clone());
+    }
+
+    fn is_compound(&self, ident: &Ident) -> bool {
+        self.is_compound.contains(ident)
+    }
+}
+
+impl std::ops::Deref for PatternVariableSet {
+    type Target = HashSet<Ident>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.idents
+    }
+}
+
+impl std::ops::DerefMut for PatternVariableSet {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.idents
+    }
+}
+
+#[derive(Clone, Debug)]
+struct CompoundArgument {
+    pattern: Pattern,
+}
+
+impl CompoundArgument {
+    fn get_vars(&self, vars: &mut PatternVariableSet) {
+        self.pattern.get_vars(vars);
+        if let Pattern::Term(TreeTerm::Var(ref x)) = self.pattern {
+            vars.set_compound(x);
+        }
+    }
+}
+
+impl Parse for CompoundArgument {
+    fn parse(input: ParseStream) -> Result<Self> {
+        Ok(CompoundArgument {
+            pattern: input.parse()?,
+        })
+    }
+}
+
+impl ToTokens for CompoundArgument {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match &self.pattern {
+            Pattern::Term(treeterm) => match treeterm {
+                TreeTerm::Var(x) => {
+                    // No Into::into() for compound pattern arguments to constrain type.
+                    let output = quote! { ::std::clone::Clone::clone(&#x) };
+                    output.to_tokens(tokens);
+                }
+                TreeTerm::Any(_) => {
+                    let output = quote! { ::proto_vulcan::compound::CompoundTerm::new_wildcard() };
+                    output.to_tokens(tokens);
+                }
+                term if term.is_empty() => {
+                    let output = quote! { ::proto_vulcan::compound::CompoundTerm::new_none() };
+                    output.to_tokens(tokens);
+                }
+                _ => treeterm.to_tokens(tokens),
+            },
+            _ => self.pattern.to_tokens(tokens),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct NamedCompoundArgument {
+    ident: Ident,
+    colon_token: Token![:],
+    pattern: Pattern,
+}
+
+impl NamedCompoundArgument {
+    fn get_vars(&self, vars: &mut PatternVariableSet) {
+        self.pattern.get_vars(vars);
+        if let Pattern::Term(TreeTerm::Var(ref x)) = self.pattern {
+            vars.set_compound(x);
+        }
+    }
+}
+
+impl Parse for NamedCompoundArgument {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ident;
+        let colon_token;
+        let pattern;
+        if input.peek(Ident) && input.peek2(Token![:]) {
+            ident = input.parse()?;
+            colon_token = input.parse()?;
+            pattern = input.parse()?;
+        } else {
+            pattern = input.parse()?;
+            match pattern {
+                Pattern::Term(TreeTerm::Var(ref var_ident)) => {
+                    ident = var_ident.clone();
+                    colon_token = syn::parse_quote!(:);
+                }
+                _ => return Err(input.error("Expected variable identifier for unnamed field.")),
+            }
+        }
+
+        Ok(NamedCompoundArgument {
+            ident,
+            colon_token,
+            pattern,
+        })
+    }
+}
+
+impl ToTokens for NamedCompoundArgument {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let ident = &self.ident;
+        let colon_token = &self.colon_token;
+        match &self.pattern {
+            Pattern::Term(treeterm) => match treeterm {
+                TreeTerm::Var(x) => {
+                    // No Into::into() for compound pattern arguments to constrain type.
+                    let output = quote! { #ident #colon_token ::std::clone::Clone::clone(&#x) };
+                    output.to_tokens(tokens);
+                }
+                TreeTerm::Any(_) => {
+                    let output = quote! { #ident #colon_token ::proto_vulcan::compound::CompoundTerm::new_wildcard() };
+                    output.to_tokens(tokens);
+                }
+                term if term.is_empty() => {
+                    let output = quote! { #ident #colon_token ::proto_vulcan::compound::CompoundTerm::new_none() };
+                    output.to_tokens(tokens);
+                }
+                _ => {
+                    let output = quote! { #ident #colon_token #treeterm };
+                    output.to_tokens(tokens);
+                }
+            },
+            _ => {
+                let pattern = &self.pattern;
+                let output = quote! { #ident #colon_token #pattern };
+                output.to_tokens(tokens);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct CompoundPath {
+    leading_colon: Option<Token![::]>,
+    path: Punctuated<Ident, Token![::]>,
+    num_snake_case: usize,
+    prefix: Punctuated<Ident, Token![::]>,
+    typename: Ident,
+    variant: Option<Ident>,
+}
+
+impl Parse for CompoundPath {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let leading_colon = if input.peek(syn::token::Colon2) {
+            Some(input.parse()?)
+        } else {
+            None
+        };
+
+        let mut num_snake_case: usize = 0;
+
+        let mut path: Punctuated<Ident, syn::token::Colon2> = Punctuated::new();
+        loop {
+            let ident: Ident;
+            if input.peek(Token![crate]) {
+                let _: Token![crate] = input.parse()?;
+                ident = quote::format_ident!("crate");
+            } else {
+                ident = input.parse()?;
+            }
+
+            if ident.to_string().chars().any(|c| c.is_uppercase()) {
+                num_snake_case += 1;
+            }
+            path.push_value(ident);
+
+            if !input.peek(Token![::]) {
+                break;
+            }
+
+            let punct = input.parse()?;
+            path.push_punct(punct);
+        }
+
+        let mut prefix = path.clone();
+        let typename;
+        let mut variant = None;
+        match num_snake_case {
+            0 => return Err(input.error("Type patterns must have snake-case names.")),
+            1 => {
+                typename = prefix.pop().unwrap().into_value();
+            }
+            2 => {
+                variant = Some(prefix.pop().unwrap().into_value());
+                typename = prefix.pop().unwrap().into_value();
+            }
+            _ => return Err(input.error("Ambiguous path with more than two snake-case segments")),
+        }
+
+        Ok(CompoundPath {
+            leading_colon,
+            path,
+            num_snake_case,
+            prefix,
+            typename,
+            variant,
+        })
+    }
+}
+
+impl ToTokens for CompoundPath {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let leading_colon = &self.leading_colon;
+        let prefix = &self.prefix;
+        let typename = &self.typename;
+        let variant = &self.variant;
+
+        let mut new_path = prefix.clone();
+        if typename == "Some" {
+            new_path.push(typename.clone());
+        } else {
+            let compound_mod_name = quote::format_ident!("{}_compound", typename);
+            let object_typename = quote::format_ident!("_Inner{}", typename);
+
+            if variant.is_some() {
+                new_path.push(compound_mod_name);
+                new_path.push(variant.clone().unwrap());
+            } else {
+                new_path.push(compound_mod_name);
+                new_path.push(object_typename);
+            }
+        }
+
+        let output = quote!(#leading_colon #new_path);
+        output.to_tokens(tokens);
+    }
+}
+
+#[derive(Clone, Debug)]
+struct UnnamedCompoundPattern {
+    compound_path: CompoundPath,
+    paren_token: Option<Paren>,
+    arguments: Option<Punctuated<CompoundArgument, Token![,]>>,
+}
+
+impl UnnamedCompoundPattern {
+    fn get_vars(&self, vars: &mut PatternVariableSet) {
+        if self.arguments.is_some() {
+            for pattern in self.arguments.as_ref().unwrap().iter() {
+                pattern.get_vars(vars);
+            }
+        }
+    }
+}
+
+impl ToTokens for UnnamedCompoundPattern {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let compound_path = &self.compound_path;
+        if self.arguments.is_some() {
+            let arguments: Vec<&CompoundArgument> =
+                self.arguments.as_ref().unwrap().iter().collect();
+            let output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( #compound_path ( #( #arguments ),* ) )) };
+            output.to_tokens(tokens);
+        } else {
+            let output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( #compound_path )) };
+            output.to_tokens(tokens);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct NamedCompoundPattern {
+    compound_path: CompoundPath,
+    brace_token: Option<Brace>,
+    arguments: Option<Punctuated<NamedCompoundArgument, Token![,]>>,
+}
+
+impl NamedCompoundPattern {
+    fn get_vars(&self, vars: &mut PatternVariableSet) {
+        if self.arguments.is_some() {
+            for pattern in self.arguments.as_ref().unwrap().iter() {
+                pattern.get_vars(vars);
+            }
+        }
+    }
+}
+
+impl ToTokens for NamedCompoundPattern {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let compound_path = &self.compound_path;
+        if self.arguments.is_some() {
+            let arguments: Vec<NamedCompoundArgument> =
+                self.arguments.as_ref().unwrap().iter().cloned().collect();
+
+            let output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( #compound_path { #( #arguments ),* } )) };
+            output.to_tokens(tokens);
+        } else {
+            let output = quote! { ::proto_vulcan::Upcast::into_super(::proto_vulcan::Downcast::into_sub( #compound_path { } )) };
+            output.to_tokens(tokens);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum CompoundPattern {
+    Unnamed(UnnamedCompoundPattern),
+    Named(NamedCompoundPattern),
+    //Tuple
+}
+
+impl CompoundPattern {
+    fn is_next_compound(input: ParseStream) -> bool {
+        if input.peek(Token![::])
+            || input.peek2(Token![::])
+            || input.peek2(Paren)
+            || input.peek2(Brace)
+        {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_vars(&self, vars: &mut PatternVariableSet) {
+        match self {
+            CompoundPattern::Unnamed(pattern) => pattern.get_vars(vars),
+            CompoundPattern::Named(pattern) => pattern.get_vars(vars),
+        }
+    }
+}
+
+impl Parse for CompoundPattern {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let compound_path: CompoundPath = input.parse()?;
+
+        if input.peek(Brace) {
+            let content;
+            Ok(CompoundPattern::Named(NamedCompoundPattern {
+                compound_path,
+                brace_token: Some(braced!(content in input)),
+                arguments: Some(content.parse_terminated(NamedCompoundArgument::parse)?),
+            }))
+        } else if input.peek(Paren) {
+            let content;
+            Ok(CompoundPattern::Unnamed(UnnamedCompoundPattern {
+                compound_path,
+                paren_token: Some(parenthesized!(content in input)),
+                arguments: Some(content.parse_terminated(CompoundArgument::parse)?),
+            }))
+        } else {
+            Ok(CompoundPattern::Unnamed(UnnamedCompoundPattern {
+                compound_path,
+                paren_token: None,
+                arguments: None,
+            }))
+        }
+    }
+}
+
+impl ToTokens for CompoundPattern {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            CompoundPattern::Unnamed(pattern) => pattern.to_tokens(tokens),
+            CompoundPattern::Named(pattern) => pattern.to_tokens(tokens),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum Pattern {
+    Term(TreeTerm),
+    Compound(CompoundPattern),
+}
+
+impl Pattern {
+    fn is_any(&self) -> bool {
+        match self {
+            Pattern::Term(treeterm) => treeterm.is_any(),
+            _ => false,
+        }
+    }
+}
+
+impl Pattern {
+    fn get_vars(&self, vars: &mut PatternVariableSet) {
+        match self {
+            Pattern::Term(term) => term.get_vars(vars),
+            Pattern::Compound(compound) => compound.get_vars(vars),
+        }
+    }
+}
+
+impl Parse for Pattern {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if CompoundPattern::is_next_compound(input) {
+            Ok(Pattern::Compound(CompoundPattern::parse(input)?))
+        } else {
+            Ok(Pattern::Term(TreeTerm::parse(input)?))
+        }
+    }
+}
+
+impl ToTokens for Pattern {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        match self {
+            Pattern::Term(treeterm) => treeterm.to_tokens(tokens),
+            Pattern::Compound(compound) => compound.to_tokens(tokens),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct PatternArm {
-    patterns: Vec<TreeTerm>,
+    patterns: Vec<Pattern>,
     arrow: Token![=>],
     brace_token: Option<Brace>,
     body: Punctuated<Clause, Token![,]>,
@@ -395,7 +1115,7 @@ impl Parse for PatternArm {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut patterns = vec![];
         loop {
-            let pattern: TreeTerm = input.parse()?;
+            let pattern: Pattern = input.parse()?;
             patterns.push(pattern);
 
             if input.peek(Token![|]) {
@@ -406,7 +1126,9 @@ impl Parse for PatternArm {
         }
 
         for pattern in patterns.iter() {
-            for var_ident in pattern.get_vars().iter() {
+            let mut pattern_vars = PatternVariableSet::new();
+            pattern.get_vars(&mut pattern_vars);
+            for var_ident in pattern_vars.iter() {
                 if var_ident.to_string() == "__term__" {
                     return Err(Error::new(
                         var_ident.span(),
@@ -481,14 +1203,27 @@ impl ToTokens for PatternMatchOperator {
         let name = &self.name;
         let term = &self.term;
 
-        let mut patterns: Vec<TreeTerm> = vec![];
+        let mut patterns: Vec<Pattern> = vec![];
         let mut vars: Vec<Vec<Ident>> = vec![];
+        let mut compounds: Vec<Vec<Ident>> = vec![];
         let mut clauses: Vec<Punctuated<Clause, Token![,]>> = vec![];
         for arm in self.arms.iter() {
             // Repeat |-expression patterns with multiple single pattern entries
             for pattern in arm.patterns.iter() {
                 patterns.push(pattern.clone());
-                vars.push(pattern.get_vars());
+                let mut pattern_vars = PatternVariableSet::new();
+                pattern.get_vars(&mut pattern_vars);
+                let mut treeterm_pattern_vars = vec![];
+                let mut compound_pattern_vars = vec![];
+                pattern_vars.iter().for_each(|x| {
+                    if pattern_vars.is_compound(x) {
+                        compound_pattern_vars.push(x.clone());
+                    } else {
+                        treeterm_pattern_vars.push(x.clone());
+                    }
+                });
+                vars.push(treeterm_pattern_vars);
+                compounds.push(compound_pattern_vars);
                 clauses.push(arm.body.clone());
             }
         }
@@ -501,8 +1236,10 @@ impl ToTokens for PatternMatchOperator {
                         // before the equality-relation with pattern is created.
                         let __term__ = #term;
                         // Define new variables found in the pattern
-                        #( let #vars = LTerm::var(stringify!(#vars)); )*
-                        [::proto_vulcan::relation::eq(__term__, #patterns), #clauses ]
+                        #( let #vars = ::proto_vulcan::lterm::LTerm::var(stringify!(#vars)); )*
+                        #( let #compounds = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#compounds)); )*
+                        let __pattern__ = #patterns;
+                        [::proto_vulcan::relation::eq(__term__, __pattern__), #clauses ]
                     } ),* ],
                 })
             }
@@ -514,8 +1251,10 @@ impl ToTokens for PatternMatchOperator {
                         // before the equality-relation with pattern is created.
                         let __term__ = #term;
                         // Define new variables found in the pattern
-                        #( let #vars = LTerm::var(stringify!(#vars)); )*
-                        [::proto_vulcan::relation::eq(__term__, #patterns), #clauses ]
+                        #( let #vars = ::proto_vulcan::lterm::LTerm::var(stringify!(#vars)); )*
+                        #( let #compounds = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#compounds)); )*
+                        let __pattern__ = #patterns;
+                        [::proto_vulcan::relation::eq(__term__, __pattern__), #clauses ]
                     } ),* ],
                 })
             }
@@ -633,8 +1372,8 @@ impl Parse for FieldAccess {
 struct InnerTreeTerm(TreeTerm);
 
 impl InnerTreeTerm {
-    fn get_vars(&self) -> Vec<Ident> {
-        self.0.get_vars()
+    fn get_vars(&self, vars: &mut PatternVariableSet) {
+        self.0.get_vars(vars)
     }
 }
 
@@ -659,7 +1398,6 @@ impl ToTokens for InnerTreeTerm {
                 output.to_tokens(tokens);
             }
             TreeTerm::Var(ident) => {
-                // For InnerTreeTerms any references to variables must be cloned
                 let output = quote! { ::std::clone::Clone::clone(&#ident) };
                 output.to_tokens(tokens);
             }
@@ -699,29 +1437,39 @@ enum TreeTerm {
 }
 
 impl TreeTerm {
-    fn get_vars(&self) -> Vec<Ident> {
+    fn is_any(&self) -> bool {
         match self {
-            TreeTerm::Value(_) => vec![],
-            TreeTerm::Var(ident) => vec![ident.clone()],
-            TreeTerm::Field(_) => vec![],
-            TreeTerm::Any(_) => vec![],
+            TreeTerm::Any(_) => true,
+            _ => false,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        match self {
+            TreeTerm::ProperList { items } => items.len() == 0,
+            _ => false,
+        }
+    }
+}
+
+impl TreeTerm {
+    fn get_vars(&self, vars: &mut PatternVariableSet) {
+        match self {
+            TreeTerm::Value(_) => (),
+            TreeTerm::Var(ident) => {
+                vars.insert(ident.clone());
+            }
+            TreeTerm::Field(_) => (),
+            TreeTerm::Any(_) => (),
             TreeTerm::ImproperList { items } => {
-                let mut variables = vec![];
                 for item in items {
-                    variables.append(&mut item.get_vars());
+                    item.get_vars(vars);
                 }
-                variables.sort();
-                variables.dedup();
-                variables
             }
             TreeTerm::ProperList { items } => {
-                let mut variables = vec![];
                 for item in items {
-                    variables.append(&mut item.get_vars());
+                    item.get_vars(vars);
                 }
-                variables.sort();
-                variables.dedup();
-                variables
             }
         }
     }
@@ -784,12 +1532,12 @@ impl ToTokens for TreeTerm {
                 output.to_tokens(tokens);
             }
             TreeTerm::Var(ident) => {
-                let output = quote! { ::std::clone::Clone::clone(&#ident) };
+                let output = quote! { ::proto_vulcan::Upcast::to_super(&#ident) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Field(field_access) => {
                 let field = &field_access.field;
-                let output = quote! { ::std::clone::Clone::clone(&#field) };
+                let output = quote! { ::proto_vulcan::Upcast::to_super(&#field) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Any(_) => {
@@ -803,8 +1551,13 @@ impl ToTokens for TreeTerm {
             }
             TreeTerm::ProperList { items } => {
                 let items: Vec<&InnerTreeTerm> = items.iter().collect();
-                let output =
-                    quote! { ::proto_vulcan::lterm::LTerm::from_array( &[ #(#items),* ] ) };
+                let output;
+                if items.is_empty() {
+                    output = quote! { ::proto_vulcan::lterm::LTerm::empty_list() };
+                } else {
+                    output =
+                        quote! { ::proto_vulcan::lterm::LTerm::from_array( &[ #(#items),* ] ) };
+                }
                 output.to_tokens(tokens);
             }
         }
@@ -814,9 +1567,9 @@ impl ToTokens for TreeTerm {
 #[allow(dead_code)]
 #[derive(Clone)]
 struct Eq {
-    left: TreeTerm,
+    left: Argument,
     eqeq: Token![==],
-    right: TreeTerm,
+    right: Argument,
 }
 
 impl Parse for Eq {
@@ -841,9 +1594,9 @@ impl ToTokens for Eq {
 #[allow(dead_code)]
 #[derive(Clone)]
 struct Diseq {
-    left: TreeTerm,
+    left: Argument,
     ne: Token![!=],
-    right: TreeTerm,
+    right: Argument,
 }
 
 impl Parse for Diseq {
@@ -1134,7 +1887,7 @@ pub fn lterm(input: TokenStream) -> TokenStream {
 #[derive(Clone)]
 struct Query {
     or1_token: Token![|],
-    variables: Punctuated<Ident, Token![,]>,
+    variables: Punctuated<TypedVariable, Token![,]>,
     or2_token: Token![|],
     brace_token: Brace,
     body: Punctuated<Clause, Token![,]>,
@@ -1148,7 +1901,7 @@ impl Parse for Query {
             if input.peek(Token![|]) {
                 break;
             }
-            let var: Ident = input.parse()?;
+            let var: TypedVariable = input.parse()?;
             variables.push_value(var);
             if input.peek(Token![|]) {
                 break;
@@ -1172,13 +1925,14 @@ impl Parse for Query {
 
 impl ToTokens for Query {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let query: Vec<&Ident> = self.variables.iter().collect();
+        let query: Vec<Ident> = self.variables.iter().map(|x| &x.name).cloned().collect();
+        let query_types: Vec<syn::Path> = self.variables.iter().map(|x| &x.path).cloned().collect();
         let body: Vec<&Clause> = self.body.iter().collect();
 
         let output = quote! {
-            #(let #query = LTerm::var(stringify!(#query));)*
+            #(let #query: #query_types <_> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#query)); )*
 
-            let __vars__ = vec![ #( #query.clone() ),* ];
+            let __vars__ = vec![ #( ::proto_vulcan::Upcast::into_super(#query.clone()) ),* ];
 
             let goal = {
                 let __query__ = ::proto_vulcan::lterm::LTerm::var("__query__");
@@ -1187,7 +1941,7 @@ impl ToTokens for Query {
                     ::proto_vulcan::operator::all::All::from_array(&[
                         ::proto_vulcan::relation::eq::eq(
                             ::std::clone::Clone::clone(&__query__),
-                            ::proto_vulcan::lterm::LTerm::from_array(&[#(::std::clone::Clone::clone(&#query)),*]),
+                            ::proto_vulcan::lterm::LTerm::from_array(&[#(::proto_vulcan::Upcast::to_super(&#query)),*]),
                      ),
                      ::proto_vulcan::operator::all::All::from_array(&[
                         #( #body ),*
@@ -1236,4 +1990,456 @@ pub fn proto_vulcan_query(input: TokenStream) -> TokenStream {
         #query
     }};
     output.into()
+}
+
+fn make_compound_modifications_to_path(path: &mut syn::Path) -> std::result::Result<(), Error> {
+    match path.segments.iter_mut().last() {
+        Some(last_segment) => match last_segment.arguments {
+            syn::PathArguments::AngleBracketed(ref mut generic_arguments) => {
+                for argument in generic_arguments.args.iter_mut() {
+                    match argument {
+                        syn::GenericArgument::Type(ty) => {
+                            make_compound_modifications_to_type(ty)?;
+                        }
+                        _ => {
+                            return Err(Error::new(argument.span(), "Invalid generic argument"));
+                        }
+                    }
+                }
+
+                return Ok(());
+            }
+            syn::PathArguments::None => {
+                last_segment.arguments =
+                    syn::PathArguments::AngleBracketed(syn::parse_quote! {<U>});
+            }
+            _ => {
+                return Err(Error::new(
+                    last_segment.arguments.span(),
+                    "Invalid type argument",
+                ));
+            }
+        },
+        None => {
+            return Err(Error::new(path.span(), "Invalid type argument"));
+        }
+    }
+    Ok(())
+}
+
+fn make_compound_modifications_to_type(ty: &mut syn::Type) -> std::result::Result<(), Error> {
+    match ty {
+        syn::Type::Path(typepath) => {
+            //let has_generic_args = has_generic_arguments(&typepath.path)?;
+            make_compound_modifications_to_path(&mut typepath.path)?;
+            *ty = syn::parse_quote! { #typepath };
+        }
+        _ => return Err(Error::new(ty.span(), "Invalid compound type")),
+    }
+    Ok(())
+}
+
+fn make_compound_modifications_to_itemstruct(
+    itemstruct: &mut syn::ItemStruct,
+) -> std::result::Result<(), Error> {
+    if itemstruct.generics.params.is_empty() {
+        let new_generics: syn::Generics = syn::parse_quote! {<U: ::proto_vulcan::user::User>};
+        itemstruct.generics = new_generics;
+    }
+    for field in itemstruct.fields.iter_mut() {
+        field.vis = syn::Visibility::Public(syn::VisPublic {
+            pub_token: syn::parse_quote!(pub),
+        });
+        make_compound_modifications_to_type(&mut field.ty)?;
+    }
+    itemstruct.vis = syn::parse_quote!(pub);
+    Ok(())
+}
+
+fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
+    let mut inner = itemstruct.clone();
+    inner.ident = quote::format_ident!("_Inner{}", itemstruct.ident);
+
+    let vis = &itemstruct.vis;
+    let struct_name = itemstruct.ident.clone();
+    let inner_ident = &inner.ident;
+    let mod_name = quote::format_ident!("{}_compound", struct_name);
+    let (impl_generics, type_generics, where_clause) = itemstruct.generics.split_for_impl();
+
+    let field_indices: Vec<syn::Index> = itemstruct
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(n, _)| syn::Index::from(n))
+        .collect();
+
+    let output = quote!(
+        #[allow(non_snake_case)]
+        #vis mod #mod_name {
+            use super::*;
+            #[derive(Clone, Eq)]
+            #inner
+
+            impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #inner_ident #type_generics #where_clause {
+                fn type_name(&self) -> &'static str {
+                    stringify!(#struct_name)
+                }
+
+                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject<U>> + 'a> {
+                    Box::new(vec![#(&self.#field_indices as &dyn ::proto_vulcan::compound::CompoundObject #type_generics),*].into_iter())
+                }
+            }
+
+            impl #impl_generics ::proto_vulcan::compound::CompoundWalkStar #type_generics for #inner_ident #type_generics #where_clause {
+                fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap #type_generics) -> Self {
+                    #inner_ident(#(self.#field_indices.compound_walk_star(smap)),*)
+                }
+            }
+
+            impl #impl_generics Into<#struct_name #type_generics> for #inner_ident #type_generics #where_clause {
+                fn into(self) -> #struct_name #type_generics {
+                    #struct_name {
+                        inner: Into::<LTerm #type_generics>::into(self),
+                    }
+                }
+            }
+
+            impl #impl_generics Into<::proto_vulcan::lterm::LTerm #type_generics> for #inner_ident #type_generics #where_clause {
+                fn into(self) -> ::proto_vulcan::lterm::LTerm #type_generics {
+                    ::proto_vulcan::lterm::LTerm::from(::std::rc::Rc::new(self) as ::std::rc::Rc<dyn ::proto_vulcan::compound::CompoundObject #type_generics>)
+                }
+            }
+
+            impl #impl_generics ::proto_vulcan::Downcast #type_generics for #inner_ident #type_generics #where_clause {
+                type SubType = #struct_name #type_generics;
+                fn into_sub(self) -> Self::SubType {
+                    self.into()
+                }
+            }
+
+            impl #impl_generics ::core::fmt::Debug for #inner_ident #type_generics #where_clause {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                    let debug_trait_builder = &mut ::core::fmt::Formatter::debug_tuple(f, stringify!(#struct_name));
+                    #( let _ = ::core::fmt::DebugTuple::field(debug_trait_builder, &self.#field_indices); )*
+                    ::core::fmt::DebugTuple::finish(debug_trait_builder)
+                }
+            }
+
+            impl #impl_generics ::std::hash::Hash for #inner_ident #type_generics #where_clause {
+                fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                    #( ::std::hash::Hash::hash(&self.#field_indices, state); )*
+                }
+            }
+
+            impl #impl_generics ::std::cmp::PartialEq for #inner_ident #type_generics #where_clause {
+                fn eq(&self, other: &Self) -> bool {
+                    #( ::std::cmp::PartialEq::eq(&self.#field_indices, &other.#field_indices) &&)* true
+                }
+            }
+        }
+
+        #[derive(Clone, Eq)]
+        #vis struct #struct_name #impl_generics {
+            inner: LTerm #type_generics,
+        }
+
+        impl #impl_generics ::std::fmt::Debug for #struct_name #type_generics #where_clause {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                self.inner.fmt(f)
+            }
+        }
+
+        impl #impl_generics ::std::hash::Hash for #struct_name #type_generics #where_clause {
+            fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                ::std::hash::Hash::hash(&self.inner, state);
+            }
+        }
+
+        impl #impl_generics ::std::cmp::PartialEq for #struct_name #type_generics #where_clause {
+            fn eq(&self, other: &Self) -> bool {
+                ::std::cmp::PartialEq::eq(&self.inner, &other.inner)
+            }
+        }
+
+        #[automatically_derived]
+        impl #impl_generics ::proto_vulcan::compound::CompoundTerm #type_generics for #struct_name #type_generics #where_clause {
+            fn new_var(name: &'static str) -> #struct_name #type_generics {
+                #struct_name {
+                    inner: LTerm::var(name),
+                }
+            }
+
+            fn new_wildcard() -> #struct_name #type_generics {
+                #struct_name {
+                    inner: LTerm::any(),
+                }
+            }
+
+            fn new_none() -> #struct_name #type_generics {
+                #struct_name {
+                    inner: LTerm::empty_list(),
+                }
+            }
+        }
+
+        impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #struct_name #type_generics #where_clause {
+            fn type_name(&self) -> &'static str {
+                stringify!(#struct_name)
+            }
+
+            fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
+                self.inner.children()
+            }
+
+            fn as_term(&self) -> Option<&LTerm<U>> {
+                Some(&self.inner)
+            }
+        }
+
+        impl #impl_generics ::proto_vulcan::compound::CompoundWalkStar #type_generics for #struct_name #type_generics #where_clause {
+            fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap #type_generics) -> Self {
+                #struct_name {
+                    inner: self.inner.compound_walk_star(smap),
+                }
+            }
+        }
+
+        #[automatically_derived]
+        impl #impl_generics Into<::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
+            fn into(self) -> LTerm #type_generics {
+                self.inner
+            }
+        }
+
+        impl #impl_generics ::proto_vulcan::Upcast<U, ::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
+            #[inline]
+            fn to_super<K: ::std::borrow::Borrow<Self>>(k: &K) -> ::proto_vulcan::lterm::LTerm #type_generics {
+                Into::into(::std::clone::Clone::clone(k.borrow()))
+            }
+
+            #[inline]
+            fn into_super(self) -> ::proto_vulcan::lterm::LTerm #type_generics {
+                Into::into(self)
+            }
+        }
+
+        impl #impl_generics ::proto_vulcan::Downcast #type_generics for #struct_name #type_generics #where_clause {
+            type SubType = Self;
+            fn into_sub(self) -> Self::SubType {
+                self.into()
+            }
+        }
+    );
+    output.into()
+}
+
+fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
+    let mut inner = itemstruct.clone();
+    inner.ident = quote::format_ident!("_Inner{}", itemstruct.ident);
+
+    let vis = &itemstruct.vis;
+    let struct_name = itemstruct.ident.clone();
+    let inner_ident = &inner.ident;
+    let mod_name = quote::format_ident!("{}_compound", struct_name);
+    let (impl_generics, type_generics, where_clause) = itemstruct.generics.split_for_impl();
+
+    let field_names: Vec<syn::Ident> = itemstruct
+        .fields
+        .iter()
+        .map(|field| field.ident.as_ref().unwrap().clone())
+        .collect();
+
+    let output = quote!(
+        #[allow(non_snake_case)]
+        #vis mod #mod_name {
+            use super::*;
+            #[derive(Clone, Eq)]
+            #inner
+
+            impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #inner_ident #type_generics #where_clause {
+                fn type_name(&self) -> &'static str {
+                    stringify!(#struct_name)
+                }
+
+                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject<U>> + 'a> {
+                    Box::new(vec![#(&self.#field_names as &dyn ::proto_vulcan::compound::CompoundObject #type_generics),*].into_iter())
+                }
+            }
+
+            impl #impl_generics ::proto_vulcan::compound::CompoundWalkStar #type_generics for #inner_ident #type_generics #where_clause {
+                fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap #type_generics) -> Self {
+                    #inner_ident { #( #field_names: self.#field_names.compound_walk_star(smap)),* }
+                }
+            }
+
+            impl #impl_generics Into<#struct_name #type_generics> for #inner_ident #type_generics #where_clause {
+                fn into(self) -> #struct_name #type_generics {
+                    #struct_name {
+                        inner: Into::<LTerm #type_generics>::into(self),
+                    }
+                }
+            }
+
+            impl #impl_generics Into<::proto_vulcan::lterm::LTerm #type_generics> for #inner_ident #type_generics #where_clause {
+                fn into(self) -> ::proto_vulcan::lterm::LTerm #type_generics {
+                    ::proto_vulcan::lterm::LTerm::from(::std::rc::Rc::new(self) as ::std::rc::Rc<dyn ::proto_vulcan::compound::CompoundObject #type_generics>)
+                }
+            }
+
+            impl #impl_generics ::proto_vulcan::Downcast #type_generics for #inner_ident #type_generics #where_clause {
+                type SubType = #struct_name #type_generics;
+                fn into_sub(self) -> Self::SubType {
+                    self.into()
+                }
+            }
+
+            impl #impl_generics ::core::fmt::Debug for #inner_ident #type_generics #where_clause {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                    let debug_trait_builder = &mut ::core::fmt::Formatter::debug_struct(f, stringify!(#struct_name));
+                    #(
+                        let _= ::core::fmt::DebugStruct::field(
+                            debug_trait_builder,
+                            stringify!(#field_names),
+                            &self.#field_names,
+                        );
+                    )*
+                    ::core::fmt::DebugStruct::finish(debug_trait_builder)
+                }
+            }
+
+            impl #impl_generics ::std::hash::Hash for #inner_ident #type_generics #where_clause {
+                fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                    #( ::std::hash::Hash::hash(&self.#field_names, state); )*
+                }
+            }
+
+            impl #impl_generics ::std::cmp::PartialEq for #inner_ident #type_generics #where_clause {
+                fn eq(&self, other: &Self) -> bool {
+                    #( ::std::cmp::PartialEq::eq(&self.#field_names, &other.#field_names) &&)* true
+                }
+            }
+        }
+
+        #[derive(Clone, Eq)]
+        #vis struct #struct_name #impl_generics {
+            inner: LTerm #type_generics,
+        }
+
+        impl #impl_generics ::std::fmt::Debug for #struct_name #type_generics #where_clause {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                self.inner.fmt(f)
+            }
+        }
+
+        impl #impl_generics ::std::hash::Hash for #struct_name #type_generics #where_clause {
+            fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                ::std::hash::Hash::hash(&self.inner, state);
+            }
+        }
+
+        impl #impl_generics ::std::cmp::PartialEq for #struct_name #type_generics #where_clause {
+            fn eq(&self, other: &Self) -> bool {
+                ::std::cmp::PartialEq::eq(&self.inner, &other.inner)
+            }
+        }
+
+        #[automatically_derived]
+        impl #impl_generics ::proto_vulcan::compound::CompoundTerm #type_generics for #struct_name #type_generics #where_clause {
+            fn new_var(name: &'static str) -> #struct_name #type_generics {
+                #struct_name {
+                    inner: LTerm::var(name),
+                }
+            }
+
+            fn new_wildcard() -> #struct_name #type_generics {
+                #struct_name {
+                    inner: LTerm::any(),
+                }
+            }
+
+            fn new_none() -> #struct_name #type_generics {
+                #struct_name {
+                    inner: LTerm::empty_list(),
+                }
+            }
+        }
+
+        impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #struct_name #type_generics #where_clause {
+            fn type_name(&self) -> &'static str {
+                stringify!(#struct_name)
+            }
+
+            fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
+                self.inner.children()
+            }
+
+            fn as_term(&self) -> Option<&LTerm<U>> {
+                Some(&self.inner)
+            }
+        }
+
+        impl #impl_generics ::proto_vulcan::compound::CompoundWalkStar #type_generics for #struct_name #type_generics #where_clause {
+            fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap #type_generics) -> Self {
+                #struct_name {
+                    inner: self.inner.compound_walk_star(smap),
+                }
+            }
+        }
+
+        #[automatically_derived]
+        impl #impl_generics Into<::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
+            fn into(self) -> LTerm #type_generics {
+                self.inner
+            }
+        }
+
+        impl #impl_generics ::proto_vulcan::Upcast<U, ::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
+            #[inline]
+            fn to_super<K: ::std::borrow::Borrow<Self>>(k: &K) -> ::proto_vulcan::lterm::LTerm #type_generics {
+                Into::into(::std::clone::Clone::clone(k.borrow()))
+            }
+
+            #[inline]
+            fn into_super(self) -> ::proto_vulcan::lterm::LTerm #type_generics {
+                Into::into(self)
+            }
+        }
+
+        impl #impl_generics ::proto_vulcan::Downcast #type_generics for #struct_name #type_generics #where_clause {
+            type SubType = Self;
+            fn into_sub(self) -> Self::SubType {
+                self.into()
+            }
+        }
+    );
+    output.into()
+}
+
+fn make_compound_struct(mut itemstruct: syn::ItemStruct) -> TokenStream {
+    // Add generics and where necessary
+    match make_compound_modifications_to_itemstruct(&mut itemstruct) {
+        Ok(()) => (),
+        Err(error) => return error.to_compile_error().into(),
+    }
+
+    match itemstruct.fields {
+        syn::Fields::Unnamed(_) => make_compound_unnamed_struct(itemstruct),
+        syn::Fields::Named(_) => make_compound_named_struct(itemstruct),
+        syn::Fields::Unit => make_compound_named_struct(itemstruct),
+    }
+}
+
+#[proc_macro_attribute]
+pub fn compound(_metadata: TokenStream, input: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(input as syn::Item);
+
+    match item {
+        //syn::Item::Enum(item_enum) => return make_compound_enum(item_enum),
+        syn::Item::Struct(item_struct) => return make_compound_struct(item_struct),
+        _ => {
+            return syn::Error::new(item.span(), "Compound attribute requires struct or enum.")
+                .to_compile_error()
+                .into();
+        }
+    }
 }

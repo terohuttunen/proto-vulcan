@@ -1,4 +1,5 @@
 use super::substitution::SMap;
+use crate::compound::CompoundObject;
 use crate::lterm::{LTerm, LTermInner};
 use crate::state::{SResult, State};
 use crate::user::User;
@@ -54,7 +55,42 @@ pub fn unify_rec<U: User>(
                 Err(err) => Err(err),
             }
         }
+        (LTermInner::Compound(ucf), LTermInner::Compound(vcf)) => {
+            unify_rec_compound(state, extension, ucf.as_ref(), vcf.as_ref())
+        }
         _ => Err(()),
+    }
+}
+
+/// Recursive unification of compound terms
+fn unify_rec_compound<U: User>(
+    mut state: State<U>,
+    extension: &mut SMap<U>,
+    ucompound: &dyn CompoundObject<U>,
+    vcompound: &dyn CompoundObject<U>,
+) -> SResult<U> {
+    if ucompound.type_id() != vcompound.type_id() {
+        return Err(());
+    }
+
+    let mut uchildren = ucompound.children();
+    let mut vchildren = vcompound.children();
+    loop {
+        match (uchildren.next(), vchildren.next()) {
+            (Some(uchild), Some(vchild)) if uchild.is_term() && vchild.is_term() => {
+                let uterm = uchild.as_term().unwrap();
+                let vterm = vchild.as_term().unwrap();
+                state = unify_rec(state, extension, uterm, vterm)?;
+            }
+            (Some(uc), Some(vc)) if !uc.is_term() && !vc.is_term() => {
+                match unify_rec_compound(state, extension, uc, vc) {
+                    Ok(new_state) => state = new_state,
+                    Err(err) => return Err(err),
+                }
+            }
+            (None, None) => return Ok(state),
+            _ => return Err(()),
+        }
     }
 }
 

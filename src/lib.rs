@@ -308,10 +308,15 @@ extern crate self as proto_vulcan;
 #[macro_use]
 extern crate proto_vulcan_macros;
 
-pub use proto_vulcan_macros::{lterm, proto_vulcan, proto_vulcan_closure, proto_vulcan_query};
+pub use proto_vulcan_macros::{
+    compound, lterm, proto_vulcan, proto_vulcan_closure, proto_vulcan_query,
+};
 
 #[macro_use]
 extern crate derivative;
+
+pub mod compound;
+use compound::CompoundObject;
 
 pub mod goal;
 pub mod lterm;
@@ -330,10 +335,35 @@ pub mod engine;
 
 pub mod query;
 
+use std::borrow::Borrow;
+use user::User;
+
+pub trait Upcast<U: User, SuperType>
+where
+    Self: CompoundObject<U> + Clone,
+    SuperType: CompoundObject<U>,
+{
+    fn to_super<K: Borrow<Self>>(k: &K) -> SuperType;
+
+    fn into_super(self) -> SuperType;
+}
+
+pub trait Downcast<U: User>
+where
+    Self: CompoundObject<U>,
+{
+    type SubType: CompoundObject<U>;
+
+    fn into_sub(self) -> Self::SubType;
+}
+
 pub mod prelude {
 
-    pub use proto_vulcan_macros::{lterm, proto_vulcan, proto_vulcan_closure, proto_vulcan_query};
+    pub use proto_vulcan_macros::{
+        compound, lterm, proto_vulcan, proto_vulcan_closure, proto_vulcan_query,
+    };
 
+    pub use crate::compound::CompoundTerm;
     pub use crate::engine::Engine;
     pub use crate::goal::{Goal, Solve};
     pub use crate::lterm::LTerm;
