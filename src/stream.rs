@@ -169,7 +169,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         self.mature(engine);
         match std::mem::replace(self, Stream::Empty) {
             Stream::Empty => return None,
-            Stream::Lazy(lazy) => unreachable!(),
+            Stream::Lazy(_) => unreachable!(),
             Stream::Unit(a) => {
                 return Some(a);
             }
@@ -196,7 +196,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         self.mature(engine);
         match std::mem::replace(self, Stream::Empty) {
             Stream::Empty => (),
-            Stream::Lazy(lazy) => unreachable!(),
+            Stream::Lazy(_) => unreachable!(),
             Stream::Unit(a) | Stream::Cons(a, _) => {
                 let _ = std::mem::replace(self, Stream::Unit(a));
             }

@@ -76,7 +76,7 @@ mod tests {
         fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
             let u = self.u.clone();
             let v = self.v.clone();
-            let g: Goal<U, E> = proto_vulcan!(fngoal move |engine, state| {
+            let g: Goal<U, E> = proto_vulcan!(fngoal move |_engine, state| {
                 match u.as_ref() {
                     // sqeq is non-relational operator and requires `u` to be associated with
                     // integer value to succeed.

@@ -105,7 +105,7 @@ fn enforce_constraints<U: User, E: Engine<U>>(x: LTerm<U>) -> Goal<U, E> {
 pub fn reify<U: User, E: Engine<U>>(x: LTerm<U>) -> Goal<U, E> {
     proto_vulcan!([
         enforce_constraints(x),
-        fngoal move |engine, state| {
+        fngoal move |_engine, state| {
             let smap = state.get_smap();
             let v = smap.walk_star(&x);
             let r = smap.reify(&v);

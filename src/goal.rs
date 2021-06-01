@@ -121,7 +121,7 @@ mod test {
     struct TestGoal {}
 
     impl<E: Engine<U>, U: User> Solve<U, E> for TestGoal {
-        fn solve(&self, engine: &E, _state: State<U>) -> Stream<U, E> {
+        fn solve(&self, _engine: &E, _state: State<U>) -> Stream<U, E> {
             Stream::empty()
         }
     }

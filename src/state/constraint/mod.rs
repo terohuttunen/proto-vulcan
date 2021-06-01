@@ -41,12 +41,12 @@ impl<U: User> dyn Constraint<U> {
 
     #[inline]
     pub fn downcast_ref<T: Any + Constraint<U>>(&self) -> Option<&T> {
-        Any::downcast_ref::<T>(self.as_any())
+        self.as_any().downcast_ref::<T>()
     }
 
     #[inline]
     pub fn downcast_mut<T: Constraint<U>>(&mut self) -> Option<&mut T> {
-        Any::downcast_mut::<T>(self.as_any_mut())
+        self.as_any_mut().downcast_mut::<T>()
     }
 }
 

@@ -25,7 +25,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
         let u = self.u.clone();
         let v = self.v.clone();
         match DiseqFdConstraint::new(u, v).run(state) {

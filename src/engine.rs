@@ -1,6 +1,6 @@
 use crate::goal::Goal;
 use crate::state::State;
-use crate::stream::{Lazy, LazyStream, Stream, StreamEngine};
+use crate::stream::{Lazy, Stream, StreamEngine};
 use crate::user::User;
 use std::fmt::Debug;
 

@@ -28,7 +28,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
         let xwalk = state.smap_ref().walk(&self.x).clone();
         match state.process_domain(&xwalk, Rc::clone(&self.domain) as Rc<FiniteDomain>) {
             Ok(state) => Stream::unit(Box::new(state)),

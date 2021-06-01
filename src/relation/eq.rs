@@ -22,7 +22,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
         match state.unify(&self.u, &self.v) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
