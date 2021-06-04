@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn test_ltefd_1() {
         let query = proto_vulcan_query!(|q| {
-            infdrange(q, #&(0..=10)),
+            infdrange(q, &(0..=10)),
             ltefd(q, 5),
         });
         let mut iter = query.run();
@@ -157,7 +157,7 @@ mod tests {
     fn test_ltefd_2() {
         let query = proto_vulcan_query!(|q| {
             |x| {
-                infdrange([x, q], #&(0..=10)),
+                infdrange([x, q], &(0..=10)),
                 ltefd(x, 5),
                 q == x,
             }
@@ -177,7 +177,7 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x| {
                 ltefd(x, 5),
-                infdrange([x, q], #&(0..=10)),
+                infdrange([x, q], &(0..=10)),
                 q == x,
             }
         });
@@ -196,8 +196,8 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y| {
                 q == [x, y],
-                infd(x, #&[1, 2, 3]),
-                infd(y, #&[0, 1, 2, 3, 4]),
+                infd(x, &[1, 2, 3]),
+                infd(y, &[0, 1, 2, 3, 4]),
                 ltefd(x, y),
             }
         });

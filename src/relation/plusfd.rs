@@ -174,7 +174,7 @@ mod tests {
     fn test_plusfd_1() {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
-                infdrange([x, y, z, q], #&(0..=9)),
+                infdrange([x, y, z, q], &(0..=9)),
                 diseqfd(x, y),
                 diseqfd(y, z),
                 diseqfd(x, z),
@@ -193,7 +193,7 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
                 q == [x, y, z],
-                infdrange([x, y, z], #&(0..=3)),
+                infdrange([x, y, z], &(0..=3)),
                 plusfd(x, y, z),
             }
         });

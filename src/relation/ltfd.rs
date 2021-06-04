@@ -26,8 +26,8 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y| {
                 q == [x, y],
-                infd(x, #&[1, 2, 3]),
-                infd(y, #&[0, 1, 2, 3, 4]),
+                infd(x, &[1, 2, 3]),
+                infd(y, &[0, 1, 2, 3, 4]),
                 ltfd(x, y),
             }
         });
@@ -53,8 +53,8 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y| {
                 q == [x, y],
-                infd(x, #&[1, 2, 3]),
-                infd(y, #&[0, 1, 2, 3, 4]),
+                infd(x, &[1, 2, 3]),
+                infd(y, &[0, 1, 2, 3, 4]),
                 ltfd(x, y),
                 diseqfd(x, 1),
                 y == 3,

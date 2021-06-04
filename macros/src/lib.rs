@@ -489,6 +489,9 @@ impl Parse for Argument {
             let _: Token![#] = input.parse()?;
             let expr: syn::Expr = input.parse()?;
             Ok(Argument::Quoted(expr))
+        } else if input.peek(Token![&]) {
+            let expr: syn::Expr = input.parse()?;
+            Ok(Argument::Quoted(expr))
         } else {
             if (input.peek(syn::token::Colon2) && input.peek2(Ident))
                 || (input.peek(Ident) && (input.peek2(syn::token::Colon2) || input.peek2(Paren))

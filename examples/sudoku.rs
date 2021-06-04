@@ -51,7 +51,7 @@ fn main() {
     let query = proto_vulcan_query!(|q| {
         q == board,
         for x in &board {
-            infdrange(x, #&(1..=BOARD_SIZE as isize))
+            infdrange(x, &(1..=BOARD_SIZE as isize))
         },
         for row in &rows {
             distinctfd(row)

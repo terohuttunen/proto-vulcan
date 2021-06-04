@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn test_distinctfd_3() {
         let query = proto_vulcan_query!(|q| {
-            infdrange(q, #&(0..=2)),
+            infdrange(q, &(0..=2)),
             distinctfd([q])
         });
         let mut iter = query.run();
@@ -237,7 +237,7 @@ mod tests {
     #[test]
     fn test_distinctfd_4() {
         let query = proto_vulcan_query!(|q| {
-            infdrange(q, #&(0..=2)),
+            infdrange(q, &(0..=2)),
             distinctfd([q, q])
         });
         let mut iter = query.run();
@@ -248,7 +248,7 @@ mod tests {
     fn test_distinctfd_5() {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
-                infdrange([x, y, z], #&(0..=2)),
+                infdrange([x, y, z], &(0..=2)),
                 distinctfd([x, y, z]),
                 q == [x, y, z],
             }
@@ -267,7 +267,7 @@ mod tests {
     fn test_distinctfd_6() {
         let query = proto_vulcan_query!(|q| {
             |a, b, c, x| {
-                infdrange([a, b, c], #&(1..=3)),
+                infdrange([a, b, c], &(1..=3)),
                 distinctfd([a, b, c]),
                 diseqfd(c, x),
                 ltefd(b, 2),
@@ -285,7 +285,7 @@ mod tests {
     fn test_distinctfd_7() {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
-                infd([x, y, z], #&[1, 2]),
+                infd([x, y, z], &[1, 2]),
                 distinctfd([x, y, z]),
             }
         });

@@ -46,8 +46,8 @@ where
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
 ///         |x, y| {
-///             infd(x, #&[1, 2]),
-///             infd(y, #&[2, 3]),
+///             infd(x, &[1, 2]),
+///             infd(y, &[2, 3]),
 ///             diseqfd(x, y),
 ///             q == [x, y],
 ///         }
@@ -170,9 +170,9 @@ mod tests {
     fn test_diseqfd_1() {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
-                infd(x, #&[1, 2]),
-                infd(y, #&[2, 3]),
-                infd([z, q], #&[2, 4]),
+                infd(x, &[1, 2]),
+                infd(y, &[2, 3]),
+                infd([z, q], &[2, 4]),
                 x == y,
                 diseqfd(x, z),
                 q == z,
@@ -188,11 +188,11 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
                 x == y,
-                infd(y, #&[2, 3]),
+                infd(y, &[2, 3]),
                 diseqfd(x, z),
-                infd([z, q], #&[2, 4]),
+                infd([z, q], &[2, 4]),
                 q == z,
-                infd(x, #&[1, 2]),
+                infd(x, &[1, 2]),
             }
         });
         let mut iter = query.run();
@@ -203,8 +203,8 @@ mod tests {
     #[test]
     fn test_diseqfd_3() {
         let query = proto_vulcan_query!(|x, y| {
-            infd(x, #&[1, 2]),
-            infd(y, #&[2, 3]),
+            infd(x, &[1, 2]),
+            infd(y, &[2, 3]),
             x == y,
         });
         let mut iter = query.run();
@@ -218,7 +218,7 @@ mod tests {
     fn test_diseqfd_4() {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
-                infd([x, y, z], #&[1, 2]),
+                infd([x, y, z], &[1, 2]),
                 diseqfd(x, y),
                 diseqfd(x, z),
                 diseqfd(y, z),

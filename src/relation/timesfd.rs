@@ -178,7 +178,7 @@ mod tests {
     fn test_timesfd_1() {
         let query = proto_vulcan_query!(|q| {
             |x, y| {
-                infdrange([x, y], #&(0..=6)),
+                infdrange([x, y], &(0..=6)),
                 timesfd(x, y, 6),
                 q == [x, y],
             }
