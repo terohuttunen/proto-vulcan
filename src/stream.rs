@@ -2,26 +2,13 @@ use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::state::State;
 use crate::user::User;
-use std::fmt;
 
+#[derive(Debug)]
 pub enum Lazy<U: User, E: Engine<U>> {
     Bind(LazyStream<U, E>, Goal<U, E>),
     MPlus(LazyStream<U, E>, LazyStream<U, E>),
     Pause(Box<State<U>>, Goal<U, E>),
     Delay(Stream<U, E>),
-}
-
-impl<U: User, E: Engine<U>> fmt::Debug for Lazy<U, E> {
-    fn fmt(&self, fm: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Lazy::Pause(state, goal) => fm.debug_tuple("Pause").field(state).field(goal).finish(),
-            Lazy::MPlus(lazy, lazy_hat) => {
-                fm.debug_tuple("MPlus").field(lazy).field(lazy_hat).finish()
-            }
-            Lazy::Bind(lazy, goal) => fm.debug_tuple("Bind").field(lazy).field(goal).finish(),
-            Lazy::Delay(stream) => fm.debug_tuple("Stream").field(stream).finish(),
-        }
-    }
 }
 
 #[derive(Debug)]
