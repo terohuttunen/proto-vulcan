@@ -48,27 +48,27 @@ pub trait User: Debug + Clone + Default + 'static {
 }
 
 #[derive(Debug, Clone)]
-pub struct EmptyUser {}
+pub struct DefaultUser {}
 
-impl EmptyUser {
-    pub fn new() -> EmptyUser {
-        EmptyUser {}
+impl DefaultUser {
+    pub fn new() -> DefaultUser {
+        DefaultUser {}
     }
 }
 
-impl fmt::Display for EmptyUser {
+impl fmt::Display for DefaultUser {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "")
     }
 }
 
-impl Default for EmptyUser {
-    fn default() -> EmptyUser {
-        EmptyUser {}
+impl Default for DefaultUser {
+    fn default() -> DefaultUser {
+        DefaultUser {}
     }
 }
 
-impl User for EmptyUser {
+impl User for DefaultUser {
     type UserTerm = ();
     type UserContext = ();
 }

@@ -154,7 +154,7 @@
 //! Proto-vulcan relations are implemented as Rust-functions that have `LTerm`-type
 //! parameters, and `Goal` return value. Because proto-vulcan is parametrized by
 //! generic `User`-type, functions must be made generic with respect to it if we want
-//! to use anything other than the default `EmptyUser`. A simple function example that
+//! to use anything other than the default `DefaultUser`. A simple function example that
 //! implements a relation that succeeds when argument `s` is an empty list is declared as:
 //! ```rust
 //! extern crate proto_vulcan;
@@ -374,7 +374,7 @@ pub mod prelude {
     pub use crate::lterm::LTerm;
     pub use crate::lvalue::LValue;
     pub use crate::state::Constraint;
-    pub use crate::user::{EmptyUser, User};
+    pub use crate::user::{DefaultUser, User};
 
     // conde is the only non-built-in operator exported by default.
     pub use crate::operator::conde::conde;

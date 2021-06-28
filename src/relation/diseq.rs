@@ -185,8 +185,8 @@ mod tests {
         smap.extend(x.clone(), five.clone());
         let c1 = DisequalityConstraint::new(smap);
         match (
-            c0.downcast_ref::<DisequalityConstraint<EmptyUser, DefaultEngine<EmptyUser>>>(),
-            c1.downcast_ref::<DisequalityConstraint<EmptyUser, DefaultEngine<EmptyUser>>>(),
+            c0.downcast_ref::<DisequalityConstraint<DefaultUser, DefaultEngine<DefaultUser>>>(),
+            c1.downcast_ref::<DisequalityConstraint<DefaultUser, DefaultEngine<DefaultUser>>>(),
         ) {
             (Some(t0), Some(t1)) => {
                 assert!(t1.subsumes(&*t0))

@@ -3,12 +3,12 @@ use crate::operator::all::All;
 use crate::operator::any::Any;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::{EmptyUser, User};
+use crate::user::{DefaultUser, User};
 use std::fmt;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub enum Goal<U = EmptyUser, E = DefaultEngine<U>>
+pub enum Goal<U = DefaultUser, E = DefaultEngine<U>>
 where
     U: User,
     E: Engine<U>,
@@ -101,18 +101,18 @@ mod test {
     use crate::prelude::*;
     use crate::state::State;
     use crate::stream::Stream;
-    use crate::user::EmptyUser;
+    use crate::user::DefaultUser;
 
     #[test]
     fn test_goal_succeed() {
-        let g = Goal::<EmptyUser>::succeed();
+        let g = Goal::<DefaultUser>::succeed();
         assert!(g.is_succeed());
         assert!(!g.is_fail());
     }
 
     #[test]
     fn test_goal_fail() {
-        let g = Goal::<EmptyUser>::fail();
+        let g = Goal::<DefaultUser>::fail();
         assert!(g.is_fail());
         assert!(!g.is_succeed());
     }
@@ -128,7 +128,7 @@ mod test {
 
     #[test]
     fn test_goal_inner() {
-        let g = Goal::<EmptyUser>::new(TestGoal {});
+        let g = Goal::<DefaultUser>::new(TestGoal {});
         assert!(!g.is_succeed());
         assert!(!g.is_fail());
     }

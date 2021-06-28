@@ -226,19 +226,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::user::EmptyUser;
+    use crate::user::DefaultUser;
     use crate::engine::DefaultEngine;
 
     #[test]
     fn test_smap_new() {
-        let smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         // A newly created SMap is empty
         assert!(smap.is_empty());
     }
 
     #[test]
     fn test_smap_extend() {
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v = lterm!(_);
         let t = lterm!(1234);
 
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn test_smap_occurs_check_1() {
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn test_smap_occurs_check_2() {
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn test_smap_walk_1() {
         // 1. Variable not found in map => input returned back as it is impossible to walk
-        let smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v = lterm!(_);
         let w = smap.walk(&v);
         assert!(LTerm::ptr_eq(&v, &w));
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn test_smap_walk_2() {
         // 2. Variable found => walked until no more variables: ends in last variable
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn test_smap_walk_3() {
         // 2. Variable found => walked until no more variables: ends in last value
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -337,7 +337,7 @@ mod tests {
     fn test_smap_walk_4() {
         // 2. Variable found => walked until no more variables: ends in last list and does not
         //    recurse into the list.
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -357,7 +357,7 @@ mod tests {
     #[test]
     fn test_smap_walk_star_1() {
         // 1. Variable not found in map => input returned back as it is impossible to walk
-        let smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v = lterm!(_);
         let w = smap.walk_star(&v);
         assert!(LTerm::ptr_eq(&v, &w));
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn test_smap_walk_star_2() {
         // 2. Variable found => walked until no more variables: ends in last variable
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn test_smap_walk_star_3() {
         // 2. Variable found => walked until no more variables: ends in last value
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -399,7 +399,7 @@ mod tests {
     fn test_smap_walk_star_4() {
         // 2. Variable found => walked until no more variables: ends in last list and does
         //    recurse into the list.
-        let mut smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let mut smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v2 = lterm!(_);
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_smap_reify() {
-        let smap = SMap::<EmptyUser, DefaultEngine<EmptyUser>>::new();
+        let smap = SMap::<DefaultUser, DefaultEngine<DefaultUser>>::new();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
         let v = LTerm::cons(v0.clone(), LTerm::singleton(v1.clone()));

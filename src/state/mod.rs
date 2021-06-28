@@ -1,7 +1,7 @@
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::relation::diseq::DisequalityConstraint;
-use crate::user::{User, EmptyUser};
+use crate::user::{User, DefaultUser};
 use crate::engine::{Engine, DefaultEngine};
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -40,7 +40,7 @@ pub type SResult<U, E> = Result<State<U, E>, ()>;
 ///    4. User data
 #[derive(Derivative, Debug)]
 #[derivative(Clone(bound="U: User"))]
-pub struct State<U = EmptyUser, E = DefaultEngine<EmptyUser>>
+pub struct State<U = DefaultUser, E = DefaultEngine<DefaultUser>>
 where
     U: User,
     E: Engine<U>,

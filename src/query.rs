@@ -4,12 +4,12 @@ use crate::lresult::LResult;
 use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::{EmptyUser, User};
+use crate::user::{DefaultUser, User};
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-pub trait QueryResult<U = EmptyUser, E = DefaultEngine<U>>
+pub trait QueryResult<U = DefaultUser, E = DefaultEngine<U>>
 where
     U: User,
     E: Engine<U>,
@@ -17,7 +17,7 @@ where
     fn from_vec(v: Vec<LResult<U, E>>) -> Self;
 }
 
-pub struct ResultIterator<R, U = EmptyUser, E = DefaultEngine<U>>
+pub struct ResultIterator<R, U = DefaultUser, E = DefaultEngine<U>>
 where
     R: QueryResult<U, E>,
     U: User,
@@ -94,7 +94,7 @@ where
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct Query<R, U = EmptyUser, E = DefaultEngine<U>>
+pub struct Query<R, U = DefaultUser, E = DefaultEngine<U>>
 where
     R: QueryResult<U, E>,
     U: User,
@@ -105,13 +105,13 @@ where
     _phantom: std::marker::PhantomData<R>,
 }
 
-impl<R, E> Query<R, EmptyUser, E>
+impl<R, E> Query<R, DefaultUser, E>
 where
-    R: QueryResult<EmptyUser, E>,
-    E: Engine<EmptyUser>,
+    R: QueryResult<DefaultUser, E>,
+    E: Engine<DefaultUser>,
 {
-    pub fn run(&self) -> ResultIterator<R, EmptyUser, E> {
-        let user_state = EmptyUser::new();
+    pub fn run(&self) -> ResultIterator<R, DefaultUser, E> {
+        let user_state = DefaultUser::new();
         let user_globals = ();
         self.run_with_user(user_state, user_globals)
     }

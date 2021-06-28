@@ -1,5 +1,5 @@
 use crate::compound::CompoundObject;
-use crate::user::{EmptyUser, User};
+use crate::user::{DefaultUser, User};
 use crate::engine::{Engine, DefaultEngine};
 use std::borrow::Borrow;
 use std::fmt;
@@ -64,7 +64,7 @@ where
 
 #[derive(Derivative)]
 #[derivative(Clone(bound="U: User"))]
-pub struct LTerm<U = EmptyUser, E = DefaultEngine<U>>
+pub struct LTerm<U = DefaultUser, E = DefaultEngine<U>>
 where
     U: User,
     E: Engine<U>,
@@ -1029,7 +1029,7 @@ mod test {
 
     #[test]
     fn test_lterm_var_1() {
-        let mut u = LTerm::<EmptyUser>::var("x");
+        let mut u = LTerm::<DefaultUser>::var("x");
         assert!(u.is_var());
         assert!(!u.is_val());
         assert!(!u.is_bool());
@@ -1047,12 +1047,12 @@ mod test {
     #[test]
     #[should_panic]
     fn test_lterm_var_2() {
-        let _ = LTerm::<EmptyUser>::var("_");
+        let _ = LTerm::<DefaultUser>::var("_");
     }
 
     #[test]
     fn test_lterm_val_1() {
-        let mut u: LTerm<EmptyUser, DefaultEngine<EmptyUser>> = lterm!(1);
+        let mut u: LTerm<DefaultUser, DefaultEngine<DefaultUser>> = lterm!(1);
         assert!(u.is_val());
         assert!(!u.is_var());
         assert!(!u.is_bool());
@@ -1069,7 +1069,7 @@ mod test {
 
     #[test]
     fn test_lterm_val_2() {
-        let mut u: LTerm<EmptyUser> = lterm!(true);
+        let mut u: LTerm<DefaultUser> = lterm!(true);
         assert!(u.is_val());
         assert!(!u.is_var());
         assert!(u.is_bool());
@@ -1086,14 +1086,14 @@ mod test {
 
     #[test]
     fn test_lterm_iter_1() {
-        let u: LTerm<EmptyUser> = lterm!([]);
+        let u: LTerm<DefaultUser> = lterm!([]);
         let mut iter = u.iter();
         assert!(iter.next().is_none());
     }
 
     #[test]
     fn test_lterm_iter_2() {
-        let u: LTerm<EmptyUser> = lterm!([1]);
+        let u: LTerm<DefaultUser> = lterm!([1]);
         let mut iter = u.iter();
         assert_eq!(iter.next().unwrap(), &1);
         assert!(iter.next().is_none());
@@ -1101,7 +1101,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_3() {
-        let u: LTerm<EmptyUser> = lterm!([1, 2, 3]);
+        let u: LTerm<DefaultUser> = lterm!([1, 2, 3]);
         let mut iter = u.iter();
         assert_eq!(iter.next().unwrap(), &1);
         assert_eq!(iter.next().unwrap(), &2);
@@ -1111,7 +1111,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_4() {
-        let u: LTerm<EmptyUser> = lterm!([1, 2 | 3]);
+        let u: LTerm<DefaultUser> = lterm!([1, 2 | 3]);
         let mut iter = u.iter();
         assert_eq!(iter.next().unwrap(), &1);
         assert_eq!(iter.next().unwrap(), &2);
@@ -1121,7 +1121,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_5() {
-        let u: LTerm<EmptyUser> = lterm!([1, 2, 3]);
+        let u: LTerm<DefaultUser> = lterm!([1, 2, 3]);
         let mut iter = IntoIterator::into_iter(&u);
         assert_eq!(iter.next().unwrap(), &1);
         assert_eq!(iter.next().unwrap(), &2);
@@ -1131,7 +1131,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_mut_1() {
-        let mut u: LTerm<EmptyUser> = lterm!([1, 2, 3]);
+        let mut u: LTerm<DefaultUser> = lterm!([1, 2, 3]);
         let iter = u.iter_mut();
         for x in iter {
             *x = lterm!(4);
@@ -1145,7 +1145,7 @@ mod test {
 
     #[test]
     fn test_lterm_iter_mut_2() {
-        let mut u: LTerm<EmptyUser> = lterm!([1, 2, 3]);
+        let mut u: LTerm<DefaultUser> = lterm!([1, 2, 3]);
         for term in &mut u {
             *term = lterm!(5);
         }
@@ -1158,15 +1158,15 @@ mod test {
 
     #[test]
     fn test_lterm_from_iter_1() {
-        let v: Vec<LTerm<EmptyUser>> = vec![lterm!(1), lterm!(2), lterm!(3)];
-        let u: LTerm<EmptyUser> = LTerm::from_iter(v);
+        let v: Vec<LTerm<DefaultUser>> = vec![lterm!(1), lterm!(2), lterm!(3)];
+        let u: LTerm<DefaultUser> = LTerm::from_iter(v);
         assert!(u == lterm!([1, 2, 3]));
     }
 
     #[test]
     fn test_lterm_extend_1() {
         let v = vec![lterm!(1), lterm!(2), lterm!(3)];
-        let mut u: LTerm<EmptyUser> = lterm!([]);
+        let mut u: LTerm<DefaultUser> = lterm!([]);
         u.extend(v);
         assert!(u == lterm!([1, 2, 3]));
     }
@@ -1174,7 +1174,7 @@ mod test {
     #[test]
     fn test_lterm_extend_2() {
         let v = vec![lterm!(1), lterm!(2), lterm!(3)];
-        let mut u: LTerm<EmptyUser> = lterm!([4, 5, 6]);
+        let mut u: LTerm<DefaultUser> = lterm!([4, 5, 6]);
         u.extend(v);
         assert!(u == lterm!([4, 5, 6, 1, 2, 3]));
     }
@@ -1182,19 +1182,19 @@ mod test {
     #[test]
     fn test_lterm_eq_1() {
         // LTerm vs. LTerm
-        assert_eq!(lterm!(1) as LTerm<EmptyUser>, lterm!(1));
-        assert_eq!(lterm!(true) as LTerm<EmptyUser>, lterm!(true));
-        assert_eq!(lterm!("foo") as LTerm<EmptyUser>, lterm!("foo"));
-        assert_eq!(lterm!('a') as LTerm<EmptyUser>, lterm!('a'));
-        assert_eq!(lterm!([1, 2, 3]) as LTerm<EmptyUser>, lterm!([1, 2, 3]));
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!(2));
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!(true));
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!('a'));
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!([]));
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!([1]));
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!("true"));
-        let u: LTerm<EmptyUser> = LTerm::var("x");
-        let v: LTerm<EmptyUser> = LTerm::var("x");
+        assert_eq!(lterm!(1) as LTerm<DefaultUser>, lterm!(1));
+        assert_eq!(lterm!(true) as LTerm<DefaultUser>, lterm!(true));
+        assert_eq!(lterm!("foo") as LTerm<DefaultUser>, lterm!("foo"));
+        assert_eq!(lterm!('a') as LTerm<DefaultUser>, lterm!('a'));
+        assert_eq!(lterm!([1, 2, 3]) as LTerm<DefaultUser>, lterm!([1, 2, 3]));
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, lterm!(2));
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, lterm!(true));
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, lterm!('a'));
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, lterm!([]));
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, lterm!([1]));
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, lterm!("true"));
+        let u: LTerm<DefaultUser> = LTerm::var("x");
+        let v: LTerm<DefaultUser> = LTerm::var("x");
         assert_eq!(u, u);
         assert_ne!(u, v);
     }
@@ -1202,72 +1202,72 @@ mod test {
     #[test]
     fn test_lterm_eq_2() {
         // LTerm vs. Rust constant
-        assert_eq!(lterm!(1) as LTerm<EmptyUser>, 1);
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, 2);
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, true);
-        assert_eq!(1, lterm!(1) as LTerm<EmptyUser>);
-        assert_ne!(2, lterm!(1) as LTerm<EmptyUser>);
-        assert_ne!(true, lterm!(1) as LTerm<EmptyUser>);
-        assert_eq!(lterm!("proto-vulcan") as LTerm<EmptyUser>, "proto-vulcan");
-        assert_ne!(lterm!(["proto-vulcan"]) as LTerm<EmptyUser>, "proto-vulcan");
-        assert_eq!("proto-vulcan", lterm!("proto-vulcan") as LTerm<EmptyUser>);
-        assert_ne!("proto-vulcan", lterm!(["proto-vulcan"]) as LTerm<EmptyUser>);
+        assert_eq!(lterm!(1) as LTerm<DefaultUser>, 1);
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, 2);
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, true);
+        assert_eq!(1, lterm!(1) as LTerm<DefaultUser>);
+        assert_ne!(2, lterm!(1) as LTerm<DefaultUser>);
+        assert_ne!(true, lterm!(1) as LTerm<DefaultUser>);
+        assert_eq!(lterm!("proto-vulcan") as LTerm<DefaultUser>, "proto-vulcan");
+        assert_ne!(lterm!(["proto-vulcan"]) as LTerm<DefaultUser>, "proto-vulcan");
+        assert_eq!("proto-vulcan", lterm!("proto-vulcan") as LTerm<DefaultUser>);
+        assert_ne!("proto-vulcan", lterm!(["proto-vulcan"]) as LTerm<DefaultUser>);
         assert_eq!(
-            lterm!("proto-vulcan") as LTerm<EmptyUser>,
+            lterm!("proto-vulcan") as LTerm<DefaultUser>,
             "proto-vulcan"[0..]
         );
         assert_ne!(
-            lterm!(["proto-vulcan"]) as LTerm<EmptyUser>,
+            lterm!(["proto-vulcan"]) as LTerm<DefaultUser>,
             "proto-vulcan"[0..]
         );
         assert_eq!(
             "proto-vulcan"[0..],
-            lterm!("proto-vulcan") as LTerm<EmptyUser>
+            lterm!("proto-vulcan") as LTerm<DefaultUser>
         );
         assert_ne!(
             "proto-vulcan"[0..],
-            lterm!(["proto-vulcan"]) as LTerm<EmptyUser>
+            lterm!(["proto-vulcan"]) as LTerm<DefaultUser>
         );
         assert_eq!(
-            lterm!("proto-vulcan") as LTerm<EmptyUser>,
+            lterm!("proto-vulcan") as LTerm<DefaultUser>,
             String::from("proto-vulcan")
         );
         assert_ne!(
-            lterm!(["proto-vulcan"]) as LTerm<EmptyUser>,
+            lterm!(["proto-vulcan"]) as LTerm<DefaultUser>,
             String::from("proto-vulcan")
         );
         assert_eq!(
             String::from("proto-vulcan"),
-            lterm!("proto-vulcan") as LTerm<EmptyUser>
+            lterm!("proto-vulcan") as LTerm<DefaultUser>
         );
         assert_ne!(
             String::from("proto-vulcan"),
-            lterm!(["proto-vulcan"]) as LTerm<EmptyUser>
+            lterm!(["proto-vulcan"]) as LTerm<DefaultUser>
         );
-        assert_eq!(lterm!('a') as LTerm<EmptyUser>, 'a');
-        assert_ne!('b', lterm!('a') as LTerm<EmptyUser>);
-        assert_ne!(lterm!(['a']) as LTerm<EmptyUser>, 'a');
-        assert_ne!('a', lterm!(['a']) as LTerm<EmptyUser>);
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, lterm!([1]));
-        assert_ne!(lterm!([1]), lterm!(1) as LTerm<EmptyUser>);
+        assert_eq!(lterm!('a') as LTerm<DefaultUser>, 'a');
+        assert_ne!('b', lterm!('a') as LTerm<DefaultUser>);
+        assert_ne!(lterm!(['a']) as LTerm<DefaultUser>, 'a');
+        assert_ne!('a', lterm!(['a']) as LTerm<DefaultUser>);
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, lterm!([1]));
+        assert_ne!(lterm!([1]), lterm!(1) as LTerm<DefaultUser>);
     }
 
     #[test]
     fn test_lterm_eq_3() {
         // LTerm vs. LValue
-        assert_eq!(lterm!(1) as LTerm<EmptyUser>, LValue::from(1));
-        assert_ne!(lterm!(1) as LTerm<EmptyUser>, LValue::from(2));
-        assert_eq!(LValue::from(1), lterm!(1) as LTerm<EmptyUser>);
-        assert_ne!(LValue::from(2), lterm!(1) as LTerm<EmptyUser>);
-        assert_ne!(LValue::from(1), lterm!([1]) as LTerm<EmptyUser>);
-        assert_ne!(lterm!([1]) as LTerm<EmptyUser>, LValue::from(1));
+        assert_eq!(lterm!(1) as LTerm<DefaultUser>, LValue::from(1));
+        assert_ne!(lterm!(1) as LTerm<DefaultUser>, LValue::from(2));
+        assert_eq!(LValue::from(1), lterm!(1) as LTerm<DefaultUser>);
+        assert_ne!(LValue::from(2), lterm!(1) as LTerm<DefaultUser>);
+        assert_ne!(LValue::from(1), lterm!([1]) as LTerm<DefaultUser>);
+        assert_ne!(lterm!([1]) as LTerm<DefaultUser>, LValue::from(1));
     }
 
     #[test]
     #[should_panic]
     fn test_lterm_projection_1() {
         // Comparison with projection panics
-        let u: LTerm<EmptyUser> = LTerm::var("x");
+        let u: LTerm<DefaultUser> = LTerm::var("x");
         let v = LTerm::projection(u.clone());
         assert_eq!(u, v);
     }
@@ -1276,7 +1276,7 @@ mod test {
     #[should_panic]
     fn test_lterm_projection_2() {
         // Comparison with projection panics
-        let u: LTerm<EmptyUser> = LTerm::var("x");
+        let u: LTerm<DefaultUser> = LTerm::var("x");
         let v = LTerm::projection(u.clone());
         assert_eq!(v, u);
     }
@@ -1286,14 +1286,14 @@ mod test {
     fn test_lterm_projection_3() {
         // Hash of projection panics
         let mut t = HashMap::new();
-        let u: LTerm<EmptyUser> = LTerm::var("x");
+        let u: LTerm<DefaultUser> = LTerm::var("x");
         let v = LTerm::projection(u.clone());
-        t.insert(v, lterm!(1) as LTerm<EmptyUser>);
+        t.insert(v, lterm!(1) as LTerm<DefaultUser>);
     }
 
     #[test]
     fn test_lterm_index_1() {
-        let u: LTerm<EmptyUser> = lterm!([1, [2], false]);
+        let u: LTerm<DefaultUser> = lterm!([1, [2], false]);
         assert_eq!(u[0], 1);
         assert_eq!(u[1], lterm!([2]));
         assert_eq!(u[2], false);
@@ -1301,7 +1301,7 @@ mod test {
 
     #[test]
     fn test_lterm_index_mut_1() {
-        let mut u: LTerm<EmptyUser> = lterm!([0, 0, 0]);
+        let mut u: LTerm<DefaultUser> = lterm!([0, 0, 0]);
         u[0] = lterm!(1);
         u[1] = lterm!([2]);
         u[2] = lterm!(false);
@@ -1312,23 +1312,23 @@ mod test {
 
     #[test]
     fn test_lterm_display() {
-        assert_eq!(format!("{}", lterm!(1234) as LTerm<EmptyUser>), "1234");
-        assert_eq!(format!("{}", lterm!(-1234) as LTerm<EmptyUser>), "-1234");
-        assert_eq!(format!("{}", lterm!(true) as LTerm<EmptyUser>), "true");
-        assert_eq!(format!("{}", lterm!(false) as LTerm<EmptyUser>), "false");
-        assert_eq!(format!("{}", LTerm::var("x") as LTerm<EmptyUser>), "x");
-        assert_eq!(format!("{}", lterm!([]) as LTerm<EmptyUser>), "[]");
+        assert_eq!(format!("{}", lterm!(1234) as LTerm<DefaultUser>), "1234");
+        assert_eq!(format!("{}", lterm!(-1234) as LTerm<DefaultUser>), "-1234");
+        assert_eq!(format!("{}", lterm!(true) as LTerm<DefaultUser>), "true");
+        assert_eq!(format!("{}", lterm!(false) as LTerm<DefaultUser>), "false");
+        assert_eq!(format!("{}", LTerm::var("x") as LTerm<DefaultUser>), "x");
+        assert_eq!(format!("{}", lterm!([]) as LTerm<DefaultUser>), "[]");
         assert_eq!(
-            format!("{}", lterm!([1, [2], true, 'a']) as LTerm<EmptyUser>),
+            format!("{}", lterm!([1, [2], true, 'a']) as LTerm<DefaultUser>),
             "[1, [2], true, 'a']"
         );
         assert_eq!(
-            format!("{}", lterm!([1, 2 | 3]) as LTerm<EmptyUser>),
+            format!("{}", lterm!([1, 2 | 3]) as LTerm<DefaultUser>),
             "[1, 2 | 3]"
         );
         let u = LTerm::var("x");
         assert_eq!(
-            format!("{}", LTerm::projection(u) as LTerm<EmptyUser>),
+            format!("{}", LTerm::projection(u) as LTerm<DefaultUser>),
             "Projection(x)"
         );
     }
