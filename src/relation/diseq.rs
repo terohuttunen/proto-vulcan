@@ -7,23 +7,31 @@ use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct Diseq<U: User> {
-    u: LTerm<U>,
-    v: LTerm<U>,
-}
-
-impl<U: User> Diseq<U> {
-    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E> {
-        Goal::new(Diseq { u, v })
-    }
-}
-
-impl<U, E> Solve<U, E> for Diseq<U>
+pub struct Diseq<U, E>
 where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
+    u: LTerm<U, E>,
+    v: LTerm<U, E>,
+}
+
+impl<U, E> Diseq<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
+        Goal::new(Diseq { u, v })
+    }
+}
+
+impl<U, E> Solve<U, E> for Diseq<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
         // Return state where u and v are unified under s, or None if unification is not possible
         match state.disunify(&self.u, &self.v) {
             Ok(state) => Stream::unit(Box::new(state)),
@@ -55,7 +63,7 @@ where
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn diseq<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+pub fn diseq<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -64,11 +72,16 @@ where
 }
 
 // Disequality constraint
-#[derive(Clone, Debug)]
-pub struct DisequalityConstraint<U: User>(SMap<U>);
+#[derive(Derivative, Debug)]
+#[derivative(Clone(bound="U: User"))]
+pub struct DisequalityConstraint<U: User, E: Engine<U>>(SMap<U, E>);
 
-impl<U: User> DisequalityConstraint<U> {
-    pub fn new(smap: SMap<U>) -> Rc<dyn Constraint<U>> {
+impl<U, E> DisequalityConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(smap: SMap<U, E>) -> Rc<dyn Constraint<U, E>> {
         Rc::new(DisequalityConstraint(smap))
     }
 
@@ -76,7 +89,7 @@ impl<U: User> DisequalityConstraint<U> {
     ///
     /// A constraint is subsumed by another constraint if unifying the constraint in the
     /// substitution of the another constraint does not extend the constraint.
-    pub fn subsumes(&self, other: &dyn Constraint<U>) -> bool {
+    pub fn subsumes(&self, other: &dyn Constraint<U, E>) -> bool {
         match other.downcast_ref::<Self>() {
             Some(other) => {
                 let mut extension = SMap::new();
@@ -94,11 +107,11 @@ impl<U: User> DisequalityConstraint<U> {
         }
     }
 
-    pub fn smap_ref(&self) -> &SMap<U> {
+    pub fn smap_ref(&self) -> &SMap<U, E> {
         &self.0
     }
 
-    pub fn walk_star(&self, smap: &SMap<U>) -> SMap<U> {
+    pub fn walk_star(&self, smap: &SMap<U, E>) -> SMap<U, E> {
         let mut n = SMap::new();
         for (k, v) in self.smap_ref().iter() {
             let kwalk = smap.walk_star(k);
@@ -110,8 +123,12 @@ impl<U: User> DisequalityConstraint<U> {
     }
 }
 
-impl<U: User> Constraint<U> for DisequalityConstraint<U> {
-    fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
+impl<U, E> Constraint<U, E> for DisequalityConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
         let mut extension = SMap::new();
         let mut test_state = state.clone();
         for (u, v) in self.0.iter() {
@@ -129,12 +146,16 @@ impl<U: User> Constraint<U> for DisequalityConstraint<U> {
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U>> {
+    fn operands(&self) -> Vec<LTerm<U, E>> {
         self.0.operands()
     }
 }
 
-impl<U: User> std::fmt::Display for DisequalityConstraint<U> {
+impl<U, E> std::fmt::Display for DisequalityConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for (u, v) in self.0.iter() {
             write!(f, "{} != {},", u, v)?;
@@ -147,6 +168,7 @@ impl<U: User> std::fmt::Display for DisequalityConstraint<U> {
 mod tests {
     use super::*;
     use crate::prelude::*;
+    use crate::engine::DefaultEngine;
 
     #[test]
     fn test_subsumes_1() {
@@ -163,8 +185,8 @@ mod tests {
         smap.extend(x.clone(), five.clone());
         let c1 = DisequalityConstraint::new(smap);
         match (
-            c0.downcast_ref::<DisequalityConstraint<EmptyUser>>(),
-            c1.downcast_ref::<DisequalityConstraint<EmptyUser>>(),
+            c0.downcast_ref::<DisequalityConstraint<DefaultUser, DefaultEngine<DefaultUser>>>(),
+            c1.downcast_ref::<DisequalityConstraint<DefaultUser, DefaultEngine<DefaultUser>>>(),
         ) {
             (Some(t0), Some(t1)) => {
                 assert!(t1.subsumes(&*t0))

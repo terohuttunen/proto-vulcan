@@ -86,7 +86,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! pub fn membero<U: User>(x: LTerm<U>, l: LTerm<U>) -> Goal<U> {
+//! pub fn membero<U: User, E: Engine<U>>(x: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
 //!     proto_vulcan_closure!(match l {
 //!         [head | _] => head == x,
 //!         [_ | rest] => membero(x, rest),
@@ -154,13 +154,13 @@
 //! Proto-vulcan relations are implemented as Rust-functions that have `LTerm`-type
 //! parameters, and `Goal` return value. Because proto-vulcan is parametrized by
 //! generic `User`-type, functions must be made generic with respect to it if we want
-//! to use anything other than the default `EmptyUser`. A simple function example that
+//! to use anything other than the default `DefaultUser`. A simple function example that
 //! implements a relation that succeeds when argument `s` is an empty list is declared as:
 //! ```rust
 //! extern crate proto_vulcan;
 //! use proto_vulcan::prelude::*;
 //!
-//! pub fn emptyo<U: User>(s: LTerm<U>) -> Goal<U> {
+//! pub fn emptyo<U: User, E: Engine<U>>(s: LTerm<U, E>) -> Goal<U, E> {
 //!     proto_vulcan!([] == s)
 //! }
 //! # fn main() {}
@@ -337,22 +337,27 @@ pub mod query;
 
 use std::borrow::Borrow;
 use user::User;
+use engine::Engine;
 
-pub trait Upcast<U: User, SuperType>
+pub trait Upcast<U, E, SuperType>
 where
-    Self: CompoundObject<U> + Clone,
-    SuperType: CompoundObject<U>,
+    U: User,
+    E: Engine<U>,
+    Self: CompoundObject<U, E> + Clone,
+    SuperType: CompoundObject<U, E>,
 {
     fn to_super<K: Borrow<Self>>(k: &K) -> SuperType;
 
     fn into_super(self) -> SuperType;
 }
 
-pub trait Downcast<U: User>
+pub trait Downcast<U, E>
 where
-    Self: CompoundObject<U>,
+    U: User,
+    E: Engine<U>,
+    Self: CompoundObject<U, E>,
 {
-    type SubType: CompoundObject<U>;
+    type SubType: CompoundObject<U, E>;
 
     fn into_sub(self) -> Self::SubType;
 }
@@ -364,12 +369,12 @@ pub mod prelude {
     };
 
     pub use crate::compound::CompoundTerm;
-    pub use crate::engine::Engine;
+    pub use crate::engine::{Engine, DefaultEngine};
     pub use crate::goal::{Goal, Solve};
     pub use crate::lterm::LTerm;
     pub use crate::lvalue::LValue;
     pub use crate::state::Constraint;
-    pub use crate::user::{EmptyUser, User};
+    pub use crate::user::{DefaultUser, User};
 
     // conde is the only non-built-in operator exported by default.
     pub use crate::operator::conde::conde;

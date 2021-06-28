@@ -46,7 +46,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
         let mut stream = Stream::empty();
 
         // Process first element separately to avoid one extra clone of `state`.

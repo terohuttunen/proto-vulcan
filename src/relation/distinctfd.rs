@@ -9,22 +9,30 @@ use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct DistinctFd<U: User> {
-    u: LTerm<U>,
-}
-
-impl<U: User> DistinctFd<U> {
-    pub fn new<E: Engine<U>>(u: LTerm<U>) -> Goal<U, E> {
-        Goal::new(DistinctFd { u })
-    }
-}
-
-impl<U, E> Solve<U, E> for DistinctFd<U>
+pub struct DistinctFd<U, E>
 where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
+    u: LTerm<U, E>,
+}
+
+impl<U, E> DistinctFd<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>) -> Goal<U, E> {
+        Goal::new(DistinctFd { u })
+    }
+}
+
+impl<U, E> Solve<U, E> for DistinctFd<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
         let u = self.u.clone();
         match DistinctFdConstraint::new(u).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
@@ -33,7 +41,7 @@ where
     }
 }
 
-pub fn distinctfd<U, E>(u: LTerm<U>) -> Goal<U, E>
+pub fn distinctfd<U, E>(u: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -42,19 +50,31 @@ where
 }
 
 #[derive(Debug)]
-pub struct DistinctFdConstraint<U: User> {
-    u: LTerm<U>,
+pub struct DistinctFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    u: LTerm<U, E>,
 }
 
-impl<U: User> DistinctFdConstraint<U> {
-    pub fn new(u: LTerm<U>) -> Rc<dyn Constraint<U>> {
+impl<U, E> DistinctFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>) -> Rc<dyn Constraint<U, E>> {
         assert!(u.is_list());
         Rc::new(DistinctFdConstraint { u })
     }
 }
 
-impl<U: User> Constraint<U> for DistinctFdConstraint<U> {
-    fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
+impl<U, E> Constraint<U, E> for DistinctFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
         let smap = state.get_smap();
 
         let v = smap.walk(&self.u);
@@ -66,7 +86,7 @@ impl<U: User> Constraint<U> for DistinctFdConstraint<U> {
             }
             LTermInner::Empty | LTermInner::Cons(_, _) => {
                 // Partition the list of terms to unresolved variables in `x` and constants in `n`.
-                let (x, n): (LTerm<U>, LTerm<U>) = v.iter().cloned().partition(|v| v.is_var());
+                let (x, n): (LTerm<U, E>, LTerm<U, E>) = v.iter().cloned().partition(|v| v.is_var());
 
                 // Convert list of LTerm constants to Vec<usize>
                 let mut n = n
@@ -111,34 +131,51 @@ impl<U: User> Constraint<U> for DistinctFdConstraint<U> {
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U>> {
+    fn operands(&self) -> Vec<LTerm<U, E>> {
         vec![self.u.clone()]
     }
 }
 
-impl<U: User> std::fmt::Display for DistinctFdConstraint<U> {
+impl<U, E> std::fmt::Display for DistinctFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct DistinctFd2Constraint<U: User> {
-    u: LTerm<U>,
-    y: LTerm<U>,
+#[derive(Derivative, Debug)]
+#[derivative(Clone(bound="U: User"))]
+pub struct DistinctFd2Constraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    u: LTerm<U, E>,
+    y: LTerm<U, E>,
     n: Vec<isize>,
 }
 
-impl<U: User> DistinctFd2Constraint<U> {
-    pub fn new(u: LTerm<U>, y: LTerm<U>, n: Vec<isize>) -> Rc<dyn Constraint<U>> {
+impl<U, E> DistinctFd2Constraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>, y: LTerm<U, E>, n: Vec<isize>) -> Rc<dyn Constraint<U, E>> {
         assert!(u.is_list());
         assert!(y.is_list());
         Rc::new(DistinctFd2Constraint { u, y, n })
     }
 }
 
-impl<U: User> Constraint<U> for DistinctFd2Constraint<U> {
-    fn run(mut self: Rc<Self>, state: State<U>) -> SResult<U> {
+impl<U, E> Constraint<U, E> for DistinctFd2Constraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn run(mut self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
         let smap = state.get_smap();
 
         let mut x = LTerm::empty_list();
@@ -186,12 +223,16 @@ impl<U: User> Constraint<U> for DistinctFd2Constraint<U> {
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U>> {
+    fn operands(&self) -> Vec<LTerm<U, E>> {
         self.u.iter().cloned().collect()
     }
 }
 
-impl<U: User> std::fmt::Display for DistinctFd2Constraint<U> {
+impl<U, E> std::fmt::Display for DistinctFd2Constraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }

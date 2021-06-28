@@ -9,13 +9,21 @@ use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct DomFd<U: User> {
-    x: LTerm<U>,
+pub struct DomFd<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    x: LTerm<U, E>,
     domain: Rc<FiniteDomain>,
 }
 
-impl<U: User> DomFd<U> {
-    pub fn new<E: Engine<U>>(x: LTerm<U>, domain: FiniteDomain) -> Goal<U, E> {
+impl<U, E> DomFd<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(x: LTerm<U, E>, domain: FiniteDomain) -> Goal<U, E> {
         Goal::new(DomFd {
             x,
             domain: Rc::new(domain),
@@ -23,12 +31,12 @@ impl<U: User> DomFd<U> {
     }
 }
 
-impl<U, E> Solve<U, E> for DomFd<U>
+impl<U, E> Solve<U, E> for DomFd<U, E>
 where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
+    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
         let xwalk = state.smap_ref().walk(&self.x).clone();
         match state.process_domain(&xwalk, Rc::clone(&self.domain) as Rc<FiniteDomain>) {
             Ok(state) => Stream::unit(Box::new(state)),

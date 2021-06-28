@@ -24,13 +24,13 @@ pub struct PatternMatchOperatorParam<'a, U: User, E: Engine<U>> {
 
 // project |x, y, ...| { <body> }
 pub struct ProjectOperatorParam<'a, U: User, E: Engine<U>> {
-    pub var_list: Vec<LTerm<U>>,
+    pub var_list: Vec<LTerm<U, E>>,
     pub body: &'a [&'a [Goal<U, E>]],
 }
 
 // fngoal [move]* |engine, state| { <rust> }
 pub struct FnOperatorParam<U: User, E: Engine<U>> {
-    pub f: Box<dyn Fn(&E, State<U>) -> Stream<U, E>>,
+    pub f: Box<dyn Fn(&E, State<U, E>) -> Stream<U, E>>,
 }
 
 // closure { <body> }
@@ -44,12 +44,12 @@ where
     E: Engine<U>,
     U: User,
     T: Debug + 'static,
-    for<'b> &'b T: IntoIterator<Item = &'b LTerm<U>>,
+    for<'b> &'b T: IntoIterator<Item = &'b LTerm<U, E>>,
 {
     pub coll: T,
     // Goal generator: generates a goal for each cycle of the "loop" given element from the
     // collection.
-    pub g: Box<dyn Fn(LTerm<U>) -> Goal<U, E>>,
+    pub g: Box<dyn Fn(LTerm<U, E>) -> Goal<U, E>>,
 }
 
 #[doc(hidden)]

@@ -4,7 +4,7 @@ use crate::lterm::LTerm;
 use crate::user::User;
 
 /// A relation which guarantees that all elements of `l` are distinct from each other.
-pub fn distincto<U, E>(l: LTerm<U>) -> Goal<U, E>
+pub fn distincto<U, E>(l: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

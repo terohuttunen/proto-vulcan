@@ -16,7 +16,7 @@ use crate::user::User;
 ///     });
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3, 4, 5]));
 /// }
-pub fn appendo<U, E>(l: LTerm<U>, s: LTerm<U>, ls: LTerm<U>) -> Goal<U, E>
+pub fn appendo<U, E>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

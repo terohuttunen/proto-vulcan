@@ -6,23 +6,31 @@ use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Debug)]
-pub struct Eq<U: User> {
-    u: LTerm<U>,
-    v: LTerm<U>,
-}
-
-impl<U: User> Eq<U> {
-    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E> {
-        Goal::new(Eq { u, v })
-    }
-}
-
-impl<U, E> Solve<U, E> for Eq<U>
+pub struct Eq<U, E>
 where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
+    u: LTerm<U, E>,
+    v: LTerm<U, E>,
+}
+
+impl<U, E> Eq<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
+        Goal::new(Eq { u, v })
+    }
+}
+
+impl<U, E> Solve<U, E> for Eq<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
         match state.unify(&self.u, &self.v) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -49,7 +57,7 @@ where
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn eq<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+pub fn eq<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

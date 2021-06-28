@@ -61,7 +61,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
         let stream = self.goal_1.solve(engine, state.clone());
         let lazy = LazyStream::pause(Box::new(state), self.goal_2.clone());
         Stream::mplus(stream, lazy)

@@ -2,15 +2,20 @@ use super::substitution::SMap;
 use crate::compound::CompoundObject;
 use crate::lterm::{LTerm, LTermInner};
 use crate::state::{SResult, State};
+use crate::engine::Engine;
 use crate::user::User;
 
 /// Recursive unification of tree terms
-pub fn unify_rec<U: User>(
-    mut state: State<U>,
-    extension: &mut SMap<U>,
-    u: &LTerm<U>,
-    v: &LTerm<U>,
-) -> SResult<U> {
+pub fn unify_rec<U, E>(
+    mut state: State<U, E>,
+    extension: &mut SMap<U, E>,
+    u: &LTerm<U, E>,
+    v: &LTerm<U, E>,
+) -> SResult<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     let uwalk = state.smap_ref().walk(u).clone();
     let vwalk = state.smap_ref().walk(v).clone();
     match (uwalk.as_ref(), vwalk.as_ref()) {
@@ -63,12 +68,16 @@ pub fn unify_rec<U: User>(
 }
 
 /// Recursive unification of compound terms
-fn unify_rec_compound<U: User>(
-    mut state: State<U>,
-    extension: &mut SMap<U>,
-    ucompound: &dyn CompoundObject<U>,
-    vcompound: &dyn CompoundObject<U>,
-) -> SResult<U> {
+fn unify_rec_compound<U, E>(
+    mut state: State<U, E>,
+    extension: &mut SMap<U, E>,
+    ucompound: &dyn CompoundObject<U, E>,
+    vcompound: &dyn CompoundObject<U, E>,
+) -> SResult<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     if ucompound.type_id() != vcompound.type_id() {
         return Err(());
     }
@@ -97,12 +106,13 @@ fn unify_rec_compound<U: User>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::DefaultEngine;
     use crate::prelude::*;
 
     #[test]
     fn test_unify_1() {
         // 1. var == var
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser, DefaultEngine<DefaultUser>>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -121,7 +131,7 @@ mod tests {
     #[test]
     fn test_unify_2() {
         // 2. var != var
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser, DefaultEngine<DefaultUser>>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -140,7 +150,7 @@ mod tests {
     #[test]
     fn test_unify_3() {
         // 3. var == val
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser, DefaultEngine<DefaultUser>>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -165,7 +175,7 @@ mod tests {
     #[test]
     fn test_unify_4() {
         // 4. var == list
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser, DefaultEngine<DefaultUser>>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -190,7 +200,7 @@ mod tests {
     #[test]
     fn test_unify_5() {
         // 5. val == var
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser, DefaultEngine<DefaultUser>>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -215,7 +225,7 @@ mod tests {
     #[test]
     fn test_unify_6() {
         // 6. list == var
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser, DefaultEngine<DefaultUser>>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -240,7 +250,7 @@ mod tests {
     #[test]
     fn test_unify_7() {
         // 7. val == val
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!(1);
         let v1 = lterm!(_);
@@ -258,7 +268,7 @@ mod tests {
     #[test]
     fn test_unify_8() {
         // 8. val != val
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!(1);
         let v1 = lterm!(_);
@@ -276,7 +286,7 @@ mod tests {
     #[test]
     fn test_unify_9() {
         // 9. list[N] == list[N]
-        let state = State::<EmptyUser>::new(Default::default());
+        let state = State::<DefaultUser>::new(Default::default());
         let v0 = lterm!([1]);
         let v1 = lterm!([1]);
 
@@ -289,7 +299,7 @@ mod tests {
     #[test]
     fn test_unify_10() {
         // 10. list[N] != list[N]
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!([1]);
         let v1 = lterm!(_);
@@ -307,7 +317,7 @@ mod tests {
     #[test]
     fn test_unify_11() {
         // 11. list[N] != list[M] where N != M
-        let mut state = State::<EmptyUser>::new(Default::default());
+        let mut state = State::<DefaultUser>::new(Default::default());
         let smap = state.smap_to_mut();
         let v0 = lterm!([1 | 1]);
         let v1 = lterm!(_);
@@ -325,7 +335,7 @@ mod tests {
     #[test]
     fn test_unify_12() {
         // Occurs check 1
-        let state = State::<EmptyUser>::new(Default::default());
+        let state = State::<DefaultUser>::new(Default::default());
         let u = LTerm::var("u");
         let v = lterm!([1, 2, 3, u]);
 
@@ -337,7 +347,7 @@ mod tests {
     #[test]
     fn test_unify_13() {
         // Occurs check 2
-        let state = State::<EmptyUser>::new(Default::default());
+        let state = State::<DefaultUser>::new(Default::default());
         let u = LTerm::var("u");
         let v = lterm!([1, 2, 3, u]);
 

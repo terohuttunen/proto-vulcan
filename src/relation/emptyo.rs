@@ -19,7 +19,7 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([]));
 /// }
 /// ```
-pub fn emptyo<U, E>(s: LTerm<U>) -> Goal<U, E>
+pub fn emptyo<U, E>(s: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

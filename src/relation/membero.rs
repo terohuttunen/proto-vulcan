@@ -21,7 +21,7 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn membero<U, E>(x: LTerm<U>, l: LTerm<U>) -> Goal<U, E>
+pub fn membero<U, E>(x: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

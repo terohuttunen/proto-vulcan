@@ -8,7 +8,7 @@ use crate::user::User;
 use std::ops::RangeInclusive;
 
 /// Associates the same domain to multiple variables
-pub fn infd<U, E>(u: LTerm<U>, domain: &[isize]) -> Goal<U, E>
+pub fn infd<U, E>(u: LTerm<U, E>, domain: &[isize]) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -24,7 +24,7 @@ where
     }
 }
 
-pub fn infdrange<U, E>(u: LTerm<U>, domain: &RangeInclusive<isize>) -> Goal<U, E>
+pub fn infdrange<U, E>(u: LTerm<U, E>, domain: &RangeInclusive<isize>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
