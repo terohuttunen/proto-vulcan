@@ -86,7 +86,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! pub fn membero<U: User>(x: LTerm<U>, l: LTerm<U>) -> Goal<U> {
+//! pub fn membero<U: User, E: Engine<U>>(x: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
 //!     proto_vulcan_closure!(match l {
 //!         [head | _] => head == x,
 //!         [_ | rest] => membero(x, rest),
@@ -160,7 +160,7 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::prelude::*;
 //!
-//! pub fn emptyo<U: User>(s: LTerm<U>) -> Goal<U> {
+//! pub fn emptyo<U: User, E: Engine<U>>(s: LTerm<U, E>) -> Goal<U, E> {
 //!     proto_vulcan!([] == s)
 //! }
 //! # fn main() {}
@@ -337,22 +337,27 @@ pub mod query;
 
 use std::borrow::Borrow;
 use user::User;
+use engine::Engine;
 
-pub trait Upcast<U: User, SuperType>
+pub trait Upcast<U, E, SuperType>
 where
-    Self: CompoundObject<U> + Clone,
-    SuperType: CompoundObject<U>,
+    U: User,
+    E: Engine<U>,
+    Self: CompoundObject<U, E> + Clone,
+    SuperType: CompoundObject<U, E>,
 {
     fn to_super<K: Borrow<Self>>(k: &K) -> SuperType;
 
     fn into_super(self) -> SuperType;
 }
 
-pub trait Downcast<U: User>
+pub trait Downcast<U, E>
 where
-    Self: CompoundObject<U>,
+    U: User,
+    E: Engine<U>,
+    Self: CompoundObject<U, E>,
 {
-    type SubType: CompoundObject<U>;
+    type SubType: CompoundObject<U, E>;
 
     fn into_sub(self) -> Self::SubType;
 }
@@ -364,7 +369,7 @@ pub mod prelude {
     };
 
     pub use crate::compound::CompoundTerm;
-    pub use crate::engine::Engine;
+    pub use crate::engine::{Engine, DefaultEngine};
     pub use crate::goal::{Goal, Solve};
     pub use crate::lterm::LTerm;
     pub use crate::lvalue::LValue;

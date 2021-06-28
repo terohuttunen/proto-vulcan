@@ -17,7 +17,7 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]));
 /// }
 /// ```
-pub fn rembero<U, E>(x: LTerm<U>, ls: LTerm<U>, out: LTerm<U>) -> Goal<U, E>
+pub fn rembero<U, E>(x: LTerm<U, E>, ls: LTerm<U, E>, out: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

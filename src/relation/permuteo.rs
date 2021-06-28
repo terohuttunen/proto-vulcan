@@ -5,7 +5,7 @@ use crate::relation::rembero;
 use crate::user::User;
 
 /// A relation that will permute xl into yl.
-pub fn permuteo<U, E>(xl: LTerm<U>, yl: LTerm<U>) -> Goal<U, E>
+pub fn permuteo<U, E>(xl: LTerm<U, E>, yl: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

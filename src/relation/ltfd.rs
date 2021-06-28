@@ -6,7 +6,7 @@ use crate::relation::diseqfd::diseqfd;
 use crate::relation::ltefd::ltefd;
 use crate::user::User;
 
-pub fn ltfd<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+pub fn ltfd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

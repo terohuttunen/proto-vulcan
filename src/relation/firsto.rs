@@ -5,7 +5,7 @@ use crate::relation::conso;
 use crate::user::User;
 
 /// A relation such that the `first` is the first element of `list`.
-pub fn firsto<U, E>(list: LTerm<U>, first: LTerm<U>) -> Goal<U, E>
+pub fn firsto<U, E>(list: LTerm<U, E>, first: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

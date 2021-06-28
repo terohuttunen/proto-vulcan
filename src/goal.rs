@@ -45,7 +45,7 @@ where
         Goal::Fail
     }
 
-    pub fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+    pub fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
         match self {
             Goal::Succeed => Stream::unit(Box::new(state)),
             Goal::Fail => Stream::empty(),
@@ -91,7 +91,7 @@ where
     E: Engine<U>,
 {
     /// Generate a stream of solutions to the goal by applying it to some initial state.
-    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E>;
+    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E>;
 }
 
 #[cfg(test)]
@@ -121,7 +121,7 @@ mod test {
     struct TestGoal {}
 
     impl<E: Engine<U>, U: User> Solve<U, E> for TestGoal {
-        fn solve(&self, _engine: &E, _state: State<U>) -> Stream<U, E> {
+        fn solve(&self, _engine: &E, _state: State<U, E>) -> Stream<U, E> {
             Stream::empty()
         }
     }

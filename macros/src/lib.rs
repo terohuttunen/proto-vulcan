@@ -197,7 +197,7 @@ impl ToTokens for Fresh {
             self.variables.iter().map(|x| &x.path).cloned().collect();
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            #( let #variables: #variable_types <_>= ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
+            #( let #variables: #variable_types <_, _> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
             ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::proto_vulcan::Upcast::to_super(&#variables) ),* ],
                 ::proto_vulcan::operator::all::All::from_array(&[ #( #body ),* ]))
         }};
@@ -1933,7 +1933,7 @@ impl ToTokens for Query {
         let body: Vec<&Clause> = self.body.iter().collect();
 
         let output = quote! {
-            #(let #query: #query_types <_> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#query)); )*
+            #(let #query: #query_types <_, _> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#query)); )*
 
             let __vars__ = vec![ #( ::proto_vulcan::Upcast::into_super(#query.clone()) ),* ];
 
@@ -1957,12 +1957,12 @@ impl ToTokens for Query {
             use std::fmt;
 
             #[derive(Clone, Debug)]
-            struct QResult<U: ::proto_vulcan::user::User> {
-                #( #query: ::proto_vulcan::lresult::LResult<U>, )*
+            struct QResult<U: ::proto_vulcan::user::User, E: ::proto_vulcan::engine::Engine<U>> {
+                #( #query: ::proto_vulcan::lresult::LResult<U, E>, )*
             }
 
-            impl<U: ::proto_vulcan::user::User> ::proto_vulcan::query::QueryResult<U> for QResult<U> {
-                fn from_vec(v: Vec<::proto_vulcan::lresult::LResult<U>>) -> QResult<U> {
+            impl<U: ::proto_vulcan::user::User, E: ::proto_vulcan::engine::Engine<U>> ::proto_vulcan::query::QueryResult<U, E> for QResult<U, E> {
+                fn from_vec(v: Vec<::proto_vulcan::lresult::LResult<U, E>>) -> QResult<U, E> {
                     let mut vi = v.into_iter();
                     QResult {
                         #( #query: vi.next().unwrap(), )*
@@ -1970,7 +1970,7 @@ impl ToTokens for Query {
                 }
             }
 
-            impl<U: User> fmt::Display for QResult<U> {
+            impl<U: ::proto_vulcan::user::User, E: ::proto_vulcan::engine::Engine<U>> fmt::Display for QResult<U, E> {
                 #[allow(unused_variables, unused_assignments)]
                 fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                     let mut count = 0;
@@ -1979,7 +1979,7 @@ impl ToTokens for Query {
                 }
             }
 
-            ::proto_vulcan::query::Query::<QResult<_>>::new(__vars__, goal)
+            ::proto_vulcan::query::Query::<QResult<_, _>>::new(__vars__, goal)
         };
 
         output.to_tokens(tokens);
@@ -2014,7 +2014,7 @@ fn make_compound_modifications_to_path(path: &mut syn::Path) -> std::result::Res
             }
             syn::PathArguments::None => {
                 last_segment.arguments =
-                    syn::PathArguments::AngleBracketed(syn::parse_quote! {<U>});
+                    syn::PathArguments::AngleBracketed(syn::parse_quote! {<U, E>});
             }
             _ => {
                 return Err(Error::new(
@@ -2046,7 +2046,7 @@ fn make_compound_modifications_to_itemstruct(
     itemstruct: &mut syn::ItemStruct,
 ) -> std::result::Result<(), Error> {
     if itemstruct.generics.params.is_empty() {
-        let new_generics: syn::Generics = syn::parse_quote! {<U: ::proto_vulcan::user::User>};
+        let new_generics: syn::Generics = syn::parse_quote! {<U: ::proto_vulcan::user::User, E: ::proto_vulcan::engine::Engine<U>>};
         itemstruct.generics = new_generics;
     }
     for field in itemstruct.fields.iter_mut() {
@@ -2080,15 +2080,21 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
         #[allow(non_snake_case)]
         #vis mod #mod_name {
             use super::*;
-            #[derive(Clone, Eq)]
+            #[derive(Eq)]
             #inner
+
+            impl #impl_generics ::std::clone::Clone for #inner_ident #type_generics #where_clause {
+                fn clone(&self) -> #inner_ident #type_generics {
+                    #inner_ident(#( ::std::clone::Clone::clone(&self.#field_indices) ),* )
+                }
+            }
 
             impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #inner_ident #type_generics #where_clause {
                 fn type_name(&self) -> &'static str {
                     stringify!(#struct_name)
                 }
 
-                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject<U>> + 'a> {
+                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
                     Box::new(vec![#(&self.#field_indices as &dyn ::proto_vulcan::compound::CompoundObject #type_generics),*].into_iter())
                 }
             }
@@ -2141,9 +2147,17 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
             }
         }
 
-        #[derive(Clone, Eq)]
+        #[derive(Eq)]
         #vis struct #struct_name #impl_generics {
             inner: LTerm #type_generics,
+        }
+
+        impl #impl_generics ::std::clone::Clone for #struct_name #type_generics #where_clause {
+            fn clone(&self) -> #struct_name #type_generics {
+                #struct_name {
+                    inner: ::std::clone::Clone::clone(&self.inner),
+                }
+            }
         }
 
         impl #impl_generics ::std::fmt::Debug for #struct_name #type_generics #where_clause {
@@ -2194,7 +2208,7 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
                 self.inner.children()
             }
 
-            fn as_term(&self) -> Option<&LTerm<U>> {
+            fn as_term(&self) -> Option<&LTerm<U, E>> {
                 Some(&self.inner)
             }
         }
@@ -2214,7 +2228,7 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
             }
         }
 
-        impl #impl_generics ::proto_vulcan::Upcast<U, ::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
+        impl #impl_generics ::proto_vulcan::Upcast<U, E, ::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
             #[inline]
             fn to_super<K: ::std::borrow::Borrow<Self>>(k: &K) -> ::proto_vulcan::lterm::LTerm #type_generics {
                 Into::into(::std::clone::Clone::clone(k.borrow()))
@@ -2256,15 +2270,23 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
         #[allow(non_snake_case)]
         #vis mod #mod_name {
             use super::*;
-            #[derive(Clone, Eq)]
+            #[derive(Eq)]
             #inner
+
+            impl #impl_generics ::std::clone::Clone for #inner_ident #type_generics #where_clause {
+                fn clone(&self) -> #inner_ident #type_generics {
+                    #inner_ident {
+                        #( #field_names: ::std::clone::Clone::clone(&self.#field_names) ),*
+                    }
+                }
+            }
 
             impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #inner_ident #type_generics #where_clause {
                 fn type_name(&self) -> &'static str {
                     stringify!(#struct_name)
                 }
 
-                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject<U>> + 'a> {
+                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
                     Box::new(vec![#(&self.#field_names as &dyn ::proto_vulcan::compound::CompoundObject #type_generics),*].into_iter())
                 }
             }
@@ -2323,9 +2345,17 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
             }
         }
 
-        #[derive(Clone, Eq)]
+        #[derive(Eq)]
         #vis struct #struct_name #impl_generics {
             inner: LTerm #type_generics,
+        }
+
+        impl #impl_generics ::std::clone::Clone for #struct_name #type_generics #where_clause {
+            fn clone(&self) -> #struct_name #type_generics {
+                #struct_name {
+                    inner: ::std::clone::Clone::clone(&self.inner),
+                }
+            }
         }
 
         impl #impl_generics ::std::fmt::Debug for #struct_name #type_generics #where_clause {
@@ -2376,7 +2406,7 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
                 self.inner.children()
             }
 
-            fn as_term(&self) -> Option<&LTerm<U>> {
+            fn as_term(&self) -> Option<&LTerm #type_generics> {
                 Some(&self.inner)
             }
         }
@@ -2396,7 +2426,7 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
             }
         }
 
-        impl #impl_generics ::proto_vulcan::Upcast<U, ::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
+        impl #impl_generics ::proto_vulcan::Upcast<U, E, ::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
             #[inline]
             fn to_super<K: ::std::borrow::Borrow<Self>>(k: &K) -> ::proto_vulcan::lterm::LTerm #type_generics {
                 Into::into(::std::clone::Clone::clone(k.borrow()))

@@ -1,7 +1,8 @@
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::relation::diseq::DisequalityConstraint;
-use crate::user::User;
+use crate::user::{User, EmptyUser};
+use crate::engine::{Engine, DefaultEngine};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -23,7 +24,7 @@ use constraint::store::ConstraintStore;
 mod reification;
 pub use reification::reify;
 
-pub type SResult<U> = Result<State<U>, ()>;
+pub type SResult<U, E> = Result<State<U, E>, ()>;
 
 /// Logic program state
 ///
@@ -37,22 +38,31 @@ pub type SResult<U> = Result<State<U>, ()>;
 ///    2. The constraint store
 ///    3. The domain store
 ///    4. User data
-#[derive(Debug, Clone)]
-pub struct State<U: User> {
+#[derive(Derivative, Debug)]
+#[derivative(Clone(bound="U: User"))]
+pub struct State<U = EmptyUser, E = DefaultEngine<EmptyUser>>
+where
+    U: User,
+    E: Engine<U>,
+{
     /// The substitution map
-    pub smap: Rc<SMap<U>>,
+    pub smap: Rc<SMap<U, E>>,
 
     /// The constraint store
-    cstore: Rc<ConstraintStore<U>>,
+    cstore: Rc<ConstraintStore<U, E>>,
 
     /// The domain store
-    dstore: Rc<HashMap<LTerm<U>, Rc<FiniteDomain>>>,
+    dstore: Rc<HashMap<LTerm<U, E>, Rc<FiniteDomain>>>,
 
     pub user_state: U,
 }
 
-impl<U: User> State<U> {
-    pub fn new(user_state: U) -> State<U> {
+impl<U, E> State<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(user_state: U) -> State<U, E> {
         State {
             smap: Rc::new(SMap::new()),
             cstore: Rc::new(ConstraintStore::new()),
@@ -62,16 +72,16 @@ impl<U: User> State<U> {
     }
 
     /// Return a reference to the substition map of the state
-    pub fn smap_ref(&self) -> &SMap<U> {
+    pub fn smap_ref(&self) -> &SMap<U, E> {
         self.smap.as_ref()
     }
 
-    pub fn smap_to_mut(&mut self) -> &mut SMap<U> {
+    pub fn smap_to_mut(&mut self) -> &mut SMap<U, E> {
         Rc::make_mut(&mut self.smap)
     }
 
     /// Returns the state with replaced substitution map
-    pub fn with_smap(self, smap: SMap<U>) -> State<U> {
+    pub fn with_smap(self, smap: SMap<U, E>) -> State<U, E> {
         State {
             smap: Rc::new(smap),
             ..self
@@ -79,21 +89,21 @@ impl<U: User> State<U> {
     }
 
     /// Get a cloned reference to the substitution map of the state
-    pub fn get_smap(&self) -> Rc<SMap<U>> {
+    pub fn get_smap(&self) -> Rc<SMap<U, E>> {
         Rc::clone(&self.smap)
     }
 
     /// Return a reference to the constraint store of the state
-    pub fn cstore_ref(&self) -> &ConstraintStore<U> {
+    pub fn cstore_ref(&self) -> &ConstraintStore<U, E> {
         self.cstore.as_ref()
     }
 
-    pub fn cstore_to_mut(&mut self) -> &mut ConstraintStore<U> {
+    pub fn cstore_to_mut(&mut self) -> &mut ConstraintStore<U, E> {
         Rc::make_mut(&mut self.cstore)
     }
 
     /// Returns the state with replaced with a new constraint store. The old store is dropped.
-    pub fn with_cstore(mut self, cstore: ConstraintStore<U>) -> State<U> {
+    pub fn with_cstore(mut self, cstore: ConstraintStore<U, E>) -> State<U, E> {
         let old_cstore = self.get_cstore();
         for c in old_cstore.iter() {
             self = self.take_constraint(c).0;
@@ -104,20 +114,20 @@ impl<U: User> State<U> {
         self
     }
 
-    pub fn get_cstore(&self) -> Rc<ConstraintStore<U>> {
+    pub fn get_cstore(&self) -> Rc<ConstraintStore<U, E>> {
         Rc::clone(&self.cstore)
     }
 
     /// Return a reference to the domain store of the state
-    pub fn dstore_ref(&self) -> &HashMap<LTerm<U>, Rc<FiniteDomain>> {
+    pub fn dstore_ref(&self) -> &HashMap<LTerm<U, E>, Rc<FiniteDomain>> {
         self.dstore.as_ref()
     }
 
-    pub fn dstore_to_mut(&mut self) -> &mut HashMap<LTerm<U>, Rc<FiniteDomain>> {
+    pub fn dstore_to_mut(&mut self) -> &mut HashMap<LTerm<U, E>, Rc<FiniteDomain>> {
         Rc::make_mut(&mut self.dstore)
     }
 
-    pub fn with_dstore(self, dstore: HashMap<LTerm<U>, Rc<FiniteDomain>>) -> State<U> {
+    pub fn with_dstore(self, dstore: HashMap<LTerm<U, E>, Rc<FiniteDomain>>) -> State<U, E> {
         State {
             dstore: Rc::new(dstore),
             ..self
@@ -125,12 +135,12 @@ impl<U: User> State<U> {
     }
 
     /// Get a cloned reference to the domain store fo the state
-    pub fn get_dstore(&self) -> Rc<HashMap<LTerm<U>, Rc<FiniteDomain>>> {
+    pub fn get_dstore(&self) -> Rc<HashMap<LTerm<U, E>, Rc<FiniteDomain>>> {
         Rc::clone(&self.dstore)
     }
 
     /// Return the state with a new constraint
-    pub fn with_constraint(mut self, constraint: Rc<dyn Constraint<U>>) -> State<U> {
+    pub fn with_constraint(mut self, constraint: Rc<dyn Constraint<U, E>>) -> State<U, E> {
         U::with_constraint(&mut self, &constraint);
         self.cstore_to_mut().push_and_normalize(constraint);
         self
@@ -138,8 +148,8 @@ impl<U: User> State<U> {
 
     pub fn take_constraint(
         mut self,
-        constraint: &Rc<dyn Constraint<U>>,
-    ) -> (State<U>, Option<Rc<dyn Constraint<U>>>) {
+        constraint: &Rc<dyn Constraint<U, E>>,
+    ) -> (State<U, E>, Option<Rc<dyn Constraint<U, E>>>) {
         match self.cstore_to_mut().take(constraint) {
             Some(constraint) => {
                 U::take_constraint(&mut self, &constraint);
@@ -152,7 +162,7 @@ impl<U: User> State<U> {
     /// Adds a new domain constraint for a variable `x`; or if the term is a value, then
     /// checks that the value is within the domain. If new domain constraint is added for a
     /// variable, it is updated to the domain store.
-    pub fn process_domain(self, x: &LTerm<U>, domain: Rc<FiniteDomain>) -> SResult<U> {
+    pub fn process_domain(self, x: &LTerm<U, E>, domain: Rc<FiniteDomain>) -> SResult<U, E> {
         match x.as_ref() {
             LTermInner::Var(_, _) => self.update_var_domain(x, domain),
             LTermInner::Val(LValue::Number(v)) if domain.contains(*v) => Ok(self),
@@ -170,7 +180,7 @@ impl<U: User> State<U> {
     ///
     /// Note: if domains are resolved into singletons, then they are converted into value
     ///       kind LTerms.
-    fn update_var_domain(self, x: &LTerm<U>, domain: Rc<FiniteDomain>) -> SResult<U> {
+    fn update_var_domain(self, x: &LTerm<U, E>, domain: Rc<FiniteDomain>) -> SResult<U, E> {
         assert!(x.is_var());
         match self.dstore.get(x) {
             Some(old_domain) => match old_domain.intersect(domain.as_ref()) {
@@ -187,7 +197,7 @@ impl<U: User> State<U> {
     /// If the domain is a singleton, i.e. a single value, it is converted into a constant value
     /// instead, by creating a new constant from the singleton value and extending the
     /// substitution to map from the variable `x` to the newly created constant.
-    fn resolve_storable_domain(mut self, x: &LTerm<U>, domain: Rc<FiniteDomain>) -> SResult<U> {
+    fn resolve_storable_domain(mut self, x: &LTerm<U, E>, domain: Rc<FiniteDomain>) -> SResult<U, E> {
         assert!(x.is_var());
         match domain.singleton_value() {
             Some(n) => {
@@ -208,7 +218,7 @@ impl<U: User> State<U> {
         }
     }
 
-    pub fn remove_domain(mut self, x: &LTerm<U>) -> SResult<U> {
+    pub fn remove_domain(mut self, x: &LTerm<U, E>) -> SResult<U, E> {
         match self.dstore_to_mut().remove(x) {
             Some(_) => Ok(self),
             None => Err(()),
@@ -216,7 +226,7 @@ impl<U: User> State<U> {
     }
 
     // Removes domain `exclude` from the domain of all variables in list `x`.
-    pub fn exclude_from_domain(mut self, x: &LTerm<U>, exclude: Rc<FiniteDomain>) -> SResult<U> {
+    pub fn exclude_from_domain(mut self, x: &LTerm<U, E>, exclude: Rc<FiniteDomain>) -> SResult<U, E> {
         assert!(x.is_list());
         let dstore = self.get_dstore();
         for y in x {
@@ -237,12 +247,12 @@ impl<U: User> State<U> {
     /// Runs all constraints from the constraint store on the current state. If any of the
     /// constraints fail, `None` is returned. Otherwise the state is returned with an updated
     /// constraint store.
-    pub fn run_constraints(mut self) -> SResult<U> {
+    pub fn run_constraints(mut self) -> SResult<U, E> {
         let mut constraints = self
             .cstore
             .iter()
             .cloned()
-            .collect::<Vec<Rc<dyn Constraint<U>>>>();
+            .collect::<Vec<Rc<dyn Constraint<U, E>>>>();
 
         // Each constraint is first removed from the store and then run against the state.
         // If the constraint does not want to be removed from the store, it adds itself
@@ -263,7 +273,7 @@ impl<U: User> State<U> {
     }
 
     /// Processes extension for disequality constraints.
-    fn process_extension_diseq(self, _extension: &SMap<U>) -> SResult<U> {
+    fn process_extension_diseq(self, _extension: &SMap<U, E>) -> SResult<U, E> {
         self.run_constraints()
     }
 
@@ -279,7 +289,7 @@ impl<U: User> State<U> {
     ///
     /// If the resulting intersection domain is non-zero, the
     /// substitution is not possible, the constraint fails and `None` is returned.
-    fn process_extension_fd(mut self, extension: &SMap<U>) -> SResult<U> {
+    fn process_extension_fd(mut self, extension: &SMap<U, E>) -> SResult<U, E> {
         let dstore = self.get_dstore();
         for (x, v) in extension.iter() {
             match dstore.get(x) {
@@ -297,7 +307,7 @@ impl<U: User> State<U> {
         Ok(self)
     }
 
-    fn process_extension_user(self, extension: &SMap<U>) -> SResult<U> {
+    fn process_extension_user(self, extension: &SMap<U, E>) -> SResult<U, E> {
         User::process_extension(self, extension)
     }
 
@@ -306,20 +316,20 @@ impl<U: User> State<U> {
     /// The extension to substitution consists of all substitutions added in a single
     /// unification. It consists of the substitutions had to be added in order to unify
     /// the two terms.
-    fn process_extension(self, extension: SMap<U>) -> SResult<U> {
+    fn process_extension(self, extension: SMap<U, E>) -> SResult<U, E> {
         self.process_extension_diseq(&extension)?
             .process_extension_fd(&extension)?
             .process_extension_user(&extension)
     }
 
-    fn is_finite_domain(constraint: &Rc<dyn Constraint<U>>) -> bool {
-        constraint.is::<crate::relation::ltefd::LessThanOrEqualFdConstraint<U>>()
-            || constraint.is::<crate::relation::plusfd::PlusFdConstraint<U>>()
-            || constraint.is::<crate::relation::minusfd::MinusFdConstraint<U>>()
-            || constraint.is::<crate::relation::timesfd::TimesFdConstraint<U>>()
-            || constraint.is::<crate::relation::diseqfd::DiseqFdConstraint<U>>()
-            || constraint.is::<crate::relation::distinctfd::DistinctFdConstraint<U>>()
-            || constraint.is::<crate::relation::distinctfd::DistinctFd2Constraint<U>>()
+    fn is_finite_domain(constraint: &Rc<dyn Constraint<U, E>>) -> bool {
+        constraint.is::<crate::relation::ltefd::LessThanOrEqualFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::plusfd::PlusFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::minusfd::MinusFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::timesfd::TimesFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::diseqfd::DiseqFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::distinctfd::DistinctFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::distinctfd::DistinctFd2Constraint<U, E>>()
     }
 
     /// Verifies that all variables constrained by domain constraints have domains
@@ -342,14 +352,14 @@ impl<U: User> State<U> {
         }
     }
 
-    pub fn unify(self, u: &LTerm<U>, v: &LTerm<U>) -> SResult<U> {
+    pub fn unify(self, u: &LTerm<U, E>, v: &LTerm<U, E>) -> SResult<U, E> {
         // Extension will contain all substitutions added in the recursive unification of the terms
         let mut extension = SMap::new();
         unify_rec(self, &mut extension, u, v)?.process_extension(extension)
     }
 
     /// Add disequality constraint
-    pub fn disunify(self, u: &LTerm<U>, v: &LTerm<U>) -> SResult<U> {
+    pub fn disunify(self, u: &LTerm<U, E>, v: &LTerm<U, E>) -> SResult<U, E> {
         // Disunification is implemented in terms of unification
         let mut extension = SMap::new();
         match unify_rec(self.clone(), &mut extension, u, v) {

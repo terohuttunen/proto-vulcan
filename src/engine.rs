@@ -12,7 +12,7 @@ where
 {
     fn new(context: U::UserContext) -> Self;
 
-    fn start(&self, state: Box<State<U>>, goal: Goal<U, Self>) -> Stream<U, Self>;
+    fn start(&self, state: Box<State<U, Self>>, goal: Goal<U, Self>) -> Stream<U, Self>;
 
     fn step(&self, lazy: Lazy<U, Self>) -> Stream<U, Self>;
 

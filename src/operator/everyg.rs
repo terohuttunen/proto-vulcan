@@ -13,10 +13,10 @@ where
     U: User,
     E: Engine<U>,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
     coll: T,
-    g: Box<dyn Fn(LTerm<U>) -> Goal<U, E>>,
+    g: Box<dyn Fn(LTerm<U, E>) -> Goal<U, E>>,
 }
 
 impl<T, U, E> Debug for Everyg<T, U, E>
@@ -24,7 +24,7 @@ where
     U: User,
     E: Engine<U>,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Everyg()")
@@ -36,9 +36,9 @@ where
     U: User,
     E: Engine<U>,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
-    fn new(coll: T, g: Box<dyn Fn(LTerm<U>) -> Goal<U, E>>) -> Goal<U, E> {
+    fn new(coll: T, g: Box<dyn Fn(LTerm<U, E>) -> Goal<U, E>>) -> Goal<U, E> {
         Goal::new(Everyg { coll, g })
     }
 }
@@ -48,9 +48,9 @@ where
     U: User,
     E: Engine<U>,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
         let term_iter = IntoIterator::into_iter(&self.coll);
         let goal_iter = term_iter.map(|term| (*self.g)(term.clone()));
         All::from_iter(goal_iter).solve(engine, state)
@@ -62,7 +62,7 @@ where
     E: Engine<U>,
     U: User,
     T: Debug + 'static,
-    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U>>,
+    for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
     Everyg::new(param.coll, param.g)
 }

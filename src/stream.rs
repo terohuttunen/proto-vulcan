@@ -7,7 +7,7 @@ use crate::user::User;
 pub enum Lazy<U: User, E: Engine<U>> {
     Bind(LazyStream<U, E>, Goal<U, E>),
     MPlus(LazyStream<U, E>, LazyStream<U, E>),
-    Pause(Box<State<U>>, Goal<U, E>),
+    Pause(Box<State<U, E>>, Goal<U, E>),
     Delay(Stream<U, E>),
 }
 
@@ -23,7 +23,7 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::MPlus(ls1, ls2)))
     }
 
-    pub fn pause(state: Box<State<U>>, goal: Goal<U, E>) -> LazyStream<U, E> {
+    pub fn pause(state: Box<State<U, E>>, goal: Goal<U, E>) -> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::Pause(state, goal)))
     }
 
@@ -49,9 +49,9 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
 #[derive(Debug)]
 pub enum Stream<U: User, E: Engine<U>> {
     Empty,
-    Unit(Box<State<U>>),
+    Unit(Box<State<U, E>>),
     Lazy(LazyStream<U, E>),
-    Cons(Box<State<U>>, LazyStream<U, E>),
+    Cons(Box<State<U, E>>, LazyStream<U, E>),
 }
 
 impl<U: User, E: Engine<U>> Stream<U, E> {
@@ -62,7 +62,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn unit(u: Box<State<U>>) -> Stream<U, E> {
+    pub fn unit(u: Box<State<U, E>>) -> Stream<U, E> {
         Stream::Unit(u)
     }
 
@@ -70,7 +70,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         Stream::Empty
     }
 
-    pub fn cons(a: Box<State<U>>, lazy: LazyStream<U, E>) -> Stream<U, E> {
+    pub fn cons(a: Box<State<U, E>>, lazy: LazyStream<U, E>) -> Stream<U, E> {
         Stream::Cons(a, lazy)
     }
 
@@ -119,7 +119,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn pause(state: Box<State<U>>, goal: Goal<U, E>) -> Stream<U, E> {
+    pub fn pause(state: Box<State<U, E>>, goal: Goal<U, E>) -> Stream<U, E> {
         Stream::Lazy(LazyStream::pause(state, goal))
     }
 
@@ -152,7 +152,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn next(&mut self, engine: &E) -> Option<Box<State<U>>> {
+    pub fn next(&mut self, engine: &E) -> Option<Box<State<U, E>>> {
         self.mature(engine);
         match std::mem::replace(self, Stream::Empty) {
             Stream::Empty => return None,
@@ -168,7 +168,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
     }
 
     /// Returns a reference to next element in the stream, if any.
-    pub fn peek<'a>(&'a mut self, engine: &E) -> Option<&'a Box<State<U>>> {
+    pub fn peek<'a>(&'a mut self, engine: &E) -> Option<&'a Box<State<U, E>>> {
         self.mature(engine);
         match self {
             Stream::Empty => None,
@@ -179,7 +179,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
 
     /// Truncates the stream leaving at most one element, and returns a reference to
     /// the remaining element if any.
-    pub fn trunc<'a>(&'a mut self, engine: &E) -> Option<&'a Box<State<U>>> {
+    pub fn trunc<'a>(&'a mut self, engine: &E) -> Option<&'a Box<State<U, E>>> {
         self.mature(engine);
         match std::mem::replace(self, Stream::Empty) {
             Stream::Empty => (),
@@ -197,12 +197,15 @@ pub struct StreamEngine<U: User> {
     context: U::UserContext,
 }
 
-impl<U: User> Engine<U> for StreamEngine<U> {
+impl<U> Engine<U> for StreamEngine<U>
+where
+    U: User,
+{
     fn new(context: U::UserContext) -> Self {
         StreamEngine { context }
     }
 
-    fn start(&self, state: Box<State<U>>, goal: Goal<U, Self>) -> Stream<U, Self> {
+    fn start(&self, state: Box<State<U, Self>>, goal: Goal<U, Self>) -> Stream<U, Self> {
         match goal {
             Goal::Succeed => Stream::unit(state),
             Goal::Fail => Stream::empty(),

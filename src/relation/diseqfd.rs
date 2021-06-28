@@ -9,23 +9,31 @@ use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct DiseqFd<U: User> {
-    u: LTerm<U>,
-    v: LTerm<U>,
-}
-
-impl<U: User> DiseqFd<U> {
-    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E> {
-        Goal::new(DiseqFd { u, v })
-    }
-}
-
-impl<U, E> Solve<U, E> for DiseqFd<U>
+pub struct DiseqFd<U, E>
 where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
+    u: LTerm<U, E>,
+    v: LTerm<U, E>,
+}
+
+impl<U, E> DiseqFd<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
+        Goal::new(DiseqFd { u, v })
+    }
+}
+
+impl<U, E> Solve<U, E> for DiseqFd<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
         let u = self.u.clone();
         let v = self.v.clone();
         match DiseqFdConstraint::new(u, v).run(state) {
@@ -62,7 +70,7 @@ where
 ///     assert_eq!(expected.len(), 0);
 /// }
 /// ```
-pub fn diseqfd<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+pub fn diseqfd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -71,21 +79,33 @@ where
 }
 
 #[derive(Debug)]
-pub struct DiseqFdConstraint<U: User> {
-    u: LTerm<U>,
-    v: LTerm<U>,
+pub struct DiseqFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    u: LTerm<U, E>,
+    v: LTerm<U, E>,
 }
 
-impl<U: User> DiseqFdConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>) -> Rc<dyn Constraint<U>> {
+impl<U, E> DiseqFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Rc<dyn Constraint<U, E>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         Rc::new(DiseqFdConstraint { u, v })
     }
 }
 
-impl<U: User> Constraint<U> for DiseqFdConstraint<U> {
-    fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
+impl<U, E> Constraint<U, E> for DiseqFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
 
@@ -149,12 +169,16 @@ impl<U: User> Constraint<U> for DiseqFdConstraint<U> {
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U>> {
+    fn operands(&self) -> Vec<LTerm<U, E>> {
         vec![self.u.clone(), self.v.clone()]
     }
 }
 
-impl<U: User> std::fmt::Display for DiseqFdConstraint<U> {
+impl<U, E> std::fmt::Display for DiseqFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }

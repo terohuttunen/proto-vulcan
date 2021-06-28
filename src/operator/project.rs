@@ -13,7 +13,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    variables: Vec<LTerm<U>>,
+    variables: Vec<LTerm<U, E>>,
     body: Goal<U, E>,
 }
 
@@ -22,7 +22,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(variables: Vec<LTerm<U>>, body: Goal<U, E>) -> Goal<U, E> {
+    pub fn new(variables: Vec<LTerm<U, E>>, body: Goal<U, E>) -> Goal<U, E> {
         Goal::new(Project { variables, body }) as Goal<U, E>
     }
 }
@@ -32,7 +32,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
         // Walk* each projected variable with the current substitution
         for v in self.variables.iter() {
             v.project(|x| state.smap_ref().walk_star(x));
@@ -57,23 +57,23 @@ mod tests {
     use crate::prelude::*;
 
     #[derive(Debug)]
-    pub struct SqEq<U: User> {
-        u: LTerm<U>,
-        v: LTerm<U>,
+    pub struct SqEq<U: User, E: Engine<U>> {
+        u: LTerm<U, E>,
+        v: LTerm<U, E>,
     }
 
-    impl<U: User> SqEq<U> {
-        pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E> {
+    impl<U: User, E: Engine<U>> SqEq<U, E> {
+        pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
             Goal::new(SqEq { u, v })
         }
     }
 
-    impl<U, E> Solve<U, E> for SqEq<U>
+    impl<U, E> Solve<U, E> for SqEq<U, E>
     where
         U: User,
         E: Engine<U>,
     {
-        fn solve(&self, engine: &E, state: State<U>) -> Stream<U, E> {
+        fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
             let u = self.u.clone();
             let v = self.v.clone();
             let g: Goal<U, E> = proto_vulcan!(fngoal move |_engine, state| {
@@ -91,7 +91,7 @@ mod tests {
         }
     }
 
-    fn sqeq<U, E>(u: LTerm<U>, v: LTerm<U>) -> Goal<U, E>
+    fn sqeq<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
     where
         U: User,
         E: Engine<U>,

@@ -43,6 +43,7 @@
 //! Type conversions to supertypes are done implicitly via inserted `Into::into` calls;
 //! for conversions to subtypes, such as compound types, unification must be used.
 
+use crate::engine::Engine;
 use crate::lterm::{LTerm, LTermInner};
 use crate::state::SMap;
 use crate::user::User;
@@ -52,10 +53,11 @@ use std::borrow::Borrow;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
-pub trait CompoundTerm<U>
+pub trait CompoundTerm<U, E>
 where
     U: User,
-    Self: CompoundObject<U> + Sized,
+    E: Engine<U>,
+    Self: CompoundObject<U, E> + Sized,
 {
     fn new_var(name: &'static str) -> Self;
 
@@ -64,16 +66,19 @@ where
     fn new_none() -> Self;
 }
 
-pub trait CompoundObject<U: User>:
-    CompoundHash<U> + CompoundEq<U> + CompoundAs<U> + WalkStar<U> + std::fmt::Debug
+pub trait CompoundObject<U, E>:
+    CompoundHash<U, E> + CompoundEq<U, E> + CompoundAs<U, E> + WalkStar<U, E> + std::fmt::Debug
+where
+    U: User,
+    E: Engine<U>,
 {
     fn type_name(&self) -> &'static str {
         ""
     }
 
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U>> + 'a>;
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a>;
 
-    fn as_term(&self) -> Option<&LTerm<U>> {
+    fn as_term(&self) -> Option<&LTerm<U, E>> {
         None
     }
 
@@ -85,54 +90,73 @@ pub trait CompoundObject<U: User>:
     }
 }
 
-pub trait WalkStar<U: User> {
-    fn walk_star(&self, smap: &SMap<U>) -> LTerm<U>;
-}
-
-impl<U, T> WalkStar<U> for T
+pub trait WalkStar<U, E>
 where
     U: User,
-    T: CompoundWalkStar<U> + Into<LTerm<U>>,
+    E: Engine<U>,
 {
-    fn walk_star(&self, smap: &SMap<U>) -> LTerm<U> {
+    fn walk_star(&self, smap: &SMap<U, E>) -> LTerm<U, E>;
+}
+
+impl<U, E, T> WalkStar<U, E> for T
+where
+    U: User,
+    E: Engine<U>,
+    T: CompoundWalkStar<U, E> + Into<LTerm<U, E>>,
+{
+    fn walk_star(&self, smap: &SMap<U, E>) -> LTerm<U, E> {
         self.compound_walk_star(smap).into()
     }
 }
 
-pub trait CompoundWalkStar<U: User> {
-    fn compound_walk_star(&self, smap: &SMap<U>) -> Self;
-}
-
-pub trait CompoundAs<U: User>: Any {
-    fn as_any(&self) -> &dyn Any;
-
-    fn as_object(&self) -> &dyn CompoundObject<U>;
-}
-
-impl<U, T> CompoundAs<U> for T
+pub trait CompoundWalkStar<U, E>
 where
     U: User,
-    T: CompoundObject<U>,
+    E: Engine<U>,
+{
+    fn compound_walk_star(&self, smap: &SMap<U, E>) -> Self;
+}
+
+pub trait CompoundAs<U, E>: Any
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn as_any(&self) -> &dyn Any;
+
+    fn as_object(&self) -> &dyn CompoundObject<U, E>;
+}
+
+impl<U, E, T> CompoundAs<U, E> for T
+where
+    U: User,
+    E: Engine<U>,
+    T: CompoundObject<U, E>,
 {
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn as_object(&self) -> &dyn CompoundObject<U> {
+    fn as_object(&self) -> &dyn CompoundObject<U, E> {
         self
     }
 }
 
-pub trait CompoundEq<U: User> {
-    fn compound_eq(&self, other: &dyn CompoundObject<U>) -> bool;
-}
-
-impl<U: User, T: PartialEq> CompoundEq<U> for T
+pub trait CompoundEq<U, E>
 where
     U: User,
-    T: PartialEq + CompoundObject<U>,
+    E: Engine<U>,
 {
-    fn compound_eq(&self, other: &dyn CompoundObject<U>) -> bool {
+    fn compound_eq(&self, other: &dyn CompoundObject<U, E>) -> bool;
+}
+
+impl<U, E, T: PartialEq> CompoundEq<U, E> for T
+where
+    U: User,
+    E: Engine<U>,
+    T: PartialEq + CompoundObject<U, E>,
+{
+    fn compound_eq(&self, other: &dyn CompoundObject<U, E>) -> bool {
         match other.as_any().downcast_ref::<T>() {
             Some(other_object) => self.eq(other_object),
             None => false,
@@ -140,36 +164,50 @@ where
     }
 }
 
-pub trait CompoundHash<U: User> {
+pub trait CompoundHash<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn compound_hash(&self, state: &mut dyn Hasher);
 }
 
-impl<U, T> CompoundHash<U> for T
+impl<U, E, T> CompoundHash<U, E> for T
 where
     U: User,
-    T: Hash + CompoundObject<U> + ?Sized,
+    E: Engine<U>,
+    T: Hash + CompoundObject<U, E> + ?Sized,
 {
     fn compound_hash(&self, mut state: &mut dyn Hasher) {
         self.hash(&mut state);
     }
 }
 
-impl<U: User> PartialEq for dyn CompoundObject<U> {
-    fn eq(&self, other: &dyn CompoundObject<U>) -> bool {
+impl<U, E> PartialEq for dyn CompoundObject<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn eq(&self, other: &dyn CompoundObject<U, E>) -> bool {
         self.compound_eq(other)
     }
 }
 
-impl<U: User> Hash for dyn CompoundObject<U> {
+impl<U, E> Hash for dyn CompoundObject<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.compound_hash(state);
     }
 }
 
-impl<U, T> Upcast<U, Self> for T
+impl<U, E, T> Upcast<U, E, Self> for T
 where
     U: User,
-    Self: CompoundObject<U> + Clone,
+    E: Engine<U>,
+    Self: CompoundObject<U, E> + Clone,
 {
     #[inline]
     fn to_super<K: Borrow<Self>>(k: &K) -> Self {
@@ -182,10 +220,11 @@ where
     }
 }
 
-impl<U, T> CompoundObject<U> for Option<T>
+impl<U, E, T> CompoundObject<U, E> for Option<T>
 where
     U: User,
-    T: CompoundObject<U> + CompoundWalkStar<U> + std::fmt::Debug + PartialEq + Hash,
+    E: Engine<U>,
+    T: CompoundObject<U, E> + CompoundWalkStar<U, E> + std::fmt::Debug + PartialEq + Hash,
 {
     fn type_name(&self) -> &'static str {
         match self {
@@ -194,41 +233,44 @@ where
         }
     }
 
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U>> + 'a> {
-        Box::new(self.iter().map(|x| x as &dyn CompoundObject<U>))
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
+        Box::new(self.iter().map(|x| x as &dyn CompoundObject<U, E>))
     }
 }
 
-impl<U, T> CompoundWalkStar<U> for Option<T>
+impl<U, E, T> CompoundWalkStar<U, E> for Option<T>
 where
     U: User,
-    T: CompoundObject<U> + CompoundWalkStar<U> + std::fmt::Debug + PartialEq + Hash,
+    E: Engine<U>,
+    T: CompoundObject<U, E> + CompoundWalkStar<U, E> + std::fmt::Debug + PartialEq + Hash,
 {
-    fn compound_walk_star(&self, smap: &SMap<U>) -> Self {
+    fn compound_walk_star(&self, smap: &SMap<U, E>) -> Self {
         self.as_ref().map(|x| x.compound_walk_star(smap))
     }
 }
 
-impl<U, T> Upcast<U, LTerm<U>> for Option<T>
+impl<U, E, T> Upcast<U, E, LTerm<U, E>> for Option<T>
 where
     U: User,
-    T: CompoundObject<U> + CompoundWalkStar<U> + Clone + Hash + PartialEq,
+    E: Engine<U>,
+    T: CompoundObject<U, E> + CompoundWalkStar<U, E> + Clone + Hash + PartialEq,
 {
     #[inline]
-    fn to_super<K: Borrow<Self>>(k: &K) -> LTerm<U> {
+    fn to_super<K: Borrow<Self>>(k: &K) -> LTerm<U, E> {
         Into::into(Clone::clone(k.borrow()))
     }
 
     #[inline]
-    fn into_super(self) -> LTerm<U> {
+    fn into_super(self) -> LTerm<U, E> {
         Into::into(self)
     }
 }
 
-impl<U, T> Downcast<U> for Option<T>
+impl<U, E, T> Downcast<U, E> for Option<T>
 where
     U: User,
-    T: CompoundObject<U> + CompoundWalkStar<U> + PartialEq + Hash,
+    E: Engine<U>,
+    T: CompoundObject<U, E> + CompoundWalkStar<U, E> + PartialEq + Hash,
 {
     type SubType = Self;
 
@@ -238,57 +280,74 @@ where
     }
 }
 
-impl<U, T> Into<LTerm<U>> for Option<T>
+impl<U, E, T> Into<LTerm<U, E>> for Option<T>
 where
     U: User,
-    T: CompoundObject<U> + Hash + PartialEq,
+    E: Engine<U>,
+    T: CompoundObject<U, E> + Hash + PartialEq,
 {
-    fn into(self) -> LTerm<U> {
+    fn into(self) -> LTerm<U, E> {
         match self {
-            Some(x) => LTerm::from(Rc::new(x) as Rc<dyn CompoundObject<U>>),
+            Some(x) => LTerm::from(Rc::new(x) as Rc<dyn CompoundObject<U, E>>),
             None => LTerm::empty_list(),
         }
     }
 }
 
-impl<U: User> CompoundTerm<U> for LTerm<U> {
-    fn new_var(name: &'static str) -> LTerm<U> {
+impl<U, E> CompoundTerm<U, E> for LTerm<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn new_var(name: &'static str) -> LTerm<U, E> {
         LTerm::var(name)
     }
 
-    fn new_wildcard() -> LTerm<U> {
+    fn new_wildcard() -> LTerm<U, E> {
         LTerm::any()
     }
 
-    fn new_none() -> LTerm<U> {
+    fn new_none() -> LTerm<U, E> {
         LTerm::empty_list()
     }
 }
 
-impl<U: User> CompoundObject<U> for LTerm<U> {
+impl<U, E> CompoundObject<U, E> for LTerm<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn type_name(&self) -> &'static str {
         "LTerm"
     }
 
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U>> + 'a> {
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
         match self.as_ref() {
             LTermInner::Compound(object) => object.children(),
             _ => Box::new(std::iter::empty()),
         }
     }
 
-    fn as_term(&self) -> Option<&LTerm<U>> {
+    fn as_term(&self) -> Option<&LTerm<U, E>> {
         Some(self)
     }
 }
 
-impl<U: User> CompoundWalkStar<U> for LTerm<U> {
-    fn compound_walk_star(&self, smap: &SMap<U>) -> Self {
+impl<U, E> CompoundWalkStar<U, E> for LTerm<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn compound_walk_star(&self, smap: &SMap<U, E>) -> Self {
         smap.walk_star(self)
     }
 }
 
-impl<U: User> Downcast<U> for LTerm<U> {
+impl<U, E> Downcast<U, E> for LTerm<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     type SubType = Self;
 
     #[inline]
@@ -297,47 +356,61 @@ impl<U: User> Downcast<U> for LTerm<U> {
     }
 }
 
-impl<U: User> CompoundObject<U> for (LTerm<U>, LTerm<U>) {
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U>> + 'a> {
+impl<U, E> CompoundObject<U, E> for (LTerm<U, E>, LTerm<U, E>)
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
         // TODO: use array into_iter when it becomes stable
         Box::new(IntoIterator::into_iter(vec![
-            &self.0 as &dyn CompoundObject<U>,
-            &self.1 as &dyn CompoundObject<U>,
+            &self.0 as &dyn CompoundObject<U, E>,
+            &self.1 as &dyn CompoundObject<U, E>,
         ]))
     }
 }
 
-impl<U: User> CompoundWalkStar<U> for (LTerm<U>, LTerm<U>) {
-    fn compound_walk_star(&self, smap: &SMap<U>) -> Self {
+impl<U, E> CompoundWalkStar<U, E> for (LTerm<U, E>, LTerm<U, E>)
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn compound_walk_star(&self, smap: &SMap<U, E>) -> Self {
         (smap.walk_star(&self.0), smap.walk_star(&self.1))
     }
 }
 
-impl<U> Into<LTerm<U>> for (LTerm<U>, LTerm<U>)
+impl<U, E> Into<LTerm<U, E>> for (LTerm<U, E>, LTerm<U, E>)
 where
     U: User,
+    E: Engine<U>,
 {
-    fn into(self) -> LTerm<U> {
-        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U>>)
+    fn into(self) -> LTerm<U, E> {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
     }
 }
 
-impl<U> Upcast<U, LTerm<U>> for (LTerm<U>, LTerm<U>)
+impl<U, E> Upcast<U, E, LTerm<U, E>> for (LTerm<U, E>, LTerm<U, E>)
 where
     U: User,
+    E: Engine<U>,
 {
     #[inline]
-    fn to_super<K: Borrow<Self>>(k: &K) -> LTerm<U> {
+    fn to_super<K: Borrow<Self>>(k: &K) -> LTerm<U, E> {
         Into::into(Clone::clone(k.borrow()))
     }
 
     #[inline]
-    fn into_super(self) -> LTerm<U> {
+    fn into_super(self) -> LTerm<U, E> {
         Into::into(self)
     }
 }
 
-impl<U: User> Downcast<U> for (LTerm<U>, LTerm<U>) {
+impl<U, E> Downcast<U, E> for (LTerm<U, E>, LTerm<U, E>)
+where
+    U: User,
+    E: Engine<U>,
+{
     type SubType = Self;
 
     #[inline]

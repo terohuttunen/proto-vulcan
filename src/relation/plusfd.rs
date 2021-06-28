@@ -9,24 +9,32 @@ use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Debug)]
-pub struct PlusFd<U: User> {
-    u: LTerm<U>,
-    v: LTerm<U>,
-    w: LTerm<U>,
-}
-
-impl<U: User> PlusFd<U> {
-    pub fn new<E: Engine<U>>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U, E> {
-        Goal::new(PlusFd { u, v, w })
-    }
-}
-
-impl<U, E> Solve<U, E> for PlusFd<U>
+pub struct PlusFd<U, E>
 where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U>) -> Stream<U, E> {
+    u: LTerm<U, E>,
+    v: LTerm<U, E>,
+    w: LTerm<U, E>,
+}
+
+impl<U, E> PlusFd<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Goal<U, E> {
+        Goal::new(PlusFd { u, v, w })
+    }
+}
+
+impl<U, E> Solve<U, E> for PlusFd<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
         match PlusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -34,7 +42,7 @@ where
     }
 }
 
-pub fn plusfd<U, E>(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Goal<U, E>
+pub fn plusfd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -43,14 +51,22 @@ where
 }
 
 #[derive(Debug)]
-pub struct PlusFdConstraint<U: User> {
-    u: LTerm<U>,
-    v: LTerm<U>,
-    w: LTerm<U>,
+pub struct PlusFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    u: LTerm<U, E>,
+    v: LTerm<U, E>,
+    w: LTerm<U, E>,
 }
 
-impl<U: User> PlusFdConstraint<U> {
-    pub fn new(u: LTerm<U>, v: LTerm<U>, w: LTerm<U>) -> Rc<dyn Constraint<U>> {
+impl<U, E> PlusFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Rc<dyn Constraint<U, E>> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
@@ -58,8 +74,12 @@ impl<U: User> PlusFdConstraint<U> {
     }
 }
 
-impl<U: User> Constraint<U> for PlusFdConstraint<U> {
-    fn run(self: Rc<Self>, state: State<U>) -> SResult<U> {
+impl<U, E> Constraint<U, E> for PlusFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
 
@@ -152,12 +172,16 @@ impl<U: User> Constraint<U> for PlusFdConstraint<U> {
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U>> {
+    fn operands(&self) -> Vec<LTerm<U, E>> {
         vec![self.u.clone(), self.v.clone(), self.w.clone()]
     }
 }
 
-impl<U: User> std::fmt::Display for PlusFdConstraint<U> {
+impl<U, E> std::fmt::Display for PlusFdConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }

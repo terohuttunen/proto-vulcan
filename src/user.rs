@@ -16,35 +16,35 @@ pub trait User: Debug + Clone + Default + 'static {
     type UserContext: Debug;
 
     /// Process extension to substitution map.
-    fn process_extension(state: State<Self>, _extension: &SMap<Self>) -> SResult<Self> {
+    fn process_extension<E: Engine<Self>>(state: State<Self, E>, _extension: &SMap<Self, E>) -> SResult<Self, E> {
         Ok(state)
     }
 
     // User unification.
-    fn unify(
-        _state: State<Self>,
-        _extension: &mut SMap<Self>,
-        _uwalk: LTerm<Self>,
-        _vwalk: LTerm<Self>,
-    ) -> SResult<Self> {
+    fn unify<E: Engine<Self>>(
+        _state: State<Self, E>,
+        _extension: &mut SMap<Self, E>,
+        _uwalk: LTerm<Self, E>,
+        _vwalk: LTerm<Self, E>,
+    ) -> SResult<Self, E> {
         Err(())
     }
 
     /// Called before the constraint is added to the state
-    fn with_constraint(_state: &mut State<Self>, _constraint: &Rc<dyn Constraint<Self>>) {}
+    fn with_constraint<E: Engine<Self>>(_state: &mut State<Self, E>, _constraint: &Rc<dyn Constraint<Self, E>>) {}
 
     /// Called after the constraint has been removed from the state
-    fn take_constraint(_state: &mut State<Self>, _constraint: &Rc<dyn Constraint<Self>>) {}
+    fn take_constraint<E: Engine<Self>>(_state: &mut State<Self, E>, _constraint: &Rc<dyn Constraint<Self, E>>) {}
 
     /// Called in reification when constraints are finalized. For example finite domain
     /// constraints are converted to sequences of integers.
-    fn enforce_constraints<E: Engine<Self>>(_x: LTerm<Self>) -> Goal<Self, E> {
+    fn enforce_constraints<E: Engine<Self>>(_x: LTerm<Self, E>) -> Goal<Self, E> {
         proto_vulcan!(true)
     }
 
-    fn finalize(_state: &mut State<Self>) {}
+    fn finalize<E: Engine<Self>>(_state: &mut State<Self, E>) {}
 
-    fn reify(_state: &mut State<Self>) {}
+    fn reify<E: Engine<Self>>(_state: &mut State<Self, E>) {}
 }
 
 #[derive(Debug, Clone)]
