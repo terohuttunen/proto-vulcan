@@ -6,7 +6,8 @@ use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct Any<U, E>
 where
     U: User,

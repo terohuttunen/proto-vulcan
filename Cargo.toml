@@ -12,6 +12,15 @@ keywords = ["logic", "programming", "language"]
 proto-vulcan-macros = { version = "=0.1.5", path = "macros" }
 derivative = "2.1"
 
+#dependencies for debugger
+crossterm = { version = "0.19", features = [ "serde" ] }
+serde = {version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+rand = { version = "0.7.3", default-features = false, features = ["std"] }
+tui = { version = "0.14", default-features = false, features = ['crossterm', 'serde'] }
+thiserror = "1.0"
+
 [dev-dependencies]
 itertools = "0.9.0"
 
