@@ -19,7 +19,7 @@ impl<E: Engine<U>, U: User> Fresh<E, U> {
 }
 
 impl<E: Engine<U>, U: User> Solve<U, E> for Fresh<E, U> {
-    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         let goal = self.body.clone();
         Stream::pause(Box::new(state), goal)
     }

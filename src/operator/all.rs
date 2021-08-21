@@ -79,7 +79,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         let stream = Stream::pause(Box::new(state), self.goal_1.clone());
         Stream::bind(stream, self.goal_2.clone())
     }

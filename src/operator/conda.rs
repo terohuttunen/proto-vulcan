@@ -53,7 +53,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         let mut stream = self.first.solve(engine, state.clone());
 
         match stream.peek(engine) {

@@ -33,7 +33,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         let u = self.u.clone();
         match DistinctFdConstraint::new(u).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),

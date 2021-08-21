@@ -37,12 +37,12 @@ where
     E: Engine<U>,
 {
     pub fn new(
-        engine: E,
+        mut engine: E,
         variables: Vec<LTerm<U, E>>,
         goal: Goal<U, E>,
         initial_state: State<U, E>,
     ) -> ResultIterator<R, U, E> {
-        let stream = goal.solve(&engine, initial_state);
+        let stream = goal.solve(&mut engine, initial_state);
         ResultIterator {
             engine,
             variables,
@@ -62,7 +62,7 @@ where
     type Item = R;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.stream.next(&self.engine) {
+        match self.stream.next(&mut self.engine) {
             Some(state) => {
                 // At this point the state has already gone through initial reification
                 // process

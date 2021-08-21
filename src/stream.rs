@@ -31,11 +31,11 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::Delay(stream)))
     }
 
-    pub fn step_into(self, engine: &E) -> Stream<U, E> {
+    pub fn step_into(self, engine: &mut E) -> Stream<U, E> {
         engine.step(*self.0)
     }
 
-    pub fn into_mature(self, engine: &E) -> Stream<U, E> {
+    pub fn into_mature(self, engine: &mut E) -> Stream<U, E> {
         let mut stream = self.step_into(engine);
         loop {
             match stream {
@@ -134,7 +134,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn mature(&mut self, engine: &E) {
+    pub fn mature(&mut self, engine: &mut E) {
         match std::mem::replace(self, Stream::Empty) {
             Stream::Lazy(lazy) => {
                 let _ = std::mem::replace(self, lazy.into_mature(engine));
@@ -145,14 +145,14 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn into_mature(self, engine: &E) -> Stream<U, E> {
+    pub fn into_mature(self, engine: &mut E) -> Stream<U, E> {
         match self {
             Stream::Lazy(lazy) => lazy.into_mature(engine),
             _ => self,
         }
     }
 
-    pub fn next(&mut self, engine: &E) -> Option<Box<State<U, E>>> {
+    pub fn next(&mut self, engine: &mut E) -> Option<Box<State<U, E>>> {
         self.mature(engine);
         match std::mem::replace(self, Stream::Empty) {
             Stream::Empty => return None,
@@ -168,7 +168,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
     }
 
     /// Returns a reference to next element in the stream, if any.
-    pub fn peek<'a>(&'a mut self, engine: &E) -> Option<&'a Box<State<U, E>>> {
+    pub fn peek<'a>(&'a mut self, engine: &mut E) -> Option<&'a Box<State<U, E>>> {
         self.mature(engine);
         match self {
             Stream::Empty => None,
@@ -179,7 +179,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
 
     /// Truncates the stream leaving at most one element, and returns a reference to
     /// the remaining element if any.
-    pub fn trunc<'a>(&'a mut self, engine: &E) -> Option<&'a Box<State<U, E>>> {
+    pub fn trunc<'a>(&'a mut self, engine: &mut E) -> Option<&'a Box<State<U, E>>> {
         self.mature(engine);
         match std::mem::replace(self, Stream::Empty) {
             Stream::Empty => (),
@@ -205,7 +205,7 @@ where
         StreamEngine { context }
     }
 
-    fn start(&self, state: Box<State<U, Self>>, goal: Goal<U, Self>) -> Stream<U, Self> {
+    fn start(&mut self, state: Box<State<U, Self>>, goal: Goal<U, Self>) -> Stream<U, Self> {
         match goal {
             Goal::Succeed => Stream::unit(state),
             Goal::Fail => Stream::empty(),
@@ -221,7 +221,7 @@ where
         }
     }
 
-    fn step(&self, lazy: Lazy<U, Self>) -> Stream<U, Self> {
+    fn step(&mut self, lazy: Lazy<U, Self>) -> Stream<U, Self> {
         match lazy {
             Lazy::Pause(state, goal) => self.start(state, goal),
             Lazy::MPlus(s1, s2) => {

@@ -32,7 +32,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         let g = self.g.clone();
         let g2 = self.g.clone();
         let goal = proto_vulcan!(

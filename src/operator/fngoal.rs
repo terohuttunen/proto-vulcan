@@ -11,7 +11,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    f: Box<dyn Fn(&E, State<U, E>) -> Stream<U, E>>,
+    f: Box<dyn Fn(&mut E, State<U, E>) -> Stream<U, E>>,
 }
 
 impl<U, E> FnGoal<U, E>
@@ -19,7 +19,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(f: Box<dyn Fn(&E, State<U, E>) -> Stream<U, E>>) -> Goal<U, E> {
+    pub fn new(f: Box<dyn Fn(&mut E, State<U, E>) -> Stream<U, E>>) -> Goal<U, E> {
         Goal::new(FnGoal { f })
     }
 }
@@ -29,7 +29,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         (*self.f)(engine, state)
     }
 }

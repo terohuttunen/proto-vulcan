@@ -29,7 +29,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         (*self.f)().solve(engine, state)
     }
 }

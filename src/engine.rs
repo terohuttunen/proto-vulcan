@@ -11,9 +11,9 @@ where
 {
     fn new(context: U::UserContext) -> Self;
 
-    fn start(&self, state: Box<State<U, Self>>, goal: Goal<U, Self>) -> Stream<U, Self>;
+    fn start(&mut self, state: Box<State<U, Self>>, goal: Goal<U, Self>) -> Stream<U, Self>;
 
-    fn step(&self, lazy: Lazy<U, Self>) -> Stream<U, Self>;
+    fn step(&mut self, lazy: Lazy<U, Self>) -> Stream<U, Self>;
 
     fn context(&self) -> &U::UserContext;
 }

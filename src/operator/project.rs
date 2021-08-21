@@ -33,7 +33,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         // Walk* each projected variable with the current substitution
         for v in self.variables.iter() {
             v.project(|x| state.smap_ref().walk_star(x));
@@ -75,7 +75,7 @@ mod tests {
         U: User,
         E: Engine<U>,
     {
-        fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
+        fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
             let u = self.u.clone();
             let v = self.v.clone();
             let g: Goal<U, E> = proto_vulcan!(fngoal move |_engine, state| {

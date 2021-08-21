@@ -50,7 +50,7 @@ where
     T: Debug + 'static,
     for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
-    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         let term_iter = IntoIterator::into_iter(&self.coll);
         let goal_iter = term_iter.map(|term| (*self.g)(term.clone()));
         All::from_iter(goal_iter).solve(engine, state)

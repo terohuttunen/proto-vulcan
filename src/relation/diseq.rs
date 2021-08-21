@@ -32,7 +32,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
         // Return state where u and v are unified under s, or None if unification is not possible
         match state.disunify(&self.u, &self.v) {
             Ok(state) => Stream::unit(Box::new(state)),

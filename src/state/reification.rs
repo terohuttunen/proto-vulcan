@@ -11,7 +11,7 @@ fn enforce_constraints_diseq<U: User, E: Engine<U>>(_x: LTerm<U, E>) -> Goal<U, 
 }
 
 fn map_sum<U, E, F, T>(
-    engine: &E,
+    engine: &mut E,
     state: State<U, E>,
     mut f: F,
     iter: impl DoubleEndedIterator<Item = T>,

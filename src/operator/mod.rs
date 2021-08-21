@@ -30,7 +30,7 @@ pub struct ProjectOperatorParam<'a, U: User, E: Engine<U>> {
 
 // fngoal [move]* |engine, state| { <rust> }
 pub struct FnOperatorParam<U: User, E: Engine<U>> {
-    pub f: Box<dyn Fn(&E, State<U, E>) -> Stream<U, E>>,
+    pub f: Box<dyn Fn(&mut E, State<U, E>) -> Stream<U, E>>,
 }
 
 // closure { <body> }
