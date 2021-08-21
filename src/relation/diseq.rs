@@ -6,7 +6,8 @@ use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct Diseq<U, E>
 where
     U: User,
@@ -72,8 +73,8 @@ where
 }
 
 // Disequality constraint
-#[derive(Derivative, Debug)]
-#[derivative(Clone(bound="U: User"))]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
 pub struct DisequalityConstraint<U: User, E: Engine<U>>(SMap<U, E>);
 
 impl<U, E> DisequalityConstraint<U, E>

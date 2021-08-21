@@ -8,7 +8,8 @@ use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct PlusZ<U, E>
 where
     U: User,
@@ -51,7 +52,8 @@ where
 }
 
 /// Sum
-#[derive(Debug, Clone)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
 pub struct PlusZConstraint<U, E>
 where
     U: User,

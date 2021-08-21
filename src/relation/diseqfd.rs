@@ -8,7 +8,8 @@ use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct DiseqFd<U, E>
 where
     U: User,
@@ -78,7 +79,8 @@ where
     DiseqFd::new(u, v)
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct DiseqFdConstraint<U, E>
 where
     U: User,

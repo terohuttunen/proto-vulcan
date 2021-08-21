@@ -8,7 +8,8 @@ use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct DistinctFd<U, E>
 where
     U: User,
@@ -49,7 +50,8 @@ where
     DistinctFd::new(u)
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct DistinctFdConstraint<U, E>
 where
     U: User,
@@ -146,8 +148,8 @@ where
     }
 }
 
-#[derive(Derivative, Debug)]
-#[derivative(Clone(bound="U: User"))]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
 pub struct DistinctFd2Constraint<U, E>
 where
     U: User,

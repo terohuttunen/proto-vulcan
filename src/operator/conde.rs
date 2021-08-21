@@ -6,7 +6,8 @@ use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct Conde<U, E>
 where
     U: User,

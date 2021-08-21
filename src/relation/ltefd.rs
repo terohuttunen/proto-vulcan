@@ -7,7 +7,8 @@ use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct LessThanOrEqualFd<U, E>
 where
     U: User,
@@ -49,7 +50,8 @@ where
 }
 
 // Finite Domain Constraints
-#[derive(Debug, Clone)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
 pub struct LessThanOrEqualFdConstraint<U, E>
 where
     U: User,

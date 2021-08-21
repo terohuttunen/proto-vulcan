@@ -8,7 +8,8 @@ use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct MinusFd<U, E>
 where
     U: User,
@@ -50,7 +51,8 @@ where
     MinusFd::new(u, v, w)
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct MinusFdConstraint<U, E>
 where
     U: User,

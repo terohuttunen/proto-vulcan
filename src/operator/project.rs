@@ -7,7 +7,8 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct Project<U, E>
 where
     U: User,
@@ -56,7 +57,8 @@ mod tests {
     use crate::lterm::LTermInner;
     use crate::prelude::*;
 
-    #[derive(Debug)]
+    #[derive(Derivative)]
+    #[derivative(Debug(bound="U: User"))]
     pub struct SqEq<U: User, E: Engine<U>> {
         u: LTerm<U, E>,
         v: LTerm<U, E>,

@@ -4,7 +4,6 @@ use crate::relation::diseq::DisequalityConstraint;
 use crate::user::{User, DefaultUser};
 use crate::engine::{Engine, DefaultEngine};
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::rc::Rc;
 
 mod substitution;
@@ -38,8 +37,8 @@ pub type SResult<U, E> = Result<State<U, E>, ()>;
 ///    2. The constraint store
 ///    3. The domain store
 ///    4. User data
-#[derive(Derivative, Debug)]
-#[derivative(Clone(bound="U: User"))]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
 pub struct State<U = DefaultUser, E = DefaultEngine<DefaultUser>>
 where
     U: User,

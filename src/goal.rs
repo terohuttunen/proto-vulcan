@@ -7,7 +7,8 @@ use crate::user::{DefaultUser, User};
 use std::fmt;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub enum Goal<U = DefaultUser, E = DefaultEngine<U>>
 where
     U: User,

@@ -2,13 +2,10 @@ use crate::goal::Goal;
 use crate::state::State;
 use crate::stream::{Lazy, Stream, StreamEngine};
 use crate::user::User;
-use std::fmt::Debug;
-
-pub mod debugger;
 
 pub type DefaultEngine<U> = StreamEngine<U>;
 
-pub trait Engine<U>: Sized
+pub trait Engine<U>: Sized + 'static
 where
     U: User,
 {

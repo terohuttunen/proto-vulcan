@@ -5,7 +5,8 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"))]
 pub struct Fresh<E: Engine<U>, U: User> {
     variables: Vec<LTerm<U, E>>,
     body: Goal<U, E>,
