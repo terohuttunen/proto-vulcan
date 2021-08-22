@@ -5,6 +5,7 @@ use crate::lterm::LTerm;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::{DefaultUser, User};
+use crate::debugger::Debugger;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -145,5 +146,11 @@ where
             self.goal.clone(),
             initial_state,
         )
+    }
+
+    pub fn run_with_debugger(&self, user_state: U, user_globals: U::UserContext) -> Debugger<R, U, E> {
+        let initial_state = State::new(user_state);
+        let engine = E::new(user_globals);
+        Debugger::new(engine, self.variables.clone(), self.goal.clone(), initial_state)
     }
 }

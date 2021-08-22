@@ -3,37 +3,66 @@ use crate::engine::Engine;
 use crate::state::State;
 use crate::goal::Goal;
 use crate::stream::{Stream, Lazy};
+use crate::query::QueryResult;
+use crate::lresult::LResult;
+use crate::lterm::LTerm;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
-pub struct Debugger<U: User, E: Engine<U>> {
-    engine: E,
-    _phantom: PhantomData<U>,
-}
+mod ui;
 
-impl<U, E> Engine<U> for Debugger<U, E>
+pub struct Debugger<R, U, E>
 where
+    R: QueryResult<U, E>,
     U: User,
     E: Engine<U>,
 {
-    fn new(context: U::UserContext) -> Self {
-        let engine = E::new(context);
+    engine: E,
+    variables: Vec<LTerm<U, E>>,
+    stream: Stream<U, E>,
+    _phantom: PhantomData<R>,
+}
+
+impl<R, U, E> Debugger<R, U, E>
+where
+    R: QueryResult<U, E>,
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(
+        mut engine: E,
+        variables: Vec<LTerm<U, E>>,
+        goal: Goal<U, E>,
+        initial_state: State<U, E>,
+    ) -> Debugger<R, U, E> {
+        let stream = goal.solve(&mut engine, initial_state);
         Debugger {
             engine,
+            variables,
+            stream,
             _phantom: PhantomData,
         }
     }
+}
 
-    fn start(&self, state: Box<State<U, Self>>, goal: Goal<U, Self>) -> Stream<U, Self> {
-        let stream = self.engine(state, goal);
-        stream
-    }
+impl<R, U, E> Iterator for Debugger<R, U, E>
+where
+    R: QueryResult<U, E>,
+    U: User,
+    E: Engine<U>,
+{
+    type Item = R;
 
-    fn step(&self, lazy: Lazy<U, Self>) -> Stream<U, Self> {
-        let stream = self.engine.step(lazy);
-        stream
-    }
-
-    fn context(&self) -> &U::UserContext {
-        self.engine.context()
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let maybe_state = self.stream.step(&mut self.engine);
+            if self.stream.is_empty() {
+                return None;
+            } else {
+                if maybe_state.is_some() {
+                    return maybe_state;
+                }
+            }
+        }
     }
 }

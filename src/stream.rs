@@ -167,6 +167,23 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
+    pub fn step(&mut self, engine: &mut E) -> Option<Box<State<U, E>>> {
+        match std::mem::replace(self, Stream::Empty) {
+            Stream::Empty => return None,
+            Stream::Lazy(lazy) => {
+                let _ = std::mem::replace(self, lazy.step_into(engine));
+                return None;
+            }
+            Stream::Unit(a) => {
+                return Some(a);
+            }
+            Stream::Cons(a, lazy) => {
+                let _ = std::mem::replace(self, Stream::Lazy(lazy));
+                return Some(a);
+            }
+        }
+    }
+
     /// Returns a reference to next element in the stream, if any.
     pub fn peek<'a>(&'a mut self, engine: &mut E) -> Option<&'a Box<State<U, E>>> {
         self.mature(engine);

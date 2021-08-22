@@ -339,6 +339,8 @@ use std::borrow::Borrow;
 use user::User;
 use engine::Engine;
 
+pub mod debugger;
+
 pub trait Upcast<U, E, SuperType>
 where
     U: User,
