@@ -6,15 +6,16 @@ use crate::engine::Engine;
 ///
 /// [a0 AND a1 AND ...] OR
 /// [b0 AND b1 AND ...] OR ...
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct Condu<U, E>
 where
     U: User,
@@ -54,13 +55,13 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
-        let mut stream = self.first.solve(engine, state.clone());
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+        let mut stream = self.first.solve(solver, state.clone());
 
         // Take only first item from the stream of first goal by truncating the stream
-        match stream.trunc(engine) {
+        match stream.trunc(solver) {
             Some(_) => Stream::bind(stream, self.rest.clone()),
-            None => self.next.solve(engine, state),
+            None => self.next.solve(solver, state),
         }
     }
 }

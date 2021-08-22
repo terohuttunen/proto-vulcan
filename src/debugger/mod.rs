@@ -1,11 +1,11 @@
-use crate::user::User;
 use crate::engine::Engine;
-use crate::state::State;
 use crate::goal::Goal;
-use crate::stream::{Stream, Lazy};
-use crate::query::QueryResult;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
+use crate::query::QueryResult;
+use crate::state::State;
+use crate::stream::{Lazy, Stream};
+use crate::user::User;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -56,11 +56,29 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             let maybe_state = self.stream.step(&mut self.engine);
-            if self.stream.is_empty() {
-                return None;
-            } else {
-                if maybe_state.is_some() {
-                    return maybe_state;
+            println!("Step");
+            match maybe_state {
+                Some(state) => {
+                    let smap = state.smap_ref();
+                    let purified_cstore = state.cstore_ref().clone().purify(smap).normalize();
+                    let reified_cstore = Rc::new(purified_cstore.walk_star(smap));
+                    let results = self
+                        .variables
+                        .iter()
+                        .map(|v| {
+                            LResult::<U, E>(
+                                state.smap_ref().walk_star(v),
+                                Rc::clone(&reified_cstore),
+                            )
+                        })
+                        .collect();
+
+                    return Some(R::from_vec(results));
+                }
+                None => {
+                    if self.stream.is_empty() {
+                        return None;
+                    }
                 }
             }
         }

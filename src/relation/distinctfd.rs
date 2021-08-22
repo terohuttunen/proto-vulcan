@@ -1,15 +1,16 @@
 use crate::engine::Engine;
 /// distinctfd finite domain constraint
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
+use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, FiniteDomain, SResult, State};
 use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct DistinctFd<U, E>
 where
     U: User,
@@ -33,7 +34,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let u = self.u.clone();
         match DistinctFdConstraint::new(u).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
@@ -51,7 +52,7 @@ where
 }
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct DistinctFdConstraint<U, E>
 where
     U: User,
@@ -88,7 +89,8 @@ where
             }
             LTermInner::Empty | LTermInner::Cons(_, _) => {
                 // Partition the list of terms to unresolved variables in `x` and constants in `n`.
-                let (x, n): (LTerm<U, E>, LTerm<U, E>) = v.iter().cloned().partition(|v| v.is_var());
+                let (x, n): (LTerm<U, E>, LTerm<U, E>) =
+                    v.iter().cloned().partition(|v| v.is_var());
 
                 // Convert list of LTerm constants to Vec<usize>
                 let mut n = n
@@ -149,7 +151,7 @@ where
 }
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub struct DistinctFd2Constraint<U, E>
 where
     U: User,

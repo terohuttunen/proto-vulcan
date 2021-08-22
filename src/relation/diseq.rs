@@ -1,13 +1,14 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::lterm::LTerm;
+use crate::solver::{Solve, Solver};
 use crate::state::{unify_rec, Constraint, SMap, SResult, State};
 use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct Diseq<U, E>
 where
     U: User,
@@ -32,7 +33,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         // Return state where u and v are unified under s, or None if unification is not possible
         match state.disunify(&self.u, &self.v) {
             Ok(state) => Stream::unit(Box::new(state)),
@@ -74,7 +75,7 @@ where
 
 // Disequality constraint
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub struct DisequalityConstraint<U: User, E: Engine<U>>(SMap<U, E>);
 
 impl<U, E> DisequalityConstraint<U, E>
@@ -168,8 +169,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prelude::*;
     use crate::engine::DefaultEngine;
+    use crate::prelude::*;
 
     #[test]
     fn test_subsumes_1() {

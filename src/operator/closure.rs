@@ -1,6 +1,7 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::operator::ClosureOperatorParam;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
@@ -29,8 +30,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
-        (*self.f)().solve(engine, state)
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+        (*self.f)().solve(solver, state)
     }
 }
 

@@ -1,14 +1,15 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::operator::all::All;
 use crate::operator::conde::conde;
 use crate::operator::OperatorParam;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct Anyo<U, E>
 where
     U: User,
@@ -32,7 +33,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let g = self.g.clone();
         let g2 = self.g.clone();
         let goal = proto_vulcan!(
@@ -43,7 +44,7 @@ where
                 },
             }
         );
-        goal.solve(engine, state)
+        goal.solve(solver, state)
     }
 }
 

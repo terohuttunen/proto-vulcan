@@ -1,13 +1,14 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::operator::all::All;
 use crate::operator::OperatorParam;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct Conde<U, E>
 where
     U: User,
@@ -47,7 +48,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let mut stream = Stream::empty();
 
         // Process first element separately to avoid one extra clone of `state`.
@@ -58,13 +59,13 @@ where
                 .rev()
                 .take(self.conjunctions.len() - 1)
             {
-                let new_stream = conjunction.solve(engine, state.clone());
+                let new_stream = conjunction.solve(solver, state.clone());
                 stream = Stream::mplus(new_stream, LazyStream::delay(stream));
             }
         }
 
         if self.conjunctions.len() > 0 {
-            let new_stream = self.conjunctions[0].solve(engine, state);
+            let new_stream = self.conjunctions[0].solve(solver, state);
             stream = Stream::mplus(new_stream, LazyStream::delay(stream));
         }
 

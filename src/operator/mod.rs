@@ -1,6 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
+use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
@@ -30,7 +31,7 @@ pub struct ProjectOperatorParam<'a, U: User, E: Engine<U>> {
 
 // fngoal [move]* |engine, state| { <rust> }
 pub struct FnOperatorParam<U: User, E: Engine<U>> {
-    pub f: Box<dyn Fn(&mut E, State<U, E>) -> Stream<U, E>>,
+    pub f: Box<dyn Fn(&Solver<U, E>, State<U, E>) -> Stream<U, E>>,
 }
 
 // closure { <body> }

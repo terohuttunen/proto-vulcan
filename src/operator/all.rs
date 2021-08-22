@@ -1,12 +1,13 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct All<U, E>
 where
     U: User,
@@ -79,7 +80,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let stream = Stream::pause(Box::new(state), self.goal_1.clone());
         Stream::bind(stream, self.goal_2.clone())
     }

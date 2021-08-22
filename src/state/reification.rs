@@ -2,6 +2,7 @@ use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::{LTerm, LTermInner};
 use crate::operator::onceo;
+use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
@@ -11,7 +12,7 @@ fn enforce_constraints_diseq<U: User, E: Engine<U>>(_x: LTerm<U, E>) -> Goal<U, 
 }
 
 fn map_sum<U, E, F, T>(
-    engine: &mut E,
+    solver: &Solver<U, E>,
     state: State<U, E>,
     mut f: F,
     iter: impl DoubleEndedIterator<Item = T>,
@@ -28,11 +29,11 @@ where
             Some(d) => {
                 if iter.peek().is_none() {
                     // If this is last value in the domain, no need to clone `state`.
-                    let new_stream = f(d).solve(engine, state);
+                    let new_stream = f(d).solve(solver, state);
                     stream = Stream::mplus(new_stream, LazyStream::delay(stream));
                     break;
                 } else {
-                    let new_stream = f(d).solve(engine, state.clone());
+                    let new_stream = f(d).solve(solver, state.clone());
                     stream = Stream::mplus(new_stream, LazyStream::delay(stream));
                 }
             }
@@ -48,14 +49,14 @@ where
 /// and returning solutions for all numbers. Adds a `x == d` substitution for each `d` in
 /// the domain.
 fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
-    proto_vulcan!(fngoal move |engine, state| {
+    proto_vulcan!(fngoal move |solver, state| {
         let xwalk: LTerm<U, E> = state.smap_ref().walk(&x).clone();
         let maybe_xdomain = state.dstore_ref().get(&xwalk).cloned();
 
         match (xwalk.as_ref(), maybe_xdomain) {
             (LTermInner::<U, E>::Var(_, _), Some(xdomain)) => {
                 // Stream of solutions where xwalk can equal any value of xdomain
-                map_sum(engine, state, |d| {
+                map_sum(solver, state, |d| {
                     let dterm = LTerm::from(d);
                     proto_vulcan!(dterm == xwalk)
                 }, xdomain.iter())
@@ -67,9 +68,9 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
                 proto_vulcan!([
                     force_ans(head),
                     force_ans(tail),
-                ]).solve(engine, state)
+                ]).solve(solver, state)
             },
-            (_, _) => proto_vulcan!(true).solve(engine, state),
+            (_, _) => proto_vulcan!(true).solve(solver, state),
         }
     })
 }

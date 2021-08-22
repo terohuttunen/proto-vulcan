@@ -1,15 +1,16 @@
 use crate::engine::Engine;
 /// Constrains u - v = w finite domains
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
+use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, FiniteDomain, SResult, State};
 use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct MinusFd<U, E>
 where
     U: User,
@@ -35,7 +36,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match MinusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -52,7 +53,7 @@ where
 }
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct MinusFdConstraint<U, E>
 where
     U: User,

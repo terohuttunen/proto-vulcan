@@ -1,8 +1,9 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::operator::all::All;
 use crate::operator::ForOperatorParam;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
@@ -50,10 +51,10 @@ where
     T: Debug + 'static,
     for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
-    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let term_iter = IntoIterator::into_iter(&self.coll);
         let goal_iter = term_iter.map(|term| (*self.g)(term.clone()));
-        All::from_iter(goal_iter).solve(engine, state)
+        All::from_iter(goal_iter).solve(solver, state)
     }
 }
 

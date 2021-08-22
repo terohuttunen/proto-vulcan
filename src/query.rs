@@ -1,11 +1,12 @@
+//use crate::debugger::Debugger;
 use crate::engine::{DefaultEngine, Engine};
 use crate::goal::Goal;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
+use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::{DefaultUser, User};
-use crate::debugger::Debugger;
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -24,7 +25,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    engine: E,
+    solver: Solver<U, E>,
     variables: Vec<LTerm<U, E>>,
     stream: Stream<U, E>,
     _phantom: PhantomData<R>,
@@ -38,14 +39,14 @@ where
     E: Engine<U>,
 {
     pub fn new(
-        mut engine: E,
+        solver: Solver<U, E>,
         variables: Vec<LTerm<U, E>>,
         goal: Goal<U, E>,
         initial_state: State<U, E>,
     ) -> ResultIterator<R, U, E> {
-        let stream = goal.solve(&mut engine, initial_state);
+        let stream = goal.solve(&solver, initial_state);
         ResultIterator {
-            engine,
+            solver,
             variables,
             stream,
             _phantom: PhantomData,
@@ -63,7 +64,7 @@ where
     type Item = R;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.stream.next(&mut self.engine) {
+        match self.stream.next(&mut self.solver) {
             Some(state) => {
                 // At this point the state has already gone through initial reification
                 // process
@@ -73,9 +74,11 @@ where
                 let results = self
                     .variables
                     .iter()
-                    .map(|v| LResult::<U, E>(state.smap_ref().walk_star(v), Rc::clone(&reified_cstore)))
+                    .map(|v| {
+                        LResult::<U, E>(state.smap_ref().walk_star(v), Rc::clone(&reified_cstore))
+                    })
                     .collect();
-                
+
                 Some(R::from_vec(results))
             }
             None => None,
@@ -139,18 +142,20 @@ where
     ) -> ResultIterator<R, U, E> {
         let initial_state = State::new(user_state);
         let user_globals = user_globals;
-        let engine = E::new(user_globals);
+        let solver = Solver::new(user_globals, false);
         ResultIterator::new(
-            engine,
+            solver,
             self.variables.clone(),
             self.goal.clone(),
             initial_state,
         )
     }
 
+    /*
     pub fn run_with_debugger(&self, user_state: U, user_globals: U::UserContext) -> Debugger<R, U, E> {
         let initial_state = State::new(user_state);
         let engine = E::new(user_globals);
         Debugger::new(engine, self.variables.clone(), self.goal.clone(), initial_state)
     }
+    */
 }

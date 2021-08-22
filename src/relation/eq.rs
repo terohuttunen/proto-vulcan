@@ -1,12 +1,13 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::lterm::LTerm;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct Eq<U, E>
 where
     U: User,
@@ -31,7 +32,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match state.unify(&self.u, &self.v) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),

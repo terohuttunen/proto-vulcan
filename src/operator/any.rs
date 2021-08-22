@@ -1,13 +1,14 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::operator::all::All;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct Any<U, E>
 where
     U: User,
@@ -62,8 +63,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
-        let stream = self.goal_1.solve(engine, state.clone());
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+        let stream = self.goal_1.solve(solver, state.clone());
         let lazy = LazyStream::pause(Box::new(state), self.goal_2.clone());
         Stream::mplus(stream, lazy)
     }

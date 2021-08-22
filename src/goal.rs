@@ -1,6 +1,7 @@
 use crate::engine::{DefaultEngine, Engine};
 use crate::operator::all::All;
 use crate::operator::any::Any;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::{DefaultUser, User};
@@ -8,7 +9,7 @@ use std::fmt;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub enum Goal<U = DefaultUser, E = DefaultEngine<U>>
 where
     U: User,
@@ -46,13 +47,13 @@ where
         Goal::Fail
     }
 
-    pub fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    pub fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match self {
             Goal::Succeed => Stream::unit(Box::new(state)),
             Goal::Fail => Stream::empty(),
-            Goal::Disj(g) => g.solve(engine, state),
-            Goal::Conj(g) => g.solve(engine, state),
-            Goal::Inner(inner) => inner.solve(engine, state),
+            Goal::Disj(g) => g.solve(solver, state),
+            Goal::Conj(g) => g.solve(solver, state),
+            Goal::Inner(inner) => inner.solve(solver, state),
         }
     }
 
@@ -83,23 +84,11 @@ impl<U: User, E: Engine<U>> Clone for Goal<U, E> {
     }
 }
 
-// A goal is a function which, given an input state, will give an output state (or infinite stream
-// of output states). It encapsulates a logic query that is evaluated as infinite stream of
-// states that solve the query at any given time.
-pub trait Solve<U, E>: fmt::Debug
-where
-    U: User,
-    E: Engine<U>,
-{
-    /// Generate a stream of solutions to the goal by applying it to some initial state.
-    fn solve(&self, engine: &mut E, state: State<U, E>) -> Stream<U, E>;
-}
-
 #[cfg(test)]
 mod test {
-    use super::Solve;
     use crate::engine::Engine;
     use crate::prelude::*;
+    use crate::solver::Solve;
     use crate::state::State;
     use crate::stream::Stream;
     use crate::user::DefaultUser;
@@ -122,7 +111,7 @@ mod test {
     struct TestGoal {}
 
     impl<E: Engine<U>, U: User> Solve<U, E> for TestGoal {
-        fn solve(&self, _engine: &mut E, _state: State<U, E>) -> Stream<U, E> {
+        fn solve(&self, _engine: &Solver<U, E>, _state: State<U, E>) -> Stream<U, E> {
             Stream::empty()
         }
     }

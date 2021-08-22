@@ -1,14 +1,15 @@
 use crate::engine::Engine;
 /// Less than or equal FD
-use crate::goal::{Goal, Solve};
+use crate::goal::Goal;
 use crate::lterm::LTerm;
+use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, SResult, State};
 use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"))]
 pub struct LessThanOrEqualFd<U, E>
 where
     U: User,
@@ -33,7 +34,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &mut E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match LessThanOrEqualFdConstraint::new(self.u.clone(), self.v.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -51,7 +52,7 @@ where
 
 // Finite Domain Constraints
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub struct LessThanOrEqualFdConstraint<U, E>
 where
     U: User,

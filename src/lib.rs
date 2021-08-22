@@ -318,28 +318,23 @@ extern crate derivative;
 pub mod compound;
 use compound::CompoundObject;
 
+//pub mod debugger;
+pub mod engine;
 pub mod goal;
+pub mod lresult;
 pub mod lterm;
-pub mod state;
-pub mod stream;
-
 pub mod lvalue;
 pub mod operator;
+pub mod query;
 pub mod relation;
-
-pub mod lresult;
-
+pub mod solver;
+pub mod state;
+pub mod stream;
 pub mod user;
 
-pub mod engine;
-
-pub mod query;
-
+use engine::Engine;
 use std::borrow::Borrow;
 use user::User;
-use engine::Engine;
-
-pub mod debugger;
 
 pub trait Upcast<U, E, SuperType>
 where
@@ -371,10 +366,11 @@ pub mod prelude {
     };
 
     pub use crate::compound::CompoundTerm;
-    pub use crate::engine::{Engine, DefaultEngine};
-    pub use crate::goal::{Goal, Solve};
+    pub use crate::engine::{DefaultEngine, Engine};
+    pub use crate::goal::Goal;
     pub use crate::lterm::LTerm;
     pub use crate::lvalue::LValue;
+    pub use crate::solver::{Solve, Solver};
     pub use crate::state::Constraint;
     pub use crate::user::{DefaultUser, User};
 
