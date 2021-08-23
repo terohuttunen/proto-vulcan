@@ -21,7 +21,7 @@ where
     E: Engine<U>,
 {
     pub fn new(f: Box<dyn Fn(&Solver<U, E>, State<U, E>) -> Stream<U, E>>) -> Goal<U, E> {
-        Goal::new(FnGoal { f })
+        Goal::dynamic(FnGoal { f })
     }
 }
 

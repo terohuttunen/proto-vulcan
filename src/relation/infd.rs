@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::operator::all::All;
+use crate::operator::conj::Conj;
 use crate::relation::domfd::DomFd;
 use crate::state::FiniteDomain;
 use crate::user::User;
@@ -18,7 +18,7 @@ where
             .iter()
             .map(|v| DomFd::new(v.clone(), FiniteDomain::from(domain)))
             .collect();
-        All::from_vec(goals)
+        Conj::from_vec(goals)
     } else {
         DomFd::new(u, FiniteDomain::from(domain))
     }
@@ -34,7 +34,7 @@ where
             .iter()
             .map(|v| DomFd::new(v.clone(), FiniteDomain::from(domain)))
             .collect();
-        All::from_vec(goals)
+        Conj::from_vec(goals)
     } else {
         DomFd::new(u, FiniteDomain::from(domain))
     }

@@ -13,6 +13,6 @@ where
     U: User,
     E: Engine<U>,
 {
-    let g = crate::operator::all::All::from_conjunctions(param.body);
+    let g = crate::operator::conj::Conj::from_conjunctions(param.body);
     proto_vulcan!(condu { g })
 }

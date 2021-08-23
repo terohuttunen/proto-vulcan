@@ -199,7 +199,7 @@ impl ToTokens for Fresh {
         let output = quote! {{
             #( let #variables: #variable_types <_, _> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
             ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::proto_vulcan::Upcast::to_super(&#variables) ),* ],
-                ::proto_vulcan::operator::all::All::from_array(&[ #( #body ),* ]))
+                ::proto_vulcan::operator::conj::Conj::from_array(&[ #( #body ),* ]))
         }};
         output.to_tokens(tokens);
     }
@@ -600,7 +600,7 @@ impl ToTokens for Closure {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam {f: Box::new(move || ::proto_vulcan::operator::all::All::from_array( &[ #( #body ),* ] ) )})
+            ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam {f: Box::new(move || ::proto_vulcan::operator::conj::Conj::from_array( &[ #( #body ),* ] ) )})
         }};
         output.to_tokens(tokens);
     }
@@ -1304,7 +1304,7 @@ impl ToTokens for For {
         let output = quote!({
             ::proto_vulcan::operator::everyg(::proto_vulcan::operator::ForOperatorParam {
                 coll: ::std::clone::Clone::clone(#coll),
-                g: Box::new(|#pattern| ::proto_vulcan::operator::all::All::from_conjunctions(&[ #( #body ),* ])),
+                g: Box::new(|#pattern| ::proto_vulcan::operator::conj::Conj::from_conjunctions(&[ #( #body ),* ])),
             })
         });
         output.to_tokens(tokens);
@@ -1750,9 +1750,9 @@ impl ToTokens for Clause {
             }
             Clause::Conjunction(conjunction) => {
                 // When conjunction is not inside a non-conjunction an operator we can construct
-                // an All-goal from it.
+                // an Conj-goal from it.
                 let output =
-                    quote! { ::proto_vulcan::operator::all::All::from_array( #conjunction ) };
+                    quote! { ::proto_vulcan::operator::conj::Conj::from_array( #conjunction ) };
                 output.to_tokens(tokens);
             }
             Clause::Relation(relation) => {
@@ -1823,7 +1823,7 @@ impl ToTokens for ClauseInOperator {
                 output.to_tokens(tokens);
             }
             Clause::Conjunction(conjunction) => {
-                // When conjunction is inside an operator, we do not create All-goal, and instead
+                // When conjunction is inside an operator, we do not create Conj-goal, and instead
                 // let the conjunction be represented as an array of goals.
                 conjunction.to_tokens(tokens);
             }
@@ -1941,12 +1941,12 @@ impl ToTokens for Query {
                 let __query__ = ::proto_vulcan::lterm::LTerm::var("__query__");
                 ::proto_vulcan::operator::fresh::Fresh::new(
                     vec![::std::clone::Clone::clone(&__query__)],
-                    ::proto_vulcan::operator::all::All::from_array(&[
+                    ::proto_vulcan::operator::conj::Conj::from_array(&[
                         ::proto_vulcan::relation::eq::eq(
                             ::std::clone::Clone::clone(&__query__),
                             ::proto_vulcan::lterm::LTerm::from_array(&[#(::proto_vulcan::Upcast::to_super(&#query)),*]),
                      ),
-                     ::proto_vulcan::operator::all::All::from_array(&[
+                     ::proto_vulcan::operator::conj::Conj::from_array(&[
                         #( #body ),*
                      ]),
                      ::proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),

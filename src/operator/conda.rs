@@ -6,7 +6,7 @@ use crate::engine::Engine;
 /// [a0 AND a1 AND ...] OR
 /// [b0 AND b1 AND ...] OR ...
 use crate::goal::Goal;
-use crate::operator::all::All;
+use crate::operator::conj::Conj;
 use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -40,9 +40,9 @@ where
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
             if !clause.is_empty() {
-                let rest = All::from_vec(clause.split_off(1));
+                let rest = Conj::from_vec(clause.split_off(1));
                 let first = clause.pop().unwrap();
-                next = Goal::new(Conda { first, rest, next });
+                next = Goal::dynamic(Conda { first, rest, next });
             }
         }
         next

@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
-use crate::operator::all::All;
+use crate::operator::conj::Conj;
 use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -23,11 +23,11 @@ where
     E: Engine<U>,
 {
     pub fn from_vec(conjunctions: Vec<Goal<U, E>>) -> Goal<U, E> {
-        Goal::new(Conde { conjunctions })
+        Goal::dynamic(Conde { conjunctions })
     }
 
     pub fn from_array(goals: &[Goal<U, E>]) -> Goal<U, E> {
-        Goal::new(Conde {
+        Goal::dynamic(Conde {
             conjunctions: goals.to_vec(),
         })
     }
@@ -37,7 +37,7 @@ where
     pub fn from_conjunctions(goals: &[&[Goal<U, E>]]) -> Goal<U, E> {
         let mut conjunctions = vec![];
         for conjunction_goals in goals {
-            conjunctions.push(All::from_array(conjunction_goals));
+            conjunctions.push(Conj::from_array(conjunction_goals));
         }
         Conde::from_vec(conjunctions)
     }

@@ -25,7 +25,7 @@ where
     E: Engine<U>,
 {
     pub fn new(u: LTerm<U, E>) -> Goal<U, E> {
-        Goal::new(DistinctFd { u })
+        Goal::dynamic(DistinctFd { u })
     }
 }
 

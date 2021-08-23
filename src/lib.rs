@@ -199,7 +199,7 @@
 //! use proto_vulcan::operator::OperatorParam;
 //!
 //! pub fn onceo<U: User, E: Engine<U>>(param: OperatorParam<U, E>) -> Goal<U, E> {
-//!    let g = proto_vulcan::operator::all::All::from_conjunctions(param.body);
+//!    let g = proto_vulcan::operator::conj::Conj::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }
 //! # fn main() {}
@@ -318,7 +318,7 @@ extern crate derivative;
 pub mod compound;
 use compound::CompoundObject;
 
-//pub mod debugger;
+pub mod debugger;
 pub mod engine;
 pub mod goal;
 pub mod lresult;

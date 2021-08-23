@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::operator::all::All;
+use crate::operator::conj::Conj;
 use crate::operator::ProjectOperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -25,7 +25,7 @@ where
     E: Engine<U>,
 {
     pub fn new(variables: Vec<LTerm<U, E>>, body: Goal<U, E>) -> Goal<U, E> {
-        Goal::new(Project { variables, body }) as Goal<U, E>
+        Goal::dynamic(Project { variables, body }) as Goal<U, E>
     }
 }
 
@@ -48,7 +48,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    Project::new(param.var_list, All::from_conjunctions(param.body))
+    Project::new(param.var_list, Conj::from_conjunctions(param.body))
 }
 
 #[cfg(test)]
@@ -68,7 +68,7 @@ mod tests {
 
     impl<U: User, E: Engine<U>> SqEq<U, E> {
         pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-            Goal::new(SqEq { u, v })
+            Goal::dynamic(SqEq { u, v })
         }
     }
 

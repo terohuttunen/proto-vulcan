@@ -21,7 +21,7 @@ where
     E: Engine<U>,
 {
     pub fn new(param: ClosureOperatorParam<U, E>) -> Goal<U, E> {
-        Goal::new(Closure { f: param.f })
+        Goal::dynamic(Closure { f: param.f })
     }
 }
 

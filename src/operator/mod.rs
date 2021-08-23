@@ -54,10 +54,6 @@ where
 }
 
 #[doc(hidden)]
-pub mod all;
-#[doc(hidden)]
-pub mod any;
-#[doc(hidden)]
 pub mod anyo;
 #[doc(hidden)]
 pub mod closure;
@@ -67,6 +63,10 @@ pub mod conda;
 pub mod conde;
 #[doc(hidden)]
 pub mod condu;
+#[doc(hidden)]
+pub mod conj;
+#[doc(hidden)]
+pub mod disj;
 #[doc(hidden)]
 pub mod everyg;
 #[doc(hidden)]

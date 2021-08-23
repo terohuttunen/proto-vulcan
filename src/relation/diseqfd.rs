@@ -26,7 +26,7 @@ where
     E: Engine<U>,
 {
     pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-        Goal::new(DiseqFd { u, v })
+        Goal::dynamic(DiseqFd { u, v })
     }
 }
 

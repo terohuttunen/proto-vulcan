@@ -1,15 +1,12 @@
 use crate::engine::{DefaultEngine, Engine};
-use crate::operator::all::All;
-use crate::operator::any::Any;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::{DefaultUser, User};
-use std::fmt;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
+#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub enum Goal<U = DefaultUser, E = DefaultEngine<U>>
 where
     U: User,
@@ -17,9 +14,8 @@ where
 {
     Succeed,
     Fail,
-    Disj(Rc<Any<U, E>>),
-    Conj(Rc<All<U, E>>),
-    Inner(Rc<dyn Solve<U, E>>),
+    Breakpoint(&'static str),
+    Dynamic(Rc<dyn Solve<U, E>>),
 }
 
 impl<U, E> Goal<U, E>
@@ -27,16 +23,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new<T: Solve<U, E> + 'static>(u: T) -> Goal<U, E> {
-        Goal::Inner(Rc::new(u))
-    }
-
-    pub fn new_disj(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
-        Goal::Disj(Rc::new(Any::new_raw(goal_1, goal_2)))
-    }
-
-    pub fn new_conj(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
-        Goal::Conj(Rc::new(All::new_raw(goal_1, goal_2)))
+    pub fn dynamic<T: Solve<U, E>>(u: T) -> Goal<U, E> {
+        Goal::Dynamic(Rc::new(u))
     }
 
     pub fn succeed() -> Goal<U, E> {
@@ -47,13 +35,16 @@ where
         Goal::Fail
     }
 
+    pub fn breakpoint(id: &'static str) -> Goal<U, E> {
+        Goal::Breakpoint(id)
+    }
+
     pub fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match self {
             Goal::Succeed => Stream::unit(Box::new(state)),
             Goal::Fail => Stream::empty(),
-            Goal::Disj(g) => g.solve(solver, state),
-            Goal::Conj(g) => g.solve(solver, state),
-            Goal::Inner(inner) => inner.solve(solver, state),
+            Goal::Breakpoint(_) => Stream::unit(Box::new(state)),
+            Goal::Dynamic(dynamic) => dynamic.solve(solver, state),
         }
     }
 
@@ -70,16 +61,11 @@ where
             _ => false,
         }
     }
-}
 
-impl<U: User, E: Engine<U>> Clone for Goal<U, E> {
-    fn clone(&self) -> Goal<U, E> {
+    pub fn is_breakpoint(&self) -> bool {
         match self {
-            Goal::Succeed => Goal::Succeed,
-            Goal::Fail => Goal::Fail,
-            Goal::Disj(g) => Goal::Disj(Rc::clone(g)),
-            Goal::Conj(g) => Goal::Conj(Rc::clone(g)),
-            Goal::Inner(inner) => Goal::Inner(Rc::clone(inner)),
+            Goal::Breakpoint(_) => true,
+            _ => false,
         }
     }
 }
@@ -118,7 +104,7 @@ mod test {
 
     #[test]
     fn test_goal_inner() {
-        let g = Goal::<DefaultUser>::new(TestGoal {});
+        let g = Goal::<DefaultUser>::dynamic(TestGoal {});
         assert!(!g.is_succeed());
         assert!(!g.is_fail());
     }

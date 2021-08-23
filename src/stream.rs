@@ -1,5 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
+use crate::operator::conj::Conj;
+use crate::operator::disj::Disj;
 use crate::solver::Solver;
 use crate::state::State;
 use crate::user::User;
@@ -235,15 +237,22 @@ where
         match goal {
             Goal::Succeed => Stream::unit(state),
             Goal::Fail => Stream::empty(),
-            Goal::Disj(disj) => Stream::lazy_mplus(
-                LazyStream::pause(state.clone(), disj.goal_1.clone()),
-                LazyStream::pause(state, disj.goal_2.clone()),
-            ),
-            Goal::Conj(conj) => Stream::lazy_bind(
-                LazyStream::pause(state, conj.goal_1.clone()),
-                conj.goal_2.clone(),
-            ),
-            Goal::Inner(goal) => goal.solve(solver, *state),
+            Goal::Breakpoint(_) => Stream::unit(state),
+            Goal::Dynamic(dynamic) => {
+                if let Some(disj) = dynamic.downcast_ref::<Disj<U, Self>>() {
+                    Stream::lazy_mplus(
+                        LazyStream::pause(state.clone(), disj.goal_1.clone()),
+                        LazyStream::pause(state, disj.goal_2.clone()),
+                    )
+                } else if let Some(conj) = dynamic.downcast_ref::<Conj<U, Self>>() {
+                    Stream::lazy_bind(
+                        LazyStream::pause(state, conj.goal_1.clone()),
+                        conj.goal_2.clone(),
+                    )
+                } else {
+                    dynamic.solve(solver, *state)
+                }
+            }
         }
     }
 

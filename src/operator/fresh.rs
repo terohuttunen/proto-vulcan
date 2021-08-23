@@ -15,7 +15,7 @@ pub struct Fresh<E: Engine<U>, U: User> {
 
 impl<E: Engine<U>, U: User> Fresh<E, U> {
     pub fn new(variables: Vec<LTerm<U, E>>, body: Goal<U, E>) -> Goal<U, E> {
-        Goal::new(Fresh { variables, body }) as Goal<U, E>
+        Goal::dynamic(Fresh { variables, body }) as Goal<U, E>
     }
 }
 

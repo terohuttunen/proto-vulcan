@@ -6,13 +6,6 @@ use crate::user::User;
 
 pub type DefaultEngine<U> = StreamEngine<U>;
 
-pub trait EngineBuilder<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-}
-
 pub trait Engine<U>: Sized + 'static
 where
     U: User,

@@ -1,8 +1,6 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
-use crate::lresult::LResult;
-use crate::lterm::LTerm;
-use crate::query::QueryResult;
+use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::{Lazy, Stream};
 use crate::user::User;
@@ -11,76 +9,37 @@ use std::rc::Rc;
 
 mod ui;
 
-pub struct Debugger<R, U, E>
+pub struct Debugger<U, E>
 where
-    R: QueryResult<U, E>,
     U: User,
     E: Engine<U>,
 {
-    engine: E,
-    variables: Vec<LTerm<U, E>>,
-    stream: Stream<U, E>,
-    _phantom: PhantomData<R>,
+    _phantom: PhantomData<U>,
+    _phantom2: PhantomData<E>,
 }
 
-impl<R, U, E> Debugger<R, U, E>
+impl<U, E> Debugger<U, E>
 where
-    R: QueryResult<U, E>,
     U: User,
     E: Engine<U>,
 {
-    pub fn new(
-        mut engine: E,
-        variables: Vec<LTerm<U, E>>,
-        goal: Goal<U, E>,
-        initial_state: State<U, E>,
-    ) -> Debugger<R, U, E> {
-        let stream = goal.solve(&mut engine, initial_state);
+    pub fn new() -> Debugger<U, E> {
         Debugger {
-            engine,
-            variables,
-            stream,
             _phantom: PhantomData,
+            _phantom2: PhantomData,
         }
     }
-}
 
-impl<R, U, E> Iterator for Debugger<R, U, E>
-where
-    R: QueryResult<U, E>,
-    U: User,
-    E: Engine<U>,
-{
-    type Item = R;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            let maybe_state = self.stream.step(&mut self.engine);
-            println!("Step");
-            match maybe_state {
-                Some(state) => {
-                    let smap = state.smap_ref();
-                    let purified_cstore = state.cstore_ref().clone().purify(smap).normalize();
-                    let reified_cstore = Rc::new(purified_cstore.walk_star(smap));
-                    let results = self
-                        .variables
-                        .iter()
-                        .map(|v| {
-                            LResult::<U, E>(
-                                state.smap_ref().walk_star(v),
-                                Rc::clone(&reified_cstore),
-                            )
-                        })
-                        .collect();
-
-                    return Some(R::from_vec(results));
-                }
-                None => {
-                    if self.stream.is_empty() {
-                        return None;
-                    }
-                }
-            }
+    pub fn pre_start(&self, solver: &Solver<U, E>, state: &State<U, E>, goal: &Goal<U, E>) {
+        if goal.is_succeed() {
+        } else if goal.is_fail() {
+        } else if goal.is_breakpoint() {
         }
     }
+
+    pub fn post_start(&self, solver: &Solver<U, E>, stream: &Stream<U, E>) {}
+
+    pub fn pre_step(&self, solver: &Solver<U, E>, lazy: &Lazy<U, E>) {}
+
+    pub fn post_step(&self, solver: &Solver<U, E>, stream: &Stream<U, E>) {}
 }

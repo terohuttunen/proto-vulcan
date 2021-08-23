@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::operator::all::All;
+use crate::operator::conj::Conj;
 use crate::operator::ForOperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -40,7 +40,7 @@ where
     for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
     fn new(coll: T, g: Box<dyn Fn(LTerm<U, E>) -> Goal<U, E>>) -> Goal<U, E> {
-        Goal::new(Everyg { coll, g })
+        Goal::dynamic(Everyg { coll, g })
     }
 }
 
@@ -54,7 +54,7 @@ where
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let term_iter = IntoIterator::into_iter(&self.coll);
         let goal_iter = term_iter.map(|term| (*self.g)(term.clone()));
-        All::from_iter(goal_iter).solve(solver, state)
+        Conj::from_iter(goal_iter).solve(solver, state)
     }
 }
 

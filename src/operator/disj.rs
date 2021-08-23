@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
-use crate::operator::all::All;
+use crate::operator::conj::Conj;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
-pub struct Any<U, E>
+pub struct Disj<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -18,23 +18,23 @@ where
     pub goal_2: Goal<U, E>,
 }
 
-impl<U, E> Any<U, E>
+impl<U, E> Disj<U, E>
 where
     U: User,
     E: Engine<U>,
 {
     pub fn new(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
-        Goal::Disj(Rc::new(Any { goal_1, goal_2 }))
+        Goal::Dynamic(Rc::new(Disj { goal_1, goal_2 }))
     }
 
-    pub fn new_raw(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Any<U, E> {
-        Any { goal_1, goal_2 }
+    pub fn new_raw(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Disj<U, E> {
+        Disj { goal_1, goal_2 }
     }
 
     pub fn from_vec(mut v: Vec<Goal<U, E>>) -> Goal<U, E> {
         let mut p = proto_vulcan!(false);
         for g in v.drain(..).rev() {
-            p = Any::new(g, p);
+            p = Disj::new(g, p);
         }
         p
     }
@@ -42,7 +42,7 @@ where
     pub fn from_array(goals: &[Goal<U, E>]) -> Goal<U, E> {
         let mut p = proto_vulcan!(false);
         for g in goals.to_vec().drain(..).rev() {
-            p = Any::new(g, p);
+            p = Disj::new(g, p);
         }
         p
     }
@@ -51,14 +51,18 @@ where
     // of conjunctions.
     pub fn from_conjunctions(conjunctions: &[&[Goal<U, E>]]) -> Goal<U, E> {
         let mut p = proto_vulcan!(false);
-        for g in conjunctions.iter().map(|conj| All::from_array(*conj)).rev() {
-            p = Any::new(g, p);
+        for g in conjunctions
+            .iter()
+            .map(|conj| Conj::from_array(*conj))
+            .rev()
+        {
+            p = Disj::new(g, p);
         }
         p
     }
 }
 
-impl<U, E> Solve<U, E> for Any<U, E>
+impl<U, E> Solve<U, E> for Disj<U, E>
 where
     U: User,
     E: Engine<U>,

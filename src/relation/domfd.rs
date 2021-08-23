@@ -26,7 +26,7 @@ where
     E: Engine<U>,
 {
     pub fn new(x: LTerm<U, E>, domain: FiniteDomain) -> Goal<U, E> {
-        Goal::new(DomFd {
+        Goal::dynamic(DomFd {
             x,
             domain: Rc::new(domain),
         })

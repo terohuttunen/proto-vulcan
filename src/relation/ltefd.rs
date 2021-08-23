@@ -25,7 +25,7 @@ where
     E: Engine<U>,
 {
     pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-        Goal::new(LessThanOrEqualFd { u, v })
+        Goal::dynamic(LessThanOrEqualFd { u, v })
     }
 }
 

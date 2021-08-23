@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
-use crate::operator::all::All;
 use crate::operator::conde::conde;
+use crate::operator::conj::Conj;
 use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -24,7 +24,7 @@ where
     E: Engine<U>,
 {
     pub fn new(g: Goal<U, E>) -> Goal<U, E> {
-        Goal::new(Anyo { g })
+        Goal::dynamic(Anyo { g })
     }
 }
 
@@ -80,7 +80,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    Anyo::new(All::from_conjunctions(param.body))
+    Anyo::new(Conj::from_conjunctions(param.body))
 }
 
 #[cfg(test)]
