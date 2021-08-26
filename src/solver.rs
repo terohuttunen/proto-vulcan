@@ -1,8 +1,8 @@
-use crate::debugger::Debugger;
+//use crate::debugger::Debugger;
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::state::State;
-use crate::stream::{Lazy, Stream};
+use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 use std::any::{Any, TypeId};
 use std::fmt;
@@ -14,7 +14,7 @@ where
 {
     engine: E,
     context: U::UserContext,
-    debugger: Option<Debugger<U, E>>,
+    //debugger: Option<Debugger<U, E>>,
 }
 
 impl<U, E> Solver<U, E>
@@ -25,44 +25,70 @@ where
     pub fn new(context: U::UserContext, debug: bool) -> Solver<U, E> {
         let engine = E::new();
         //let debugger = debug.then_some(Debugger::new());
-        let debugger = if debug { Some(Debugger::new()) } else { None };
+        //let debugger = if debug { Some(Debugger::new()) } else { None };
         Solver {
             engine,
             context,
-            debugger,
+            //debugger,
         }
     }
 
-    pub fn start(&self, state: Box<State<U, E>>, goal: Goal<U, E>) -> Stream<U, E> {
-        match &self.debugger {
-            Some(debugger) => debugger.pre_start(self, &state, &goal),
-            None => (),
-        }
-
-        let stream = self.engine.start(self, state, goal);
-
-        match &self.debugger {
-            Some(debugger) => debugger.post_start(self, &stream),
-            None => (),
-        }
-
-        stream
+    pub fn start(&self, goal: &Goal<U, E>, initial_state: State<U, E>) -> Stream<U, E> {
+        self.engine.start(self, Box::new(initial_state), goal)
     }
 
-    pub fn step(&self, lazy: Lazy<U, E>) -> Stream<U, E> {
-        match &self.debugger {
-            Some(debugger) => debugger.pre_step(self, &lazy),
-            None => (),
+    pub fn next(&self, stream: &mut Stream<U, E>) -> Option<Box<State<U, E>>> {
+        loop {
+            // TODO: Debugger step hook
+            match std::mem::replace(stream, Stream::Empty) {
+                Stream::Empty => {
+                    // TODO: Debugger program exit hook
+                    return None;
+                }
+                Stream::Unit(state) => {
+                    // TODO: Debugger new solution hook
+                    return Some(state);
+                }
+                Stream::Lazy(LazyStream(lazy)) => *stream = self.engine.step(self, *lazy),
+                Stream::Cons(state, lazy_stream) => {
+                    *stream = Stream::Lazy(lazy_stream);
+                    // TODO: Debugger new solution hook
+                    return Some(state);
+                }
+            }
         }
+    }
 
-        let stream = self.engine.step(self, lazy);
-
-        match &self.debugger {
-            Some(debugger) => debugger.post_step(self, &stream),
-            None => (),
+    /// Returns a reference to next element in the stream, if any.
+    pub fn peek<'a>(&self, stream: &'a mut Stream<U, E>) -> Option<&'a Box<State<U, E>>> {
+        loop {
+            match stream {
+                Stream::Lazy(_) => {
+                    if let Stream::Lazy(LazyStream(lazy)) = std::mem::replace(stream, Stream::Empty)
+                    {
+                        *stream = self.engine.step(self, *lazy);
+                    }
+                }
+                _ => return stream.head(),
+            }
         }
+    }
 
-        stream
+    /// Truncates the stream leaving at most one element, and returns a reference to
+    /// the remaining element if any.
+    pub fn trunc<'a>(&self, stream: &'a mut Stream<U, E>) -> Option<&'a Box<State<U, E>>> {
+        loop {
+            match std::mem::replace(stream, Stream::Empty) {
+                Stream::Empty => return None,
+                Stream::Lazy(LazyStream(lazy)) => {
+                    *stream = self.engine.step(self, *lazy);
+                }
+                Stream::Unit(a) | Stream::Cons(a, _) => {
+                    *stream = Stream::Unit(a);
+                    return stream.head();
+                }
+            }
+        }
     }
 
     pub fn context(&self) -> &U::UserContext {

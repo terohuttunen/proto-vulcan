@@ -43,7 +43,7 @@ where
         goal: Goal<U, E>,
         initial_state: State<U, E>,
     ) -> ResultIterator<R, U, E> {
-        let stream = goal.solve(&solver, initial_state);
+        let stream = solver.start(&goal, initial_state);
         ResultIterator {
             solver,
             variables,
@@ -63,7 +63,7 @@ where
     type Item = R;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.stream.next(&mut self.solver) {
+        match self.solver.next(&mut self.stream) {
             Some(state) => {
                 // At this point the state has already gone through initial reification
                 // process

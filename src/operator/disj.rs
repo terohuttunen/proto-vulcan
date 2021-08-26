@@ -68,8 +68,9 @@ where
     E: Engine<U>,
 {
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        let stream = self.goal_1.solve(solver, state.clone());
-        let lazy = LazyStream::pause(Box::new(state), self.goal_2.clone());
-        Stream::mplus(stream, lazy)
+        Stream::lazy_mplus(
+            LazyStream::pause(Box::new(state.clone()), self.goal_1.clone()),
+            LazyStream::pause(Box::new(state), self.goal_2.clone()),
+        )
     }
 }

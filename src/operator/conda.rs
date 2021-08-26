@@ -55,9 +55,9 @@ where
     E: Engine<U>,
 {
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        let mut stream = self.first.solve(solver, state.clone());
+        let mut stream = solver.start(&self.first, state.clone());
 
-        match stream.peek(solver) {
+        match solver.peek(&mut stream) {
             Some(_) => Stream::bind(stream, self.rest.clone()),
             None => self.next.solve(solver, state),
         }

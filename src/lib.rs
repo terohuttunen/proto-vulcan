@@ -318,7 +318,7 @@ extern crate derivative;
 pub mod compound;
 use compound::CompoundObject;
 
-pub mod debugger;
+//pub mod debugger;
 pub mod engine;
 pub mod goal;
 pub mod lresult;

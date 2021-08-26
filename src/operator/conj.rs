@@ -2,7 +2,7 @@ use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
-use crate::stream::Stream;
+use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 use std::rc::Rc;
 
@@ -85,7 +85,9 @@ where
     E: Engine<U>,
 {
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        let stream = Stream::pause(Box::new(state), self.goal_1.clone());
-        Stream::bind(stream, self.goal_2.clone())
+        Stream::lazy_bind(
+            LazyStream::pause(Box::new(state), self.goal_1.clone()),
+            self.goal_2.clone(),
+        )
     }
 }

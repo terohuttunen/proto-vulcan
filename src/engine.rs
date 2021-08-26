@@ -16,7 +16,7 @@ where
         &'a self,
         solver: &'a Solver<U, Self>,
         state: Box<State<U, Self>>,
-        goal: Goal<U, Self>,
+        goal: &Goal<U, Self>,
     ) -> Stream<U, Self>;
 
     fn step<'a>(&'a self, solver: &'a Solver<U, Self>, lazy: Lazy<U, Self>) -> Stream<U, Self>;

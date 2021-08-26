@@ -1,7 +1,5 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
-use crate::operator::conj::Conj;
-use crate::operator::disj::Disj;
 use crate::solver::Solver;
 use crate::state::State;
 use crate::user::User;
@@ -16,7 +14,7 @@ pub enum Lazy<U: User, E: Engine<U>> {
 }
 
 #[derive(Debug)]
-pub struct LazyStream<U: User, E: Engine<U>>(Box<Lazy<U, E>>);
+pub struct LazyStream<U: User, E: Engine<U>>(pub Box<Lazy<U, E>>);
 
 impl<U: User, E: Engine<U>> LazyStream<U, E> {
     pub fn bind(ls: LazyStream<U, E>, goal: Goal<U, E>) -> LazyStream<U, E> {
@@ -33,20 +31,6 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
 
     pub fn delay(stream: Stream<U, E>) -> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::Delay(stream)))
-    }
-
-    pub fn step_into(self, solver: &Solver<U, E>) -> Stream<U, E> {
-        solver.step(*self.0)
-    }
-
-    pub fn into_mature(self, solver: &Solver<U, E>) -> Stream<U, E> {
-        let mut stream = self.step_into(solver);
-        loop {
-            match stream {
-                Stream::Lazy(lazy) => stream = lazy.step_into(solver),
-                _ => return stream,
-            }
-        }
     }
 }
 
@@ -138,78 +122,11 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn mature(&mut self, solver: &Solver<U, E>) {
-        match std::mem::replace(self, Stream::Empty) {
-            Stream::Lazy(lazy) => {
-                let _ = std::mem::replace(self, lazy.into_mature(solver));
-            }
-            s => {
-                let _ = std::mem::replace(self, s);
-            }
-        }
-    }
-
-    pub fn into_mature(self, solver: &Solver<U, E>) -> Stream<U, E> {
+    pub fn head(&self) -> Option<&Box<State<U, E>>> {
         match self {
-            Stream::Lazy(lazy) => lazy.into_mature(solver),
-            _ => self,
-        }
-    }
-
-    pub fn next(&mut self, solver: &Solver<U, E>) -> Option<Box<State<U, E>>> {
-        self.mature(solver);
-        match std::mem::replace(self, Stream::Empty) {
-            Stream::Empty => return None,
-            Stream::Lazy(_) => unreachable!(),
-            Stream::Unit(a) => {
-                return Some(a);
-            }
-            Stream::Cons(a, lazy) => {
-                let _ = std::mem::replace(self, Stream::Lazy(lazy));
-                return Some(a);
-            }
-        }
-    }
-
-    pub fn step(&mut self, solver: &Solver<U, E>) -> Option<Box<State<U, E>>> {
-        match std::mem::replace(self, Stream::Empty) {
-            Stream::Empty => return None,
-            Stream::Lazy(lazy) => {
-                let _ = std::mem::replace(self, lazy.step_into(solver));
-                return None;
-            }
-            Stream::Unit(a) => {
-                return Some(a);
-            }
-            Stream::Cons(a, lazy) => {
-                let _ = std::mem::replace(self, Stream::Lazy(lazy));
-                return Some(a);
-            }
-        }
-    }
-
-    /// Returns a reference to next element in the stream, if any.
-    pub fn peek<'a>(&'a mut self, solver: &Solver<U, E>) -> Option<&'a Box<State<U, E>>> {
-        self.mature(solver);
-        match self {
-            Stream::Empty => None,
-            Stream::Lazy(_) => unreachable!(),
             Stream::Unit(a) | Stream::Cons(a, _) => Some(a),
+            _ => None,
         }
-    }
-
-    /// Truncates the stream leaving at most one element, and returns a reference to
-    /// the remaining element if any.
-    pub fn trunc<'a>(&'a mut self, solver: &Solver<U, E>) -> Option<&'a Box<State<U, E>>> {
-        self.mature(solver);
-        match std::mem::replace(self, Stream::Empty) {
-            Stream::Empty => (),
-            Stream::Lazy(_) => unreachable!(),
-            Stream::Unit(a) | Stream::Cons(a, _) => {
-                let _ = std::mem::replace(self, Stream::Unit(a));
-            }
-        }
-        self.peek(solver)
     }
 }
 
@@ -232,39 +149,25 @@ where
         &self,
         solver: &Solver<U, Self>,
         state: Box<State<U, Self>>,
-        goal: Goal<U, Self>,
+        goal: &Goal<U, Self>,
     ) -> Stream<U, Self> {
         match goal {
             Goal::Succeed => Stream::unit(state),
             Goal::Fail => Stream::empty(),
             Goal::Breakpoint(_) => Stream::unit(state),
-            Goal::Dynamic(dynamic) => {
-                if let Some(disj) = dynamic.downcast_ref::<Disj<U, Self>>() {
-                    Stream::lazy_mplus(
-                        LazyStream::pause(state.clone(), disj.goal_1.clone()),
-                        LazyStream::pause(state, disj.goal_2.clone()),
-                    )
-                } else if let Some(conj) = dynamic.downcast_ref::<Conj<U, Self>>() {
-                    Stream::lazy_bind(
-                        LazyStream::pause(state, conj.goal_1.clone()),
-                        conj.goal_2.clone(),
-                    )
-                } else {
-                    dynamic.solve(solver, *state)
-                }
-            }
+            Goal::Dynamic(dynamic) => dynamic.solve(solver, *state),
         }
     }
 
     fn step(&self, solver: &Solver<U, Self>, lazy: Lazy<U, Self>) -> Stream<U, Self> {
         match lazy {
-            Lazy::Pause(state, goal) => solver.start(state, goal),
+            Lazy::Pause(state, goal) => self.start(solver, state, &goal),
             Lazy::MPlus(s1, s2) => {
-                let stream = s1.step_into(solver);
+                let stream = self.step(solver, *s1.0);
                 Stream::mplus(stream, s2)
             }
             Lazy::Bind(s, goal) => {
-                let stream = s.step_into(solver);
+                let stream = self.step(solver, *s.0);
                 Stream::bind(stream, goal)
             }
             Lazy::Delay(stream) => stream,
