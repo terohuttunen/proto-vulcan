@@ -141,7 +141,7 @@ where
     ) -> ResultIterator<R, U, E> {
         let initial_state = State::new(user_state);
         let user_globals = user_globals;
-        let solver = Solver::new(user_globals, false);
+        let solver = Solver::new(user_globals, true);
         ResultIterator::new(
             solver,
             self.variables.clone(),

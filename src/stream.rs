@@ -5,7 +5,128 @@ use crate::state::State;
 use crate::user::User;
 use std::marker::PhantomData;
 
-#[derive(Debug)]
+pub enum StreamCursor<'a, U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    Stream(usize, &'a Stream<U, E>),
+    LazyStream(usize, &'a LazyStream<U, E>),
+    End,
+}
+
+pub enum StreamWalkStep<'a, U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    State(&'a State<U, E>),
+    LazyStream(&'a LazyStream<U, E>),
+    Backtrack(&'a LazyStream<U, E>),
+}
+
+// Depth-first walk of the stream.
+pub struct StreamWalker<'a, U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    next_pos: StreamCursor<'a, U, E>,
+    deferred_stack: Vec<(usize, &'a LazyStream<U, E>)>,
+}
+
+impl<'a, U, E> StreamWalker<'a, U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(stream: &'a Stream<U, E>) -> StreamWalker<'a, U, E> {
+        let deferred_stack = Vec::new();
+        let next_pos = StreamCursor::Stream(0, stream);
+        StreamWalker {
+            next_pos,
+            deferred_stack,
+        }
+    }
+
+    fn backtrack(&mut self) -> Option<(usize, StreamWalkStep<'a, U, E>)> {
+        match self.deferred_stack.pop() {
+            Some((depth, lazy_stream)) => {
+                match &*lazy_stream.0 {
+                    Lazy::Bind(_, _) => {}
+                    Lazy::MPlus(_left, right) => {
+                        self.next_pos = StreamCursor::LazyStream(depth + 1, right);
+                    }
+                    _ => unreachable!(),
+                }
+                Some((depth, StreamWalkStep::Backtrack(lazy_stream)))
+            }
+            None => None,
+        }
+    }
+
+    fn downstream(
+        &mut self,
+        depth: usize,
+        stream: &'a Stream<U, E>,
+    ) -> Option<(usize, StreamWalkStep<'a, U, E>)> {
+        let step = match stream {
+            Stream::Empty => {
+                return self.backtrack();
+            }
+            Stream::Unit(a) => {
+                self.next_pos = StreamCursor::End;
+                // Return state now, backtrack on next call
+                StreamWalkStep::State(a)
+            }
+            Stream::Lazy(lazy_stream) => {
+                return self.branch(depth, lazy_stream);
+            }
+            Stream::Cons(a, lazy_stream) => {
+                self.next_pos = StreamCursor::LazyStream(depth + 1, lazy_stream);
+                StreamWalkStep::State(a)
+            }
+        };
+
+        return Some((depth, step));
+    }
+
+    fn branch(
+        &mut self,
+        depth: usize,
+        lazy_stream: &'a LazyStream<U, E>,
+    ) -> Option<(usize, StreamWalkStep<'a, U, E>)> {
+        match &*lazy_stream.0 {
+            Lazy::Bind(bound_stream, _goal) => {
+                self.deferred_stack.push((depth, lazy_stream));
+                self.next_pos = StreamCursor::LazyStream(depth + 1, bound_stream);
+            }
+            Lazy::MPlus(left, _right) => {
+                self.deferred_stack.push((depth, lazy_stream));
+                self.next_pos = StreamCursor::LazyStream(depth + 1, left);
+            }
+            Lazy::Pause(_state, _goal) => {
+                self.next_pos = StreamCursor::End;
+            }
+            Lazy::Delay(stream) => {
+                self.next_pos = StreamCursor::Stream(depth + 1, stream);
+            }
+        }
+
+        Some((depth, StreamWalkStep::LazyStream(lazy_stream)))
+    }
+
+    pub fn next(&mut self) -> Option<(usize, StreamWalkStep<'a, U, E>)> {
+        match self.next_pos {
+            StreamCursor::Stream(depth, s) => self.downstream(depth, s),
+            StreamCursor::LazyStream(depth, l) => self.branch(depth, l),
+            StreamCursor::End => self.backtrack(),
+        }
+    }
+}
+
+#[derive(Derivative)]
+#[derivative(Clone(bound = "U: User"), Debug(bound = "U: User"))]
 pub enum Lazy<U: User, E: Engine<U>> {
     Bind(LazyStream<U, E>, Goal<U, E>),
     MPlus(LazyStream<U, E>, LazyStream<U, E>),
@@ -13,7 +134,8 @@ pub enum Lazy<U: User, E: Engine<U>> {
     Delay(Stream<U, E>),
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Clone(bound = "U: User"), Debug(bound = "U: User"))]
 pub struct LazyStream<U: User, E: Engine<U>>(pub Box<Lazy<U, E>>);
 
 impl<U: User, E: Engine<U>> LazyStream<U, E> {
@@ -34,7 +156,8 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Clone(bound = "U: User"), Debug(bound = "U: User"))]
 pub enum Stream<U: User, E: Engine<U>> {
     Empty,
     Unit(Box<State<U, E>>),
@@ -128,6 +251,10 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
             _ => None,
         }
     }
+
+    pub fn walk<'a>(&'a self) -> StreamWalker<'a, U, E> {
+        StreamWalker::new(self)
+    }
 }
 
 #[derive(Debug)]
@@ -145,23 +272,9 @@ where
         }
     }
 
-    fn start(
-        &self,
-        solver: &Solver<U, Self>,
-        state: Box<State<U, Self>>,
-        goal: &Goal<U, Self>,
-    ) -> Stream<U, Self> {
-        match goal {
-            Goal::Succeed => Stream::unit(state),
-            Goal::Fail => Stream::empty(),
-            Goal::Breakpoint(_) => Stream::unit(state),
-            Goal::Dynamic(dynamic) => dynamic.solve(solver, *state),
-        }
-    }
-
     fn step(&self, solver: &Solver<U, Self>, lazy: Lazy<U, Self>) -> Stream<U, Self> {
         match lazy {
-            Lazy::Pause(state, goal) => self.start(solver, state, &goal),
+            Lazy::Pause(state, goal) => solver.start(&goal, *state),
             Lazy::MPlus(s1, s2) => {
                 let stream = self.step(solver, *s1.0);
                 Stream::mplus(stream, s2)

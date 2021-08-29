@@ -1,4 +1,4 @@
-//use crate::debugger::Debugger;
+use crate::debugger::Debugger;
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::state::State;
@@ -14,7 +14,8 @@ where
 {
     engine: E,
     context: U::UserContext,
-    //debugger: Option<Debugger<U, E>>,
+    debugger: Debugger<U, E>,
+    debug_enabled: bool,
 }
 
 impl<U, E> Solver<U, E>
@@ -22,37 +23,61 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(context: U::UserContext, debug: bool) -> Solver<U, E> {
+    pub fn new(context: U::UserContext, debug_enabled: bool) -> Solver<U, E> {
         let engine = E::new();
         //let debugger = debug.then_some(Debugger::new());
-        //let debugger = if debug { Some(Debugger::new()) } else { None };
+        let debugger = Debugger::new();
         Solver {
             engine,
             context,
-            //debugger,
+            debugger,
+            debug_enabled,
         }
     }
 
-    pub fn start(&self, goal: &Goal<U, E>, initial_state: State<U, E>) -> Stream<U, E> {
-        self.engine.start(self, Box::new(initial_state), goal)
+    pub fn start(&self, goal: &Goal<U, E>, state: State<U, E>) -> Stream<U, E> {
+        match goal {
+            Goal::Succeed => Stream::unit(Box::new(state)),
+            Goal::Fail => Stream::empty(),
+            Goal::Breakpoint(id) => {
+                if self.debug_enabled {
+                    // TODO: self.debugger.breakpoint(goal, &state, *id)
+                }
+                Stream::unit(Box::new(state))
+            }
+            Goal::Dynamic(dynamic) => {
+                if self.debug_enabled {
+                    // TODO: self.debugger.start(goal, &state)
+                }
+                dynamic.solve(self, state)
+            }
+        }
     }
 
-    pub fn next(&self, stream: &mut Stream<U, E>) -> Option<Box<State<U, E>>> {
+    pub fn next(&mut self, stream: &mut Stream<U, E>) -> Option<Box<State<U, E>>> {
         loop {
-            // TODO: Debugger step hook
+            if self.debug_enabled {
+                self.debugger.next_step(stream);
+            }
             match std::mem::replace(stream, Stream::Empty) {
                 Stream::Empty => {
-                    // TODO: Debugger program exit hook
+                    if self.debug_enabled {
+                        self.debugger.program_exit();
+                    }
                     return None;
                 }
                 Stream::Unit(state) => {
-                    // TODO: Debugger new solution hook
+                    if self.debug_enabled {
+                        self.debugger.new_solution(stream, &state);
+                    }
                     return Some(state);
                 }
                 Stream::Lazy(LazyStream(lazy)) => *stream = self.engine.step(self, *lazy),
                 Stream::Cons(state, lazy_stream) => {
                     *stream = Stream::Lazy(lazy_stream);
-                    // TODO: Debugger new solution hook
+                    if self.debug_enabled {
+                        self.debugger.new_solution(stream, &state);
+                    }
                     return Some(state);
                 }
             }
