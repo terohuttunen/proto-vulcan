@@ -6,7 +6,7 @@ use proto_vulcan::relation::membero;
 use proto_vulcan::relation::permuteo;
 use std::time::Instant;
 
-fn lefto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
+fn lefto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan_closure!(
         match l {
             [head | rest] => {
@@ -19,7 +19,7 @@ fn lefto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
 }
 
 // Of Landon and Jason, one has the 7:30pm reservation and the other loves mozzarella.
-fn rule1(answers: LTerm) -> Goal {
+fn rule1<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |c1, r1, c2, r2| {
             membero(["landon", _, c1, r1], answers),
@@ -33,12 +33,12 @@ fn rule1(answers: LTerm) -> Goal {
 }
 
 // The blue-cheese enthusiast subscribed to Fortune.
-fn rule2(answers: LTerm) -> Goal {
+fn rule2<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(membero([_, "fortune", "blue-cheese", _], answers))
 }
 
 // The muenster enthusiast didn't subscribe to Vogue.
-fn rule3(answers: LTerm) -> Goal {
+fn rule3<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |s1, s2| {
             [_, "vogue", _, _] == s1,
@@ -53,7 +53,7 @@ fn rule3(answers: LTerm) -> Goal {
 // The 5 people were the Fortune subscriber, Landon, the person with a
 // reservation at 5:00pm, the mascarpone enthusiast, and the Vogue
 // subscriber.
-fn rule4(answers: LTerm) -> Goal {
+fn rule4<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(permuteo(
         [
             [_, "fortune", _, _],
@@ -67,7 +67,7 @@ fn rule4(answers: LTerm) -> Goal {
 }
 
 // The person with a reservation at 5:00pm didn't subscribe to Time.
-fn rule5(answers: LTerm) -> Goal {
+fn rule5<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |s1, s2| {
             [_, _, _, "5:00pm"] == s1,
@@ -80,7 +80,7 @@ fn rule5(answers: LTerm) -> Goal {
 }
 
 // The Cosmopolitan subscriber has an earlier reservation than the mascarpone enthusiast.
-fn rule6(answers: LTerm) -> Goal {
+fn rule6<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |r1, r2| {
             membero([_, "cosmopolitan", _, r1], answers),
@@ -91,7 +91,7 @@ fn rule6(answers: LTerm) -> Goal {
 }
 
 // Bailey has a later reservation than the blue-cheese enthusiast.
-fn rule7(answers: LTerm) -> Goal {
+fn rule7<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |r1, r2| {
             membero([_, _, "blue-cheese", r1], answers),
@@ -103,7 +103,7 @@ fn rule7(answers: LTerm) -> Goal {
 
 // Either the person with a reservation at 7:00pm or the person with a
 // reservation at 7:30pm subscribed to Fortune.
-fn rule8(answers: LTerm) -> Goal {
+fn rule8<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |r| {
             membero([_, "fortune", _, r], answers),
@@ -116,7 +116,7 @@ fn rule8(answers: LTerm) -> Goal {
 }
 
 // Landon has a later reservation than the Time subscriber.
-fn rule9(answers: LTerm) -> Goal {
+fn rule9<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |r1, r2| {
             membero([_, "time", _, r1], answers),
@@ -127,7 +127,7 @@ fn rule9(answers: LTerm) -> Goal {
 }
 
 // The Fortune subscriber is not Jamari.
-fn rule10(answers: LTerm) -> Goal {
+fn rule10<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |s1, s2| {
             [_, "fortune", _, _] == s1,
@@ -140,11 +140,11 @@ fn rule10(answers: LTerm) -> Goal {
 }
 
 // The person with a reservation at 5:00pm loves mozzarella.
-fn rule11(answers: LTerm) -> Goal {
+fn rule11<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(membero([_, _, "mozzarella", "5:00pm"], answers))
 }
 
-fn hard_zebrao(answers: LTerm) -> Goal {
+fn hard_zebrao<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     let people = lterm!([_, _, _, _, _]);
     let magazines = lterm!([_, _, _, _, _]);
     let cheeses = lterm!([_, _, _, _, _]);

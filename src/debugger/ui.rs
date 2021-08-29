@@ -165,6 +165,12 @@ where
                                 Lazy::MPlus(left, right) => {
                                     format!("{}{}", indent, "MPlus")
                                 }
+                                Lazy::BindDFS(lazy_stream, goal) => {
+                                    format!("{}Bind: {:?}", indent, goal)
+                                }
+                                Lazy::MPlusDFS(left, right) => {
+                                    format!("{}{}", indent, "MPlusDFS")
+                                }
                                 Lazy::Pause(state, goal) => {
                                     format!("{}Pause: {:?}", indent, goal)
                                 }

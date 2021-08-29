@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
-pub enum Goal<U = DefaultUser, E = DefaultEngine<U>>
+pub enum Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -72,7 +72,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::engine::Engine;
+    use crate::engine::{DefaultEngine, Engine};
     use crate::prelude::*;
     use crate::solver::Solve;
     use crate::state::State;
@@ -81,14 +81,14 @@ mod test {
 
     #[test]
     fn test_goal_succeed() {
-        let g = Goal::<DefaultUser>::succeed();
+        let g = Goal::<DefaultUser, DefaultEngine<DefaultUser>>::succeed();
         assert!(g.is_succeed());
         assert!(!g.is_fail());
     }
 
     #[test]
     fn test_goal_fail() {
-        let g = Goal::<DefaultUser>::fail();
+        let g = Goal::<DefaultUser, DefaultEngine<DefaultUser>>::fail();
         assert!(g.is_fail());
         assert!(!g.is_succeed());
     }
@@ -104,7 +104,7 @@ mod test {
 
     #[test]
     fn test_goal_inner() {
-        let g = Goal::<DefaultUser>::dynamic(TestGoal {});
+        let g = Goal::<DefaultUser, DefaultEngine<DefaultUser>>::dynamic(TestGoal {});
         assert!(!g.is_succeed());
         assert!(!g.is_fail());
     }

@@ -173,8 +173,8 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! pub struct OperatorParam<'a, U: User> {
-//!     pub body: &'a [&'a [Goal<U>]],
+//! pub struct OperatorParam<'a, U: User, E: Engine<U>> {
+//!     pub body: &'a [&'a [Goal<U, E>]],
 //! }
 //!
 //! // operator <term> {
@@ -183,9 +183,9 @@
 //! //    ...
 //! //    _ => <body_default>,
 //! // }
-//! pub struct PatternMatchOperatorParam<'a, U: User> {
+//! pub struct PatternMatchOperatorParam<'a, U: User, E: Engine<U>> {
 //!     // First goal of each arm is the match-goal
-//!     pub arms: &'a [&'a [Goal<U>]],
+//!     pub arms: &'a [&'a [Goal<U, E>]],
 //! }
 //! ```
 //! Even though the structs are identical, the first goal on each arm of
@@ -215,7 +215,7 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::prelude::*;
 //!
-//! pub fn appendo(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
+//! pub fn appendo<U: User, E: Engine<U>>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> Goal<U, E> {
 //!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,
@@ -275,7 +275,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! fn example() -> Goal {
+//! fn example<U: User, E: Engine<U>>() -> Goal<U, E> {
 //!     proto_vulcan!(
 //!         fngoal |engine, state| {
 //!             // There could be more Rust here modifying the `state`
