@@ -58,6 +58,8 @@ pub mod anyo;
 #[doc(hidden)]
 pub mod closure;
 #[doc(hidden)]
+pub mod cond;
+#[doc(hidden)]
 pub mod conda;
 #[doc(hidden)]
 pub mod conde;
@@ -95,6 +97,9 @@ pub use conde::conde;
 
 #[doc(inline)]
 pub use condu::condu;
+
+#[doc(inline)]
+pub use cond::cond;
 
 #[doc(inline)]
 pub use onceo::onceo;

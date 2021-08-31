@@ -105,6 +105,9 @@ where
                 self.deferred_stack.push((depth, lazy_stream));
                 self.next_pos = StreamCursor::LazyStream(depth + 1, left);
             }
+            Lazy::Pause(_state, _goal) => {
+                self.next_pos = StreamCursor::End;
+            }
             Lazy::BindDFS(bound_stream, _goal) => {
                 self.deferred_stack.push((depth, lazy_stream));
                 self.next_pos = StreamCursor::LazyStream(depth + 1, bound_stream);
@@ -113,7 +116,7 @@ where
                 self.deferred_stack.push((depth, lazy_stream));
                 self.next_pos = StreamCursor::LazyStream(depth + 1, left);
             }
-            Lazy::Pause(_state, _goal) => {
+            Lazy::PauseDFS(_state, _goal) => {
                 self.next_pos = StreamCursor::End;
             }
             Lazy::Delay(stream) => {
@@ -138,9 +141,10 @@ where
 pub enum Lazy<U: User, E: Engine<U>> {
     Bind(LazyStream<U, E>, Goal<U, E>),
     MPlus(LazyStream<U, E>, LazyStream<U, E>),
+    Pause(Box<State<U, E>>, Goal<U, E>),
     BindDFS(LazyStream<U, E>, Goal<U, E>),
     MPlusDFS(LazyStream<U, E>, LazyStream<U, E>),
-    Pause(Box<State<U, E>>, Goal<U, E>),
+    PauseDFS(Box<State<U, E>>, Goal<U, E>),
     Delay(Stream<U, E>),
 }
 
@@ -157,6 +161,10 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::MPlus(ls1, ls2)))
     }
 
+    pub fn pause(state: Box<State<U, E>>, goal: Goal<U, E>) -> LazyStream<U, E> {
+        LazyStream(Box::new(Lazy::Pause(state, goal)))
+    }
+
     pub fn bind_dfs(ls: LazyStream<U, E>, goal: Goal<U, E>) -> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::BindDFS(ls, goal)))
     }
@@ -165,8 +173,8 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::MPlusDFS(ls1, ls2)))
     }
 
-    pub fn pause(state: Box<State<U, E>>, goal: Goal<U, E>) -> LazyStream<U, E> {
-        LazyStream(Box::new(Lazy::Pause(state, goal)))
+    pub fn pause_dfs(state: Box<State<U, E>>, goal: Goal<U, E>) -> LazyStream<U, E> {
+        LazyStream(Box::new(Lazy::PauseDFS(state, goal)))
     }
 
     pub fn delay(stream: Stream<U, E>) -> LazyStream<U, E> {
@@ -234,6 +242,14 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
+    pub fn lazy_mplus(lazy: LazyStream<U, E>, lazy_hat: LazyStream<U, E>) -> Stream<U, E> {
+        Stream::Lazy(LazyStream::mplus(lazy, lazy_hat))
+    }
+
+    pub fn pause(state: Box<State<U, E>>, goal: Goal<U, E>) -> Stream<U, E> {
+        Stream::Lazy(LazyStream::pause(state, goal))
+    }
+
     pub fn mplus_dfs(stream: Stream<U, E>, lazy: LazyStream<U, E>) -> Stream<U, E> {
         match stream {
             Stream::Empty => Stream::lazy(lazy),
@@ -254,17 +270,13 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
             match stream {
                 Stream::Empty => Stream::Empty,
                 Stream::Lazy(lazy) => Stream::lazy_bind_dfs(lazy, goal),
-                Stream::Unit(a) => Stream::pause(a, goal),
+                Stream::Unit(a) => Stream::pause_dfs(a, goal),
                 Stream::Cons(state, lazy) => Stream::lazy_mplus_dfs(
-                    LazyStream::pause(state, goal.clone()),
+                    LazyStream::pause_dfs(state, goal.clone()),
                     LazyStream::bind_dfs(lazy, goal),
                 ),
             }
         }
-    }
-
-    pub fn lazy_mplus(lazy: LazyStream<U, E>, lazy_hat: LazyStream<U, E>) -> Stream<U, E> {
-        Stream::Lazy(LazyStream::mplus(lazy, lazy_hat))
     }
 
     pub fn lazy_bind(lazy: LazyStream<U, E>, goal: Goal<U, E>) -> Stream<U, E> {
@@ -291,8 +303,8 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn pause(state: Box<State<U, E>>, goal: Goal<U, E>) -> Stream<U, E> {
-        Stream::Lazy(LazyStream::pause(state, goal))
+    pub fn pause_dfs(state: Box<State<U, E>>, goal: Goal<U, E>) -> Stream<U, E> {
+        Stream::Lazy(LazyStream::pause_dfs(state, goal))
     }
 
     pub fn delay(stream: Stream<U, E>) -> Stream<U, E> {
@@ -335,7 +347,6 @@ where
 
     fn step(&self, solver: &Solver<U, Self>, lazy: Lazy<U, Self>) -> Stream<U, Self> {
         match lazy {
-            Lazy::Pause(state, goal) => solver.start(&goal, *state),
             Lazy::MPlus(s1, s2) => {
                 let stream = self.step(solver, *s1.0);
                 Stream::mplus(stream, s2)
@@ -344,6 +355,7 @@ where
                 let stream = self.step(solver, *s.0);
                 Stream::bind(stream, goal)
             }
+            Lazy::Pause(state, goal) => solver.start(&goal, *state),
             Lazy::MPlusDFS(s1, s2) => {
                 let stream = self.step(solver, *s1.0);
                 Stream::mplus_dfs(stream, s2)
@@ -352,6 +364,7 @@ where
                 let stream = self.step(solver, *s.0);
                 Stream::bind_dfs(stream, goal)
             }
+            Lazy::PauseDFS(state, goal) => solver.start(&goal, *state),
             Lazy::Delay(stream) => stream,
         }
     }
