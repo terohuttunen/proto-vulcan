@@ -6,6 +6,7 @@ use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
+use crate::GoalCast;
 
 fn enforce_constraints_diseq<U: User, E: Engine<U>>(_x: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(true)

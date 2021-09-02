@@ -333,6 +333,7 @@ pub mod stream;
 pub mod user;
 
 use engine::Engine;
+use goal::AnyGoal;
 use std::borrow::Borrow;
 use user::User;
 
@@ -357,6 +358,16 @@ where
     type SubType: CompoundObject<U, E>;
 
     fn into_sub(self) -> Self::SubType;
+}
+
+pub trait GoalCast<U, E, SuperGoal>
+where
+    U: User,
+    E: Engine<U>,
+    Self: AnyGoal<U, E> + Into<SuperGoal>,
+    SuperGoal: AnyGoal<U, E>,
+{
+    fn cast_into(self) -> SuperGoal;
 }
 
 pub mod prelude {

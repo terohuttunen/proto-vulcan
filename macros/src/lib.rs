@@ -225,7 +225,7 @@ impl Parse for Conjunction {
 impl ToTokens for Conjunction {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
-        let output = quote! { &[ #( #body ),* ] };
+        let output = quote! { &[ #( ::proto_vulcan::GoalCast::cast_into(#body) ),* ] };
         output.to_tokens(tokens)
     }
 }
@@ -1741,18 +1741,17 @@ impl ToTokens for Clause {
                 diseq.to_tokens(tokens);
             }
             Clause::Succeed(_) => {
-                let output = quote! { ::proto_vulcan::relation::succeed() };
+                let output = quote! { ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::succeed()) };
                 output.to_tokens(tokens);
             }
             Clause::Fail(_) => {
-                let output = quote! { ::proto_vulcan::relation::fail() };
+                let output = quote! { ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::fail()) };
                 output.to_tokens(tokens);
             }
             Clause::Conjunction(conjunction) => {
                 // When conjunction is not inside a non-conjunction an operator we can construct
                 // an Conj-goal from it.
-                let output =
-                    quote! { ::proto_vulcan::operator::conj::Conj::from_array( #conjunction ) };
+                let output = quote! { ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::operator::conj::Conj::from_array( #conjunction )) };
                 output.to_tokens(tokens);
             }
             Clause::Relation(relation) => {
@@ -1791,35 +1790,35 @@ impl ToTokens for ClauseInOperator {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match &self.0 {
             Clause::For(for_clause) => {
-                let output = quote! { &[ #for_clause ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#for_clause) ] };
                 output.to_tokens(tokens);
             }
             Clause::Project(project) => {
-                let output = quote! { &[ #project ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#project) ] };
                 output.to_tokens(tokens);
             }
             Clause::FnGoal(fngoal) => {
-                let output = quote! { &[ #fngoal ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#fngoal) ] };
                 output.to_tokens(tokens);
             }
             Clause::Fresh(fresh) => {
-                let output = quote! { &[ #fresh ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#fresh) ] };
                 output.to_tokens(tokens);
             }
             Clause::Eq(eq) => {
-                let output = quote! { &[ #eq ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#eq) ] };
                 output.to_tokens(tokens);
             }
             Clause::Diseq(diseq) => {
-                let output = quote! { &[ #diseq ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#diseq) ] };
                 output.to_tokens(tokens);
             }
             Clause::Succeed(_) => {
-                let output = quote! { &[ ::proto_vulcan::relation::succeed() ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::succeed()) ] };
                 output.to_tokens(tokens);
             }
             Clause::Fail(_) => {
-                let output = quote! { &[ ::proto_vulcan::relation::fail() ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::fail()) ] };
                 output.to_tokens(tokens);
             }
             Clause::Conjunction(conjunction) => {
@@ -1828,27 +1827,27 @@ impl ToTokens for ClauseInOperator {
                 conjunction.to_tokens(tokens);
             }
             Clause::Relation(relation) => {
-                let output = quote! { &[ #relation ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#relation) ] };
                 output.to_tokens(tokens);
             }
             Clause::Closure(closure) => {
-                let output = quote! { &[ #closure ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#closure) ] };
                 output.to_tokens(tokens);
             }
             Clause::Loop(l) => {
-                let output = quote! { &[ #l ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#l) ] };
                 output.to_tokens(tokens);
             }
             Clause::Operator(operator) => {
-                let output = quote! { &[ #operator ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#operator) ] };
                 output.to_tokens(tokens);
             }
             Clause::PatternMatchOperator(operator) => {
-                let output = quote! { &[ #operator ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#operator) ] };
                 output.to_tokens(tokens);
             }
             Clause::Expression(expr) => {
-                let output = quote! { &[ #expr ]};
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#expr) ]};
                 output.to_tokens(tokens);
             }
         }
