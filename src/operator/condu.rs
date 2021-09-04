@@ -67,7 +67,7 @@ where
 }
 
 /// Committed choice operator.
-pub fn condu<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+pub fn condu<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

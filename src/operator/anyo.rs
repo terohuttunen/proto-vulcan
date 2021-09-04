@@ -75,7 +75,7 @@ where
 ///     assert_eq!(iter.next().unwrap().q, 3);
 /// }
 /// ```
-pub fn anyo<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+pub fn anyo<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

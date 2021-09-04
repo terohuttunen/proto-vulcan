@@ -89,7 +89,7 @@ where
 /// If there is only one goal within the conjunction as: `[foo()]`, then the brackets are not
 /// necessary, and we can write just `foo()`.
 
-pub fn cond<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+pub fn cond<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

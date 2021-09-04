@@ -173,8 +173,12 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! pub struct OperatorParam<'a, U: User, E: Engine<U>> {
-//!     pub body: &'a [&'a [Goal<U, E>]],
+//! # use proto_vulcan::goal::AnyGoal;
+//! # use std::marker::PhantomData;
+//! pub struct OperatorParam<'a, U: User, E: Engine<U>, G: AnyGoal<U, E>> {
+//!     pub body: &'a [&'a [G]],
+//!     _phantom: PhantomData<U>,
+//!     _phantom2: PhantomData<E>,
 //! }
 //!
 //! // operator <term> {
@@ -183,9 +187,11 @@
 //! //    ...
 //! //    _ => <body_default>,
 //! // }
-//! pub struct PatternMatchOperatorParam<'a, U: User, E: Engine<U>> {
+//! pub struct PatternMatchOperatorParam<'a, U: User, E: Engine<U>, G: AnyGoal<U, E>> {
 //!     // First goal of each arm is the match-goal
-//!     pub arms: &'a [&'a [Goal<U, E>]],
+//!     pub arms: &'a [&'a [G]],
+//!     _phantom: PhantomData<U>,
+//!     _phantom2: PhantomData<E>,
 //! }
 //! ```
 //! Even though the structs are identical, the first goal on each arm of
@@ -198,7 +204,7 @@
 //! use proto_vulcan::operator::condu;
 //! use proto_vulcan::operator::OperatorParam;
 //!
-//! pub fn onceo<U: User, E: Engine<U>>(param: OperatorParam<U, E>) -> Goal<U, E> {
+//! pub fn onceo<U: User, E: Engine<U>>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E> {
 //!    let g = proto_vulcan::operator::conj::Conj::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }

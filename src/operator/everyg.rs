@@ -58,7 +58,7 @@ where
     }
 }
 
-pub fn everyg<T, U, E>(param: ForOperatorParam<T, U, E>) -> Goal<U, E>
+pub fn everyg<T, U, E>(param: ForOperatorParam<T, U, E, Goal<U, E>>) -> Goal<U, E>
 where
     E: Engine<U>,
     U: User,

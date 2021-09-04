@@ -65,7 +65,7 @@ where
 }
 
 /// Soft cut operator.
-pub fn conda<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+pub fn conda<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

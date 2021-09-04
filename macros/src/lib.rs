@@ -66,10 +66,10 @@ impl ToTokens for Project {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
             #( let #variables = ::proto_vulcan::lterm::LTerm::projection(::std::clone::Clone::clone(&#variables)); )*
-            ::proto_vulcan::operator::project::project(::proto_vulcan::operator::ProjectOperatorParam {
-                var_list: vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
-                body: &[ #( &[ #body  ] ),* ],
-            })
+            ::proto_vulcan::operator::project::project(::proto_vulcan::operator::ProjectOperatorParam::new(
+                vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
+                &[ #( &[ #body  ] ),* ],
+            ))
         }};
         output.to_tokens(tokens);
     }
@@ -600,7 +600,7 @@ impl ToTokens for Closure {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam {f: Box::new(move || ::proto_vulcan::operator::conj::Conj::from_array( &[ #( #body ),* ] ) )})
+            ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam::new(Box::new(move || ::proto_vulcan::operator::conj::Conj::from_array( &[ #( #body ),* ] ) )))
         }};
         output.to_tokens(tokens);
     }
@@ -630,7 +630,7 @@ impl ToTokens for Loop {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output = quote! {{
-            ::proto_vulcan::operator::anyo::anyo(::proto_vulcan::operator::OperatorParam { body: &[ #( #body ),* ] })
+            ::proto_vulcan::operator::anyo::anyo(::proto_vulcan::operator::OperatorParam::new( &[ #( #body ),* ] ))
         }};
         output.to_tokens(tokens);
     }
@@ -660,7 +660,7 @@ impl ToTokens for Operator {
         let name = &self.name;
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output =
-            quote! { #name ( ::proto_vulcan::operator::OperatorParam { body: &[ #( #body ),* ] } )};
+            quote! { #name ( ::proto_vulcan::operator::OperatorParam::new( &[ #( #body ),* ] ) )};
         output.to_tokens(tokens);
     }
 }
@@ -1233,8 +1233,8 @@ impl ToTokens for PatternMatchOperator {
 
         let output = if name.to_string() == "match" {
             quote! {
-                ::proto_vulcan::operator::matche ( ::proto_vulcan::operator::PatternMatchOperatorParam {
-                    arms: &[ #( &{
+                ::proto_vulcan::operator::matche ( ::proto_vulcan::operator::PatternMatchOperatorParam::new(
+                    &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
                         let __term__ = #term;
@@ -1244,12 +1244,12 @@ impl ToTokens for PatternMatchOperator {
                         let __pattern__ = #patterns;
                         [::proto_vulcan::relation::eq(__term__, __pattern__), #clauses ]
                     } ),* ],
-                })
+                ))
             }
         } else {
             quote! {
-                #name ( ::proto_vulcan::operator::PatternMatchOperatorParam {
-                    arms: &[ #( &{
+                #name ( ::proto_vulcan::operator::PatternMatchOperatorParam::new(
+                    &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
                         let __term__ = #term;
@@ -1259,7 +1259,7 @@ impl ToTokens for PatternMatchOperator {
                         let __pattern__ = #patterns;
                         [::proto_vulcan::relation::eq(__term__, __pattern__), #clauses ]
                     } ),* ],
-                })
+                ))
             }
         };
         output.to_tokens(tokens);
@@ -1302,10 +1302,10 @@ impl ToTokens for For {
         let coll = &self.coll;
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output = quote!({
-            ::proto_vulcan::operator::everyg(::proto_vulcan::operator::ForOperatorParam {
-                coll: ::std::clone::Clone::clone(#coll),
-                g: Box::new(|#pattern| ::proto_vulcan::operator::conj::Conj::from_conjunctions(&[ #( #body ),* ])),
-            })
+            ::proto_vulcan::operator::everyg(::proto_vulcan::operator::ForOperatorParam::new(
+                ::std::clone::Clone::clone(#coll),
+                Box::new(|#pattern| ::proto_vulcan::operator::conj::Conj::from_conjunctions(&[ #( #body ),* ])),
+            ))
         });
         output.to_tokens(tokens);
     }

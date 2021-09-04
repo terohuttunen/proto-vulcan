@@ -43,7 +43,7 @@ where
     }
 }
 
-pub fn project<U, E>(param: ProjectOperatorParam<U, E>) -> Goal<U, E>
+pub fn project<U, E>(param: ProjectOperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

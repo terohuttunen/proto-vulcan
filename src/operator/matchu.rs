@@ -4,7 +4,7 @@ use crate::operator::condu::Condu;
 use crate::operator::PatternMatchOperatorParam;
 use crate::user::User;
 
-pub fn matchu<U, E>(param: PatternMatchOperatorParam<U, E>) -> Goal<U, E>
+pub fn matchu<U, E>(param: PatternMatchOperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,

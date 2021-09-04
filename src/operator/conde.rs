@@ -115,7 +115,7 @@ where
 ///     assert_eq!(expected.len(), 0);
 /// }
 /// ```
-pub fn conde<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+pub fn conde<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
