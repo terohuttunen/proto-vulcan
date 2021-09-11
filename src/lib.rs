@@ -370,7 +370,7 @@ pub trait GoalCast<U, E, SuperGoal>
 where
     U: User,
     E: Engine<U>,
-    Self: AnyGoal<U, E> + Into<SuperGoal>,
+    Self: AnyGoal<U, E>,
     SuperGoal: AnyGoal<U, E>,
 {
     fn cast_into(self) -> SuperGoal;

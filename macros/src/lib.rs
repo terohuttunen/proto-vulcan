@@ -66,10 +66,16 @@ impl ToTokens for Project {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
             #( let #variables = ::proto_vulcan::lterm::LTerm::projection(::std::clone::Clone::clone(&#variables)); )*
+            /*
             ::proto_vulcan::operator::project::project(::proto_vulcan::operator::ProjectOperatorParam::new(
                 vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
-                &[ #( &[ #body  ] ),* ],
+                &[ #( &[ ::proto_vulcan::GoalCast::cast_into( #body ) ] ),* ],
             ))
+            */
+            ::proto_vulcan::operator::project::Project::new(
+                vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
+                ::proto_vulcan::operator::conj::InferredConj::from_conjunctions(&[ #( &[ ::proto_vulcan::GoalCast::cast_into( #body ) ] ),* ])
+            )
         }};
         output.to_tokens(tokens);
     }
@@ -199,7 +205,8 @@ impl ToTokens for Fresh {
         let output = quote! {{
             #( let #variables: #variable_types <_, _> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
             ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::proto_vulcan::Upcast::to_super(&#variables) ),* ],
-                ::proto_vulcan::operator::conj::Conj::from_array(&[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ]))
+                //::proto_vulcan::GoalCast::cast_into(
+                    ::proto_vulcan::operator::conj::InferredConj::from_array(&[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ]))
         }};
         output.to_tokens(tokens);
     }
@@ -600,7 +607,9 @@ impl ToTokens for Closure {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam::new(Box::new(move || ::proto_vulcan::operator::conj::Conj::from_array( &[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ] ) )))
+            //::proto_vulcan::GoalCast::cast_into(
+                ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam::new(Box::new(move || ::proto_vulcan::operator::conj::Conj::from_array( &[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ] ) )))
+            //)
         }};
         output.to_tokens(tokens);
     }
@@ -1233,7 +1242,7 @@ impl ToTokens for PatternMatchOperator {
 
         let output = if name.to_string() == "match" {
             quote! {
-                ::proto_vulcan::operator::matche ( ::proto_vulcan::operator::PatternMatchOperatorParam::new(
+                ::proto_vulcan::operator::conde::Conde::from_conjunctions (
                     &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
@@ -1242,9 +1251,11 @@ impl ToTokens for PatternMatchOperator {
                         #( let #vars = ::proto_vulcan::lterm::LTerm::var(stringify!(#vars)); )*
                         #( let #compounds = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#compounds)); )*
                         let __pattern__ = #patterns;
-                        [::proto_vulcan::relation::eq(__term__, __pattern__), #clauses ]
+                        [::proto_vulcan::GoalCast::cast_into(
+                            ::proto_vulcan::relation::eq(__term__, __pattern__)),
+                         ::proto_vulcan::GoalCast::cast_into( #clauses )]
                     } ),* ],
-                ))
+                )
             }
         } else {
             quote! {
@@ -1257,7 +1268,9 @@ impl ToTokens for PatternMatchOperator {
                         #( let #vars = ::proto_vulcan::lterm::LTerm::var(stringify!(#vars)); )*
                         #( let #compounds = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#compounds)); )*
                         let __pattern__ = #patterns;
-                        [::proto_vulcan::relation::eq(__term__, __pattern__), #clauses ]
+                        [::proto_vulcan::GoalCast::cast_into(
+                            ::proto_vulcan::relation::eq(__term__, __pattern__)),
+                         ::proto_vulcan::GoalCast::cast_into( #clauses )]
                     } ),* ],
                 ))
             }
@@ -1741,17 +1754,17 @@ impl ToTokens for Clause {
                 diseq.to_tokens(tokens);
             }
             Clause::Succeed(_) => {
-                let output = quote! { ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::succeed()) };
+                let output = quote! { ::proto_vulcan::relation::succeed() };
                 output.to_tokens(tokens);
             }
             Clause::Fail(_) => {
-                let output = quote! { ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::fail()) };
+                let output = quote! { ::proto_vulcan::relation::fail() };
                 output.to_tokens(tokens);
             }
             Clause::Conjunction(conjunction) => {
                 // When conjunction is not inside a non-conjunction an operator we can construct
                 // an Conj-goal from it.
-                let output = quote! { ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::operator::conj::Conj::from_array( #conjunction )) };
+                let output = quote! { ::proto_vulcan::operator::conj::InferredConj::from_array( #conjunction ) };
                 output.to_tokens(tokens);
             }
             Clause::Relation(relation) => {
@@ -1859,7 +1872,7 @@ pub fn proto_vulcan(input: TokenStream) -> TokenStream {
     let clause = parse_macro_input!(input as Clause);
 
     let output = quote! {
-        #clause
+        ::proto_vulcan::GoalCast::cast_into(#clause)
     };
     output.into()
 }
@@ -1870,7 +1883,7 @@ pub fn proto_vulcan_closure(input: TokenStream) -> TokenStream {
     let closure = Closure::new(vec![clause]);
 
     let output = quote! {
-        #closure
+        ::proto_vulcan::GoalCast::cast_into(#closure)
     };
     output.into()
 }

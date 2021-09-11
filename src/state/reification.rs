@@ -1,13 +1,13 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, Goal};
 use crate::lterm::{LTerm, LTermInner};
-use crate::operator::onceo;
+//use crate::operator::onceo;
 use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 use crate::GoalCast;
-
+/*
 fn enforce_constraints_diseq<U: User, E: Engine<U>>(_x: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(true)
 }
@@ -66,12 +66,13 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
             (LTermInner::<U, E>::Cons(head, tail), _) => {
                 let head: LTerm<U, E> = head.clone();
                 let tail: LTerm<U, E> = tail.clone();
-                proto_vulcan!([
+                let g: Goal<U, E>  = proto_vulcan!([
                     force_ans(head),
                     force_ans(tail),
-                ]).solve(solver, state)
+                ]);
+                g.solve(solver, state)
             },
-            (_, _) => proto_vulcan!(true).solve(solver, state),
+            (_, _) => solver.start(&Goal::Succeed, state),//proto_vulcan!(true).solve(solver, state),
         }
     })
 }
@@ -103,8 +104,9 @@ fn enforce_constraints<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
         U::enforce_constraints(x)
     ])
 }
-
+*/
 pub fn reify<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
+    /*
     proto_vulcan!([
         enforce_constraints(x),
         fngoal move |_engine, state| {
@@ -115,4 +117,6 @@ pub fn reify<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
             Stream::unit(Box::new(state.with_smap(r).with_cstore(cstore)))
         }
     ])
+    */
+    Goal::Succeed
 }

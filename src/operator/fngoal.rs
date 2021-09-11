@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::operator::FnOperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -20,8 +20,10 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(f: Box<dyn Fn(&Solver<U, E>, State<U, E>) -> Stream<U, E>>) -> Goal<U, E> {
-        Goal::dynamic(FnGoal { f })
+    pub fn new<G: AnyGoal<U, E>>(
+        f: Box<dyn Fn(&Solver<U, E>, State<U, E>) -> Stream<U, E>>,
+    ) -> InferredGoal<U, E, G> {
+        InferredGoal::dynamic(FnGoal { f })
     }
 }
 
@@ -45,10 +47,11 @@ where
     }
 }
 
-pub fn fngoal<U, E>(param: FnOperatorParam<U, E>) -> Goal<U, E>
+pub fn fngoal<U, E, G>(param: FnOperatorParam<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     FnGoal::new(param.f)
 }

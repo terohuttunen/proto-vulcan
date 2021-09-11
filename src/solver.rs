@@ -1,6 +1,6 @@
 use crate::debugger::Debugger;
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{DFSGoal, Goal};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
@@ -39,13 +39,32 @@ where
         match goal {
             Goal::Succeed => Stream::unit(Box::new(state)),
             Goal::Fail => Stream::empty(),
-            Goal::Breakpoint(id) => {
+            Goal::Breakpoint(_id) => {
                 if self.debug_enabled {
                     // TODO: self.debugger.breakpoint(goal, &state, *id)
                 }
                 Stream::unit(Box::new(state))
             }
             Goal::Dynamic(dynamic) => {
+                if self.debug_enabled {
+                    // TODO: self.debugger.start(goal, &state)
+                }
+                dynamic.solve(self, state)
+            }
+        }
+    }
+
+    pub fn start_dfs(&self, goal: &DFSGoal<U, E>, state: State<U, E>) -> Stream<U, E> {
+        match goal {
+            DFSGoal::Succeed => Stream::unit(Box::new(state)),
+            DFSGoal::Fail => Stream::empty(),
+            DFSGoal::Breakpoint(_id) => {
+                if self.debug_enabled {
+                    // TODO: self.debugger.breakpoint(goal, &state, *id)
+                }
+                Stream::unit(Box::new(state))
+            }
+            DFSGoal::Dynamic(dynamic) => {
                 if self.debug_enabled {
                     // TODO: self.debugger.start(goal, &state)
                 }

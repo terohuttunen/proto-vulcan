@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, GoalCast, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -8,20 +8,35 @@ use crate::user::User;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
-pub struct Fresh<E: Engine<U>, U: User> {
+pub struct Fresh<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
+{
     variables: Vec<LTerm<U, E>>,
-    body: Goal<U, E>,
+    body: InferredGoal<U, E, G>,
 }
 
-impl<E: Engine<U>, U: User> Fresh<E, U> {
-    pub fn new(variables: Vec<LTerm<U, E>>, body: Goal<U, E>) -> Goal<U, E> {
-        Goal::dynamic(Fresh { variables, body }) as Goal<U, E>
+impl<U, E, G> Fresh<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
+{
+    pub fn new(variables: Vec<LTerm<U, E>>, body: InferredGoal<U, E, G>) -> InferredGoal<U, E, G> {
+        InferredGoal::dynamic(Fresh { variables, body })
     }
 }
 
-impl<E: Engine<U>, U: User> Solve<U, E> for Fresh<E, U> {
+impl<U, E, G> Solve<U, E> for Fresh<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
+{
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let goal = self.body.clone();
-        Stream::pause(Box::new(state), goal)
+        G::pause(state, goal.cast_into())
     }
 }

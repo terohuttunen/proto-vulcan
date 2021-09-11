@@ -1,52 +1,67 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
-use crate::operator::conj::Conj;
+use crate::goal::{AnyGoal, Goal, InferredGoal};
+use crate::operator::conj::InferredConj;
 use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
+use crate::GoalCast;
+use std::marker::PhantomData;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
-pub struct Conde<U, E>
+pub struct Conde<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
-    conjunctions: Vec<Goal<U, E>>,
+    conjunctions: Vec<G>,
+    _phantom: PhantomData<U>,
+    _phantom2: PhantomData<E>,
 }
 
-impl<U, E> Conde<U, E>
+impl<U, E, G> Conde<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
-    pub fn from_vec(conjunctions: Vec<Goal<U, E>>) -> Goal<U, E> {
-        Goal::dynamic(Conde { conjunctions })
+    pub fn from_vec(conjunctions: Vec<G>) -> InferredGoal<U, E, G> {
+        InferredGoal::dynamic(Conde {
+            conjunctions,
+            _phantom: PhantomData,
+            _phantom2: PhantomData,
+        })
     }
 
-    pub fn from_array(goals: &[Goal<U, E>]) -> Goal<U, E> {
-        Goal::dynamic(Conde {
+    pub fn from_array(goals: &[G]) -> InferredGoal<U, E, G> {
+        InferredGoal::dynamic(Conde {
             conjunctions: goals.to_vec(),
+            _phantom: PhantomData,
+            _phantom2: PhantomData,
         })
     }
 
     // The parameter is a list of conjunctions, and the resulting goal is a disjunction
     // of conjunctions.
-    pub fn from_conjunctions(goals: &[&[Goal<U, E>]]) -> Goal<U, E> {
+    pub fn from_conjunctions(goals: &[&[G]]) -> InferredGoal<U, E, G> {
         let mut conjunctions = vec![];
         for conjunction_goals in goals {
-            conjunctions.push(Conj::from_array(conjunction_goals));
+            conjunctions.push(GoalCast::cast_into(InferredConj::from_array(
+                conjunction_goals,
+            )));
         }
         Conde::from_vec(conjunctions)
     }
 }
 
-impl<U, E> Solve<U, E> for Conde<U, E>
+impl<U, E, G> Solve<U, E> for Conde<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let mut stream = Stream::empty();
@@ -119,6 +134,16 @@ pub fn conde<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
+{
+    Conde::from_conjunctions(param.body).cast_into()
+}
+
+/// Inferred version of conde
+pub fn cond<U, E, G>(param: OperatorParam<U, E, G>) -> InferredGoal<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     Conde::from_conjunctions(param.body)
 }

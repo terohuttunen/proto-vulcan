@@ -1,8 +1,6 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
-use crate::operator::conj::Conj;
-use crate::operator::ProjectOperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
@@ -10,29 +8,32 @@ use crate::user::User;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
-pub struct Project<U, E>
+pub struct Project<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     variables: Vec<LTerm<U, E>>,
-    body: Goal<U, E>,
+    body: InferredGoal<U, E, G>,
 }
 
-impl<U, E> Project<U, E>
+impl<U, E, G> Project<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
-    pub fn new(variables: Vec<LTerm<U, E>>, body: Goal<U, E>) -> Goal<U, E> {
-        Goal::dynamic(Project { variables, body }) as Goal<U, E>
+    pub fn new(variables: Vec<LTerm<U, E>>, body: InferredGoal<U, E, G>) -> InferredGoal<U, E, G> {
+        InferredGoal::dynamic(Project { variables, body })
     }
 }
 
-impl<U, E> Solve<U, E> for Project<U, E>
+impl<U, E, G> Solve<U, E> for Project<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E> + 'static,
 {
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         // Walk* each projected variable with the current substitution
@@ -41,14 +42,6 @@ where
         }
         self.body.solve(solver, state)
     }
-}
-
-pub fn project<U, E>(param: ProjectOperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    Project::new(param.var_list, Conj::from_conjunctions(param.body))
 }
 
 #[cfg(test)]

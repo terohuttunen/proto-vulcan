@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, DFSGoal, Goal};
 use crate::solver::Solver;
 use crate::state::State;
 use crate::user::User;
@@ -142,9 +142,9 @@ pub enum Lazy<U: User, E: Engine<U>> {
     Bind(LazyStream<U, E>, Goal<U, E>),
     MPlus(LazyStream<U, E>, LazyStream<U, E>),
     Pause(Box<State<U, E>>, Goal<U, E>),
-    BindDFS(LazyStream<U, E>, Goal<U, E>),
+    BindDFS(LazyStream<U, E>, DFSGoal<U, E>),
     MPlusDFS(LazyStream<U, E>, LazyStream<U, E>),
-    PauseDFS(Box<State<U, E>>, Goal<U, E>),
+    PauseDFS(Box<State<U, E>>, DFSGoal<U, E>),
     Delay(Stream<U, E>),
 }
 
@@ -165,7 +165,7 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::Pause(state, goal)))
     }
 
-    pub fn bind_dfs(ls: LazyStream<U, E>, goal: Goal<U, E>) -> LazyStream<U, E> {
+    pub fn bind_dfs(ls: LazyStream<U, E>, goal: DFSGoal<U, E>) -> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::BindDFS(ls, goal)))
     }
 
@@ -173,7 +173,7 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::MPlusDFS(ls1, ls2)))
     }
 
-    pub fn pause_dfs(state: Box<State<U, E>>, goal: Goal<U, E>) -> LazyStream<U, E> {
+    pub fn pause_dfs(state: Box<State<U, E>>, goal: DFSGoal<U, E>) -> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::PauseDFS(state, goal)))
     }
 
@@ -261,7 +261,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn bind_dfs(stream: Stream<U, E>, goal: Goal<U, E>) -> Stream<U, E> {
+    pub fn bind_dfs(stream: Stream<U, E>, goal: DFSGoal<U, E>) -> Stream<U, E> {
         if goal.is_succeed() {
             stream
         } else if goal.is_fail() {
@@ -293,7 +293,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         Stream::Lazy(LazyStream::mplus_dfs(lazy, lazy_hat))
     }
 
-    pub fn lazy_bind_dfs(lazy: LazyStream<U, E>, goal: Goal<U, E>) -> Stream<U, E> {
+    pub fn lazy_bind_dfs(lazy: LazyStream<U, E>, goal: DFSGoal<U, E>) -> Stream<U, E> {
         if goal.is_succeed() {
             Stream::lazy(lazy)
         } else if goal.is_fail() {
@@ -303,7 +303,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn pause_dfs(state: Box<State<U, E>>, goal: Goal<U, E>) -> Stream<U, E> {
+    pub fn pause_dfs(state: Box<State<U, E>>, goal: DFSGoal<U, E>) -> Stream<U, E> {
         Stream::Lazy(LazyStream::pause_dfs(state, goal))
     }
 
@@ -364,7 +364,7 @@ where
                 let stream = self.step(solver, *s.0);
                 Stream::bind_dfs(stream, goal)
             }
-            Lazy::PauseDFS(state, goal) => solver.start(&goal, *state),
+            Lazy::PauseDFS(state, goal) => solver.start_dfs(&goal, *state),
             Lazy::Delay(stream) => stream,
         }
     }

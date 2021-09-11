@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -22,8 +22,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-        Goal::dynamic(Eq { u, v })
+    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+        InferredGoal::dynamic(Eq { u, v })
     }
 }
 
@@ -59,10 +59,11 @@ where
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn eq<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
+pub fn eq<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     Eq::new(u, v)
 }

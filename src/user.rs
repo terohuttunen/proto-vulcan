@@ -16,7 +16,10 @@ pub trait User: Debug + Clone + Default + 'static {
     type UserContext: Debug;
 
     /// Process extension to substitution map.
-    fn process_extension<E: Engine<Self>>(state: State<Self, E>, _extension: &SMap<Self, E>) -> SResult<Self, E> {
+    fn process_extension<E: Engine<Self>>(
+        state: State<Self, E>,
+        _extension: &SMap<Self, E>,
+    ) -> SResult<Self, E> {
         Ok(state)
     }
 
@@ -31,15 +34,23 @@ pub trait User: Debug + Clone + Default + 'static {
     }
 
     /// Called before the constraint is added to the state
-    fn with_constraint<E: Engine<Self>>(_state: &mut State<Self, E>, _constraint: &Rc<dyn Constraint<Self, E>>) {}
+    fn with_constraint<E: Engine<Self>>(
+        _state: &mut State<Self, E>,
+        _constraint: &Rc<dyn Constraint<Self, E>>,
+    ) {
+    }
 
     /// Called after the constraint has been removed from the state
-    fn take_constraint<E: Engine<Self>>(_state: &mut State<Self, E>, _constraint: &Rc<dyn Constraint<Self, E>>) {}
+    fn take_constraint<E: Engine<Self>>(
+        _state: &mut State<Self, E>,
+        _constraint: &Rc<dyn Constraint<Self, E>>,
+    ) {
+    }
 
     /// Called in reification when constraints are finalized. For example finite domain
     /// constraints are converted to sequences of integers.
     fn enforce_constraints<E: Engine<Self>>(_x: LTerm<Self, E>) -> Goal<Self, E> {
-        proto_vulcan!(true)
+        Goal::Succeed
     }
 
     fn finalize<E: Engine<Self>>(_state: &mut State<Self, E>) {}

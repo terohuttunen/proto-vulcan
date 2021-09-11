@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, Goal};
 use crate::lterm::LTerm;
 use crate::operator::conj::Conj;
 use crate::operator::ForOperatorParam;

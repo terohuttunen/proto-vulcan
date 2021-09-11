@@ -60,9 +60,9 @@ fn nqueenso<U: User, E: Engine<U>>(
             [distinctfd(l), diagonalso(#n, #0, #1, ltail, l), queens == l]
         })
     } else {
-        proto_vulcan_closure!(|x| {
-            infdrange(x, &(1..=n)),
-            nqueenso(queens, #n, #i - 1, [x | l])
+        proto_vulcan_closure!(|| {
+            //infdrange(x, &(1..=n)),
+            //nqueenso(queens, #n, #i - 1, [x | l])
         })
     }
 }

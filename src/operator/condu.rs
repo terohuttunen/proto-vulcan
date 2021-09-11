@@ -13,6 +13,7 @@ use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
+use crate::GoalCast;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -37,11 +38,11 @@ where
     E: Engine<U>,
 {
     pub fn from_conjunctions(body: &[&[Goal<U, E>]]) -> Goal<U, E> {
-        let mut next = proto_vulcan!(false);
+        let mut next = Goal::Fail;
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
             if !clause.is_empty() {
-                let rest = Conj::from_vec(clause.split_off(1));
+                let rest = GoalCast::cast_into(Conj::from_vec(clause.split_off(1)));
                 let first = clause.pop().unwrap();
                 next = Goal::dynamic(Condu { first, rest, next });
             }

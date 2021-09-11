@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::{AdaptiveGoal, AnyGoal, DFSGoal, Goal};
+use crate::goal::AnyGoal;
 use crate::lterm::LTerm;
 use crate::solver::Solver;
 use crate::state::State;
@@ -67,32 +67,6 @@ where
             _phantom: PhantomData,
             _phantom2: PhantomData,
         }
-    }
-}
-
-// project |x, y, ...| { <body> }
-pub struct ProjectOperatorParam<'a, U, E, G>
-where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
-{
-    pub var_list: Vec<LTerm<U, E>>,
-    pub body: &'a [&'a [G]],
-}
-
-impl<'a, U, E, G> ProjectOperatorParam<'a, U, E, G>
-where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
-{
-    #[inline]
-    pub fn new(
-        var_list: Vec<LTerm<U, E>>,
-        body: &'a [&'a [G]],
-    ) -> ProjectOperatorParam<'a, U, E, G> {
-        ProjectOperatorParam { var_list, body }
     }
 }
 
@@ -166,14 +140,12 @@ where
 pub mod anyo;
 #[doc(hidden)]
 pub mod closure;
-#[doc(hidden)]
-pub mod cond;
-#[doc(hidden)]
-pub mod conda;
-#[doc(hidden)]
+//#[doc(hidden)]
+//pub mod conda;
+//#[doc(hidden)]
 pub mod conde;
-#[doc(hidden)]
-pub mod condu;
+//#[doc(hidden)]
+//pub mod condu;
 #[doc(hidden)]
 pub mod conj;
 #[doc(hidden)]
@@ -184,43 +156,43 @@ pub mod everyg;
 pub mod fngoal;
 #[doc(hidden)]
 pub mod fresh;
-#[doc(hidden)]
-pub mod matcha;
+//#[doc(hidden)]
+//pub mod matcha;
 #[doc(hidden)]
 pub mod matche;
-#[doc(hidden)]
-pub mod matchu;
-#[doc(hidden)]
-pub mod onceo;
+//#[doc(hidden)]
+//pub mod matchu;
+//#[doc(hidden)]
+//pub mod onceo;
 #[doc(hidden)]
 pub mod project;
 
 #[doc(inline)]
 pub use anyo::anyo;
 
-#[doc(inline)]
-pub use conda::conda;
+//#[doc(inline)]
+//pub use conda::conda;
 
 #[doc(inline)]
 pub use conde::conde;
 
 #[doc(inline)]
-pub use condu::condu;
+pub use conde::cond;
 
-#[doc(inline)]
-pub use cond::cond;
+//#[doc(inline)]
+//pub use condu::condu;
 
-#[doc(inline)]
-pub use onceo::onceo;
+//#[doc(inline)]
+//pub use onceo::onceo;
 
 #[doc(inline)]
 pub use matche::matche;
 
-#[doc(inline)]
-pub use matchu::matchu;
+//#[doc(inline)]
+//pub use matchu::matchu;
 
-#[doc(inline)]
-pub use matcha::matcha;
+//#[doc(inline)]
+//pub use matcha::matcha;
 
 #[doc(inline)]
 pub use everyg::everyg;

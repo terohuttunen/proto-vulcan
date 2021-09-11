@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, Goal};
 use crate::operator::conde::conde;
 use crate::operator::conj::Conj;
 use crate::operator::OperatorParam;
@@ -7,6 +7,7 @@ use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
+use crate::GoalCast;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -80,7 +81,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    Anyo::new(Conj::from_conjunctions(param.body))
+    Anyo::new(GoalCast::cast_into(Conj::from_conjunctions(param.body)))
 }
 
 #[cfg(test)]
