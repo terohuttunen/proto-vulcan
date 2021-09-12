@@ -76,20 +76,22 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
     })
 }
 
+#[cfg(feature = "clpfd")]
 fn enforce_constraints_fd<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
-    if cfg!(feature = "clpfd") {
-        proto_vulcan!([
-            force_ans(x),
-            fngoal | engine,
-            state | {
-                state.verify_all_bound();
-                let bound_x = state.dstore_ref().keys().cloned().collect::<LTerm<U, E>>();
-                proto_vulcan!( onceo { force_ans(bound_x) } ).solve(engine, state)
-            }
-        ])
-    } else {
-        Goal::succeed()
-    }
+    proto_vulcan!([
+        force_ans(x),
+        fngoal | engine,
+        state | {
+            state.verify_all_bound();
+            let bound_x = state.dstore_ref().keys().cloned().collect::<LTerm<U, E>>();
+            proto_vulcan!( onceo { force_ans(bound_x) } ).solve(engine, state)
+        }
+    ])
+}
+
+#[cfg(not(feature = "clpfd"))]
+fn enforce_constraints_fd<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
+    Goal::succeed()
 }
 
 /// A goal that enforces the current set of constraints.

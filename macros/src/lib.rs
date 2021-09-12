@@ -1218,7 +1218,7 @@ impl ToTokens for PatternMatchOperator {
         let mut patterns: Vec<Pattern> = vec![];
         let mut vars: Vec<Vec<Ident>> = vec![];
         let mut compounds: Vec<Vec<Ident>> = vec![];
-        let mut clauses: Vec<Punctuated<Clause, Token![,]>> = vec![];
+        let mut clauses: Vec<Punctuated<proc_macro2::TokenStream, Token![,]>> = vec![];
         for arm in self.arms.iter() {
             // Repeat |-expression patterns with multiple single pattern entries
             for pattern in arm.patterns.iter() {
@@ -1236,7 +1236,15 @@ impl ToTokens for PatternMatchOperator {
                 });
                 vars.push(treeterm_pattern_vars);
                 compounds.push(compound_pattern_vars);
-                clauses.push(arm.body.clone());
+                let mut arm_clauses: Punctuated<proc_macro2::TokenStream, Token![,]> =
+                    Punctuated::new();
+                for clause in arm.body.iter() {
+                    let tokens = quote! {
+                        ::proto_vulcan::GoalCast::cast_into( #clause )
+                    };
+                    arm_clauses.push(tokens);
+                }
+                clauses.push(arm_clauses);
             }
         }
 
@@ -1253,7 +1261,7 @@ impl ToTokens for PatternMatchOperator {
                         let __pattern__ = #patterns;
                         [::proto_vulcan::GoalCast::cast_into(
                             ::proto_vulcan::relation::eq(__term__, __pattern__)),
-                         ::proto_vulcan::GoalCast::cast_into( #clauses )]
+                         #clauses]
                     } ),* ],
                 )
             }
@@ -1270,7 +1278,7 @@ impl ToTokens for PatternMatchOperator {
                         let __pattern__ = #patterns;
                         [::proto_vulcan::GoalCast::cast_into(
                             ::proto_vulcan::relation::eq(__term__, __pattern__)),
-                         ::proto_vulcan::GoalCast::cast_into( #clauses )]
+                         #clauses]
                     } ),* ],
                 ))
             }
@@ -1951,21 +1959,23 @@ impl ToTokens for Query {
 
             let goal = {
                 let __query__ = ::proto_vulcan::lterm::LTerm::var("__query__");
-                ::proto_vulcan::operator::fresh::Fresh::new(
-                    vec![::std::clone::Clone::clone(&__query__)],
-                    ::proto_vulcan::operator::conj::Conj::from_array(&[
-                        ::proto_vulcan::GoalCast::cast_into(
-                            ::proto_vulcan::relation::eq::eq(
-                                ::std::clone::Clone::clone(&__query__),
-                                ::proto_vulcan::lterm::LTerm::from_array(&[#(::proto_vulcan::Upcast::to_super(&#query)),*]),
+                ::proto_vulcan::GoalCast::cast_into(
+                    ::proto_vulcan::operator::fresh::Fresh::new(
+                        vec![::std::clone::Clone::clone(&__query__)],
+                        ::proto_vulcan::operator::conj::InferredConj::from_array(&[
+                            ::proto_vulcan::GoalCast::cast_into(
+                                ::proto_vulcan::relation::eq::eq(
+                                    ::std::clone::Clone::clone(&__query__),
+                                    ::proto_vulcan::lterm::LTerm::from_array(&[#(::proto_vulcan::Upcast::to_super(&#query)),*]),
 
-                            )
-                        ),
-                     ::proto_vulcan::operator::conj::Conj::from_array(&[
-                        #( ::proto_vulcan::GoalCast::cast_into( #body ) ),*
-                     ]),
-                     ::proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
-                    ]),
+                                )
+                            ),
+                        ::proto_vulcan::operator::conj::Conj::from_array(&[
+                            #( ::proto_vulcan::GoalCast::cast_into( #body ) ),*
+                        ]),
+                        ::proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
+                        ]),
+                    )
                 )
             };
 
