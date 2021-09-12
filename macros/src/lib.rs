@@ -1317,7 +1317,7 @@ impl ToTokens for For {
         let output = quote!({
             ::proto_vulcan::operator::everyg(::proto_vulcan::operator::ForOperatorParam::new(
                 ::std::clone::Clone::clone(#coll),
-                Box::new(|#pattern| ::proto_vulcan::operator::conj::Conj::from_conjunctions(&[ #( #body ),* ])),
+                Box::new(|#pattern| ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::operator::conj::InferredConj::from_conjunctions(&[ #( #body ),* ]))),
             ))
         });
         output.to_tokens(tokens);

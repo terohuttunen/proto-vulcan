@@ -197,6 +197,38 @@ fn test_matche_bfs<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
     })
 }
 
+fn test_for_bfs<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
+    proto_vulcan!(for y in &x {
+        match y {
+            0 => test_succeed_bfs(),
+            1 => test_succeed_dfs(),
+            2 => test_succeed_inferred(),
+        }
+    })
+}
+
+fn test_for_dfs<U: User, E: Engine<U>>(x: LTerm<U, E>) -> DFSGoal<U, E> {
+    proto_vulcan!(for y in &x {
+        match y {
+            //0 => test_succeed_bfs(),
+            1 => test_succeed_dfs(),
+            2 => test_succeed_inferred(),
+        }
+    })
+}
+
+fn test_for_inferred<U: User, E: Engine<U>, G: AnyGoal<U, E>>(
+    x: LTerm<U, E>,
+) -> InferredGoal<U, E, G> {
+    proto_vulcan!(for y in &x {
+        match y {
+            //0 => test_succeed_bfs(),
+            //1 => test_succeed_dfs(),
+            2 => test_succeed_inferred(),
+        }
+    })
+}
+
 fn main() {
     /*
     let foo: DFSGoal<DefaultUser, DefaultEngine<DefaultUser>> = test_relation_dfs();

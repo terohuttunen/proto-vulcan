@@ -2,9 +2,10 @@ use crate::engine::Engine;
 use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
 use crate::solver::{Solve, Solver};
 use crate::state::State;
-use crate::stream::Stream;
+use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 use crate::GoalCast;
+use std::any::Any;
 use std::marker::PhantomData;
 
 #[derive(Derivative)]
@@ -86,7 +87,10 @@ where
     E: Engine<U>,
 {
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        Goal::bind(state, self.goal_1.clone(), self.goal_2.clone())
+        Stream::lazy_bind(
+            LazyStream::pause(Box::new(state), self.goal_1.clone()),
+            self.goal_2.clone(),
+        )
     }
 }
 
@@ -169,7 +173,10 @@ where
     E: Engine<U>,
 {
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        DFSGoal::bind(state, self.goal_1.clone(), self.goal_2.clone())
+        Stream::lazy_bind_dfs(
+            LazyStream::pause_dfs(Box::new(state), self.goal_1.clone()),
+            self.goal_2.clone(),
+        )
     }
 }
 
@@ -258,6 +265,10 @@ where
         }
         InferredGoal::new(p)
     }
+
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl<U, E, G> Solve<U, E> for InferredConj<U, E, G>
@@ -267,6 +278,24 @@ where
     G: AnyGoal<U, E> + 'static,
 {
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        G::bind(state, self.goal_1.clone(), self.goal_2.clone())
+        if let Some(bfs) = self
+            .as_any()
+            .downcast_ref::<InferredConj<U, E, Goal<U, E>>>()
+        {
+            Stream::lazy_bind(
+                LazyStream::pause(Box::new(state), bfs.goal_1.clone().cast_into()),
+                bfs.goal_2.clone().cast_into(),
+            )
+        } else if let Some(dfs) = self
+            .as_any()
+            .downcast_ref::<InferredConj<U, E, DFSGoal<U, E>>>()
+        {
+            Stream::lazy_bind_dfs(
+                LazyStream::pause_dfs(Box::new(state), dfs.goal_1.clone().cast_into()),
+                dfs.goal_2.clone().cast_into(),
+            )
+        } else {
+            unreachable!()
+        }
     }
 }

@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
-use crate::stream::{LazyStream, Stream};
+use crate::stream::Stream;
 use crate::user::User;
 use std::marker::PhantomData;
 use std::rc::Rc;
@@ -34,12 +34,6 @@ where
     fn is_fail(&self) -> bool;
 
     fn is_breakpoint(&self) -> bool;
-
-    fn bind(state: State<U, E>, goal_1: Self, goal_2: Self) -> Stream<U, E>;
-
-    fn mplus(state: State<U, E>, goal_1: Self, goal_2: Self) -> Stream<U, E>;
-
-    fn pause(state: State<U, E>, goal: Self) -> Stream<U, E>;
 
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E>;
 }
@@ -119,21 +113,6 @@ where
             Goal::Breakpoint(_) => true,
             _ => false,
         }
-    }
-
-    fn bind(state: State<U, E>, goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Stream<U, E> {
-        Stream::lazy_bind(LazyStream::pause(Box::new(state), goal_1), goal_2)
-    }
-
-    fn mplus(state: State<U, E>, goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Stream<U, E> {
-        Stream::lazy_mplus(
-            LazyStream::pause(Box::new(state.clone()), goal_1),
-            LazyStream::pause(Box::new(state), goal_2),
-        )
-    }
-
-    fn pause(state: State<U, E>, goal: Goal<U, E>) -> Stream<U, E> {
-        Stream::pause(Box::new(state), goal)
     }
 
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
@@ -223,21 +202,6 @@ where
         }
     }
 
-    fn bind(state: State<U, E>, goal_1: DFSGoal<U, E>, goal_2: DFSGoal<U, E>) -> Stream<U, E> {
-        Stream::lazy_bind_dfs(LazyStream::pause_dfs(Box::new(state), goal_1), goal_2)
-    }
-
-    fn mplus(state: State<U, E>, goal_1: DFSGoal<U, E>, goal_2: DFSGoal<U, E>) -> Stream<U, E> {
-        Stream::lazy_mplus_dfs(
-            LazyStream::pause_dfs(Box::new(state.clone()), goal_1),
-            LazyStream::pause_dfs(Box::new(state), goal_2),
-        )
-    }
-
-    fn pause(state: State<U, E>, goal: DFSGoal<U, E>) -> Stream<U, E> {
-        Stream::pause_dfs(Box::new(state), goal)
-    }
-
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match self {
             DFSGoal::Succeed => Stream::unit(Box::new(state)),
@@ -323,26 +287,6 @@ where
 
     fn is_breakpoint(&self) -> bool {
         self.goal.is_breakpoint()
-    }
-
-    fn bind(
-        state: State<U, E>,
-        goal_1: InferredGoal<U, E, G>,
-        goal_2: InferredGoal<U, E, G>,
-    ) -> Stream<U, E> {
-        G::bind(state, goal_1.cast_into(), goal_2.cast_into())
-    }
-
-    fn mplus(
-        state: State<U, E>,
-        goal_1: InferredGoal<U, E, G>,
-        goal_2: InferredGoal<U, E, G>,
-    ) -> Stream<U, E> {
-        G::mplus(state, goal_1.cast_into(), goal_2.cast_into())
-    }
-
-    fn pause(state: State<U, E>, goal: InferredGoal<U, E, G>) -> Stream<U, E> {
-        G::pause(state, goal.cast_into())
     }
 
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {

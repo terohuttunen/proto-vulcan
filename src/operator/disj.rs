@@ -136,6 +136,9 @@ where
     E: Engine<U>,
 {
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        DFSGoal::mplus(state, self.goal_1.clone(), self.goal_2.clone())
+        Stream::lazy_mplus_dfs(
+            LazyStream::pause_dfs(Box::new(state.clone()), self.goal_1.clone()),
+            LazyStream::pause_dfs(Box::new(state), self.goal_2.clone()),
+        )
     }
 }
