@@ -136,63 +136,96 @@ where
     }
 }
 
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod anyo;
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod closure;
 #[doc(hidden)]
 pub mod conda;
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod conde;
 #[doc(hidden)]
 pub mod condu;
+
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod conj;
+
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod disj;
+
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod everyg;
+
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod fngoal;
+
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod fresh;
+
+#[cfg(feature = "extras")]
 #[doc(hidden)]
 pub mod matcha;
+
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod matche;
+
+#[cfg(feature = "extras")]
 #[doc(hidden)]
 pub mod matchu;
-//#[doc(hidden)]
-//pub mod onceo;
+
+#[cfg(any(feature = "extras", feature = "clpfd"))]
+#[doc(hidden)]
+pub mod onceo;
+
+#[cfg(feature = "extras")]
 #[doc(hidden)]
 pub mod project;
 
+#[cfg(feature = "core")]
 #[doc(inline)]
 pub use anyo::anyo;
 
+#[cfg(feature = "extras")]
 #[doc(inline)]
 pub use conda::conda;
 
+#[cfg(feature = "core")]
 #[doc(inline)]
 pub use conde::conde;
 
+#[cfg(feature = "extras")]
 #[doc(inline)]
 pub use conde::cond;
 
+#[cfg(feature = "extras")]
 #[doc(inline)]
 pub use condu::condu;
 
-//#[doc(inline)]
-//pub use onceo::onceo;
+#[cfg(any(feature = "extras", feature = "clpfd"))]
+#[doc(inline)]
+pub use onceo::onceo;
 
+#[cfg(feature = "core")]
 #[doc(inline)]
 pub use matche::matche;
 
+#[cfg(feature = "extras")]
 #[doc(inline)]
 pub use matchu::matchu;
 
+#[cfg(feature = "extras")]
 #[doc(inline)]
 pub use matcha::matcha;
 
+#[cfg(feature = "core")]
 #[doc(inline)]
 pub use everyg::everyg;
