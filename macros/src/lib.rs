@@ -66,15 +66,11 @@ impl ToTokens for Project {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
             #( let #variables = ::proto_vulcan::lterm::LTerm::projection(::std::clone::Clone::clone(&#variables)); )*
-            /*
-            ::proto_vulcan::operator::project::project(::proto_vulcan::operator::ProjectOperatorParam::new(
-                vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
-                &[ #( &[ ::proto_vulcan::GoalCast::cast_into( #body ) ] ),* ],
-            ))
-            */
             ::proto_vulcan::operator::project::Project::new(
                 vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
-                ::proto_vulcan::operator::conj::InferredConj::from_conjunctions(&[ #( &[ ::proto_vulcan::GoalCast::cast_into( #body ) ] ),* ])
+                ::proto_vulcan::GoalCast::cast_into(
+                    ::proto_vulcan::operator::conj::InferredConj::from_conjunctions(&[ #( &[ ::proto_vulcan::GoalCast::cast_into( #body ) ] ),* ])
+                )
             )
         }};
         output.to_tokens(tokens);
@@ -205,8 +201,9 @@ impl ToTokens for Fresh {
         let output = quote! {{
             #( let #variables: #variable_types <_, _> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
             ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::proto_vulcan::Upcast::to_super(&#variables) ),* ],
-                //::proto_vulcan::GoalCast::cast_into(
+                ::proto_vulcan::GoalCast::cast_into(
                     ::proto_vulcan::operator::conj::InferredConj::from_array(&[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ]))
+                )
         }};
         output.to_tokens(tokens);
     }
@@ -607,9 +604,11 @@ impl ToTokens for Closure {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            //::proto_vulcan::GoalCast::cast_into(
-                ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam::new(Box::new(move || ::proto_vulcan::operator::conj::Conj::from_array( &[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ] ) )))
-            //)
+            ::proto_vulcan::operator::closure::Closure::new(
+                ::proto_vulcan::operator::ClosureOperatorParam::new(
+                    Box::new(move || ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::operator::conj::InferredConj::from_array( &[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ] ) ))
+                )
+            )
         }};
         output.to_tokens(tokens);
     }
@@ -1962,19 +1961,21 @@ impl ToTokens for Query {
                 ::proto_vulcan::GoalCast::cast_into(
                     ::proto_vulcan::operator::fresh::Fresh::new(
                         vec![::std::clone::Clone::clone(&__query__)],
-                        ::proto_vulcan::operator::conj::InferredConj::from_array(&[
-                            ::proto_vulcan::GoalCast::cast_into(
-                                ::proto_vulcan::relation::eq::eq(
-                                    ::std::clone::Clone::clone(&__query__),
-                                    ::proto_vulcan::lterm::LTerm::from_array(&[#(::proto_vulcan::Upcast::to_super(&#query)),*]),
+                        ::proto_vulcan::GoalCast::cast_into(
+                            ::proto_vulcan::operator::conj::InferredConj::from_array(&[
+                                ::proto_vulcan::GoalCast::cast_into(
+                                    ::proto_vulcan::relation::eq::eq(
+                                        ::std::clone::Clone::clone(&__query__),
+                                        ::proto_vulcan::lterm::LTerm::from_array(&[#(::proto_vulcan::Upcast::to_super(&#query)),*]),
 
-                                )
-                            ),
-                        ::proto_vulcan::operator::conj::Conj::from_array(&[
-                            #( ::proto_vulcan::GoalCast::cast_into( #body ) ),*
-                        ]),
-                        ::proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
-                        ]),
+                                    )
+                                ),
+                                ::proto_vulcan::operator::conj::Conj::from_array(&[
+                                    #( ::proto_vulcan::GoalCast::cast_into( #body ) ),*
+                                ]),
+                                ::proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
+                            ]),
+                        )
                     )
                 )
             };

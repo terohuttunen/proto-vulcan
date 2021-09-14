@@ -23,7 +23,7 @@ where
     pub fn new<G: AnyGoal<U, E>>(
         f: Box<dyn Fn(&Solver<U, E>, State<U, E>) -> Stream<U, E>>,
     ) -> InferredGoal<U, E, G> {
-        InferredGoal::dynamic(FnGoal { f })
+        InferredGoal::new(G::dynamic(FnGoal { f }))
     }
 }
 

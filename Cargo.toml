@@ -25,10 +25,11 @@ thiserror = "1.0"
 itertools = "0.9.0"
 
 [features]
-default = ["core"]
+default = ["core", "extras"]
 core = []
 extras = []
 clpfd = []
+clpz = []
 
 [workspace]
 members = ["macros"]

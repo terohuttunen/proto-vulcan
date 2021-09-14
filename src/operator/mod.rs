@@ -168,6 +168,10 @@ pub mod fngoal;
 
 #[cfg(feature = "core")]
 #[doc(hidden)]
+pub mod dfs;
+
+#[cfg(feature = "core")]
+#[doc(hidden)]
 pub mod fresh;
 
 #[cfg(feature = "extras")]
@@ -186,9 +190,13 @@ pub mod matchu;
 #[doc(hidden)]
 pub mod onceo;
 
-#[cfg(feature = "extras")]
+#[cfg(feature = "core")]
 #[doc(hidden)]
 pub mod project;
+
+#[cfg(feature = "core")]
+#[doc(inline)]
+pub use dfs::dfs;
 
 #[cfg(feature = "core")]
 #[doc(inline)]
@@ -202,7 +210,7 @@ pub use conda::conda;
 #[doc(inline)]
 pub use conde::conde;
 
-#[cfg(feature = "extras")]
+#[cfg(feature = "core")]
 #[doc(inline)]
 pub use conde::cond;
 

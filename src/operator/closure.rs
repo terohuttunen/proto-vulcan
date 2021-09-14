@@ -26,11 +26,11 @@ where
     G: AnyGoal<U, E> + 'static,
 {
     pub fn new(param: ClosureOperatorParam<U, E, G>) -> InferredGoal<U, E, G> {
-        InferredGoal::dynamic(Closure {
+        InferredGoal::new(G::dynamic(Closure {
             f: param.f,
             _phantom: PhantomData,
             _phantom2: PhantomData,
-        })
+        }))
     }
 }
 

@@ -43,7 +43,7 @@ where
     for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
     fn new(coll: T, g: Box<dyn Fn(LTerm<U, E>) -> G>) -> InferredGoal<U, E, G> {
-        InferredGoal::dynamic(Everyg { coll, g })
+        InferredGoal::new(G::dynamic(Everyg { coll, g }))
     }
 }
 
@@ -58,7 +58,7 @@ where
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let term_iter = IntoIterator::into_iter(&self.coll);
         let goal_iter = term_iter.map(|term| (*self.g)(term.clone()));
-        InferredConj::from_iter(goal_iter).solve(solver, state)
+        InferredConj::from_iter(goal_iter).goal.solve(solver, state)
     }
 }
 

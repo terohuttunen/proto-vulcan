@@ -16,7 +16,7 @@ where
     G: AnyGoal<U, E>,
 {
     variables: Vec<LTerm<U, E>>,
-    body: InferredGoal<U, E, G>,
+    body: G,
 }
 
 impl<U, E, G> Fresh<U, E, G>
@@ -25,8 +25,8 @@ where
     E: Engine<U>,
     G: AnyGoal<U, E>,
 {
-    pub fn new(variables: Vec<LTerm<U, E>>, body: InferredGoal<U, E, G>) -> InferredGoal<U, E, G> {
-        InferredGoal::dynamic(Fresh { variables, body })
+    pub fn new(variables: Vec<LTerm<U, E>>, body: G) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Fresh { variables, body }))
     }
 
     pub fn as_any(&self) -> &dyn Any {
@@ -42,9 +42,9 @@ where
 {
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         if let Some(bfs) = self.as_any().downcast_ref::<Fresh<U, E, Goal<U, E>>>() {
-            Stream::pause(Box::new(state), bfs.body.clone().cast_into())
+            Stream::pause(Box::new(state), bfs.body.clone())
         } else if let Some(dfs) = self.as_any().downcast_ref::<Fresh<U, E, DFSGoal<U, E>>>() {
-            Stream::pause_dfs(Box::new(state), dfs.body.clone().cast_into())
+            Stream::pause_dfs(Box::new(state), dfs.body.clone())
         } else {
             unreachable!()
         }

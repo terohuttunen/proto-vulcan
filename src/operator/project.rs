@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::{AnyGoal, InferredGoal};
+use crate::goal::{AnyGoal, GoalCast, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -15,7 +15,7 @@ where
     G: AnyGoal<U, E>,
 {
     variables: Vec<LTerm<U, E>>,
-    body: InferredGoal<U, E, G>,
+    body: G,
 }
 
 impl<U, E, G> Project<U, E, G>
@@ -24,8 +24,8 @@ where
     E: Engine<U>,
     G: AnyGoal<U, E>,
 {
-    pub fn new(variables: Vec<LTerm<U, E>>, body: InferredGoal<U, E, G>) -> InferredGoal<U, E, G> {
-        InferredGoal::dynamic(Project { variables, body })
+    pub fn new(variables: Vec<LTerm<U, E>>, body: G) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Project { variables, body }))
     }
 }
 

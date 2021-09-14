@@ -27,7 +27,7 @@ where
     E: Engine<U>,
     G: AnyGoal<U, E>,
 {
-    InferredGoal::succeed()
+    InferredGoal::new(G::succeed())
 }
 
 #[cfg(test)]

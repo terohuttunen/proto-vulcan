@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, DFSGoal, Goal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -29,6 +29,17 @@ where
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
         [_ | rest] => membero(x, rest),
+    })
+}
+
+pub fn member<U, E>(x: LTerm<U, E>, l: LTerm<U, E>) -> DFSGoal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    proto_vulcan_closure!(match l {
+        [head | _] => head == x,
+        [_ | rest] => member(x, rest),
     })
 }
 

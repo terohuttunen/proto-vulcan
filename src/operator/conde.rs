@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::{AnyGoal, Goal, InferredGoal};
+use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
 use crate::operator::conj::InferredConj;
 use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
@@ -7,6 +7,7 @@ use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 use crate::GoalCast;
+use std::any::Any;
 use std::marker::PhantomData;
 
 #[derive(Derivative)]
@@ -29,19 +30,23 @@ where
     G: AnyGoal<U, E>,
 {
     pub fn from_vec(conjunctions: Vec<G>) -> InferredGoal<U, E, G> {
-        InferredGoal::dynamic(Conde {
+        InferredGoal::new(G::dynamic(Conde {
             conjunctions,
             _phantom: PhantomData,
             _phantom2: PhantomData,
-        })
+        }))
     }
 
     pub fn from_array(goals: &[G]) -> InferredGoal<U, E, G> {
-        InferredGoal::dynamic(Conde {
+        InferredGoal::new(G::dynamic(Conde {
             conjunctions: goals.to_vec(),
             _phantom: PhantomData,
             _phantom2: PhantomData,
-        })
+        }))
+    }
+
+    pub fn as_any(&self) -> &dyn Any {
+        self
     }
 
     // The parameter is a list of conjunctions, and the resulting goal is a disjunction
@@ -64,27 +69,53 @@ where
     G: AnyGoal<U, E>,
 {
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        let mut stream = Stream::empty();
+        if let Some(bfs) = self.as_any().downcast_ref::<Conde<U, E, Goal<U, E>>>() {
+            let mut stream = Stream::empty();
 
-        // Process first element separately to avoid one extra clone of `state`.
-        if self.conjunctions.len() > 1 {
-            for conjunction in self
-                .conjunctions
-                .iter()
-                .rev()
-                .take(self.conjunctions.len() - 1)
-            {
-                let new_stream = conjunction.solve(solver, state.clone());
+            // Process first element separately to avoid one extra clone of `state`.
+            if bfs.conjunctions.len() > 1 {
+                for conjunction in bfs
+                    .conjunctions
+                    .iter()
+                    .rev()
+                    .take(bfs.conjunctions.len() - 1)
+                {
+                    let new_stream = conjunction.solve(solver, state.clone());
+                    stream = Stream::mplus(new_stream, LazyStream::delay(stream));
+                }
+            }
+
+            if self.conjunctions.len() > 0 {
+                let new_stream = bfs.conjunctions[0].solve(solver, state);
                 stream = Stream::mplus(new_stream, LazyStream::delay(stream));
             }
-        }
 
-        if self.conjunctions.len() > 0 {
-            let new_stream = self.conjunctions[0].solve(solver, state);
-            stream = Stream::mplus(new_stream, LazyStream::delay(stream));
-        }
+            stream
+        } else if let Some(dfs) = self.as_any().downcast_ref::<Conde<U, E, DFSGoal<U, E>>>() {
+            let mut stream = Stream::empty();
 
-        stream
+            // Process first element separately to avoid one extra clone of `state`.
+            if dfs.conjunctions.len() > 1 {
+                for conjunction in dfs
+                    .conjunctions
+                    .iter()
+                    .rev()
+                    .take(dfs.conjunctions.len() - 1)
+                {
+                    let new_stream = conjunction.solve(solver, state.clone());
+                    stream = Stream::mplus_dfs(new_stream, LazyStream::delay(stream));
+                }
+            }
+
+            if self.conjunctions.len() > 0 {
+                let new_stream = dfs.conjunctions[0].solve(solver, state);
+                stream = Stream::mplus_dfs(new_stream, LazyStream::delay(stream));
+            }
+
+            stream
+        } else {
+            unreachable!()
+        }
     }
 }
 

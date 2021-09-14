@@ -29,6 +29,8 @@ where
     where
         Self: Sized;
 
+    fn from_solve(u: Rc<dyn Solve<U, E>>) -> Self;
+
     fn is_succeed(&self) -> bool;
 
     fn is_fail(&self) -> bool;
@@ -92,6 +94,10 @@ where
 
     fn dynamic<T: Solve<U, E>>(u: T) -> Goal<U, E> {
         Goal::Dynamic(Rc::new(u))
+    }
+
+    fn from_solve(u: Rc<dyn Solve<U, E>>) -> Goal<U, E> {
+        Goal::Dynamic(u)
     }
 
     fn is_succeed(&self) -> bool {
@@ -181,6 +187,10 @@ where
         DFSGoal::Dynamic(Rc::new(u))
     }
 
+    fn from_solve(u: Rc<dyn Solve<U, E>>) -> DFSGoal<U, E> {
+        DFSGoal::Dynamic(u)
+    }
+
     fn is_succeed(&self) -> bool {
         match self {
             DFSGoal::Succeed => true,
@@ -235,7 +245,7 @@ where
     E: Engine<U>,
     G: AnyGoal<U, E>,
 {
-    goal: G,
+    pub goal: G,
     _phantom: PhantomData<U>,
     _phantom2: PhantomData<E>,
 }
@@ -252,45 +262,6 @@ where
             _phantom: PhantomData,
             _phantom2: PhantomData,
         }
-    }
-}
-
-impl<U, E, G> AnyGoal<U, E> for InferredGoal<U, E, G>
-where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
-{
-    fn succeed() -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::succeed())
-    }
-
-    fn fail() -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::fail())
-    }
-
-    fn breakpoint(id: &'static str) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::breakpoint(id))
-    }
-
-    fn dynamic<T: Solve<U, E>>(u: T) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(u))
-    }
-
-    fn is_succeed(&self) -> bool {
-        self.goal.is_succeed()
-    }
-
-    fn is_fail(&self) -> bool {
-        self.goal.is_fail()
-    }
-
-    fn is_breakpoint(&self) -> bool {
-        self.goal.is_breakpoint()
-    }
-
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        self.goal.solve(solver, state)
     }
 }
 
@@ -319,6 +290,19 @@ where
     }
 }
 
+// InferredGoal<G> -> InferredGoal<G>
+impl<U, E, G> GoalCast<U, E, InferredGoal<U, E, G>> for InferredGoal<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
+{
+    #[inline]
+    fn cast_into(self) -> InferredGoal<U, E, G> {
+        self
+    }
+}
+
 // Goal -> Goal
 impl<U, E> GoalCast<U, E, Goal<U, E>> for Goal<U, E>
 where
@@ -340,41 +324,6 @@ where
         self
     }
 }
-
-// InferredGoal -> InferredGoal
-/*
-impl<U, E> GoalCast<U, E, InferredGoal<U, E, Goal<U, E>>> for InferredGoal<U, E, Goal<U, E>>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn cast_into(self) -> Self {
-        self
-    }
-}
-
-impl<U, E> GoalCast<U, E, InferredGoal<U, E, DFSGoal<U, E>>> for InferredGoal<U, E, DFSGoal<U, E>>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn cast_into(self) -> Self {
-        self
-    }
-}
-*/
-/*
-impl<U, E, G> GoalCast<U, E, InferredGoal<U, E, G>> for InferredGoal<U, E, G>
-where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
-{
-    fn cast_into(self) -> Self {
-        self
-    }
-}
-*/
 
 #[cfg(test)]
 mod test {

@@ -198,22 +198,22 @@ impl<U, E, G> InferredConj<U, E, G>
 where
     U: User,
     E: Engine<U>,
-    G: AnyGoal<U, E> + 'static,
+    G: AnyGoal<U, E>,
 {
     pub fn new(goal_1: G, goal_2: G) -> InferredGoal<U, E, G> {
         if goal_1.is_succeed() && goal_2.is_succeed() {
-            return InferredGoal::succeed();
+            return InferredGoal::new(G::succeed());
         }
         if goal_1.is_fail() || goal_2.is_fail() {
-            return InferredGoal::fail();
+            return InferredGoal::new(G::fail());
         }
 
-        InferredGoal::dynamic(InferredConj {
+        InferredGoal::new(G::dynamic(InferredConj {
             goal_1,
             goal_2,
             _phantom: PhantomData,
             _phantom2: PhantomData,
-        })
+        }))
     }
 
     pub fn new_raw(goal_1: G, goal_2: G) -> InferredConj<U, E, G> {
@@ -275,7 +275,7 @@ impl<U, E, G> Solve<U, E> for InferredConj<U, E, G>
 where
     U: User,
     E: Engine<U>,
-    G: AnyGoal<U, E> + 'static,
+    G: AnyGoal<U, E>,
 {
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         if let Some(bfs) = self
