@@ -340,7 +340,6 @@ pub mod stream;
 pub mod user;
 
 use engine::Engine;
-use goal::AnyGoal;
 use std::borrow::Borrow;
 use user::User;
 

@@ -1,8 +1,8 @@
+use crate::engine::{DefaultEngine, Engine};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::relation::diseq::DisequalityConstraint;
-use crate::user::{User, DefaultUser};
-use crate::engine::{Engine, DefaultEngine};
+use crate::user::{DefaultUser, User};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -38,7 +38,7 @@ pub type SResult<U, E> = Result<State<U, E>, ()>;
 ///    3. The domain store
 ///    4. User data
 #[derive(Derivative)]
-#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
+#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub struct State<U = DefaultUser, E = DefaultEngine<DefaultUser>>
 where
     U: User,
@@ -196,7 +196,11 @@ where
     /// If the domain is a singleton, i.e. a single value, it is converted into a constant value
     /// instead, by creating a new constant from the singleton value and extending the
     /// substitution to map from the variable `x` to the newly created constant.
-    fn resolve_storable_domain(mut self, x: &LTerm<U, E>, domain: Rc<FiniteDomain>) -> SResult<U, E> {
+    fn resolve_storable_domain(
+        mut self,
+        x: &LTerm<U, E>,
+        domain: Rc<FiniteDomain>,
+    ) -> SResult<U, E> {
         assert!(x.is_var());
         match domain.singleton_value() {
             Some(n) => {
@@ -225,7 +229,11 @@ where
     }
 
     // Removes domain `exclude` from the domain of all variables in list `x`.
-    pub fn exclude_from_domain(mut self, x: &LTerm<U, E>, exclude: Rc<FiniteDomain>) -> SResult<U, E> {
+    pub fn exclude_from_domain(
+        mut self,
+        x: &LTerm<U, E>,
+        exclude: Rc<FiniteDomain>,
+    ) -> SResult<U, E> {
         assert!(x.is_list());
         let dstore = self.get_dstore();
         for y in x {
@@ -322,7 +330,6 @@ where
     }
 
     fn is_finite_domain(constraint: &Rc<dyn Constraint<U, E>>) -> bool {
-        /*
         constraint.is::<crate::relation::ltefd::LessThanOrEqualFdConstraint<U, E>>()
             || constraint.is::<crate::relation::plusfd::PlusFdConstraint<U, E>>()
             || constraint.is::<crate::relation::minusfd::MinusFdConstraint<U, E>>()
@@ -330,8 +337,6 @@ where
             || constraint.is::<crate::relation::diseqfd::DiseqFdConstraint<U, E>>()
             || constraint.is::<crate::relation::distinctfd::DistinctFdConstraint<U, E>>()
             || constraint.is::<crate::relation::distinctfd::DistinctFd2Constraint<U, E>>()
-        */
-        false
     }
 
     /// Verifies that all variables constrained by domain constraints have domains

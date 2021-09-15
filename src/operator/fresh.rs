@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::{AnyGoal, DFSGoal, Goal, GoalCast, InferredGoal};
+use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
