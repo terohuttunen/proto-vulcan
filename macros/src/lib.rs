@@ -1078,15 +1078,6 @@ enum Pattern {
 }
 
 impl Pattern {
-    fn is_any(&self) -> bool {
-        match self {
-            Pattern::Term(treeterm) => treeterm.is_any(),
-            _ => false,
-        }
-    }
-}
-
-impl Pattern {
     fn get_vars(&self, vars: &mut PatternVariableSet) {
         match self {
             Pattern::Term(term) => term.get_vars(vars),
@@ -1460,13 +1451,6 @@ enum TreeTerm {
 }
 
 impl TreeTerm {
-    fn is_any(&self) -> bool {
-        match self {
-            TreeTerm::Any(_) => true,
-            _ => false,
-        }
-    }
-
     fn is_empty(&self) -> bool {
         match self {
             TreeTerm::ProperList { items } => items.len() == 0,
