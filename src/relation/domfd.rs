@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 /// Constrains x in domain
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::FiniteDomain;
@@ -25,11 +25,11 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(x: LTerm<U, E>, domain: FiniteDomain) -> Goal<U, E> {
-        Goal::dynamic(DomFd {
+    pub fn new<G: AnyGoal<U, E>>(x: LTerm<U, E>, domain: FiniteDomain) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(DomFd {
             x,
             domain: Rc::new(domain),
-        })
+        }))
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 /// Less than or equal FD
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, SResult, State};
@@ -24,8 +24,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-        Goal::dynamic(LessThanOrEqualFd { u, v })
+    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(LessThanOrEqualFd { u, v }))
     }
 }
 
@@ -42,10 +42,11 @@ where
     }
 }
 
-pub fn ltefd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
+pub fn ltefd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     LessThanOrEqualFd::new(u, v)
 }

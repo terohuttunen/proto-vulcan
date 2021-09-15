@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 /// distinctfd finite domain constraint
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::solver::{Solve, Solver};
@@ -24,8 +24,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>) -> Goal<U, E> {
-        Goal::dynamic(DistinctFd { u })
+    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(DistinctFd { u }))
     }
 }
 
@@ -43,10 +43,11 @@ where
     }
 }
 
-pub fn distinctfd<U, E>(u: LTerm<U, E>) -> Goal<U, E>
+pub fn distinctfd<U, E, G>(u: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     DistinctFd::new(u)
 }

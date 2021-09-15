@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 /// Constrain disequality in finite domains
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::solver::{Solve, Solver};
@@ -25,8 +25,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-        Goal::dynamic(DiseqFd { u, v })
+    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(DiseqFd { u, v }))
     }
 }
 
@@ -72,10 +72,11 @@ where
 ///     assert_eq!(expected.len(), 0);
 /// }
 /// ```
-pub fn diseqfd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
+pub fn diseqfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     DiseqFd::new(u, v)
 }

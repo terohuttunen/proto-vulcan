@@ -1,6 +1,6 @@
 use crate::engine::Engine;
 /// Constrains u * v = w finite domains
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::solver::{Solve, Solver};
@@ -26,8 +26,12 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Goal<U, E> {
-        Goal::dynamic(TimesFd { u, v, w })
+    pub fn new<G: AnyGoal<U, E>>(
+        u: LTerm<U, E>,
+        v: LTerm<U, E>,
+        w: LTerm<U, E>,
+    ) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(TimesFd { u, v, w }))
     }
 }
 
@@ -44,10 +48,11 @@ where
     }
 }
 
-pub fn timesfd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Goal<U, E>
+pub fn timesfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     TimesFd::new(u, v, w)
 }

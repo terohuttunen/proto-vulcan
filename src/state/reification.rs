@@ -90,7 +90,7 @@ fn enforce_constraints_fd<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
 }
 
 #[cfg(not(feature = "clpfd"))]
-fn enforce_constraints_fd<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
+fn enforce_constraints_fd<U: User, E: Engine<U>>(_x: LTerm<U, E>) -> Goal<U, E> {
     Goal::succeed()
 }
 

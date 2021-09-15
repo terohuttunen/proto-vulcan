@@ -1,40 +1,42 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, GoalCast, InferredGoal};
 use crate::lterm::LTerm;
-use crate::operator::conj::Conj;
+use crate::operator::conj::InferredConj;
 use crate::relation::domfd::DomFd;
 use crate::state::FiniteDomain;
 use crate::user::User;
 use std::ops::RangeInclusive;
 
 /// Associates the same domain to multiple variables
-pub fn infd<U, E>(u: LTerm<U, E>, domain: &[isize]) -> Goal<U, E>
+pub fn infd<U, E, G>(u: LTerm<U, E>, domain: &[isize]) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     if u.is_list() {
         let goals = u
             .iter()
-            .map(|v| DomFd::new(v.clone(), FiniteDomain::from(domain)))
+            .map(|v| DomFd::new(v.clone(), FiniteDomain::from(domain)).cast_into())
             .collect();
-        Conj::from_vec(goals)
+        InferredConj::from_vec(goals)
     } else {
         DomFd::new(u, FiniteDomain::from(domain))
     }
 }
 
-pub fn infdrange<U, E>(u: LTerm<U, E>, domain: &RangeInclusive<isize>) -> Goal<U, E>
+pub fn infdrange<U, E, G>(u: LTerm<U, E>, domain: &RangeInclusive<isize>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     if u.is_list() {
         let goals = u
             .iter()
-            .map(|v| DomFd::new(v.clone(), FiniteDomain::from(domain)))
+            .map(|v| DomFd::new(v.clone(), FiniteDomain::from(domain)).cast_into())
             .collect();
-        Conj::from_vec(goals)
+        InferredConj::from_vec(goals)
     } else {
         DomFd::new(u, FiniteDomain::from(domain))
     }
