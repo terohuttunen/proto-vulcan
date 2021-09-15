@@ -3,7 +3,7 @@ use crate::goal::Goal;
 use crate::user::User;
 
 /// A relation that succeeds an unbounded number of times.
-pub fn alwayso<U, E>() -> Goal<U, E>
+pub fn always<U, E>() -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -15,18 +15,18 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::alwayso;
+    use super::always;
     use crate::operator::conde::conde;
     use crate::prelude::*;
 
     #[test]
-    fn test_alwayso_1() {
+    fn test_always_1() {
         let query = proto_vulcan_query!(|x| {
             conde {
                 true == x,
                 false == x,
             },
-            alwayso(),
+            always(),
             false == x,
         });
         let mut iter = query.run();

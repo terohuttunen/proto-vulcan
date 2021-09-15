@@ -1,6 +1,6 @@
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod alwayso;
+pub mod always;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
@@ -44,7 +44,7 @@ pub mod member;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod nevero;
+pub mod never;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
@@ -117,7 +117,7 @@ pub use eq::eq;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use alwayso::alwayso;
+pub use always::always;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
@@ -149,7 +149,7 @@ pub use member::member;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use nevero::nevero;
+pub use never::never;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
