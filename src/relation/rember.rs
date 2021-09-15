@@ -9,15 +9,15 @@ use crate::user::User;
 /// ```rust
 /// extern crate proto_vulcan;
 /// use proto_vulcan::prelude::*;
-/// use proto_vulcan::relation::rembero;
+/// use proto_vulcan::relation::rember;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
-///         rembero(2, [1, 2, 3, 2, 4], q)
+///         rember(2, [1, 2, 3, 2, 4], q)
 ///     });
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]));
 /// }
 /// ```
-pub fn rembero<U, E>(x: LTerm<U, E>, ls: LTerm<U, E>, out: LTerm<U, E>) -> Goal<U, E>
+pub fn rember<U, E>(x: LTerm<U, E>, ls: LTerm<U, E>, out: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -28,7 +28,7 @@ where
             [[a | d], d] => a == x,
             [[y | ys], [y | zs]] => {
                 y != x,
-                rembero(x, ys, zs)
+                rember(x, ys, zs)
             }
         }
     )
@@ -36,12 +36,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::rembero;
+    use super::rember;
     use crate::prelude::*;
 
     #[test]
-    fn test_rembero_1() {
-        let query = proto_vulcan_query!(|q| { rembero(2, [1, 2, 3, 2, 4], q) });
+    fn test_rember_1() {
+        let query = proto_vulcan_query!(|q| { rember(2, [1, 2, 3, 2, 4], q) });
         assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]))
     }
 }

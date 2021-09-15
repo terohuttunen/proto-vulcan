@@ -4,7 +4,7 @@ use crate::lterm::LTerm;
 use crate::user::User;
 
 /// A relation which guarantees that all elements of `l` are distinct from each other.
-pub fn distincto<U, E>(l: LTerm<U, E>) -> Goal<U, E>
+pub fn distinct<U, E>(l: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -14,8 +14,8 @@ where
             [] | [_] => ,
             [first, second | rest] => {
                 first != second,
-                distincto([first | rest]),
-                distincto([second | rest]),
+                distinct([first | rest]),
+                distinct([second | rest]),
             }
         }
     )
@@ -23,14 +23,14 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::distincto;
+    use super::distinct;
     use crate::prelude::*;
 
     #[test]
-    fn test_distincto_1() {
+    fn test_distinct_1() {
         let query = proto_vulcan_query!(|q| {
             |x, y, a, b| {
-                distincto(q),
+                distinct(q),
                 [x, y] == [a, b],
                 q == [a, b],
                 x == 1,

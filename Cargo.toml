@@ -33,3 +33,11 @@ clpz = []
 
 [workspace]
 members = ["macros"]
+
+[[example]]
+name = "sudoku"
+required-features = ["clpfd"]
+
+[[example]]
+name = "n-queens"
+required-features = ["clpfd"]

@@ -5,7 +5,6 @@ use proto_vulcan::operator::dfs;
 use proto_vulcan::operator::matche;
 use proto_vulcan::prelude::*;
 use proto_vulcan::relation::member;
-use proto_vulcan::relation::membero;
 
 fn test_succeed_bfs<U: User, E: Engine<U>>() -> Goal<U, E> {
     proto_vulcan!(true)

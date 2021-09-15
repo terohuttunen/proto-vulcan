@@ -80,11 +80,11 @@ use the latter variant.
 ```rust
 use proto_vulcan::prelude::*;
 
-pub fn appendo(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
+pub fn append(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
     proto_vulcan_closure!(
         match [l, s, ls] {
             [[], x, x] => ,
-            [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
+            [[x | l1], l2, [x | l3]] => append(l1, l2, l3),
         }
     )
 }

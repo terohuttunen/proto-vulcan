@@ -138,17 +138,17 @@ where
 /// # Example
 /// Conde is one of the core miniKanren operators, and it executes an interleaved search of the
 /// streams of solutions from the conjunctions. This example shows how the solutions from the
-/// `membero`-relations, are interleaved by the `conde`-operator:
+/// `member`-relations, are interleaved by the `conde`-operator:
 /// ```rust
 /// extern crate proto_vulcan;
 /// use proto_vulcan::prelude::*;
-/// use proto_vulcan::relation::membero;
+/// use proto_vulcan::relation::member;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
 ///         conde {
-///             membero(q, [1, 2, 3]),
-///             membero(q, [4, 5, 6]),
-///             membero(q, [7, 8, 9]),
+///             member(q, [1, 2, 3]),
+///             member(q, [4, 5, 6]),
+///             member(q, [7, 8, 9]),
 ///         }
 ///     });
 ///     let mut iter = query.run();
@@ -183,15 +183,15 @@ where
 mod test {
     use super::conde;
     use crate::prelude::*;
-    use crate::relation::membero::membero;
+    use crate::relation::member::member;
 
     #[test]
     fn test_conde_1() {
         let query = proto_vulcan_query!(|q| {
             conde {
-                membero(q, [1, 2, 3]),
-                membero(q, [4, 5, 6]),
-                membero(q, [7, 8, 9]),
+                member(q, [1, 2, 3]),
+                member(q, [4, 5, 6]),
+                member(q, [7, 8, 9]),
             }
         });
         let iter = query.run();

@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -10,7 +10,7 @@ use crate::user::User;
 /// ```rust
 /// extern crate proto_vulcan;
 /// use proto_vulcan::prelude::*;
-/// use proto_vulcan::relation::conso;
+/// use proto_vulcan::relation::cons;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
 ///         cons(1, [2, 3], q)

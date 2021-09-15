@@ -309,6 +309,7 @@ where
     U: User,
     E: Engine<U>,
 {
+    #[inline]
     fn cast_into(self) -> Self {
         self
     }
@@ -320,6 +321,7 @@ where
     U: User,
     E: Engine<U>,
 {
+    #[inline]
     fn cast_into(self) -> Self {
         self
     }

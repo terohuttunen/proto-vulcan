@@ -1,6 +1,6 @@
 extern crate proto_vulcan;
 use proto_vulcan::prelude::*;
-use proto_vulcan::relation::membero;
+use proto_vulcan::relation::member;
 use std::time::Instant;
 
 fn righto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
@@ -22,7 +22,7 @@ fn easy_zebrao<U: User, E: Engine<U>>(houses: LTerm<U, E>) -> Goal<U, E> {
         // Spanish lives right next to red house
         righto(["spanish", _], [_, "red"], houses),
         // The Norwegian lives in the blue house
-        membero(["norwegian", "blue"], houses)
+        member(["norwegian", "blue"], houses)
     ])
 }
 

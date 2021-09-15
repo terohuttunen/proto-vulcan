@@ -78,7 +78,7 @@ where
 mod tests {
     use crate::operator::conda::conda;
     use crate::prelude::*;
-    use crate::relation::membero::membero;
+    use crate::relation::member::member;
 
     #[test]
     fn test_conda_1() {
@@ -86,7 +86,7 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
                 q == [x, y],
-                membero(z, [5, 6]),
+                member(z, [5, 6]),
                 conda {
                     [x == z, y == 2],
                     [x == z, y == 4],
@@ -105,7 +105,7 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
                 q == [x, y],
-                membero(z, [5, 6]),
+                member(z, [5, 6]),
                 conda {
                     [false, y == 2],
                     [x == z, y == 4],

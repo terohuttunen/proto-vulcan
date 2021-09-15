@@ -1,11 +1,11 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::relation::rembero;
+use crate::relation::rember;
 use crate::user::User;
 
 /// A relation that will permute xl into yl.
-pub fn permuteo<U, E>(xl: LTerm<U, E>, yl: LTerm<U, E>) -> Goal<U, E>
+pub fn permute<U, E>(xl: LTerm<U, E>, yl: LTerm<U, E>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -14,8 +14,8 @@ where
         match [xl, yl] {
             [[], []] => ,
             [[x | xs], _] => |ys| {
-                permuteo(xs, ys),
-                rembero(x, yl, ys),
+                permute(xs, ys),
+                rember(x, yl, ys),
             }
         }
     )
@@ -27,8 +27,8 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_permuteo_1() {
-        let query = proto_vulcan_query!(|q| { permuteo([1, 2], q) });
+    fn test_permute_1() {
+        let query = proto_vulcan_query!(|q| { permute([1, 2], q) });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, lterm!([]));
         assert_eq!(iter.next().unwrap().q, lterm!([1]));

@@ -221,11 +221,11 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::prelude::*;
 //!
-//! pub fn appendo<U: User, E: Engine<U>>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> Goal<U, E> {
+//! pub fn append<U: User, E: Engine<U>>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> Goal<U, E> {
 //!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,
-//!            [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
+//!            [[x | l1], l2, [x | l3]] => append(l1, l2, l3),
 //!        }
 //!     )
 //! }
@@ -285,7 +285,8 @@
 //!     proto_vulcan!(
 //!         fngoal |engine, state| {
 //!             // There could be more Rust here modifying the `state`
-//!             proto_vulcan!(true).solve(engine, state)
+//!             let g: Goal<U, E> = proto_vulcan!(true);
+//!             g.solve(engine, state)
 //!         }
 //!     )
 //! }
@@ -382,7 +383,7 @@ pub mod prelude {
 
     pub use crate::compound::CompoundTerm;
     pub use crate::engine::{DefaultEngine, Engine};
-    pub use crate::goal::Goal;
+    pub use crate::goal::{AnyGoal, Goal};
     pub use crate::lterm::LTerm;
     pub use crate::lvalue::LValue;
     pub use crate::solver::{Solve, Solver};

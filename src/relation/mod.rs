@@ -4,7 +4,7 @@ pub mod alwayso;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod appendo;
+pub mod append;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
@@ -16,11 +16,11 @@ pub mod diseq;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod distincto;
+pub mod distinct;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod emptyo;
+pub mod empty;
 
 #[cfg(feature = "core")]
 #[doc(hidden)]
@@ -32,15 +32,15 @@ pub mod fail;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod firsto;
+pub mod first;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod member1o;
+pub mod member1;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod membero;
+pub mod member;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
@@ -48,15 +48,15 @@ pub mod nevero;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod permuteo;
+pub mod permute;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod rembero;
+pub mod rember;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod resto;
+pub mod rest;
 
 #[cfg(feature = "core")]
 #[doc(hidden)]
@@ -121,7 +121,7 @@ pub use alwayso::alwayso;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use appendo::appendo;
+pub use append::append;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
@@ -129,27 +129,23 @@ pub use cons::cons;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use distincto::distincto;
+pub use distinct::distinct;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use emptyo::emptyo;
+pub use empty::empty;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use firsto::firsto;
+pub use first::first;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use member1o::member1o;
+pub use member1::member1;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use membero::membero;
-
-#[cfg(feature = "extras")]
-#[doc(inline)]
-pub use membero::member;
+pub use member::member;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
@@ -157,15 +153,15 @@ pub use nevero::nevero;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use permuteo::permuteo;
+pub use permute::permute;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use rembero::rembero;
+pub use rember::rember;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use resto::resto;
+pub use rest::rest;
 
 #[cfg(feature = "core")]
 #[doc(inline)]

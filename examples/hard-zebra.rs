@@ -2,8 +2,8 @@ extern crate proto_vulcan;
 use itertools::izip;
 use proto_vulcan::lterm::LTerm;
 use proto_vulcan::prelude::*;
-use proto_vulcan::relation::membero;
-use proto_vulcan::relation::permuteo;
+use proto_vulcan::relation::member;
+use proto_vulcan::relation::permute;
 use std::time::Instant;
 
 fn lefto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
@@ -11,7 +11,7 @@ fn lefto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) 
         match l {
             [head | rest] => {
                 head == x,
-                membero(y, rest),
+                member(y, rest),
             },
             [_ | rest] => lefto(x, y, rest),
         }
@@ -22,8 +22,8 @@ fn lefto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) 
 fn rule1<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |c1, r1, c2, r2| {
-            membero(["landon", _, c1, r1], answers),
-            membero(["jason", _, c2, r2], answers),
+            member(["landon", _, c1, r1], answers),
+            member(["jason", _, c2, r2], answers),
             conde {
                 [r1 == "7:30pm", c2 == "mozzarella"],
                 [r2 == "7:30pm", c1 == "mozzarella"],
@@ -34,7 +34,7 @@ fn rule1<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
 
 // The blue-cheese enthusiast subscribed to Fortune.
 fn rule2<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
-    proto_vulcan!(membero([_, "fortune", "blue-cheese", _], answers))
+    proto_vulcan!(member([_, "fortune", "blue-cheese", _], answers))
 }
 
 // The muenster enthusiast didn't subscribe to Vogue.
@@ -43,8 +43,8 @@ fn rule3<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
         |s1, s2| {
             [_, "vogue", _, _] == s1,
             [_, _, "muenster", _] == s2,
-            membero(s1, answers),
-            membero(s2, answers),
+            member(s1, answers),
+            member(s2, answers),
             s1 != s2,
         }
     )
@@ -54,7 +54,7 @@ fn rule3<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
 // reservation at 5:00pm, the mascarpone enthusiast, and the Vogue
 // subscriber.
 fn rule4<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
-    proto_vulcan!(permuteo(
+    proto_vulcan!(permute(
         [
             [_, "fortune", _, _],
             ["landon", _, _, _],
@@ -72,8 +72,8 @@ fn rule5<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
         |s1, s2| {
             [_, _, _, "5:00pm"] == s1,
             [_, "time", _, _] == s2,
-            membero(s1, answers),
-            membero(s2, answers),
+            member(s1, answers),
+            member(s2, answers),
             s1 != s2,
         }
     )
@@ -83,8 +83,8 @@ fn rule5<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
 fn rule6<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |r1, r2| {
-            membero([_, "cosmopolitan", _, r1], answers),
-            membero([_, _, "mascarpone", r2], answers),
+            member([_, "cosmopolitan", _, r1], answers),
+            member([_, _, "mascarpone", r2], answers),
             lefto(r1, r2, ["5:00pm", "6:00pm", "7:00pm", "7:30pm", "8:30pm"])
         }
     )
@@ -94,8 +94,8 @@ fn rule6<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
 fn rule7<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |r1, r2| {
-            membero([_, _, "blue-cheese", r1], answers),
-            membero(["bailey", _, _, r2], answers),
+            member([_, _, "blue-cheese", r1], answers),
+            member(["bailey", _, _, r2], answers),
             lefto(r1, r2, ["5:00pm", "6:00pm", "7:00pm", "7:30pm", "8:30pm"])
         }
     )
@@ -106,7 +106,7 @@ fn rule7<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
 fn rule8<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |r| {
-            membero([_, "fortune", _, r], answers),
+            member([_, "fortune", _, r], answers),
             conde {
                 r == "7:00pm",
                 r == "7:30pm",
@@ -119,8 +119,8 @@ fn rule8<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
 fn rule9<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(
         |r1, r2| {
-            membero([_, "time", _, r1], answers),
-            membero(["landon", _, _, r2], answers),
+            member([_, "time", _, r1], answers),
+            member(["landon", _, _, r2], answers),
             lefto(r1, r2, ["5:00pm", "6:00pm", "7:00pm", "7:30pm", "8:30pm"])
         }
     )
@@ -132,8 +132,8 @@ fn rule10<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
         |s1, s2| {
             [_, "fortune", _, _] == s1,
             ["jamari", _, _, _] == s2,
-            membero(s1, answers),
-            membero(s2, answers),
+            member(s1, answers),
+            member(s2, answers),
             s1 != s2,
         }
     )
@@ -141,7 +141,7 @@ fn rule10<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
 
 // The person with a reservation at 5:00pm loves mozzarella.
 fn rule11<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
-    proto_vulcan!(membero([_, _, "mozzarella", "5:00pm"], answers))
+    proto_vulcan!(member([_, _, "mozzarella", "5:00pm"], answers))
 }
 
 fn hard_zebrao<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
@@ -172,11 +172,11 @@ fn hard_zebrao<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
         rule9(answers),
         rule10(answers),
         rule11(answers),
-        permuteo(
+        permute(
             magazines,
             ["fortune", "time", "cosmopolitan", "us-weekly", "vogue"]
         ),
-        permuteo(
+        permute(
             cheeses,
             [
                 "asiago",
@@ -186,7 +186,7 @@ fn hard_zebrao<U: User, E: Engine<U>>(answers: LTerm<U, E>) -> Goal<U, E> {
                 "muenster"
             ]
         ),
-        permuteo(
+        permute(
             reservations,
             ["5:00pm", "6:00pm", "7:00pm", "7:30pm", "8:30pm"]
         ),
