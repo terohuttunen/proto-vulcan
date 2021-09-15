@@ -26,10 +26,10 @@ where
     E: Engine<U>,
 {
     pub fn new<G: AnyGoal<U, E>>(x: LTerm<U, E>, domain: FiniteDomain) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(DomFd {
+        InferredGoal::new(G::dynamic(Rc::new(DomFd {
             x,
             domain: Rc::new(domain),
-        }))
+        })))
     }
 }
 

@@ -7,6 +7,7 @@ use crate::stream::Stream;
 use crate::user::User;
 use std::fmt;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 pub struct Closure<U, E, G>
 where
@@ -26,11 +27,11 @@ where
     G: AnyGoal<U, E> + 'static,
 {
     pub fn new(param: ClosureOperatorParam<U, E, G>) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(Closure {
+        InferredGoal::new(G::dynamic(Rc::new(Closure {
             f: param.f,
             _phantom: PhantomData,
             _phantom2: PhantomData,
-        }))
+        })))
     }
 }
 

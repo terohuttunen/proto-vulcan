@@ -6,6 +6,7 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::fmt;
+use std::rc::Rc;
 
 pub struct FnGoal<U, E>
 where
@@ -23,7 +24,7 @@ where
     pub fn new<G: AnyGoal<U, E>>(
         f: Box<dyn Fn(&Solver<U, E>, State<U, E>) -> Stream<U, E>>,
     ) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(FnGoal { f }))
+        InferredGoal::new(G::dynamic(Rc::new(FnGoal { f })))
     }
 }
 

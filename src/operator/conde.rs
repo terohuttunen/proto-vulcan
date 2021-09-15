@@ -9,6 +9,7 @@ use crate::user::User;
 use crate::GoalCast;
 use std::any::Any;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -30,19 +31,19 @@ where
     G: AnyGoal<U, E>,
 {
     pub fn from_vec(conjunctions: Vec<G>) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(Conde {
+        InferredGoal::new(G::dynamic(Rc::new(Conde {
             conjunctions,
             _phantom: PhantomData,
             _phantom2: PhantomData,
-        }))
+        })))
     }
 
     pub fn from_array(goals: &[G]) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(Conde {
+        InferredGoal::new(G::dynamic(Rc::new(Conde {
             conjunctions: goals.to_vec(),
             _phantom: PhantomData,
             _phantom2: PhantomData,
-        }))
+        })))
     }
 
     pub fn as_any(&self) -> &dyn Any {

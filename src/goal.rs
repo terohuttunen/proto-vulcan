@@ -25,11 +25,9 @@ where
     where
         Self: Sized;
 
-    fn dynamic<T: Solve<U, E>>(u: T) -> Self
+    fn dynamic(u: Rc<dyn Solve<U, E>>) -> Self
     where
         Self: Sized;
-
-    fn from_solve(u: Rc<dyn Solve<U, E>>) -> Self;
 
     fn is_succeed(&self) -> bool;
 
@@ -58,8 +56,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn dynamic<T: Solve<U, E>>(u: T) -> Goal<U, E> {
-        Goal::Dynamic(Rc::new(u))
+    pub fn dynamic(u: Rc<dyn Solve<U, E>>) -> Goal<U, E> {
+        Goal::Dynamic(u)
     }
 
     pub fn succeed() -> Goal<U, E> {
@@ -92,11 +90,7 @@ where
         Goal::Breakpoint(id)
     }
 
-    fn dynamic<T: Solve<U, E>>(u: T) -> Goal<U, E> {
-        Goal::Dynamic(Rc::new(u))
-    }
-
-    fn from_solve(u: Rc<dyn Solve<U, E>>) -> Goal<U, E> {
+    fn dynamic(u: Rc<dyn Solve<U, E>>) -> Goal<U, E> {
         Goal::Dynamic(u)
     }
 
@@ -149,8 +143,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn dynamic<T: Solve<U, E>>(u: T) -> DFSGoal<U, E> {
-        DFSGoal::Dynamic(Rc::new(u))
+    pub fn dynamic(u: Rc<dyn Solve<U, E>>) -> DFSGoal<U, E> {
+        DFSGoal::Dynamic(u)
     }
 
     pub fn succeed() -> DFSGoal<U, E> {
@@ -183,11 +177,7 @@ where
         DFSGoal::Breakpoint(id)
     }
 
-    fn dynamic<T: Solve<U, E>>(u: T) -> DFSGoal<U, E> {
-        DFSGoal::Dynamic(Rc::new(u))
-    }
-
-    fn from_solve(u: Rc<dyn Solve<U, E>>) -> DFSGoal<U, E> {
+    fn dynamic(u: Rc<dyn Solve<U, E>>) -> DFSGoal<U, E> {
         DFSGoal::Dynamic(u)
     }
 
@@ -336,6 +326,7 @@ mod test {
     use crate::state::State;
     use crate::stream::Stream;
     use crate::user::DefaultUser;
+    use std::rc::Rc;
 
     #[test]
     fn test_goal_succeed() {
@@ -362,7 +353,7 @@ mod test {
 
     #[test]
     fn test_goal_inner() {
-        let g = Goal::<DefaultUser, DefaultEngine<DefaultUser>>::dynamic(TestGoal {});
+        let g = Goal::<DefaultUser, DefaultEngine<DefaultUser>>::dynamic(Rc::new(TestGoal {}));
         assert!(!g.is_succeed());
         assert!(!g.is_fail());
     }

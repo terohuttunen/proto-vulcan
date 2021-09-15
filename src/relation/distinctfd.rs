@@ -25,7 +25,7 @@ where
     E: Engine<U>,
 {
     pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(DistinctFd { u }))
+        InferredGoal::new(G::dynamic(Rc::new(DistinctFd { u })))
     }
 }
 

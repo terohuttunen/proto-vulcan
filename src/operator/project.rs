@@ -5,6 +5,7 @@ use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
+use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -25,7 +26,7 @@ where
     G: AnyGoal<U, E>,
 {
     pub fn new(variables: Vec<LTerm<U, E>>, body: G) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(Project { variables, body }))
+        InferredGoal::new(G::dynamic(Rc::new(Project { variables, body })))
     }
 }
 
@@ -33,7 +34,7 @@ impl<U, E, G> Solve<U, E> for Project<U, E, G>
 where
     U: User,
     E: Engine<U>,
-    G: AnyGoal<U, E> + 'static,
+    G: AnyGoal<U, E>,
 {
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         // Walk* each projected variable with the current substitution
@@ -51,6 +52,7 @@ mod tests {
     use crate::lterm::LTermInner;
     use crate::prelude::*;
     use crate::solver::{Solve, Solver};
+    use std::rc::Rc;
 
     #[derive(Derivative)]
     #[derivative(Debug(bound = "U: User"))]
@@ -61,7 +63,7 @@ mod tests {
 
     impl<U: User, E: Engine<U>> SqEq<U, E> {
         pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-            Goal::dynamic(SqEq { u, v })
+            Goal::dynamic(Rc::new(SqEq { u, v }))
         }
     }
 

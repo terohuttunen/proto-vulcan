@@ -5,6 +5,7 @@ use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
+use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -23,7 +24,7 @@ where
     E: Engine<U>,
 {
     pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(Eq { u, v }))
+        InferredGoal::new(G::dynamic(Rc::new(Eq { u, v })))
     }
 }
 

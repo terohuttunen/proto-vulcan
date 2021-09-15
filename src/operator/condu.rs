@@ -14,6 +14,7 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use crate::GoalCast;
+use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -44,7 +45,7 @@ where
             if !clause.is_empty() {
                 let rest = GoalCast::cast_into(Conj::from_vec(clause.split_off(1)));
                 let first = clause.pop().unwrap();
-                next = Goal::dynamic(Condu { first, rest, next });
+                next = Goal::dynamic(Rc::new(Condu { first, rest, next }));
             }
         }
         next

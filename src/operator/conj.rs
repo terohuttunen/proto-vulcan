@@ -7,6 +7,7 @@ use crate::user::User;
 use crate::GoalCast;
 use std::any::Any;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -32,7 +33,7 @@ where
             return Goal::fail();
         }
 
-        Goal::dynamic(Conj { goal_1, goal_2 })
+        Goal::dynamic(Rc::new(Conj { goal_1, goal_2 }))
     }
 
     pub fn new_raw(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Conj<U, E> {
@@ -118,7 +119,7 @@ where
             return DFSGoal::fail();
         }
 
-        DFSGoal::dynamic(DFSConj { goal_1, goal_2 })
+        DFSGoal::dynamic(Rc::new(DFSConj { goal_1, goal_2 }))
     }
 
     pub fn new_raw(goal_1: DFSGoal<U, E>, goal_2: DFSGoal<U, E>) -> DFSConj<U, E> {
@@ -208,12 +209,12 @@ where
             return InferredGoal::new(G::fail());
         }
 
-        InferredGoal::new(G::dynamic(InferredConj {
+        InferredGoal::new(G::dynamic(Rc::new(InferredConj {
             goal_1,
             goal_2,
             _phantom: PhantomData,
             _phantom2: PhantomData,
-        }))
+        })))
     }
 
     pub fn new_raw(goal_1: G, goal_2: G) -> InferredConj<U, E, G> {

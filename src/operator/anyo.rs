@@ -8,6 +8,7 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use crate::GoalCast;
+use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -25,7 +26,7 @@ where
     E: Engine<U>,
 {
     pub fn new(g: Goal<U, E>) -> Goal<U, E> {
-        Goal::dynamic(Anyo { g })
+        Goal::dynamic(Rc::new(Anyo { g }))
     }
 }
 

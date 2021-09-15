@@ -8,6 +8,7 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::fmt::Debug;
+use std::rc::Rc;
 
 pub struct Everyg<T, U, E, G>
 where
@@ -43,7 +44,7 @@ where
     for<'a> &'a T: IntoIterator<Item = &'a LTerm<U, E>>,
 {
     fn new(coll: T, g: Box<dyn Fn(LTerm<U, E>) -> G>) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(Everyg { coll, g }))
+        InferredGoal::new(G::dynamic(Rc::new(Everyg { coll, g })))
     }
 }
 

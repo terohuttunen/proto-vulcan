@@ -31,7 +31,7 @@ where
         v: LTerm<U, E>,
         w: LTerm<U, E>,
     ) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(TimesFd { u, v, w }))
+        InferredGoal::new(G::dynamic(Rc::new(TimesFd { u, v, w })))
     }
 }
 

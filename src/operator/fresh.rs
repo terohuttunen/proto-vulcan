@@ -6,6 +6,7 @@ use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
 use std::any::Any;
+use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
@@ -26,7 +27,7 @@ where
     G: AnyGoal<U, E>,
 {
     pub fn new(variables: Vec<LTerm<U, E>>, body: G) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(Fresh { variables, body }))
+        InferredGoal::new(G::dynamic(Rc::new(Fresh { variables, body })))
     }
 
     pub fn as_any(&self) -> &dyn Any {
