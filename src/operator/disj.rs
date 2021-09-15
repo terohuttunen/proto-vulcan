@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::{DFSGoal, Goal};
+use crate::goal::{AnyGoal, DFSGoal, Goal};
 use crate::operator::conj::{Conj, DFSConj};
 use crate::solver::{Solve, Solver};
 use crate::state::State;

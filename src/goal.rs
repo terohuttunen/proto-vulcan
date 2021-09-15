@@ -51,28 +51,6 @@ where
     Dynamic(Rc<dyn Solve<U, E>>),
 }
 
-impl<U, E> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn dynamic(u: Rc<dyn Solve<U, E>>) -> Goal<U, E> {
-        Goal::Dynamic(u)
-    }
-
-    pub fn succeed() -> Goal<U, E> {
-        Goal::Succeed
-    }
-
-    pub fn fail() -> Goal<U, E> {
-        Goal::Fail
-    }
-
-    pub fn breakpoint(id: &'static str) -> Goal<U, E> {
-        Goal::Breakpoint(id)
-    }
-}
-
 impl<U, E> AnyGoal<U, E> for Goal<U, E>
 where
     U: User,
@@ -136,28 +114,6 @@ where
     Fail,
     Breakpoint(&'static str),
     Dynamic(Rc<dyn Solve<U, E>>),
-}
-
-impl<U, E> DFSGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn dynamic(u: Rc<dyn Solve<U, E>>) -> DFSGoal<U, E> {
-        DFSGoal::Dynamic(u)
-    }
-
-    pub fn succeed() -> DFSGoal<U, E> {
-        DFSGoal::Succeed
-    }
-
-    pub fn fail() -> DFSGoal<U, E> {
-        DFSGoal::Fail
-    }
-
-    pub fn breakpoint(id: &'static str) -> DFSGoal<U, E> {
-        DFSGoal::Breakpoint(id)
-    }
 }
 
 impl<U, E> AnyGoal<U, E> for DFSGoal<U, E>

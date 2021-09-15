@@ -6,7 +6,7 @@ use crate::engine::Engine;
 ///
 /// [a0 AND a1 AND ...] OR
 /// [b0 AND b1 AND ...] OR ...
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, Goal};
 use crate::operator::conj::Conj;
 use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
