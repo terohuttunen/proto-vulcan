@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -19,10 +19,11 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([]));
 /// }
 /// ```
-pub fn empty<U, E>(s: LTerm<U, E>) -> Goal<U, E>
+pub fn empty<U, E, G>(s: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     proto_vulcan!([] == s)
 }

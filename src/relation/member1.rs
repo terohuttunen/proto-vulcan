@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -19,10 +19,11 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn member1<U, E>(x: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E>
+pub fn member1<U, E, G>(x: LTerm<U, E>, l: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
