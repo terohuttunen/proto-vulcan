@@ -1,14 +1,15 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::relation::rember;
 use crate::user::User;
 
 /// A relation that will permute xl into yl.
-pub fn permute<U, E>(xl: LTerm<U, E>, yl: LTerm<U, E>) -> Goal<U, E>
+pub fn permute<U, E, G>(xl: LTerm<U, E>, yl: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     proto_vulcan_closure!(
         match [xl, yl] {

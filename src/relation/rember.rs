@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -17,10 +17,11 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]));
 /// }
 /// ```
-pub fn rember<U, E>(x: LTerm<U, E>, ls: LTerm<U, E>, out: LTerm<U, E>) -> Goal<U, E>
+pub fn rember<U, E, G>(x: LTerm<U, E>, ls: LTerm<U, E>, out: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     proto_vulcan_closure!(
         match [ls, out] {
