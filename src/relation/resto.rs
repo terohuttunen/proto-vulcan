@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::relation::conso;
+use crate::relation::cons;
 use crate::user::User;
 
 /// A relation such that `rest` is `list` without its first element.
@@ -23,7 +23,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    proto_vulcan!(|first| { conso(first, rest, list) })
+    proto_vulcan!(|first| { cons(first, rest, list) })
 }
 
 #[cfg(test)]

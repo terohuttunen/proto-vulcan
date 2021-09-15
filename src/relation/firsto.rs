@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::relation::conso;
+use crate::relation::cons;
 use crate::user::User;
 
 /// A relation such that the `first` is the first element of `list`.
@@ -10,7 +10,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    proto_vulcan!(|rest| { conso(first, rest, list) })
+    proto_vulcan!(|rest| { cons(first, rest, list) })
 }
 
 #[cfg(test)]

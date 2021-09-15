@@ -8,7 +8,7 @@ pub mod appendo;
 
 #[cfg(feature = "extras")]
 #[doc(hidden)]
-pub mod conso;
+pub mod cons;
 
 #[cfg(feature = "core")]
 #[doc(hidden)]
@@ -125,7 +125,7 @@ pub use appendo::appendo;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]
-pub use conso::conso;
+pub use cons::cons;
 
 #[cfg(feature = "extras")]
 #[doc(inline)]

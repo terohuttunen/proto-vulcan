@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -25,6 +25,33 @@ where
         match [l, s, ls] {
             [[], x, x] => ,
             [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
+        }
+    )
+}
+
+pub fn append_dfs<U, E>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> DFSGoal<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    proto_vulcan_closure!(
+        match [l, s, ls] {
+            [[], x, x] => ,
+            [[x | l1], l2, [x | l3]] => append_dfs(l1, l2, l3),
+        }
+    )
+}
+
+pub fn append<U, E, G>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> InferredGoal<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
+{
+    proto_vulcan_closure!(
+        match [l, s, ls] {
+            [[], x, x] => ,
+            [[x | l1], l2, [x | l3]] => append(l1, l2, l3),
         }
     )
 }

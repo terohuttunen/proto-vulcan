@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::{AnyGoal, DFSGoal, Goal};
+use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -32,10 +32,22 @@ where
     })
 }
 
-pub fn member<U, E>(x: LTerm<U, E>, l: LTerm<U, E>) -> DFSGoal<U, E>
+pub fn member_dfs<U, E>(x: LTerm<U, E>, l: LTerm<U, E>) -> DFSGoal<U, E>
 where
     U: User,
     E: Engine<U>,
+{
+    proto_vulcan_closure!(match l {
+        [head | _] => head == x,
+        [_ | rest] => member_dfs(x, rest),
+    })
+}
+
+pub fn member<U, E, G>(x: LTerm<U, E>, l: LTerm<U, E>) -> InferredGoal<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
