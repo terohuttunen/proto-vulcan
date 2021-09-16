@@ -14,14 +14,14 @@ fn map_sum<U, E, F, T>(
     solver: &Solver<U, E>,
     state: State<U, E>,
     mut f: F,
-    iter: impl DoubleEndedIterator<Item = T>,
+    iter: impl Iterator<Item = T>,
 ) -> Stream<U, E>
 where
     U: User,
     E: Engine<U>,
     F: FnMut(T) -> Goal<U, E>,
 {
-    let mut iter = iter.rev().peekable();
+    let mut iter = iter.peekable();
     let mut stream = Stream::empty();
     loop {
         match iter.next() {
@@ -59,7 +59,7 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
                 map_sum(solver, state, |d| {
                     let dterm = LTerm::from(d);
                     proto_vulcan!(dterm == xwalk)
-                }, xdomain.iter())
+                }, xdomain.iter().rev())
 
             }
             (LTermInner::<U, E>::Cons(head, tail), _) => {
