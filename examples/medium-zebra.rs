@@ -1,7 +1,7 @@
 extern crate proto_vulcan;
 use proto_vulcan::prelude::*;
-use proto_vulcan::relation::firsto;
-use proto_vulcan::relation::membero;
+use proto_vulcan::relation::first;
+use proto_vulcan::relation::member;
 use std::time::Instant;
 
 /* The puzzle:
@@ -32,7 +32,7 @@ use std::time::Instant;
 
 */
 
-fn righto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
+fn righto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan_closure!(
         match l {
             [first, second | _] => {
@@ -44,27 +44,27 @@ fn righto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
     )
 }
 
-fn nexto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
+fn nexto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!(conde {
         righto(x, y, l),
         righto(y, x, l)
     })
 }
 
-fn medium_zebrao(houses: LTerm) -> Goal {
+fn medium_zebrao<U: User, E: Engine<U>>(houses: LTerm<U, E>) -> Goal<U, E> {
     proto_vulcan!([
         [_, _, [_, _, "milk", _, _], _, _] == houses,
-        firsto(houses, ["norwegian", _, _, _, _]),
+        first(houses, ["norwegian", _, _, _, _]),
         nexto(["norwegian", _, _, _, _], [_, _, _, _, "blue"], houses),
         righto([_, _, _, _, "ivory"], [_, _, _, _, "green"], houses),
-        membero(["englishman", _, _, _, "red"], houses),
-        membero([_, "kools", _, _, "yellow"], houses),
-        membero(["spaniard", _, _, "dog", _], houses),
-        membero([_, _, "coffee", _, "green"], houses),
-        membero(["ukrainian", _, "tea", _, _], houses),
-        membero([_, "lucky-strikes", "oj", _, _], houses),
-        membero(["japanese", "parliaments", _, _, _], houses),
-        membero([_, "oldgolds", _, "snails", _], houses),
+        member(["englishman", _, _, _, "red"], houses),
+        member([_, "kools", _, _, "yellow"], houses),
+        member(["spaniard", _, _, "dog", _], houses),
+        member([_, _, "coffee", _, "green"], houses),
+        member(["ukrainian", _, "tea", _, _], houses),
+        member([_, "lucky-strikes", "oj", _, _], houses),
+        member(["japanese", "parliaments", _, _, _], houses),
+        member([_, "oldgolds", _, "snails", _], houses),
         nexto([_, _, _, "horse", _], [_, "kools", _, _, _], houses),
         nexto([_, _, _, "fox", _], [_, "chesterfields", _, _, _], houses)
     ])

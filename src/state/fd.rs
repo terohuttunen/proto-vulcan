@@ -3,6 +3,7 @@ use std::cmp::{max, min};
 use std::iter::Iterator;
 use std::ops::RangeInclusive;
 use std::slice::Iter;
+use std::vec::IntoIter;
 
 #[derive(Debug, Clone)]
 pub enum FiniteDomain {
@@ -213,6 +214,13 @@ impl FiniteDomain {
             FiniteDomain::Sparse(v) => FiniteDomainIter::SparseIter(v.iter()),
         }
     }
+
+    pub fn into_iter(self) -> FiniteDomainIntoIter {
+        match self {
+            FiniteDomain::Interval(r) => FiniteDomainIntoIter::IntervalIter(r.clone().into_iter()),
+            FiniteDomain::Sparse(v) => FiniteDomainIntoIter::SparseIter(v.clone().into_iter()),
+        }
+    }
 }
 
 impl PartialEq for FiniteDomain {
@@ -241,6 +249,31 @@ impl<'a> DoubleEndedIterator for FiniteDomainIter<'a> {
         match self {
             FiniteDomainIter::IntervalIter(r) => r.next_back(),
             FiniteDomainIter::SparseIter(v) => v.copied().next_back(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum FiniteDomainIntoIter {
+    IntervalIter(RangeInclusive<isize>),
+    SparseIter(IntoIter<isize>),
+}
+
+impl Iterator for FiniteDomainIntoIter {
+    type Item = isize;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            FiniteDomainIntoIter::IntervalIter(r) => r.next(),
+            FiniteDomainIntoIter::SparseIter(v) => v.next(),
+        }
+    }
+}
+
+impl DoubleEndedIterator for FiniteDomainIntoIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            FiniteDomainIntoIter::IntervalIter(r) => r.next_back(),
+            FiniteDomainIntoIter::SparseIter(v) => v.next_back(),
         }
     }
 }

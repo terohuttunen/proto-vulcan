@@ -66,10 +66,12 @@ impl ToTokens for Project {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
             #( let #variables = ::proto_vulcan::lterm::LTerm::projection(::std::clone::Clone::clone(&#variables)); )*
-            ::proto_vulcan::operator::project::project(::proto_vulcan::operator::ProjectOperatorParam {
-                var_list: vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
-                body: &[ #( &[ #body  ] ),* ],
-            })
+            ::proto_vulcan::operator::project::Project::new(
+                vec![ #( ::std::clone::Clone::clone(&#variables) ),* ],
+                ::proto_vulcan::GoalCast::cast_into(
+                    ::proto_vulcan::operator::conj::InferredConj::from_conjunctions(&[ #( &[ ::proto_vulcan::GoalCast::cast_into( #body ) ] ),* ])
+                )
+            )
         }};
         output.to_tokens(tokens);
     }
@@ -199,7 +201,9 @@ impl ToTokens for Fresh {
         let output = quote! {{
             #( let #variables: #variable_types <_, _> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
             ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::proto_vulcan::Upcast::to_super(&#variables) ),* ],
-                ::proto_vulcan::operator::all::All::from_array(&[ #( #body ),* ]))
+                ::proto_vulcan::GoalCast::cast_into(
+                    ::proto_vulcan::operator::conj::InferredConj::from_array(&[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ]))
+                )
         }};
         output.to_tokens(tokens);
     }
@@ -225,7 +229,7 @@ impl Parse for Conjunction {
 impl ToTokens for Conjunction {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
-        let output = quote! { &[ #( #body ),* ] };
+        let output = quote! { &[ #( ::proto_vulcan::GoalCast::cast_into(#body) ),* ] };
         output.to_tokens(tokens)
     }
 }
@@ -600,7 +604,11 @@ impl ToTokens for Closure {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            ::proto_vulcan::operator::closure::Closure::new(::proto_vulcan::operator::ClosureOperatorParam {f: Box::new(move || ::proto_vulcan::operator::all::All::from_array( &[ #( #body ),* ] ) )})
+            ::proto_vulcan::operator::closure::Closure::new(
+                ::proto_vulcan::operator::ClosureOperatorParam::new(
+                    Box::new(move || ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::operator::conj::InferredConj::from_array( &[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ] ) ))
+                )
+            )
         }};
         output.to_tokens(tokens);
     }
@@ -630,7 +638,7 @@ impl ToTokens for Loop {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output = quote! {{
-            ::proto_vulcan::operator::anyo::anyo(::proto_vulcan::operator::OperatorParam { body: &[ #( #body ),* ] })
+            ::proto_vulcan::operator::anyo::anyo(::proto_vulcan::operator::OperatorParam::new( &[ #( #body ),* ] ))
         }};
         output.to_tokens(tokens);
     }
@@ -660,7 +668,7 @@ impl ToTokens for Operator {
         let name = &self.name;
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output =
-            quote! { #name ( ::proto_vulcan::operator::OperatorParam { body: &[ #( #body ),* ] } )};
+            quote! { #name ( ::proto_vulcan::operator::OperatorParam::new( &[ #( #body ),* ] ) )};
         output.to_tokens(tokens);
     }
 }
@@ -1070,15 +1078,6 @@ enum Pattern {
 }
 
 impl Pattern {
-    fn is_any(&self) -> bool {
-        match self {
-            Pattern::Term(treeterm) => treeterm.is_any(),
-            _ => false,
-        }
-    }
-}
-
-impl Pattern {
     fn get_vars(&self, vars: &mut PatternVariableSet) {
         match self {
             Pattern::Term(term) => term.get_vars(vars),
@@ -1209,7 +1208,7 @@ impl ToTokens for PatternMatchOperator {
         let mut patterns: Vec<Pattern> = vec![];
         let mut vars: Vec<Vec<Ident>> = vec![];
         let mut compounds: Vec<Vec<Ident>> = vec![];
-        let mut clauses: Vec<Punctuated<Clause, Token![,]>> = vec![];
+        let mut clauses: Vec<Punctuated<proc_macro2::TokenStream, Token![,]>> = vec![];
         for arm in self.arms.iter() {
             // Repeat |-expression patterns with multiple single pattern entries
             for pattern in arm.patterns.iter() {
@@ -1227,14 +1226,22 @@ impl ToTokens for PatternMatchOperator {
                 });
                 vars.push(treeterm_pattern_vars);
                 compounds.push(compound_pattern_vars);
-                clauses.push(arm.body.clone());
+                let mut arm_clauses: Punctuated<proc_macro2::TokenStream, Token![,]> =
+                    Punctuated::new();
+                for clause in arm.body.iter() {
+                    let tokens = quote! {
+                        ::proto_vulcan::GoalCast::cast_into( #clause )
+                    };
+                    arm_clauses.push(tokens);
+                }
+                clauses.push(arm_clauses);
             }
         }
 
         let output = if name.to_string() == "match" {
             quote! {
-                ::proto_vulcan::operator::matche ( ::proto_vulcan::operator::PatternMatchOperatorParam {
-                    arms: &[ #( &{
+                ::proto_vulcan::operator::conde::Conde::from_conjunctions (
+                    &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
                         let __term__ = #term;
@@ -1242,14 +1249,16 @@ impl ToTokens for PatternMatchOperator {
                         #( let #vars = ::proto_vulcan::lterm::LTerm::var(stringify!(#vars)); )*
                         #( let #compounds = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#compounds)); )*
                         let __pattern__ = #patterns;
-                        [::proto_vulcan::relation::eq(__term__, __pattern__), #clauses ]
+                        [::proto_vulcan::GoalCast::cast_into(
+                            ::proto_vulcan::relation::eq(__term__, __pattern__)),
+                         #clauses]
                     } ),* ],
-                })
+                )
             }
         } else {
             quote! {
-                #name ( ::proto_vulcan::operator::PatternMatchOperatorParam {
-                    arms: &[ #( &{
+                #name ( ::proto_vulcan::operator::PatternMatchOperatorParam::new(
+                    &[ #( &{
                         // Define alias for the `term` so that pattern-variables do not redefine it
                         // before the equality-relation with pattern is created.
                         let __term__ = #term;
@@ -1257,9 +1266,11 @@ impl ToTokens for PatternMatchOperator {
                         #( let #vars = ::proto_vulcan::lterm::LTerm::var(stringify!(#vars)); )*
                         #( let #compounds = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#compounds)); )*
                         let __pattern__ = #patterns;
-                        [::proto_vulcan::relation::eq(__term__, __pattern__), #clauses ]
+                        [::proto_vulcan::GoalCast::cast_into(
+                            ::proto_vulcan::relation::eq(__term__, __pattern__)),
+                         #clauses]
                     } ),* ],
-                })
+                ))
             }
         };
         output.to_tokens(tokens);
@@ -1302,10 +1313,10 @@ impl ToTokens for For {
         let coll = &self.coll;
         let body: Vec<&ClauseInOperator> = self.body.iter().collect();
         let output = quote!({
-            ::proto_vulcan::operator::everyg(::proto_vulcan::operator::ForOperatorParam {
-                coll: ::std::clone::Clone::clone(#coll),
-                g: Box::new(|#pattern| ::proto_vulcan::operator::all::All::from_conjunctions(&[ #( #body ),* ])),
-            })
+            ::proto_vulcan::operator::everyg(::proto_vulcan::operator::ForOperatorParam::new(
+                ::std::clone::Clone::clone(#coll),
+                Box::new(|#pattern| ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::operator::conj::InferredConj::from_conjunctions(&[ #( #body ),* ]))),
+            ))
         });
         output.to_tokens(tokens);
     }
@@ -1440,13 +1451,6 @@ enum TreeTerm {
 }
 
 impl TreeTerm {
-    fn is_any(&self) -> bool {
-        match self {
-            TreeTerm::Any(_) => true,
-            _ => false,
-        }
-    }
-
     fn is_empty(&self) -> bool {
         match self {
             TreeTerm::ProperList { items } => items.len() == 0,
@@ -1750,9 +1754,8 @@ impl ToTokens for Clause {
             }
             Clause::Conjunction(conjunction) => {
                 // When conjunction is not inside a non-conjunction an operator we can construct
-                // an All-goal from it.
-                let output =
-                    quote! { ::proto_vulcan::operator::all::All::from_array( #conjunction ) };
+                // an Conj-goal from it.
+                let output = quote! { ::proto_vulcan::operator::conj::InferredConj::from_array( #conjunction ) };
                 output.to_tokens(tokens);
             }
             Clause::Relation(relation) => {
@@ -1791,64 +1794,64 @@ impl ToTokens for ClauseInOperator {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match &self.0 {
             Clause::For(for_clause) => {
-                let output = quote! { &[ #for_clause ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#for_clause) ] };
                 output.to_tokens(tokens);
             }
             Clause::Project(project) => {
-                let output = quote! { &[ #project ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#project) ] };
                 output.to_tokens(tokens);
             }
             Clause::FnGoal(fngoal) => {
-                let output = quote! { &[ #fngoal ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#fngoal) ] };
                 output.to_tokens(tokens);
             }
             Clause::Fresh(fresh) => {
-                let output = quote! { &[ #fresh ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#fresh) ] };
                 output.to_tokens(tokens);
             }
             Clause::Eq(eq) => {
-                let output = quote! { &[ #eq ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#eq) ] };
                 output.to_tokens(tokens);
             }
             Clause::Diseq(diseq) => {
-                let output = quote! { &[ #diseq ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#diseq) ] };
                 output.to_tokens(tokens);
             }
             Clause::Succeed(_) => {
-                let output = quote! { &[ ::proto_vulcan::relation::succeed() ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::succeed()) ] };
                 output.to_tokens(tokens);
             }
             Clause::Fail(_) => {
-                let output = quote! { &[ ::proto_vulcan::relation::fail() ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::fail()) ] };
                 output.to_tokens(tokens);
             }
             Clause::Conjunction(conjunction) => {
-                // When conjunction is inside an operator, we do not create All-goal, and instead
+                // When conjunction is inside an operator, we do not create Conj-goal, and instead
                 // let the conjunction be represented as an array of goals.
                 conjunction.to_tokens(tokens);
             }
             Clause::Relation(relation) => {
-                let output = quote! { &[ #relation ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#relation) ] };
                 output.to_tokens(tokens);
             }
             Clause::Closure(closure) => {
-                let output = quote! { &[ #closure ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#closure) ] };
                 output.to_tokens(tokens);
             }
             Clause::Loop(l) => {
-                let output = quote! { &[ #l ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#l) ] };
                 output.to_tokens(tokens);
             }
             Clause::Operator(operator) => {
-                let output = quote! { &[ #operator ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#operator) ] };
                 output.to_tokens(tokens);
             }
             Clause::PatternMatchOperator(operator) => {
-                let output = quote! { &[ #operator ] };
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#operator) ] };
                 output.to_tokens(tokens);
             }
             Clause::Expression(expr) => {
-                let output = quote! { &[ #expr ]};
+                let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#expr) ]};
                 output.to_tokens(tokens);
             }
         }
@@ -1860,7 +1863,7 @@ pub fn proto_vulcan(input: TokenStream) -> TokenStream {
     let clause = parse_macro_input!(input as Clause);
 
     let output = quote! {
-        #clause
+        ::proto_vulcan::GoalCast::cast_into(#clause)
     };
     output.into()
 }
@@ -1871,7 +1874,7 @@ pub fn proto_vulcan_closure(input: TokenStream) -> TokenStream {
     let closure = Closure::new(vec![clause]);
 
     let output = quote! {
-        #closure
+        ::proto_vulcan::GoalCast::cast_into(#closure)
     };
     output.into()
 }
@@ -1939,18 +1942,25 @@ impl ToTokens for Query {
 
             let goal = {
                 let __query__ = ::proto_vulcan::lterm::LTerm::var("__query__");
-                ::proto_vulcan::operator::fresh::Fresh::new(
-                    vec![::std::clone::Clone::clone(&__query__)],
-                    ::proto_vulcan::operator::all::All::from_array(&[
-                        ::proto_vulcan::relation::eq::eq(
-                            ::std::clone::Clone::clone(&__query__),
-                            ::proto_vulcan::lterm::LTerm::from_array(&[#(::proto_vulcan::Upcast::to_super(&#query)),*]),
-                     ),
-                     ::proto_vulcan::operator::all::All::from_array(&[
-                        #( #body ),*
-                     ]),
-                     ::proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
-                    ]),
+                ::proto_vulcan::GoalCast::cast_into(
+                    ::proto_vulcan::operator::fresh::Fresh::new(
+                        vec![::std::clone::Clone::clone(&__query__)],
+                        ::proto_vulcan::GoalCast::cast_into(
+                            ::proto_vulcan::operator::conj::InferredConj::from_array(&[
+                                ::proto_vulcan::GoalCast::cast_into(
+                                    ::proto_vulcan::relation::eq::eq(
+                                        ::std::clone::Clone::clone(&__query__),
+                                        ::proto_vulcan::lterm::LTerm::from_array(&[#(::proto_vulcan::Upcast::to_super(&#query)),*]),
+
+                                    )
+                                ),
+                                ::proto_vulcan::operator::conj::Conj::from_array(&[
+                                    #( ::proto_vulcan::GoalCast::cast_into( #body ) ),*
+                                ]),
+                                ::proto_vulcan::state::reify(::std::clone::Clone::clone(&__query__)),
+                            ]),
+                        )
+                    )
                 )
             };
 

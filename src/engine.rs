@@ -1,20 +1,14 @@
-use crate::goal::Goal;
-use crate::state::State;
+use crate::solver::Solver;
 use crate::stream::{Lazy, Stream, StreamEngine};
 use crate::user::User;
-use std::fmt::Debug;
 
 pub type DefaultEngine<U> = StreamEngine<U>;
 
-pub trait Engine<U>: Debug + Sized + 'static
+pub trait Engine<U>: Sized + 'static
 where
     U: User,
 {
-    fn new(context: U::UserContext) -> Self;
+    fn new() -> Self;
 
-    fn start(&self, state: Box<State<U, Self>>, goal: Goal<U, Self>) -> Stream<U, Self>;
-
-    fn step(&self, lazy: Lazy<U, Self>) -> Stream<U, Self>;
-
-    fn context(&self) -> &U::UserContext;
+    fn step<'a>(&'a self, solver: &'a Solver<U, Self>, lazy: Lazy<U, Self>) -> Stream<U, Self>;
 }

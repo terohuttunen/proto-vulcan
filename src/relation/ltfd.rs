@@ -1,15 +1,16 @@
 // Less-than finite domain constraint
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::relation::diseqfd::diseqfd;
 use crate::relation::ltefd::ltefd;
 use crate::user::User;
 
-pub fn ltfd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
+pub fn ltfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     proto_vulcan!([diseqfd(u, v), ltefd(u, v)])
 }

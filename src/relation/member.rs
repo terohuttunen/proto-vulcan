@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -9,10 +9,10 @@ use crate::user::User;
 /// ```rust
 /// extern crate proto_vulcan;
 /// use proto_vulcan::prelude::*;
-/// use proto_vulcan::relation::membero;
+/// use proto_vulcan::relation::member;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
-///         membero(q, [1, 2, 3])
+///         member(q, [1, 2, 3])
 ///     });
 ///     let mut iter = query.run();
 ///     assert!(iter.next().unwrap().q == 1);
@@ -21,14 +21,15 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn membero<U, E>(x: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E>
+pub fn member<U, E, G>(x: LTerm<U, E>, l: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
-        [_ | rest] => membero(x, rest),
+        [_ | rest] => member(x, rest),
     })
 }
 
@@ -38,8 +39,8 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    fn test_membero_1() {
-        let query = proto_vulcan_query!(|q| { membero(q, [1, 2, 3]) });
+    fn test_member_1() {
+        let query = proto_vulcan_query!(|q| { member(q, [1, 2, 3]) });
         let mut iter = query.run();
         assert!(iter.next().unwrap().q == 1);
         assert!(iter.next().unwrap().q == 2);
@@ -48,8 +49,8 @@ mod test {
     }
 
     #[test]
-    fn test_membero_2() {
-        let query = proto_vulcan_query!(|q| { membero(q, [1, 1, 1]) });
+    fn test_member_2() {
+        let query = proto_vulcan_query!(|q| { member(q, [1, 1, 1]) });
         let mut iter = query.run();
         assert!(iter.next().unwrap().q == 1);
         assert!(iter.next().unwrap().q == 1);
@@ -58,8 +59,8 @@ mod test {
     }
 
     #[test]
-    fn test_membero_3() {
-        let query = proto_vulcan_query!(|q| { membero(q, []) });
+    fn test_member_3() {
+        let query = proto_vulcan_query!(|q| { member(q, []) });
         assert!(query.run().next().is_none());
     }
 }

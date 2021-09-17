@@ -8,8 +8,8 @@ use std::ops::Deref;
 /// Substitution Map
 ///
 /// Substitution maps track the binding of variables to terms.
-#[derive(Derivative, Debug)]
-#[derivative(Clone(bound="U: User"))]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
 pub struct SMap<U, E>(HashMap<LTerm<U, E>, LTerm<U, E>>)
 where
     U: User,

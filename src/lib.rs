@@ -173,8 +173,12 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! pub struct OperatorParam<'a, U: User> {
-//!     pub body: &'a [&'a [Goal<U>]],
+//! # use proto_vulcan::goal::AnyGoal;
+//! # use std::marker::PhantomData;
+//! pub struct OperatorParam<'a, U: User, E: Engine<U>, G: AnyGoal<U, E>> {
+//!     pub body: &'a [&'a [G]],
+//!     _phantom: PhantomData<U>,
+//!     _phantom2: PhantomData<E>,
 //! }
 //!
 //! // operator <term> {
@@ -183,9 +187,11 @@
 //! //    ...
 //! //    _ => <body_default>,
 //! // }
-//! pub struct PatternMatchOperatorParam<'a, U: User> {
+//! pub struct PatternMatchOperatorParam<'a, U: User, E: Engine<U>, G: AnyGoal<U, E>> {
 //!     // First goal of each arm is the match-goal
-//!     pub arms: &'a [&'a [Goal<U>]],
+//!     pub arms: &'a [&'a [G]],
+//!     _phantom: PhantomData<U>,
+//!     _phantom2: PhantomData<E>,
 //! }
 //! ```
 //! Even though the structs are identical, the first goal on each arm of
@@ -198,8 +204,8 @@
 //! use proto_vulcan::operator::condu;
 //! use proto_vulcan::operator::OperatorParam;
 //!
-//! pub fn onceo<U: User, E: Engine<U>>(param: OperatorParam<U, E>) -> Goal<U, E> {
-//!    let g = proto_vulcan::operator::all::All::from_conjunctions(param.body);
+//! pub fn onceo<U: User, E: Engine<U>>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E> {
+//!    let g = proto_vulcan::operator::conj::Conj::from_conjunctions(param.body);
 //!    proto_vulcan!(condu { g })
 //! }
 //! # fn main() {}
@@ -215,11 +221,11 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::prelude::*;
 //!
-//! pub fn appendo(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
+//! pub fn append<U: User, E: Engine<U>>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> Goal<U, E> {
 //!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,
-//!            [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
+//!            [[x | l1], l2, [x | l3]] => append(l1, l2, l3),
 //!        }
 //!     )
 //! }
@@ -275,11 +281,12 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! fn example() -> Goal {
+//! fn example<U: User, E: Engine<U>>() -> Goal<U, E> {
 //!     proto_vulcan!(
 //!         fngoal |engine, state| {
 //!             // There could be more Rust here modifying the `state`
-//!             proto_vulcan!(true).solve(engine, state)
+//!             let g: Goal<U, E> = proto_vulcan!(true);
+//!             g.solve(engine, state)
 //!         }
 //!     )
 //! }
@@ -318,26 +325,23 @@ extern crate derivative;
 pub mod compound;
 use compound::CompoundObject;
 
+pub mod debugger;
+pub mod engine;
 pub mod goal;
+pub mod lresult;
 pub mod lterm;
-pub mod state;
-pub mod stream;
-
 pub mod lvalue;
 pub mod operator;
+pub mod query;
 pub mod relation;
-
-pub mod lresult;
-
+pub mod solver;
+pub mod state;
+pub mod stream;
 pub mod user;
 
-pub mod engine;
-
-pub mod query;
-
+use engine::Engine;
 use std::borrow::Borrow;
 use user::User;
-use engine::Engine;
 
 pub trait Upcast<U, E, SuperType>
 where
@@ -362,6 +366,14 @@ where
     fn into_sub(self) -> Self::SubType;
 }
 
+pub trait GoalCast<U, E, SuperGoal>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn cast_into(self) -> SuperGoal;
+}
+
 pub mod prelude {
 
     pub use proto_vulcan_macros::{
@@ -369,10 +381,11 @@ pub mod prelude {
     };
 
     pub use crate::compound::CompoundTerm;
-    pub use crate::engine::{Engine, DefaultEngine};
-    pub use crate::goal::{Goal, Solve};
+    pub use crate::engine::{DefaultEngine, Engine};
+    pub use crate::goal::{AnyGoal, Goal};
     pub use crate::lterm::LTerm;
     pub use crate::lvalue::LValue;
+    pub use crate::solver::{Solve, Solver};
     pub use crate::state::Constraint;
     pub use crate::user::{DefaultUser, User};
 

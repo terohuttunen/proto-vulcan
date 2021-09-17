@@ -1,14 +1,16 @@
 use crate::engine::Engine;
 /// Constrains u + v = w
-use crate::goal::{Goal, Solve};
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
+use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, SResult, State};
 use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
 pub struct PlusZ<U, E>
 where
     U: User,
@@ -24,8 +26,12 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Goal<U, E> {
-        Goal::new(PlusZ { u, v, w })
+    pub fn new<G: AnyGoal<U, E>>(
+        u: LTerm<U, E>,
+        v: LTerm<U, E>,
+        w: LTerm<U, E>,
+    ) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Rc::new(PlusZ { u, v, w })))
     }
 }
 
@@ -34,7 +40,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match PlusZConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -42,16 +48,18 @@ where
     }
 }
 
-pub fn plusz<U, E>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Goal<U, E>
+pub fn plusz<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     PlusZ::new(u, v, w)
 }
 
 /// Sum
-#[derive(Debug, Clone)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub struct PlusZConstraint<U, E>
 where
     U: User,

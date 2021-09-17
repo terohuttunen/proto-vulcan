@@ -8,11 +8,11 @@ use proto_vulcan::prelude::*;
 /// Once operator
 ///
 /// Guarantees that the conjunction of body goals generates at most one answer.
-pub fn onceo<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+pub fn onceo<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
 {
-    let g = crate::operator::all::All::from_conjunctions(param.body);
+    let g = crate::operator::conj::Conj::from_conjunctions(param.body);
     proto_vulcan!(condu { g })
 }

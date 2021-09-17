@@ -1,6 +1,6 @@
 use crate::compound::CompoundObject;
+use crate::engine::{DefaultEngine, Engine};
 use crate::user::{DefaultUser, User};
-use crate::engine::{Engine, DefaultEngine};
 use std::borrow::Borrow;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -32,7 +32,7 @@ impl fmt::Display for VarID {
 
 /// Logic Term.
 #[derive(Derivative, Debug)]
-#[derivative(Clone(bound="U: User"))]
+#[derivative(Clone(bound = "U: User"))]
 pub enum LTermInner<U, E>
 where
     U: User,
@@ -63,7 +63,7 @@ where
 }
 
 #[derive(Derivative)]
-#[derivative(Clone(bound="U: User"))]
+#[derivative(Clone(bound = "U: User"))]
 pub struct LTerm<U = DefaultUser, E = DefaultEngine<U>>
 where
     U: User,
@@ -229,6 +229,13 @@ where
     pub fn get_bool(&self) -> Option<bool> {
         match self.as_ref() {
             LTermInner::Val(LValue::Bool(u)) => Some(*u),
+            _ => None,
+        }
+    }
+
+    pub fn get_name(&self) -> Option<&str> {
+        match self.as_ref() {
+            LTermInner::Var(_, name) => Some(name),
             _ => None,
         }
     }
@@ -797,7 +804,8 @@ impl<U, E> Eq for LTerm<U, E>
 where
     U: User,
     E: Engine<U>,
-{}
+{
+}
 
 impl<U, E> Default for LTerm<U, E>
 where
@@ -912,7 +920,8 @@ impl<'a, U, E> std::iter::FusedIterator for LTermIter<'a, U, E>
 where
     U: User,
     E: Engine<U>,
-{}
+{
+}
 
 impl<'a, U, E> IntoIterator for &'a LTerm<U, E>
 where
@@ -998,7 +1007,8 @@ impl<'a, U, E> std::iter::FusedIterator for LTermIterMut<'a, U, E>
 where
     U: User,
     E: Engine<U>,
-{}
+{
+}
 
 impl<U, E> Index<usize> for LTerm<U, E>
 where
@@ -1209,9 +1219,15 @@ mod test {
         assert_ne!(2, lterm!(1) as LTerm<DefaultUser>);
         assert_ne!(true, lterm!(1) as LTerm<DefaultUser>);
         assert_eq!(lterm!("proto-vulcan") as LTerm<DefaultUser>, "proto-vulcan");
-        assert_ne!(lterm!(["proto-vulcan"]) as LTerm<DefaultUser>, "proto-vulcan");
+        assert_ne!(
+            lterm!(["proto-vulcan"]) as LTerm<DefaultUser>,
+            "proto-vulcan"
+        );
         assert_eq!("proto-vulcan", lterm!("proto-vulcan") as LTerm<DefaultUser>);
-        assert_ne!("proto-vulcan", lterm!(["proto-vulcan"]) as LTerm<DefaultUser>);
+        assert_ne!(
+            "proto-vulcan",
+            lterm!(["proto-vulcan"]) as LTerm<DefaultUser>
+        );
         assert_eq!(
             lterm!("proto-vulcan") as LTerm<DefaultUser>,
             "proto-vulcan"[0..]

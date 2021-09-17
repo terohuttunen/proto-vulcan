@@ -5,14 +5,18 @@ use crate::engine::Engine;
 ///
 /// [a0 AND a1 AND ...] OR
 /// [b0 AND b1 AND ...] OR ...
-use crate::goal::{Goal, Solve};
-use crate::operator::all::All;
+use crate::goal::{AnyGoal, Goal};
+use crate::operator::conj::Conj;
 use crate::operator::OperatorParam;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
+use crate::GoalCast;
+use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
 pub struct Conda<U, E>
 where
     U: User,
@@ -34,13 +38,13 @@ where
     E: Engine<U>,
 {
     pub fn from_conjunctions(body: &[&[Goal<U, E>]]) -> Goal<U, E> {
-        let mut next = proto_vulcan!(false);
+        let mut next = Goal::fail();
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
             if !clause.is_empty() {
-                let rest = All::from_vec(clause.split_off(1));
+                let rest = GoalCast::cast_into(Conj::from_vec(clause.split_off(1)));
                 let first = clause.pop().unwrap();
-                next = Goal::new(Conda { first, rest, next });
+                next = Goal::dynamic(Rc::new(Conda { first, rest, next }));
             }
         }
         next
@@ -52,18 +56,18 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
-        let mut stream = self.first.solve(engine, state.clone());
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+        let mut stream = solver.start(&self.first, state.clone());
 
-        match stream.peek(engine) {
+        match solver.peek(&mut stream) {
             Some(_) => Stream::bind(stream, self.rest.clone()),
-            None => self.next.solve(engine, state),
+            None => self.next.solve(solver, state),
         }
     }
 }
 
 /// Soft cut operator.
-pub fn conda<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+pub fn conda<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -75,7 +79,7 @@ where
 mod tests {
     use crate::operator::conda::conda;
     use crate::prelude::*;
-    use crate::relation::membero::membero;
+    use crate::relation::member::member;
 
     #[test]
     fn test_conda_1() {
@@ -83,7 +87,7 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
                 q == [x, y],
-                membero(z, [5, 6]),
+                member(z, [5, 6]),
                 conda {
                     [x == z, y == 2],
                     [x == z, y == 4],
@@ -102,7 +106,7 @@ mod tests {
         let query = proto_vulcan_query!(|q| {
             |x, y, z| {
                 q == [x, y],
-                membero(z, [5, 6]),
+                member(z, [5, 6]),
                 conda {
                     [false, y == 2],
                     [x == z, y == 4],

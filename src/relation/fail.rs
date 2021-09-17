@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::user::User;
 
 /// A relation that fails.
@@ -21,12 +21,13 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn fail<U, E>() -> Goal<U, E>
+pub fn fail<U, E, G>() -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
-    Goal::fail()
+    InferredGoal::new(G::fail())
 }
 
 #[cfg(test)]

@@ -1,13 +1,15 @@
 use crate::engine::Engine;
 /// Less than or equal FD
-use crate::goal::{Goal, Solve};
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
+use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, SResult, State};
 use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
 pub struct LessThanOrEqualFd<U, E>
 where
     U: User,
@@ -22,8 +24,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-        Goal::new(LessThanOrEqualFd { u, v })
+    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Rc::new(LessThanOrEqualFd { u, v })))
     }
 }
 
@@ -32,7 +34,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match LessThanOrEqualFdConstraint::new(self.u.clone(), self.v.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -40,16 +42,18 @@ where
     }
 }
 
-pub fn ltefd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
+pub fn ltefd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     LessThanOrEqualFd::new(u, v)
 }
 
 // Finite Domain Constraints
-#[derive(Debug, Clone)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub struct LessThanOrEqualFdConstraint<U, E>
 where
     U: User,

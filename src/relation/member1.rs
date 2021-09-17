@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::user::User;
 
@@ -9,43 +9,44 @@ use crate::user::User;
 /// ```rust
 /// extern crate proto_vulcan;
 /// use proto_vulcan::prelude::*;
-/// use proto_vulcan::relation::member1o;
+/// use proto_vulcan::relation::member1;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
-///         member1o(q, [1, 1, 1, 1, 1])
+///         member1(q, [1, 1, 1, 1, 1])
 ///     });
 ///     let mut iter = query.run();
 ///     assert_eq!(iter.next().unwrap().q, 1);
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn member1o<U, E>(x: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E>
+pub fn member1<U, E, G>(x: LTerm<U, E>, l: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     proto_vulcan_closure!(match l {
         [head | _] => head == x,
-        [head | rest] => [head != x, member1o(x, rest)],
+        [head | rest] => [head != x, member1(x, rest)],
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::member1o;
+    use super::member1;
     use crate::prelude::*;
 
     #[test]
-    fn test_member1o_1() {
-        let query = proto_vulcan_query!(|q| { member1o(q, [1, 1, 1, 1, 1]) });
+    fn test_member1_1() {
+        let query = proto_vulcan_query!(|q| { member1(q, [1, 1, 1, 1, 1]) });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, 1);
         assert!(iter.next().is_none());
     }
 
     #[test]
-    fn test_member1o_2() {
-        let query = proto_vulcan_query!(|q| { member1o(q, [1, 2, 3, 4, 5]) });
+    fn test_member1_2() {
+        let query = proto_vulcan_query!(|q| { member1(q, [1, 2, 3, 4, 5]) });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, 1);
         assert_eq!(iter.next().unwrap().q, 2);
@@ -56,8 +57,8 @@ mod tests {
     }
 
     #[test]
-    fn test_member1o_3() {
-        let query = proto_vulcan_query!(|q| { member1o(q, [1, 0, 0, 0, 1]) });
+    fn test_member1_3() {
+        let query = proto_vulcan_query!(|q| { member1(q, [1, 0, 0, 0, 1]) });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, 1);
         assert_eq!(iter.next().unwrap().q, 0);
@@ -65,8 +66,8 @@ mod tests {
     }
 
     #[test]
-    fn test_member1o_4() {
-        let query = proto_vulcan_query!(|q| { member1o(q, [1, 1, 1, 1, 0]) });
+    fn test_member1_4() {
+        let query = proto_vulcan_query!(|q| { member1(q, [1, 1, 1, 1, 0]) });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, 1);
         assert_eq!(iter.next().unwrap().q, 0);
@@ -74,8 +75,8 @@ mod tests {
     }
 
     #[test]
-    fn test_member1o_5() {
-        let query = proto_vulcan_query!(|q| { member1o(q, [1, 1, 1, 0, 0]) });
+    fn test_member1_5() {
+        let query = proto_vulcan_query!(|q| { member1(q, [1, 1, 1, 0, 0]) });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, 1);
         assert_eq!(iter.next().unwrap().q, 0);
@@ -83,25 +84,25 @@ mod tests {
     }
 
     #[test]
-    fn test_member1o_6() {
-        let query = proto_vulcan_query!(|q| { member1o(q, []) });
+    fn test_member1_6() {
+        let query = proto_vulcan_query!(|q| { member1(q, []) });
         let mut iter = query.run();
         assert!(iter.next().is_none());
     }
 
     #[test]
-    fn test_member1o_7() {
-        let query = proto_vulcan_query!(|q| { member1o(q, [5]) });
+    fn test_member1_7() {
+        let query = proto_vulcan_query!(|q| { member1(q, [5]) });
         let mut iter = query.run();
         assert_eq!(iter.next().unwrap().q, 5);
         assert!(iter.next().is_none());
     }
 
     #[test]
-    fn test_member1o_8() {
+    fn test_member1_8() {
         let query = proto_vulcan_query!(|q| {
             |a, b, c| {
-                member1o(q, [a, b, c]),
+                member1(q, [a, b, c]),
                 a == 5,
                 b == 3,
                 c == 9,
@@ -115,10 +116,10 @@ mod tests {
     }
 
     #[test]
-    fn test_member1o_9() {
+    fn test_member1_9() {
         let query = proto_vulcan_query!(|q| {
             |a, b, c| {
-                member1o(q, [a, a, b, b]),
+                member1(q, [a, a, b, b]),
                 a == 5,
                 b == 3,
             }
@@ -130,10 +131,10 @@ mod tests {
     }
 
     #[test]
-    fn test_member1o_10() {
+    fn test_member1_10() {
         let query = proto_vulcan_query!(|q| {
             |a, b, c| {
-                member1o(q, [a, a, b, b, c, c]),
+                member1(q, [a, a, b, b, c, c]),
                 a == 5,
                 b == 5,
                 c == 3,

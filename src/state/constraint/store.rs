@@ -7,8 +7,8 @@ use crate::state::User;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-#[derive(Derivative, Debug)]
-#[derivative(Clone(bound="U: User"))]
+#[derive(Derivative)]
+#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
 pub struct ConstraintStore<U, E>(HashSet<Rc<dyn Constraint<U, E>>>)
 where
     U: User,

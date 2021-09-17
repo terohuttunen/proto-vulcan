@@ -1,14 +1,16 @@
 use crate::engine::Engine;
 /// Constrain disequality in finite domains
-use crate::goal::{Goal, Solve};
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
+use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, FiniteDomain, SResult, State};
 use crate::stream::Stream;
 use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
 pub struct DiseqFd<U, E>
 where
     U: User,
@@ -23,8 +25,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-        Goal::new(DiseqFd { u, v })
+    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Rc::new(DiseqFd { u, v })))
     }
 }
 
@@ -33,7 +35,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         let u = self.u.clone();
         let v = self.v.clone();
         match DiseqFdConstraint::new(u, v).run(state) {
@@ -70,15 +72,17 @@ where
 ///     assert_eq!(expected.len(), 0);
 /// }
 /// ```
-pub fn diseqfd<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
+pub fn diseqfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     DiseqFd::new(u, v)
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
 pub struct DiseqFdConstraint<U, E>
 where
     U: User,

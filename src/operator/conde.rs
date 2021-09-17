@@ -1,73 +1,122 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
-use crate::operator::all::All;
+use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
+use crate::operator::conj::InferredConj;
 use crate::operator::OperatorParam;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
 use crate::user::User;
+use crate::GoalCast;
+use std::any::Any;
+use std::marker::PhantomData;
+use std::rc::Rc;
 
-#[derive(Debug)]
-pub struct Conde<U, E>
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
+pub struct Conde<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
-    conjunctions: Vec<Goal<U, E>>,
+    conjunctions: Vec<G>,
+    _phantom: PhantomData<U>,
+    _phantom2: PhantomData<E>,
 }
 
-impl<U, E> Conde<U, E>
+impl<U, E, G> Conde<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
-    pub fn from_vec(conjunctions: Vec<Goal<U, E>>) -> Goal<U, E> {
-        Goal::new(Conde { conjunctions })
+    pub fn from_vec(conjunctions: Vec<G>) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Rc::new(Conde {
+            conjunctions,
+            _phantom: PhantomData,
+            _phantom2: PhantomData,
+        })))
     }
 
-    pub fn from_array(goals: &[Goal<U, E>]) -> Goal<U, E> {
-        Goal::new(Conde {
+    pub fn from_array(goals: &[G]) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Rc::new(Conde {
             conjunctions: goals.to_vec(),
-        })
+            _phantom: PhantomData,
+            _phantom2: PhantomData,
+        })))
+    }
+
+    pub fn as_any(&self) -> &dyn Any {
+        self
     }
 
     // The parameter is a list of conjunctions, and the resulting goal is a disjunction
     // of conjunctions.
-    pub fn from_conjunctions(goals: &[&[Goal<U, E>]]) -> Goal<U, E> {
+    pub fn from_conjunctions(goals: &[&[G]]) -> InferredGoal<U, E, G> {
         let mut conjunctions = vec![];
         for conjunction_goals in goals {
-            conjunctions.push(All::from_array(conjunction_goals));
+            conjunctions.push(GoalCast::cast_into(InferredConj::from_array(
+                conjunction_goals,
+            )));
         }
         Conde::from_vec(conjunctions)
     }
 }
 
-impl<U, E> Solve<U, E> for Conde<U, E>
+impl<U, E, G> Solve<U, E> for Conde<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
-    fn solve(&self, engine: &E, state: State<U, E>) -> Stream<U, E> {
-        let mut stream = Stream::empty();
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+        if let Some(bfs) = self.as_any().downcast_ref::<Conde<U, E, Goal<U, E>>>() {
+            let mut stream = Stream::empty();
 
-        // Process first element separately to avoid one extra clone of `state`.
-        if self.conjunctions.len() > 1 {
-            for conjunction in self
-                .conjunctions
-                .iter()
-                .rev()
-                .take(self.conjunctions.len() - 1)
-            {
-                let new_stream = conjunction.solve(engine, state.clone());
+            // Process first element separately to avoid one extra clone of `state`.
+            if bfs.conjunctions.len() > 1 {
+                for conjunction in bfs
+                    .conjunctions
+                    .iter()
+                    .rev()
+                    .take(bfs.conjunctions.len() - 1)
+                {
+                    let new_stream = conjunction.solve(solver, state.clone());
+                    stream = Stream::mplus(new_stream, LazyStream::delay(stream));
+                }
+            }
+
+            if self.conjunctions.len() > 0 {
+                let new_stream = bfs.conjunctions[0].solve(solver, state);
                 stream = Stream::mplus(new_stream, LazyStream::delay(stream));
             }
-        }
 
-        if self.conjunctions.len() > 0 {
-            let new_stream = self.conjunctions[0].solve(engine, state);
-            stream = Stream::mplus(new_stream, LazyStream::delay(stream));
-        }
+            stream
+        } else if let Some(dfs) = self.as_any().downcast_ref::<Conde<U, E, DFSGoal<U, E>>>() {
+            let mut stream = Stream::empty();
 
-        stream
+            // Process first element separately to avoid one extra clone of `state`.
+            if dfs.conjunctions.len() > 1 {
+                for conjunction in dfs
+                    .conjunctions
+                    .iter()
+                    .rev()
+                    .take(dfs.conjunctions.len() - 1)
+                {
+                    let new_stream = conjunction.solve(solver, state.clone());
+                    stream = Stream::mplus_dfs(new_stream, LazyStream::delay(stream));
+                }
+            }
+
+            if self.conjunctions.len() > 0 {
+                let new_stream = dfs.conjunctions[0].solve(solver, state);
+                stream = Stream::mplus_dfs(new_stream, LazyStream::delay(stream));
+            }
+
+            stream
+        } else {
+            unreachable!()
+        }
     }
 }
 
@@ -90,17 +139,17 @@ where
 /// # Example
 /// Conde is one of the core miniKanren operators, and it executes an interleaved search of the
 /// streams of solutions from the conjunctions. This example shows how the solutions from the
-/// `membero`-relations, are interleaved by the `conde`-operator:
+/// `member`-relations, are interleaved by the `conde`-operator:
 /// ```rust
 /// extern crate proto_vulcan;
 /// use proto_vulcan::prelude::*;
-/// use proto_vulcan::relation::membero;
+/// use proto_vulcan::relation::member;
 /// fn main() {
 ///     let query = proto_vulcan_query!(|q| {
 ///         conde {
-///             membero(q, [1, 2, 3]),
-///             membero(q, [4, 5, 6]),
-///             membero(q, [7, 8, 9]),
+///             member(q, [1, 2, 3]),
+///             member(q, [4, 5, 6]),
+///             member(q, [7, 8, 9]),
 ///         }
 ///     });
 ///     let mut iter = query.run();
@@ -113,10 +162,20 @@ where
 ///     assert_eq!(expected.len(), 0);
 /// }
 /// ```
-pub fn conde<U, E>(param: OperatorParam<U, E>) -> Goal<U, E>
+pub fn conde<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
 where
     U: User,
     E: Engine<U>,
+{
+    Conde::from_conjunctions(param.body).cast_into()
+}
+
+/// Inferred version of conde
+pub fn cond<U, E, G>(param: OperatorParam<U, E, G>) -> InferredGoal<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     Conde::from_conjunctions(param.body)
 }
@@ -125,15 +184,15 @@ where
 mod test {
     use super::conde;
     use crate::prelude::*;
-    use crate::relation::membero::membero;
+    use crate::relation::member::member;
 
     #[test]
     fn test_conde_1() {
         let query = proto_vulcan_query!(|q| {
             conde {
-                membero(q, [1, 2, 3]),
-                membero(q, [4, 5, 6]),
-                membero(q, [7, 8, 9]),
+                member(q, [1, 2, 3]),
+                member(q, [4, 5, 6]),
+                member(q, [7, 8, 9]),
             }
         });
         let iter = query.run();

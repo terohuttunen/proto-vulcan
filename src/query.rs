@@ -2,6 +2,7 @@ use crate::engine::{DefaultEngine, Engine};
 use crate::goal::Goal;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
+use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::{DefaultUser, User};
@@ -23,7 +24,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    engine: E,
+    solver: Solver<U, E>,
     variables: Vec<LTerm<U, E>>,
     stream: Stream<U, E>,
     _phantom: PhantomData<R>,
@@ -37,14 +38,14 @@ where
     E: Engine<U>,
 {
     pub fn new(
-        engine: E,
+        solver: Solver<U, E>,
         variables: Vec<LTerm<U, E>>,
         goal: Goal<U, E>,
         initial_state: State<U, E>,
     ) -> ResultIterator<R, U, E> {
-        let stream = goal.solve(&engine, initial_state);
+        let stream = solver.start(&goal, initial_state);
         ResultIterator {
-            engine,
+            solver,
             variables,
             stream,
             _phantom: PhantomData,
@@ -62,7 +63,7 @@ where
     type Item = R;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.stream.next(&self.engine) {
+        match self.solver.next(&mut self.stream) {
             Some(state) => {
                 // At this point the state has already gone through initial reification
                 // process
@@ -72,9 +73,11 @@ where
                 let results = self
                     .variables
                     .iter()
-                    .map(|v| LResult::<U, E>(state.smap_ref().walk_star(v), Rc::clone(&reified_cstore)))
+                    .map(|v| {
+                        LResult::<U, E>(state.smap_ref().walk_star(v), Rc::clone(&reified_cstore))
+                    })
                     .collect();
-                
+
                 Some(R::from_vec(results))
             }
             None => None,
@@ -138,9 +141,9 @@ where
     ) -> ResultIterator<R, U, E> {
         let initial_state = State::new(user_state);
         let user_globals = user_globals;
-        let engine = E::new(user_globals);
+        let solver = Solver::new(user_globals, false);
         ResultIterator::new(
-            engine,
+            solver,
             self.variables.clone(),
             self.goal.clone(),
             initial_state,

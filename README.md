@@ -33,10 +33,12 @@
 A [`miniKanren`]-family relational logic programming language embedded in Rust.
 
 In addition to core miniKanren language, proto-vulcan currently provides support for:
+* Depth-first and breadth-first search with inference
+* Compound types
 * Disequality constraints CLP(Tree)
 * Finite-domain constraints CLP(FD)
 * Various operators: anyo, conda, condu, onceo, project
-* Pattern matching: matche, matcha, matchu
+* Pattern matching: match, matche, matcha, matchu
 * Writing goals in Rust embedded inline within proto-vulcan
 * User extension interface
 
@@ -80,11 +82,11 @@ use the latter variant.
 ```rust
 use proto_vulcan::prelude::*;
 
-pub fn appendo(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
+pub fn append(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
     proto_vulcan_closure!(
         match [l, s, ls] {
             [[], x, x] => ,
-            [[x | l1], l2, [x | l3]] => appendo(l1, l2, l3),
+            [[x | l1], l2, [x | l3]] => append(l1, l2, l3),
         }
     )
 }

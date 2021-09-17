@@ -1,11 +1,14 @@
 use crate::engine::Engine;
-use crate::goal::{Goal, Solve};
+use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
+use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
 use crate::user::User;
+use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
 pub struct Eq<U, E>
 where
     U: User,
@@ -20,8 +23,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
-        Goal::new(Eq { u, v })
+    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Rc::new(Eq { u, v })))
     }
 }
 
@@ -30,7 +33,7 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn solve(&self, _engine: &E, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
         match state.unify(&self.u, &self.v) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -57,10 +60,11 @@ where
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn eq<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
+pub fn eq<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
+    G: AnyGoal<U, E>,
 {
     Eq::new(u, v)
 }
