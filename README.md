@@ -33,8 +33,8 @@
 A [`miniKanren`]-family relational logic programming language embedded in Rust.
 
 In addition to core miniKanren language, proto-vulcan currently provides support for:
-* Compound types
 * Depth-first and breadth-first search with inference
+* Compound types
 * Disequality constraints CLP(Tree)
 * Finite-domain constraints CLP(FD)
 * Various operators: anyo, conda, condu, onceo, project
