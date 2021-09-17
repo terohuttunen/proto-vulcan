@@ -20,6 +20,8 @@ pub use fd::FiniteDomain;
 
 use constraint::store::ConstraintStore;
 
+pub mod map_sum;
+
 mod reification;
 pub use reification::reify;
 

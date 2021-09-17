@@ -122,6 +122,9 @@ where
             Lazy::Delay(stream) => {
                 self.next_pos = StreamCursor::Stream(depth + 1, stream);
             }
+            Lazy::Iterator(_iter) => {
+                self.next_pos = StreamCursor::End;
+            }
         }
 
         Some((depth, StreamWalkStep::LazyStream(lazy_stream)))
@@ -136,6 +139,36 @@ where
     }
 }
 
+pub trait StreamIterator<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn clone_box(&self) -> Box<dyn StreamIterator<U, E>>;
+
+    fn next(&mut self, solver: &Solver<U, E>) -> Option<Stream<U, E>>;
+}
+
+impl<U, E> Clone for Box<dyn StreamIterator<U, E>>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
+
+impl<U, E> std::fmt::Debug for Box<dyn StreamIterator<U, E>>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn fmt(&self, fm: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(fm, "StreamIterator(...)")
+    }
+}
+
 #[derive(Derivative)]
 #[derivative(Clone(bound = "U: User"), Debug(bound = "U: User"))]
 pub enum Lazy<U: User, E: Engine<U>> {
@@ -146,6 +179,7 @@ pub enum Lazy<U: User, E: Engine<U>> {
     MPlusDFS(LazyStream<U, E>, LazyStream<U, E>),
     PauseDFS(Box<State<U, E>>, DFSGoal<U, E>),
     Delay(Stream<U, E>),
+    Iterator(Box<dyn StreamIterator<U, E>>),
 }
 
 #[derive(Derivative)]
@@ -179,6 +213,10 @@ impl<U: User, E: Engine<U>> LazyStream<U, E> {
 
     pub fn delay(stream: Stream<U, E>) -> LazyStream<U, E> {
         LazyStream(Box::new(Lazy::Delay(stream)))
+    }
+
+    pub fn iterator(iter: Box<dyn StreamIterator<U, E>>) -> LazyStream<U, E> {
+        LazyStream(Box::new(Lazy::Iterator(iter)))
     }
 }
 
@@ -311,6 +349,10 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         Stream::Lazy(LazyStream::delay(stream))
     }
 
+    pub fn iterator(iter: Box<dyn StreamIterator<U, E>>) -> Stream<U, E> {
+        Stream::Lazy(LazyStream::iterator(iter))
+    }
+
     pub fn is_mature(&self) -> bool {
         match self {
             Stream::Lazy(_) => false,
@@ -366,6 +408,15 @@ where
             }
             Lazy::PauseDFS(state, goal) => solver.start_dfs(&goal, *state),
             Lazy::Delay(stream) => stream,
+            Lazy::Iterator(mut iter) => {
+                // The point of iterator (at least for now) is to conserve used resources by
+                // deferring stream expansion; thus using DFS search to process the returned
+                // stream fully before asking for more from the iterator.
+                match iter.next(solver) {
+                    Some(stream) => Stream::mplus_dfs(stream, LazyStream::iterator(iter)),
+                    None => Stream::empty(),
+                }
+            }
         }
     }
 }

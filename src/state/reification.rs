@@ -1,48 +1,13 @@
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal};
 use crate::lterm::{LTerm, LTermInner};
-use crate::solver::Solver;
-use crate::state::State;
-use crate::stream::{LazyStream, Stream};
+use crate::stream::Stream;
 use crate::user::User;
 
 #[cfg(feature = "clpfd")]
 use crate::operator::onceo;
 
-#[cfg(feature = "clpfd")]
-fn map_sum<U, E, F, T>(
-    solver: &Solver<U, E>,
-    state: State<U, E>,
-    mut f: F,
-    iter: impl Iterator<Item = T>,
-) -> Stream<U, E>
-where
-    U: User,
-    E: Engine<U>,
-    F: FnMut(T) -> Goal<U, E>,
-{
-    let mut iter = iter.peekable();
-    let mut stream = Stream::empty();
-    loop {
-        match iter.next() {
-            Some(d) => {
-                if iter.peek().is_none() {
-                    // If this is last value in the domain, no need to clone `state`.
-                    let new_stream = f(d).solve(solver, state);
-                    stream = Stream::mplus(new_stream, LazyStream::delay(stream));
-                    break;
-                } else {
-                    let new_stream = f(d).solve(solver, state.clone());
-                    stream = Stream::mplus(new_stream, LazyStream::delay(stream));
-                }
-            }
-            None => {
-                unreachable!();
-            }
-        }
-    }
-    stream
-}
+use crate::state::map_sum::map_sum;
 
 /// Enforces the finite domain constraints by expanding the domains into sequences of numbers,
 /// and returning solutions for all numbers. Adds a `x == d` substitution for each `d` in
@@ -60,7 +25,12 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
                     let dterm = LTerm::from(d);
                     proto_vulcan!(dterm == xwalk)
                 }, xdomain.iter().rev())
-
+                /*
+                map_sum_iter(state, move |d| {
+                    let dterm = LTerm::from(d);
+                    proto_vulcan!(dterm == xwalk)
+                }, Box::new((*xdomain).clone().into_iter()))
+                */
             }
             (LTermInner::<U, E>::Cons(head, tail), _) => {
                 let head: LTerm<U, E> = head.clone();
@@ -71,7 +41,7 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
                 ]);
                 g.solve(solver, state)
             },
-            (_, _) => solver.start(&Goal::Succeed, state),//proto_vulcan!(true).solve(solver, state),
+            (_, _) => solver.start(&Goal::Succeed, state),
         }
     })
 }

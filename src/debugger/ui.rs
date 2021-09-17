@@ -153,37 +153,40 @@ where
                 Some((depth, step)) => {
                     let indent = " ".repeat(depth);
                     match step {
-                        StreamWalkStep::State(state) => {
+                        StreamWalkStep::State(_state) => {
                             let item = format!("{}{}", indent, "State");
                             stream_items.push(ListItem::new(item));
                         }
                         StreamWalkStep::LazyStream(lazy_stream) => {
                             let item = match &*lazy_stream.0 {
-                                Lazy::Bind(lazy_stream, goal) => {
+                                Lazy::Bind(_lazy_stream, goal) => {
                                     format!("{}Bind: {:?}", indent, goal)
                                 }
-                                Lazy::MPlus(left, right) => {
+                                Lazy::MPlus(_left, _right) => {
                                     format!("{}{}", indent, "MPlus")
                                 }
-                                Lazy::Pause(state, goal) => {
+                                Lazy::Pause(_state, goal) => {
                                     format!("{}Pause: {:?}", indent, goal)
                                 }
-                                Lazy::BindDFS(lazy_stream, goal) => {
+                                Lazy::BindDFS(_lazy_stream, goal) => {
                                     format!("{}Bind: {:?}", indent, goal)
                                 }
-                                Lazy::MPlusDFS(left, right) => {
+                                Lazy::MPlusDFS(_left, _right) => {
                                     format!("{}{}", indent, "MPlusDFS")
                                 }
-                                Lazy::PauseDFS(state, goal) => {
+                                Lazy::PauseDFS(_state, goal) => {
                                     format!("{}PauseDFS: {:?}", indent, goal)
                                 }
-                                Lazy::Delay(stream) => {
+                                Lazy::Delay(_stream) => {
                                     format!("{}{}", indent, "Delay")
+                                }
+                                Lazy::Iterator(_iter) => {
+                                    format!("{}{}", indent, "Iterator")
                                 }
                             };
                             stream_items.push(ListItem::new(item));
                         }
-                        StreamWalkStep::Backtrack(lazy_stream) => {}
+                        StreamWalkStep::Backtrack(_lazy_stream) => {}
                     };
                 }
                 None => break,

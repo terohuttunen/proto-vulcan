@@ -1,23 +1,8 @@
 use crate::engine::Engine;
-use crate::goal::Goal;
-use crate::solver::Solver;
+
 use crate::state::State;
-use crate::stream::{Lazy, Stream};
+use crate::stream::Stream;
 use crate::user::User;
-use std::marker::PhantomData;
-use std::rc::Rc;
-use std::sync::atomic::AtomicBool;
-use std::sync::{mpsc, Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
-
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode, KeyEvent},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-
-use tui::{backend::CrosstermBackend, Terminal};
 
 mod ui;
 use ui::UI;
@@ -86,5 +71,5 @@ where
         self.ui.hide();
     }
 
-    pub fn new_solution(&mut self, stream: &Stream<U, E>, state: &Box<State<U, E>>) {}
+    pub fn new_solution(&mut self, _stream: &Stream<U, E>, _state: &Box<State<U, E>>) {}
 }
