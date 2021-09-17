@@ -35,7 +35,6 @@ where
     U: User,
     E: Engine<U>,
 {
-    io_thread_handle: thread::JoinHandle<()>,
     event_receiver: mpsc::Receiver<Event>,
     ui_visible: Arc<AtomicBool>,
 
@@ -58,7 +57,7 @@ where
 
         // Spawn IO polling thread that sends IO and/or timetick events to
         // the channel if the UI is visible.
-        let io_thread_handle = thread::spawn(move || {
+        thread::spawn(move || {
             let mut last_tick = Instant::now();
             loop {
                 let timeout = tick_rate
@@ -91,7 +90,6 @@ where
         let terminal = Terminal::new(backend).expect("new terminal");
 
         UI {
-            io_thread_handle,
             event_receiver,
             ui_visible,
             terminal,
