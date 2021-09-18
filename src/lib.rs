@@ -1,9 +1,9 @@
-//! A miniKanren-family relational logic programming language embedded in Rust.
+//! A relational logic programming language embedded in Rust.
 //!
+//! The language started as a miniKanren, but has evolved into its own language.
 //! In addition to core miniKanren language, proto-vulcan currently supports disequality
 //! constraints CLP(Tree), finite-domain constraints CLP(FD), as well as pattern-matching
-//! (`match`) operator. The user can write additional relations and operators
-//! as Rust functions, and even customize logic terms.
+//! (`match`) operator, depth-first search and compound types.
 //!
 //! The language is embedded into Rust with macros which parse the language syntax and convert it
 //! into Rust.
@@ -276,7 +276,7 @@
 //! # Embedding Rust into Proto-vulcan
 //! Sometimes it is useful to write goals in Rust and embed them in Proto-vulcan with the built-in
 //! operator `fngoal |state| { <rust-code> }`, where `state` is the current value of the
-//! `State`-monad. The function must return a `Stream<U>`, that can be obtained by applying the
+//! `State`-monad. The function must return a `Stream<U, E>`, that can be obtained by applying the
 //! returned goal to the input state. For example, a goal that always succeeds, can be written as:
 //! ```rust
 //! # extern crate proto_vulcan;
@@ -325,6 +325,7 @@ extern crate derivative;
 pub mod compound;
 use compound::CompoundObject;
 
+#[cfg(feature = "debugger")]
 pub mod debugger;
 pub mod engine;
 pub mod goal;

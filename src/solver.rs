@@ -1,4 +1,3 @@
-use crate::debugger::Debugger;
 use crate::engine::Engine;
 use crate::goal::{DFSGoal, Goal};
 use crate::state::State;
@@ -7,6 +6,9 @@ use crate::user::User;
 use std::any::{Any, TypeId};
 use std::fmt;
 
+#[cfg(feature = "debugger")]
+use crate::debugger::Debugger;
+
 pub struct Solver<U, E>
 where
     U: User,
@@ -14,6 +16,7 @@ where
 {
     engine: E,
     context: U::UserContext,
+    #[cfg(feature = "debugger")]
     debugger: Debugger<U, E>,
     debug_enabled: bool,
 }
@@ -25,11 +28,12 @@ where
 {
     pub fn new(context: U::UserContext, debug_enabled: bool) -> Solver<U, E> {
         let engine = E::new();
-        //let debugger = debug.then_some(Debugger::new());
+        #[cfg(feature = "debugger")]
         let debugger = Debugger::new();
         Solver {
             engine,
             context,
+            #[cfg(feature = "debugger")]
             debugger,
             debug_enabled,
         }
@@ -75,17 +79,20 @@ where
 
     pub fn next(&mut self, stream: &mut Stream<U, E>) -> Option<Box<State<U, E>>> {
         loop {
+            #[cfg(feature = "debugger")]
             if self.debug_enabled {
                 self.debugger.next_step(stream);
             }
             match std::mem::replace(stream, Stream::Empty) {
                 Stream::Empty => {
+                    #[cfg(feature = "debugger")]
                     if self.debug_enabled {
                         self.debugger.program_exit();
                     }
                     return None;
                 }
                 Stream::Unit(state) => {
+                    #[cfg(feature = "debugger")]
                     if self.debug_enabled {
                         self.debugger.new_solution(stream, &state);
                     }
@@ -94,6 +101,7 @@ where
                 Stream::Lazy(LazyStream(lazy)) => *stream = self.engine.step(self, *lazy),
                 Stream::Cons(state, lazy_stream) => {
                     *stream = Stream::Lazy(lazy_stream);
+                    #[cfg(feature = "debugger")]
                     if self.debug_enabled {
                         self.debugger.new_solution(stream, &state);
                     }

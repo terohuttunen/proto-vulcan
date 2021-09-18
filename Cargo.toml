@@ -30,6 +30,7 @@ core = []
 extras = []
 clpfd = []
 clpz = []
+debugger = []
 
 [workspace]
 members = ["macros"]
