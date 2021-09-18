@@ -1,3 +1,39 @@
+//! # Relations
+//!
+//! Proto-vulcan relations are implemented as Rust-functions that have `LTerm`-type
+//! parameters, and `Goal` return value. Because proto-vulcan is parametrized by
+//! generic `User`-type, functions must be made generic with respect to it if we want
+//! to use anything other than the default `DefaultUser`. A simple function example that
+//! implements a relation that succeeds when argument `s` is an empty list is declared as:
+//! ```rust
+//! extern crate proto_vulcan;
+//! use proto_vulcan::prelude::*;
+//!
+//! pub fn emptyo<U: User, E: Engine<U>>(s: LTerm<U, E>) -> Goal<U, E> {
+//!     proto_vulcan!([] == s)
+//! }
+//! # fn main() {}
+//! ```
+//! ## Recursion
+//! The relation-constructor calls within `proto_vulcan!`-macro are evaluated immediately when the
+//! relation-constructor containing the macro is called; relations within `proto-vulcan!` are just
+//! function calls. Recursive relations must instead use `proto_vulcan_closure!`-macro, that
+//! puts the function calls and necessary context into a closure that will be evaluated later.
+//! ```rust
+//! extern crate proto_vulcan;
+//! use proto_vulcan::prelude::*;
+//!
+//! pub fn append<U: User, E: Engine<U>>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> Goal<U, E> {
+//!     proto_vulcan_closure!(
+//!        match [l, s, ls] {
+//!            [[], x, x] => ,
+//!            [[x | l1], l2, [x | l3]] => append(l1, l2, l3),
+//!        }
+//!     )
+//! }
+//!
+//! # fn main() {}
+//! ```
 #[cfg(feature = "extras")]
 #[doc(hidden)]
 pub mod always;
@@ -64,48 +100,12 @@ pub mod succeed;
 
 // CLP(FD)
 #[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod diseqfd;
-
-#[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod distinctfd;
-
-#[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod domfd;
-
-#[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod infd;
-
-#[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod ltefd;
-
-#[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod ltfd;
-
-#[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod minusfd;
-
-#[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod plusfd;
-
-#[cfg(feature = "clpfd")]
-#[doc(hidden)]
-pub mod timesfd;
+pub mod clpfd;
 
 // CLP(Z)
 #[cfg(feature = "clpz")]
 #[doc(hidden)]
-pub mod plusz;
-#[cfg(feature = "clpz")]
-#[doc(hidden)]
-pub mod timesz;
+pub mod clpz;
 
 #[cfg(feature = "core")]
 #[doc(inline)]
@@ -173,44 +173,44 @@ pub use succeed::succeed;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use diseqfd::diseqfd;
+pub use clpfd::diseqfd::diseqfd;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use distinctfd::distinctfd;
+pub use clpfd::distinctfd::distinctfd;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use infd::infd;
+pub use clpfd::infd::infd;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use infd::infdrange;
+pub use clpfd::infd::infdrange;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use ltefd::ltefd;
+pub use clpfd::ltefd::ltefd;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use ltfd::ltfd;
+pub use clpfd::ltfd::ltfd;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use minusfd::minusfd;
+pub use clpfd::minusfd::minusfd;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use plusfd::plusfd;
+pub use clpfd::plusfd::plusfd;
 
 #[cfg(feature = "clpfd")]
 #[doc(inline)]
-pub use timesfd::timesfd;
+pub use clpfd::timesfd::timesfd;
 
 #[cfg(feature = "clpz")]
 #[doc(inline)]
-pub use plusz::plusz;
+pub use clpz::plusz::plusz;
 
 #[cfg(feature = "clpz")]
 #[doc(inline)]
-pub use timesz::timesz;
+pub use clpz::timesz::timesz;

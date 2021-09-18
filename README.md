@@ -26,14 +26,15 @@
 </a>
 <!-- rustc version -->
 <a href=''>
-  <img src='https://img.shields.io/badge/rustc-1.49.0+-informational.svg'
+  <img src='https://img.shields.io/badge/rustc-1.54.0+-informational.svg'
     alt='Required rustc minimum version' />
 </a>
 
-A [`miniKanren`]-family relational logic programming language embedded in Rust.
+A relational logic programming language embedded in Rust. It started as a yet another 
+[`miniKanren`](http://minikanren.org), but has already evolved into its own language with miniKanren at its core.
 
 In addition to core miniKanren language, proto-vulcan currently provides support for:
-* Depth-first and breadth-first search with inference
+* miniKanren-like breadth-first and Prolog-like depth-first search.
 * Compound types ([Example](examples/tree-nodes.rs))
 * Disequality constraints CLP(Tree)
 * Finite-domain constraints CLP(FD)
@@ -43,9 +44,8 @@ In addition to core miniKanren language, proto-vulcan currently provides support
 * User extension interface
 
 The language is embedded into Rust with macros which parse the language syntax and convert it
-into Rust.
-
-[`miniKanren`]: http://minikanren.org
+into Rust. The language looks a lot like Rust, but isn't. For example, fresh variables are
+presented with Rust closure syntax, and pattern matching looks like Rust match.
 
 
 # Example
@@ -74,33 +74,30 @@ q = 2
 q = 3
 ```
 
-New relations can be defined as Rust-functions using `proto_vulcan!` and
-`proto_vulcan_closure!`-macros. Expressions within `proto_vulcan!` are
-evaluated immediately, whereas expressions within `proto_vulcan_closure!`
-are stored into a closure and evaluated later. Recursive relations must
-use the latter variant.
-```rust
-use proto_vulcan::prelude::*;
+## Embedding in Rust
+To embed proto-vulcan in Rust, four macros are used: `proto_vulcan!`, `proto_vulcan_closure!`,
+`proto_vulcan_query!`, and `lterm!`.
 
-pub fn append(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
-    proto_vulcan_closure!(
-        match [l, s, ls] {
-            [[], x, x] => ,
-            [[x | l1], l2, [x | l3]] => append(l1, l2, l3),
-        }
-    )
-}
-```
-More examples in [documentation](https://docs.rs/proto-vulcan/).
+  * `proto_vulcan!(<goal>)` declares a Proto-vulcan goal, and returns a Rust
+    variable of type `Goal`.
+  * `proto_vulcan_closure!(<goal>)` declares a Proto-vulcan goal, and returns a Rust
+    variable of type `Goal`. The goal expression is evaluated lazily when the goal
+    is evaluated. The closure takes ownership of all variables referenced within the closure.
+  * `proto_vulcan_query!(|a, b, c| { <goal> })` defines a Proto-vulcan query with query-variables
+    `a`, `b` and `c`. The returned value is a `Query`-struct, that when `run`, produces an
+    iterator that can be used to iterate over valid solutions to the logic program. The iterator
+    returns a struct with fields named after the query variables.
+  * `lterm!(<tree-term>)` declares a logic tree-term in Rust code, which can be passed to
+    proto-vulcan program within proto_vulcan! or proto_vulcan_query!, or compared with results.
 
 ## License
 
 Licensed under either of
 
  * Apache License, Version 2.0
-   ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+   ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
  * MIT license
-   ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+   ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
 

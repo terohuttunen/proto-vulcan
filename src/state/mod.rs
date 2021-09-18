@@ -332,13 +332,13 @@ where
     }
 
     fn is_finite_domain(constraint: &Rc<dyn Constraint<U, E>>) -> bool {
-        constraint.is::<crate::relation::ltefd::LessThanOrEqualFdConstraint<U, E>>()
-            || constraint.is::<crate::relation::plusfd::PlusFdConstraint<U, E>>()
-            || constraint.is::<crate::relation::minusfd::MinusFdConstraint<U, E>>()
-            || constraint.is::<crate::relation::timesfd::TimesFdConstraint<U, E>>()
-            || constraint.is::<crate::relation::diseqfd::DiseqFdConstraint<U, E>>()
-            || constraint.is::<crate::relation::distinctfd::DistinctFdConstraint<U, E>>()
-            || constraint.is::<crate::relation::distinctfd::DistinctFd2Constraint<U, E>>()
+        constraint.is::<crate::relation::clpfd::ltefd::LessThanOrEqualFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::clpfd::plusfd::PlusFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::clpfd::minusfd::MinusFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::clpfd::timesfd::TimesFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::clpfd::diseqfd::DiseqFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::clpfd::distinctfd::DistinctFdConstraint<U, E>>()
+            || constraint.is::<crate::relation::clpfd::distinctfd::DistinctFd2Constraint<U, E>>()
     }
 
     /// Verifies that all variables constrained by domain constraints have domains

@@ -1,3 +1,25 @@
+//! # Embeds Rust into Proto-vulcan
+//!
+//! Sometimes it is useful to write goals in Rust and embed them in Proto-vulcan with the built-in
+//! operator `fngoal |state| { <rust-code> }`, where `state` is the current value of the
+//! `State`-monad. The function must return a `Stream<U, E>`, that can be obtained by applying the
+//! returned goal to the input state. For example, a goal that always succeeds, can be written as:
+//! ```rust
+//! # extern crate proto_vulcan;
+//! # use proto_vulcan::prelude::*;
+//! fn example<U: User, E: Engine<U>>() -> Goal<U, E> {
+//!     proto_vulcan!(
+//!         fngoal |engine, state| {
+//!             // There could be more Rust here modifying the `state`
+//!             let g: Goal<U, E> = proto_vulcan!(true);
+//!             g.solve(engine, state)
+//!         }
+//!     )
+//! }
+//! # fn main() {}
+//! ```
+//! See more complex example in `reification.rs` of Proto-vulcan itself.
+//!
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::operator::FnOperatorParam;

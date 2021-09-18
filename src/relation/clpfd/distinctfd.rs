@@ -247,9 +247,9 @@ where
 mod tests {
     use super::distinctfd;
     use crate::prelude::*;
-    use crate::relation::diseqfd::diseqfd;
-    use crate::relation::infd::{infd, infdrange};
-    use crate::relation::ltefd::ltefd;
+    use crate::relation::clpfd::diseqfd::diseqfd;
+    use crate::relation::clpfd::infd::{infd, infdrange};
+    use crate::relation::clpfd::ltefd::ltefd;
 
     #[test]
     fn test_distinctfd_1() {

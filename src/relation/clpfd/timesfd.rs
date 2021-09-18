@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-/// Constrains u + v = w finite domains
+/// Constrains u * v = w finite domains
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
-pub struct PlusFd<U, E>
+pub struct TimesFd<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -21,7 +21,7 @@ where
     w: LTerm<U, E>,
 }
 
-impl<U, E> PlusFd<U, E>
+impl<U, E> TimesFd<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -31,35 +31,35 @@ where
         v: LTerm<U, E>,
         w: LTerm<U, E>,
     ) -> InferredGoal<U, E, G> {
-        InferredGoal::new(G::dynamic(Rc::new(PlusFd { u, v, w })))
+        InferredGoal::new(G::dynamic(Rc::new(TimesFd { u, v, w })))
     }
 }
 
-impl<U, E> Solve<U, E> for PlusFd<U, E>
+impl<U, E> Solve<U, E> for TimesFd<U, E>
 where
     U: User,
     E: Engine<U>,
 {
     fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        match PlusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
+        match TimesFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
         }
     }
 }
 
-pub fn plusfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn timesfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> InferredGoal<U, E, G>
 where
     U: User,
     E: Engine<U>,
     G: AnyGoal<U, E>,
 {
-    PlusFd::new(u, v, w)
+    TimesFd::new(u, v, w)
 }
 
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"))]
-pub struct PlusFdConstraint<U, E>
+pub struct TimesFdConstraint<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -69,7 +69,7 @@ where
     w: LTerm<U, E>,
 }
 
-impl<U, E> PlusFdConstraint<U, E>
+impl<U, E> TimesFdConstraint<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -78,11 +78,11 @@ where
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
-        Rc::new(PlusFdConstraint { u, v, w })
+        Rc::new(TimesFdConstraint { u, v, w })
     }
 }
 
-impl<U, E> Constraint<U, E> for PlusFdConstraint<U, E>
+impl<U, E> Constraint<U, E> for TimesFdConstraint<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -127,7 +127,7 @@ where
         // If all operators are bound to numbers, then we can drop the constraint or fail if
         // constraint is not fulfilled.
         if uwalk.is_number() && vwalk.is_number() && wwalk.is_number() {
-            if uwalk.get_number().unwrap() + vwalk.get_number().unwrap()
+            if uwalk.get_number().unwrap() * vwalk.get_number().unwrap()
                 == wwalk.get_number().unwrap()
             {
                 return Ok(state);
@@ -144,32 +144,37 @@ where
                 let vmax = vdomain.max();
                 let wmin = wdomain.min();
                 let wmax = wdomain.max();
-                // The constraint is: u + v = w
+                // The constraint is: u * v = w  <=>  u = w / v  <=>  v = w / u
                 //
                 // Given domains for u and v, we can then deduce that the domain of w must be
-                // in range [umin + vmin .. umax + vmax]. The constraining domain is built and
+                // in range [umin - vmax .. umax + vmin]. The constraining domain is built and
                 // intersected with the current domain of w in .process_domain()-call.
                 //
                 // Same application of constraining domain is done for the other two variables.
+                //   w = u * v  =>  [umin * vmin .. umax * vmax]
+                //   u = w / v  =>  [wmin / vmax .. wmax / vmin]
+                //   v = w / u  =>  [wmin / umax .. wmax / umin]
                 //
                 // The constraint is not dropped until all variables converge into numbers.
                 Ok(state
                     .process_domain(
                         &wwalk,
                         Rc::new(FiniteDomain::from(
-                            umin.saturating_add(vmin)..=umax.saturating_add(vmax),
+                            umin.saturating_mul(vmin)..=umax.saturating_mul(vmax),
                         )),
                     )?
                     .process_domain(
                         &uwalk,
                         Rc::new(FiniteDomain::from(
-                            wmin.saturating_sub(vmax)..=wmax.saturating_sub(vmin),
+                            wmin.checked_div(vmax).unwrap_or(umin)
+                                ..=wmax.checked_div(vmin).unwrap_or(umax),
                         )),
                     )?
                     .process_domain(
                         &vwalk,
                         Rc::new(FiniteDomain::from(
-                            wmin.saturating_sub(umax)..=wmax.saturating_sub(umin),
+                            wmin.checked_div(umax).unwrap_or(vmin)
+                                ..=wmax.checked_div(umin).unwrap_or(vmax),
                         )),
                     )?
                     .with_constraint(self))
@@ -185,7 +190,7 @@ where
     }
 }
 
-impl<U, E> std::fmt::Display for PlusFdConstraint<U, E>
+impl<U, E> std::fmt::Display for TimesFdConstraint<U, E>
 where
     U: User,
     E: Engine<U>,
@@ -197,56 +202,24 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::plusfd;
+    use super::timesfd;
     use crate::prelude::*;
-    use crate::relation::diseqfd::diseqfd;
-    use crate::relation::infd::infdrange;
+    use crate::relation::clpfd::infd::infdrange;
 
     #[test]
-    fn test_plusfd_1() {
+    fn test_timesfd_1() {
         let query = proto_vulcan_query!(|q| {
-            |x, y, z| {
-                infdrange([x, y, z, q], &(0..=9)),
-                diseqfd(x, y),
-                diseqfd(y, z),
-                diseqfd(x, z),
-                x == 2,
-                q == 3,
-                plusfd(y, 3, z),
+            |x, y| {
+                infdrange([x, y], &(0..=6)),
+                timesfd(x, y, 6),
+                q == [x, y],
             }
         });
         let mut iter = query.run();
-        assert!(iter.next().unwrap().q == 3);
+        assert_eq!(iter.next().unwrap().q, lterm!([1, 6]));
+        assert_eq!(iter.next().unwrap().q, lterm!([2, 3]));
+        assert_eq!(iter.next().unwrap().q, lterm!([3, 2]));
+        assert_eq!(iter.next().unwrap().q, lterm!([6, 1]));
         assert!(iter.next().is_none());
-    }
-
-    #[test]
-    fn test_plusfd_2() {
-        let query = proto_vulcan_query!(|q| {
-            |x, y, z| {
-                q == [x, y, z],
-                infdrange([x, y, z], &(0..=3)),
-                plusfd(x, y, z),
-            }
-        });
-        let iter = query.run();
-        let mut expected = vec![
-            lterm!([0, 0, 0]),
-            lterm!([0, 1, 1]),
-            lterm!([0, 2, 2]),
-            lterm!([1, 0, 1]),
-            lterm!([0, 3, 3]),
-            lterm!([3, 0, 3]),
-            lterm!([1, 1, 2]),
-            lterm!([1, 2, 3]),
-            lterm!([2, 0, 2]),
-            lterm!([2, 1, 3]),
-        ];
-        iter.for_each(|x| {
-            let n = x.q.clone();
-            assert!(expected.contains(&n));
-            expected.retain(|y| &n != y);
-        });
-        assert_eq!(expected.len(), 0);
     }
 }

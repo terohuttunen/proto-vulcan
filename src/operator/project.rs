@@ -1,3 +1,8 @@
+//! # Projection
+//!
+//! For projecting variables there is a built-in operator `project |x, y, z| { <body> }`, where
+//! variables already declared earlier, can be projected within the operator body as specified
+//! by the projection list `|x, y, z|`.
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;

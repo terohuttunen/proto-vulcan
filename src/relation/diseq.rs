@@ -1,3 +1,27 @@
+//! # CLP(Tree)
+//! Proto-vulcan implements disequality constraint for tree-terms with built-in syntax: `x != y`.
+//!
+//! # Example
+//! ```rust
+//! extern crate proto_vulcan;
+//! use proto_vulcan::prelude::*;
+//! fn main() {
+//!     let query = proto_vulcan_query!(|x, y| {
+//!         [x, 1] != [2, y],
+//!     });
+//!
+//!     for result in query.run() {
+//!         println!("{}", result);
+//!     }
+//! }
+//! ```
+//! Because the variables are not fully constrained, they can be anything except specific values,
+//! and the output of the example is:
+//! ```text
+//! x: _.3  where  { _.3 != 2 }
+//! y: _.4  where  { _.4 != 1 }
+//! ```
+//!
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;

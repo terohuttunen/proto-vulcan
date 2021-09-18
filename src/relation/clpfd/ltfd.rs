@@ -2,8 +2,8 @@
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
-use crate::relation::diseqfd::diseqfd;
-use crate::relation::ltefd::ltefd;
+use crate::relation::clpfd::diseqfd::diseqfd;
+use crate::relation::clpfd::ltefd::ltefd;
 use crate::user::User;
 
 pub fn ltfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
@@ -19,8 +19,8 @@ where
 mod tests {
     use super::ltfd;
     use crate::prelude::*;
-    use crate::relation::diseqfd::diseqfd;
-    use crate::relation::infd::infd;
+    use crate::relation::clpfd::diseqfd::diseqfd;
+    use crate::relation::clpfd::infd::infd;
 
     #[test]
     fn test_ltfd_1() {

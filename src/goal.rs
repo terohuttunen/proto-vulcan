@@ -1,3 +1,29 @@
+//! Solvable goals
+//!
+//! Proto-vulcan goals can be divided into two main categories: 1) breadth-first
+//! search (BFS) and 2) depth-first search (DFS) goals. The solutions to BFS goals
+//! are searched in the usual miniKanren-style interleaved fashion, whereas solutions
+//! to DFS goals are searched in the Prolog-style depth-first fashion. Breadth-first
+//! search is fairer, and can provide solutions from multiple infinite streams in
+//! parallel, but requires more resources to maintain the parallel search streams.
+//! Depth-first search on the other hand requires less resources, but cannot handle
+//! infinite streams of solutions. If all solutions are needed, and the order does
+//! not matter, then DFS is recommended.
+//!
+//! * BFS goals are represented by the `Goal<U, E>` type.
+//! * DFS goals are represented by the `DFSGoal<U, E>` type.
+//!
+//! Proto-vulcan allows any branch in the tree of goals to be DFS; by default, queries
+//! are BFS. Preventing embedding of BFS goals in DFS branches is enforced with Rust
+//! typing. A branch can be made DFS with an operator that is strictly DFS, or with
+//! the dfs-operator and inferred goals. The embedding of goals is controlled with
+//! the `GoalCast`-trait; wherever a goal is a parameter of another goal, the macros
+//! generate a `GoalCast::cast_into(goal)`-call to convert the parameter goal into
+//! the kind of the parent goal constructor parameter.
+//!
+//! Often an operator or relation can be either DFS or BFS; such goals can be wrapped
+//! into `InferredGoal<U, E, G>` which is always cast into the search type of the
+//! parent goal.
 use crate::engine::Engine;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
@@ -38,6 +64,7 @@ where
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E>;
 }
 
+/// Breadth-first searched goal
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub enum Goal<U, E>
@@ -103,6 +130,7 @@ where
     }
 }
 
+/// Depth-first searched goal
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub enum DFSGoal<U, E>
@@ -183,6 +211,10 @@ where
     }
 }
 
+/// A wrapper for goals that can be either DFS or BFS.
+///
+/// The correct kind is inferred at compile time from the type of the parent goal
+/// constructor parameter where the goal is placed.
 #[derive(Derivative)]
 #[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
 pub struct InferredGoal<U, E, G>

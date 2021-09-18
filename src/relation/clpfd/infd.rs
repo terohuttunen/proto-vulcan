@@ -2,7 +2,7 @@ use crate::engine::Engine;
 use crate::goal::{AnyGoal, GoalCast, InferredGoal};
 use crate::lterm::LTerm;
 use crate::operator::conj::InferredConj;
-use crate::relation::domfd::DomFd;
+use crate::relation::clpfd::domfd::DomFd;
 use crate::state::FiniteDomain;
 use crate::user::User;
 use std::ops::RangeInclusive;

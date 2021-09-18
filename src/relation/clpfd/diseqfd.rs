@@ -1,5 +1,5 @@
+//! Constrain disequality in finite domains
 use crate::engine::Engine;
-/// Constrain disequality in finite domains
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
@@ -192,7 +192,7 @@ where
 mod tests {
     use super::diseqfd;
     use crate::prelude::*;
-    use crate::relation::infd::infd;
+    use crate::relation::clpfd::infd::infd;
 
     #[test]
     fn test_diseqfd_1() {

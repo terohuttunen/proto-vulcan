@@ -163,7 +163,7 @@ where
 mod tests {
     use super::ltefd;
     use crate::prelude::*;
-    use crate::relation::infd::{infd, infdrange};
+    use crate::relation::clpfd::infd::{infd, infdrange};
 
     #[test]
     fn test_ltefd_1() {

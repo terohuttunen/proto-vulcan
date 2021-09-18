@@ -1,3 +1,14 @@
+//! # For-operator
+//!
+//! For the same effect as miniKanren's `everyg`, proto-vulcan uses the `for`-operator, which
+//! ensures that a goal `g` succeeds for all `x` in collection `coll`. The collection must be such
+//! that it implements `IntoIterator<Item = &LTerm>`.
+//! ```ignore
+//! for x in &coll {
+//!     g
+//! }
+//!
+//! ```
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;

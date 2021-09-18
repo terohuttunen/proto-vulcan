@@ -1,3 +1,51 @@
+//! # Operators
+//!
+//! The signature of operators is different from relations. Operators have different kinds of
+//! parameters, of which only `OperatorParam` and `PatternMatchOperatorParam` are of interest
+//! to user; the parser generates these parameter types for regular operators and pattern-match
+//! operators, respectively.
+//! ```rust
+//! # extern crate proto_vulcan;
+//! # use proto_vulcan::prelude::*;
+//! # use proto_vulcan::goal::AnyGoal;
+//! # use std::marker::PhantomData;
+//! pub struct OperatorParam<'a, U: User, E: Engine<U>, G: AnyGoal<U, E>> {
+//!     pub body: &'a [&'a [G]],
+//!     _phantom: PhantomData<U>,
+//!     _phantom2: PhantomData<E>,
+//! }
+//!
+//! // operator <term> {
+//! //    <pattern0> | <pattern1> => <body0/1>,
+//! //    <pattern2> => <body2>,
+//! //    ...
+//! //    _ => <body_default>,
+//! // }
+//! pub struct PatternMatchOperatorParam<'a, U: User, E: Engine<U>, G: AnyGoal<U, E>> {
+//!     // First goal of each arm is the match-goal
+//!     pub arms: &'a [&'a [G]],
+//!     _phantom: PhantomData<U>,
+//!     _phantom2: PhantomData<E>,
+//! }
+//! ```
+//! Even though the structs are identical, the first goal on each arm of
+//! `PatternMatchOperatorParam` is the pattern and the match-term equality.
+//!
+//! For example `onceo` can be implemented as:
+//! ```rust
+//! extern crate proto_vulcan;
+//! use proto_vulcan::prelude::*;
+//! use proto_vulcan::operator::condu;
+//! use proto_vulcan::operator::OperatorParam;
+//!
+//! pub fn onceo<U: User, E: Engine<U>>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E> {
+//!    let g = proto_vulcan::operator::conj::Conj::from_conjunctions(param.body);
+//!    proto_vulcan!(condu { g })
+//! }
+//! # fn main() {}
+//! ```
+//!
+
 use crate::engine::Engine;
 use crate::goal::AnyGoal;
 use crate::lterm::LTerm;
