@@ -53,7 +53,7 @@ where
 {
     state: State<U, E>,
     f: F,
-    iter: Box<I>,
+    iter: I,
     _phantom: PhantomData<U>,
     _phantom2: PhantomData<E>,
 }
@@ -67,7 +67,7 @@ where
     T: 'static,
     I: Iterator<Item = T> + Clone,
 {
-    pub fn new(state: State<U, E>, f: F, iter: Box<I>) -> MapSumIterator<U, E, G, F, T, I> {
+    pub fn new(state: State<U, E>, f: F, iter: I) -> MapSumIterator<U, E, G, F, T, I> {
         MapSumIterator {
             state,
             f,
@@ -102,7 +102,7 @@ where
     }
 }
 
-pub fn map_sum_iter<U, E, F, T, I>(state: State<U, E>, f: F, iter: Box<I>) -> Stream<U, E>
+pub fn map_sum_iter<U, E, F, T, I>(state: State<U, E>, f: F, iter: I) -> Stream<U, E>
 where
     U: User,
     E: Engine<U>,
