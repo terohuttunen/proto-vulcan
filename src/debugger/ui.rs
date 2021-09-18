@@ -65,10 +65,10 @@ where
                     .unwrap_or_else(|| Duration::from_secs(0));
                 let ui_visible = io_ui_visible.load(Ordering::SeqCst);
 
-                if event::poll(timeout).expect("poll works") {
-                    if let CEvent::Key(key) = event::read().expect("can read events") {
-                        // Generate key events to queue only if the UI is visible
-                        if ui_visible {
+                // Poll IO and Generate key events to queue only if the UI is visible
+                if ui_visible {
+                    if event::poll(timeout).expect("poll works") {
+                        if let CEvent::Key(key) = event::read().expect("can read events") {
                             event_sender
                                 .send(Event::Input(key))
                                 .expect("can send events");
