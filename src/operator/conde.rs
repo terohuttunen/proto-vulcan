@@ -182,9 +182,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::conde;
+    use super::{cond, conde};
+    use crate::operator::dfs;
     use crate::prelude::*;
-    use crate::relation::member::member;
+    use crate::relation::member;
 
     #[test]
     fn test_conde_1() {
@@ -195,13 +196,64 @@ mod test {
                 member(q, [7, 8, 9]),
             }
         });
-        let iter = query.run();
-        let mut expected = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
-        iter.for_each(|x| {
-            let n = x.q.get_number().unwrap();
-            assert!(expected.contains(&n));
-            expected.retain(|y| n != *y);
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().q, 1);
+        assert_eq!(iter.next().unwrap().q, 4);
+        assert_eq!(iter.next().unwrap().q, 2);
+        assert_eq!(iter.next().unwrap().q, 7);
+        assert_eq!(iter.next().unwrap().q, 3);
+        assert_eq!(iter.next().unwrap().q, 5);
+        assert_eq!(iter.next().unwrap().q, 8);
+        assert_eq!(iter.next().unwrap().q, 6);
+        assert_eq!(iter.next().unwrap().q, 9);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_cond_1() {
+        // cond in BFS is same as conde
+        let query = proto_vulcan_query!(|q| {
+            cond {
+                member(q, [1, 2, 3]),
+                member(q, [4, 5, 6]),
+                member(q, [7, 8, 9]),
+            }
         });
-        assert_eq!(expected.len(), 0);
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().q, 1);
+        assert_eq!(iter.next().unwrap().q, 4);
+        assert_eq!(iter.next().unwrap().q, 2);
+        assert_eq!(iter.next().unwrap().q, 7);
+        assert_eq!(iter.next().unwrap().q, 3);
+        assert_eq!(iter.next().unwrap().q, 5);
+        assert_eq!(iter.next().unwrap().q, 8);
+        assert_eq!(iter.next().unwrap().q, 6);
+        assert_eq!(iter.next().unwrap().q, 9);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_cond_2() {
+        // cond in DFS goes depth-first
+        let query = proto_vulcan_query!(|q| {
+            dfs {
+                cond {
+                    member(q, [1, 2, 3]),
+                    member(q, [4, 5, 6]),
+                    member(q, [7, 8, 9]),
+                }
+            }
+        });
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().q, 1);
+        assert_eq!(iter.next().unwrap().q, 2);
+        assert_eq!(iter.next().unwrap().q, 3);
+        assert_eq!(iter.next().unwrap().q, 4);
+        assert_eq!(iter.next().unwrap().q, 5);
+        assert_eq!(iter.next().unwrap().q, 6);
+        assert_eq!(iter.next().unwrap().q, 7);
+        assert_eq!(iter.next().unwrap().q, 8);
+        assert_eq!(iter.next().unwrap().q, 9);
+        assert!(iter.next().is_none());
     }
 }
