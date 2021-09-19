@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::goal::{AnyGoal, Goal};
+use crate::goal::{AnyGoal, DFSGoal, Goal};
 use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream, StreamIterator};
@@ -106,7 +106,7 @@ pub fn map_sum_iter<U, E, F, T, I>(state: State<U, E>, f: F, iter: I) -> Stream<
 where
     U: User,
     E: Engine<U>,
-    F: Fn(T) -> Goal<U, E> + Clone + 'static,
+    F: Fn(T) -> DFSGoal<U, E> + Clone + 'static,
     T: 'static,
     I: Iterator<Item = T> + Clone + 'static,
 {
