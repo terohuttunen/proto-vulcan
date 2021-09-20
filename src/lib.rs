@@ -37,7 +37,6 @@ pub trait Upcast<U, E, SuperType>
 where
     U: User,
     E: Engine<U>,
-    Self: CompoundObject<U, E> + Clone,
     SuperType: CompoundObject<U, E>,
 {
     fn to_super<K: Borrow<Self>>(k: &K) -> SuperType;
