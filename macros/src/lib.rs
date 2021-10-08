@@ -363,6 +363,7 @@ impl ToTokens for TupleCompoundConstructorArgument {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 struct UnnamedCompoundConstructor {
     compound_path: CompoundPath,
@@ -385,6 +386,7 @@ impl ToTokens for UnnamedCompoundConstructor {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 struct NamedCompoundConstructor {
     compound_path: CompoundPath,
@@ -407,6 +409,7 @@ impl ToTokens for NamedCompoundConstructor {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 struct TupleCompoundConstructor {
     paren_token: Paren,
@@ -505,7 +508,7 @@ impl Parse for Argument {
             // Try parsing TreeTerm
             Ok(Argument::TreeTerm(term))
         } else {
-            // If not treeterm, fall back to expression
+            // If not a treeterm, fall back to expression
             let expr = input.parse()?;
             Ok(Argument::Expr { expr, cast: false })
         }
@@ -835,6 +838,7 @@ impl ToTokens for NamedCompoundArgument {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 struct CompoundPath {
     leading_colon: Option<Token![::]>,
@@ -932,6 +936,7 @@ impl ToTokens for CompoundPath {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 struct UnnamedCompoundPattern {
     compound_path: CompoundPath,
@@ -964,6 +969,7 @@ impl ToTokens for UnnamedCompoundPattern {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 struct NamedCompoundPattern {
     compound_path: CompoundPath,
@@ -1096,6 +1102,7 @@ impl ToTokens for Pattern {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 struct PatternArm {
     patterns: Vec<Pattern>,
@@ -1268,6 +1275,7 @@ impl ToTokens for PatternMatchOperator {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 struct For {
     for_token: Token![for],
