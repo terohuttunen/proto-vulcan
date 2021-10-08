@@ -14,7 +14,7 @@ fn diago<U: User, E: Engine<U>>(
 ) -> Goal<U, E> {
     proto_vulcan!(
         |qi_plus_d, qj_plus_d| {
-            infdrange([qi_plus_d, qj_plus_d], #range),
+            infdrange([qi_plus_d, qj_plus_d], {range}),
             plusfd(qi, d, qi_plus_d),
             diseqfd(qi_plus_d, qj),
             plusfd(qj, d, qj_plus_d),
@@ -35,13 +35,13 @@ fn diagonalso<U: User, E: Engine<U>>(
             [] | [_] => ,
             [_, second | rest] => {
                 s == [],
-                diagonalso(#n, #i + 1, #i + 2, rest, [second | rest]),
+                diagonalso({n}, {i + 1}, {i + 2}, rest, [second | rest]),
             },
             [qi | _] => {
                 |qj, tail| {
                     s == [qj | tail],
-                    diago(qi, qj, #LTerm::from(j - i), &(0..=2 * n)),
-                    diagonalso(#n, #i, #j + 1, tail, r),
+                    diago(qi, qj, {j - i}, &(0..=2 * n)),
+                    diagonalso({n}, {i}, {j + 1}, tail, r),
                 }
             }
         }
@@ -57,21 +57,19 @@ fn nqueenso<U: User, E: Engine<U>>(
     if i == 0 {
         proto_vulcan!(|ltail| {
             l == [_ | ltail],
-            [distinctfd(l), diagonalso(#n, #0, #1, ltail, l), queens == l]
+            [distinctfd(l), diagonalso({n}, {0isize}, {1isize}, ltail, l), queens == l]
         })
     } else {
         proto_vulcan_closure!(|x| {
             infdrange(x, &(1..=n)),
-            nqueenso(queens, #n, #i - 1, [x | l])
+            nqueenso(queens, {n}, {i - 1}, [x | l])
         })
     }
 }
 
 fn main() {
-    let n = 8;
-    let query = proto_vulcan_query!(|queens| {
-        nqueenso(queens, #n, #n, [])
-    });
+    let n: isize = 8;
+    let query = proto_vulcan_query!(|queens| { nqueenso(queens, { n }, { n }, []) });
 
     for (i, result) in query.run().enumerate() {
         println!("{}: {}", i, result.queens);
