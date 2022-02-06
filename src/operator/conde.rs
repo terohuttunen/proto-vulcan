@@ -256,4 +256,53 @@ mod test {
         assert_eq!(iter.next().unwrap().q, 9);
         assert!(iter.next().is_none());
     }
+
+    #[test]
+    fn test_cond_3() {
+        let query = proto_vulcan_query!(|q| {
+            dfs {
+                cond {
+                    [true, q == 1],
+                    [q == 2],
+                }
+            }
+        });
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().q, 1);
+        assert_eq!(iter.next().unwrap().q, 2);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_cond_4() {
+        use crate::operator::onceo;
+        let query = proto_vulcan_query!(|q| {
+            onceo {
+                dfs {
+                    cond {
+                        [true, q == 1],
+                        [q == 2],
+                    }
+                }
+            }
+        });
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().q, 1);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_cond_5() {
+        let query = proto_vulcan_query!(|q| {
+            dfs {
+                cond {
+                    [false, q == 1],
+                    [q == 2],
+                }
+            }
+        });
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().q, 2);
+        assert!(iter.next().is_none());
+    }
 }
