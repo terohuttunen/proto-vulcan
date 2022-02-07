@@ -31,8 +31,8 @@ use pattern::{Pattern, PatternMatchOperator, PatternVariableSet};
 mod treeterm;
 use treeterm::TreeTerm;
 
-mod value;
-use value::Value;
+mod literal;
+use literal::Literal;
 
 mod relation;
 use relation::{Argument, Relation};

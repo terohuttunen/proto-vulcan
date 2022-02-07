@@ -1,4 +1,4 @@
-use crate::{PatternVariableSet, Value};
+use crate::{Literal, PatternVariableSet};
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
 use syn::punctuated::Punctuated;
@@ -94,7 +94,7 @@ impl ToTokens for InnerTreeTerm {
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum TreeTerm {
-    Value(Value),
+    Value(Literal),
     Var(Ident),
     Field(FieldAccess),
     Any(Token![_]),
@@ -146,7 +146,7 @@ impl Parse for TreeTerm {
             let id: Ident = input.parse()?;
             Ok(TreeTerm::Var(id))
         } else if input.peek(syn::Lit) {
-            let value: Value = input.parse()?;
+            let value: Literal = input.parse()?;
             Ok(TreeTerm::Value(value))
         } else if input.peek(Bracket) {
             let content;
