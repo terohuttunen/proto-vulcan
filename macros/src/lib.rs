@@ -34,11 +34,8 @@ use treeterm::TreeTerm;
 mod value;
 use value::Value;
 
-mod argument;
-use argument::Argument;
-
 mod relation;
-use relation::Relation;
+use relation::{Argument, Relation};
 
 mod closure;
 use closure::Closure;
