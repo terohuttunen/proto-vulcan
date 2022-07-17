@@ -136,12 +136,9 @@ where
     {
         match self.as_ref() {
             LTermInner::Projection(p) => {
-                let ptr: *const LTermInner<U, E> = self.inner.as_ref();
+                let ptr = Rc::as_ptr(&self.inner) as *mut LTermInner<U, E>;
                 let projected = f(p).into_inner();
-                let _ = unsafe {
-                    let mut_ptr = ptr as *mut LTermInner<U, E>;
-                    std::ptr::replace(mut_ptr, projected.as_ref().clone())
-                };
+                unsafe { *ptr = projected.as_ref().clone() };
             }
             _ => panic!("Cannot project non-Projection LTerm."),
         }
