@@ -9,6 +9,9 @@ repository = "https://github.com/terohuttunen/proto-vulcan/"
 keywords = ["logic", "programming", "language"]
 
 [dependencies]
+pest = "2.7.10"
+pest_derive = "2.7.10"
+thiserror = "1.0"
 proto-vulcan-macros = { version = "=0.1.6", path = "macros" }
 derivative = "2.1"
 

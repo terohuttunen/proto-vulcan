@@ -1,0 +1,171 @@
+// =============================================================================
+// Proto-vulcan Language Grammar (Corrected and Complete)
+// =============================================================================
+
+// -- Whitespace and Comments --
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ line_comment | block_comment }
+line_comment  = _{ "//" ~ (!("\n" | EOI) ~ ANY)* }
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+
+// =============================================================================
+// Top-Level Program Structure
+// =============================================================================
+
+program = {
+    SOI ~ (use_statement | mod_definition | struct_definition | impl_block | relation_definition)* ~ EOI
+}
+
+mod_definition = {
+    "mod" ~ ident ~ search_strategy? ~ "{" ~
+        (use_statement | mod_definition | struct_definition | impl_block | relation_definition)*
+    ~ "}"
+}
+
+struct_definition = {
+    pub_keyword? ~ "struct" ~ type_name ~ (tuple_struct_def | named_struct_def)
+}
+
+tuple_struct_def = {
+    "(" ~ (type_name ~ ("," ~ type_name)*)? ~ ","? ~ ")" ~ ";"
+}
+
+named_struct_def = {
+    "{" ~ (named_field ~ ("," ~ named_field)*)? ~ ","? ~ "}"
+}
+
+named_field = { pub_keyword? ~ ident ~ ":" ~ type_name }
+
+impl_block = {
+    "impl" ~ type_name ~ "{" ~
+        (relation_definition)*
+    ~ "}"
+}
+
+// =============================================================================
+// Imports
+// =============================================================================
+
+use_statement = { "use" ~ use_path ~ ";" }
+
+use_path = {
+    path_segment ~ ("::" ~ (path_segment | glob | list_import))*
+}
+
+path_segment = { ident }
+glob = { "*" }
+list_import = { "{" ~ (import_item ~ ("," ~ import_item)*)? ~ ","? ~ "}" }
+import_item = { ident ~ ("as" ~ ident)? }
+
+
+// =============================================================================
+// Definitions
+// =============================================================================
+
+relation_definition = {
+    pub_keyword? ~ "rel" ~ ident ~ "(" ~ (parameter ~ ("," ~ parameter)*)? ~ ","? ~ ")" ~ search_strategy? ~ "{" ~
+        goal_body
+    ~ "}"
+}
+
+parameter = { ident ~ (":" ~ type_name)? }
+type_name = { ident }
+search_strategy = { "@" ~ ("bfs" | "dfs") }
+pub_keyword = { "pub" }
+
+
+// =============================================================================
+// Goal Structures
+// =============================================================================
+
+goal_body = { (goal ~ ("," | ";")?)* }
+
+goal = {
+    let_declaration |
+    fresh_variables |
+    disjunction |
+    conjunction |
+    pattern_matching |
+    equality_goal |
+    disequality_goal |
+    method_call |
+    relation_call |
+    parenthesized_goal
+}
+
+// -- Variable Declarations --
+let_declaration = { "let" ~ ident ~ ("=" ~ term)? ~ ";" }
+fresh_variables = { "|" ~ (ident ~ ("," ~ ident)*)? ~ "|" ~ "{" ~ goal_body ~ "}" }
+
+// -- Control Flow --
+disjunction = { "conde" ~ "{" ~ goal_body ~ "}" }
+conjunction = { "[" ~ goal_body ~ "]" }
+pattern_matching = { "match" ~ term ~ "{" ~ (pattern_arm ~ ("," ~ pattern_arm)* ~ ","?)? ~ "}" }
+pattern_arm = { pattern ~ "=>" ~ "{" ~ goal_body ~ "}" }
+parenthesized_goal = { "(" ~ goal_body ~ ")" }
+
+// -- Basic Goals --
+equality_goal = { term ~ "==" ~ term }
+disequality_goal = { term ~ "!=" ~ term }
+method_call = { term ~ "." ~ ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
+relation_call = { ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
+
+
+// =============================================================================
+// Terms and Patterns
+// =============================================================================
+
+term = {
+    literal |
+    list_construction |
+    named_struct_construction |
+    compound_construction |
+    parenthesized_term |
+    variable
+}
+
+parenthesized_term = { "(" ~ term ~ ")" }
+
+// -- Patterns (used in `match` arms) --
+pattern = {
+    literal |
+    wildcard |
+    list_pattern |
+    named_struct_pattern |
+    compound_pattern |
+    variable
+}
+
+wildcard = { "_" }
+
+list_pattern = { "[" ~ (pattern_list)? ~ "]" }
+pattern_list = { pattern ~ ("," ~ pattern)* ~ (list_tail)? | list_tail }
+list_tail = { "|" ~ pattern }
+
+named_struct_pattern = {
+    ident ~ "{" ~ (field_pattern ~ ("," ~ field_pattern)*)? ~ ","? ~ "}"
+}
+field_pattern = { ident ~ ":" ~ pattern }
+
+compound_pattern = { ident ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ")" }
+
+// -- Term/Pattern Components --
+literal = { boolean_literal | number_literal | string_literal | char_literal }
+variable = @{ ident }
+list_construction = { "[" ~ (term ~ ("," ~ term)*)? ~ "]" }
+named_struct_construction = {
+    ident ~ "{" ~ (field_initializer ~ ("," ~ field_initializer)*)? ~ ","? ~ "}"
+}
+field_initializer = { ident ~ ":" ~ term }
+compound_construction = { ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
+
+// =============================================================================
+// Lexical Elements
+// =============================================================================
+
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+boolean_literal = @{ "true" | "false" }
+number_literal = @{ "-"? ~ ASCII_DIGIT+ }
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+char_literal = @{ "'" ~ (!"'" ~ ANY) ~ "'" } 
