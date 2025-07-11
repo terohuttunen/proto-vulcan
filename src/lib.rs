@@ -11,7 +11,7 @@ pub use proto_vulcan_macros::{
 #[macro_use]
 extern crate derivative;
 
-pub mod parser;
+pub mod interpreter;
 
 pub mod compound;
 use compound::CompoundObject;

@@ -7,7 +7,7 @@ pub mod ast;
 use ast::*;
 
 #[derive(Parser)]
-#[grammar = "parser/grammar.pest"]
+#[grammar = "interpreter/parser/grammar.pest"]
 pub struct VulcanParser;
 
 #[derive(Error, Debug)]
