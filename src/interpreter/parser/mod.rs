@@ -304,7 +304,7 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
         Rule::any_block => build_any_block(pair),
         Rule::all_block => build_all_block(pair),
         Rule::pattern_matching => Ok(Goal::PatternMatch(build_pattern_matching(pair)?)),
-        Rule::relation_call => Ok(Goal::RelationCall(build_relation_call(pair)?)),
+        Rule::call_expr => Ok(Goal::RelationCall(build_relation_call(pair)?)),
         Rule::method_call => Ok(Goal::MethodCall(build_method_call(pair)?)),
         Rule::equality_goal => {
             let mut inner = pair.into_inner();
@@ -613,7 +613,7 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
         Rule::named_struct_construction => {
             Ok(Term::NamedStruct(build_named_struct_construction(pair)?))
         }
-        Rule::compound_construction => Ok(Term::Compound(build_compound_construction(pair)?)),
+        Rule::call_expr => Ok(Term::Compound(build_compound_construction(pair)?)),
         Rule::parenthesized_term => Ok(Term::Parenthesized(Box::new(build_term(
             pair.into_inner()
                 .next()

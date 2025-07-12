@@ -88,7 +88,7 @@ goal = {
     equality_goal |
     disequality_goal |
     method_call |
-    relation_call |
+    call_expr |
     parenthesized_goal
 }
 
@@ -134,7 +134,7 @@ parenthesized_goal = { "(" ~ goal_body ~ ")" }
 equality_goal = { term ~ "==" ~ term }
 disequality_goal = { term ~ "!=" ~ term }
 method_call = { term ~ "." ~ ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
-relation_call = { ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
+call_expr = { ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
 
 // =============================================================================
 // Terms and Patterns
@@ -144,7 +144,7 @@ term = {
     literal |
     list_construction |
     named_struct_construction |
-    compound_construction |
+    call_expr |
     parenthesized_term |
     variable
 }
@@ -184,7 +184,6 @@ named_struct_construction = {
     ident ~ "{" ~ (field_initializer ~ ("," ~ field_initializer)*)? ~ ","? ~ "}"
 }
 field_initializer = { ident ~ ":" ~ term }
-compound_construction = { ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
 
 // =============================================================================
 // Lexical Elements
