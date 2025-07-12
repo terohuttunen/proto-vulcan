@@ -83,8 +83,104 @@ pub struct Parameter {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SearchStrategy {
-    Bfs,
+    Bfs, // default
     Dfs,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchParams {
+    pub strategy: Option<SearchStrategy>,
+    pub limit: Option<u64>,
+    pub depth: Option<u64>,
+    pub custom_params: Vec<(String, SearchParamValue)>,
+}
+
+impl SearchParams {
+    pub fn new() -> Self {
+        Self {
+            strategy: None,
+            limit: None,
+            depth: None,
+            custom_params: Vec::new(),
+        }
+    }
+
+    pub fn with_strategy(mut self, strategy: SearchStrategy) -> Self {
+        self.strategy = Some(strategy);
+        self
+    }
+
+    pub fn with_limit(mut self, limit: u64) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    pub fn with_depth(mut self, depth: u64) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
+    pub fn with_custom_param(mut self, name: String, value: SearchParamValue) -> Self {
+        self.custom_params.push((name, value));
+        self
+    }
+}
+
+impl Display for SearchParams {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(")?;
+        let mut first = true;
+
+        if let Some(strategy) = &self.strategy {
+            write!(f, "strategy = {}", strategy)?;
+            first = false;
+        }
+
+        if let Some(limit) = self.limit {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "limit = {}", limit)?;
+            first = false;
+        }
+
+        if let Some(depth) = self.depth {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "depth = {}", depth)?;
+            first = false;
+        }
+
+        for (name, value) in &self.custom_params {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{} = {}", name, value)?;
+            first = false;
+        }
+
+        write!(f, ")")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SearchParamValue {
+    Number(i64),
+    String(String),
+    Identifier(String),
+    Boolean(bool),
+}
+
+impl Display for SearchParamValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SearchParamValue::Number(n) => write!(f, "{}", n),
+            SearchParamValue::String(s) => write!(f, "\"{}\"", s),
+            SearchParamValue::Identifier(id) => write!(f, "{}", id),
+            SearchParamValue::Boolean(b) => write!(f, "{}", b),
+        }
+    }
 }
 
 pub type GoalBody = Vec<Goal>;
@@ -118,11 +214,39 @@ pub struct FreshVariables {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Disjunction {
     pub body: GoalBody,
+    pub params: Option<SearchParams>,
+}
+
+impl Disjunction {
+    pub fn new(body: GoalBody) -> Self {
+        Self { body, params: None }
+    }
+
+    pub fn with_params(body: GoalBody, params: SearchParams) -> Self {
+        Self {
+            body,
+            params: Some(params),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conjunction {
     pub body: GoalBody,
+    pub params: Option<SearchParams>,
+}
+
+impl Conjunction {
+    pub fn new(body: GoalBody) -> Self {
+        Self { body, params: None }
+    }
+
+    pub fn with_params(body: GoalBody, params: SearchParams) -> Self {
+        Self {
+            body,
+            params: Some(params),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -402,8 +526,8 @@ impl Display for Parameter {
 impl Display for SearchStrategy {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SearchStrategy::Bfs => write!(f, "@bfs"),
-            SearchStrategy::Dfs => write!(f, "@dfs"),
+            SearchStrategy::Bfs => write!(f, "bfs"),
+            SearchStrategy::Dfs => write!(f, "dfs"),
         }
     }
 }
@@ -453,9 +577,13 @@ impl Display for FreshVariables {
 
 impl Display for Disjunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "conde {{")?;
+        write!(f, "any")?;
+        if let Some(params) = &self.params {
+            write!(f, "{}", params)?;
+        }
+        writeln!(f, " {{")?;
         for goal in &self.body {
-            writeln!(f, "    {},", goal)?;
+            writeln!(f, "    {}", goal)?;
         }
         write!(f, "}}")
     }
@@ -463,11 +591,15 @@ impl Display for Disjunction {
 
 impl Display for Conjunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[")?;
-        for goal in &self.body {
-            write!(f, "{}, ", goal)?;
+        write!(f, "all")?;
+        if let Some(params) = &self.params {
+            write!(f, "{}", params)?;
         }
-        write!(f, "]")
+        writeln!(f, " {{")?;
+        for goal in &self.body {
+            writeln!(f, "    {}", goal)?;
+        }
+        write!(f, "}}")
     }
 }
 
@@ -653,5 +785,53 @@ impl Display for CompoundPattern {
             first = false;
         }
         write!(f, ")")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_params_display() {
+        let params = SearchParams::new()
+            .with_strategy(SearchStrategy::Dfs)
+            .with_limit(100)
+            .with_depth(5)
+            .with_custom_param(
+                "mode".to_string(),
+                SearchParamValue::String("exhaustive".to_string()),
+            );
+
+        assert_eq!(
+            params.to_string(),
+            "(strategy = dfs, limit = 100, depth = 5, mode = \"exhaustive\")"
+        );
+    }
+
+    #[test]
+    fn test_search_params_empty() {
+        let params = SearchParams::new();
+        assert_eq!(params.to_string(), "()");
+    }
+
+    #[test]
+    fn test_search_params_single() {
+        let params = SearchParams::new().with_strategy(SearchStrategy::Bfs);
+        assert_eq!(params.to_string(), "(strategy = bfs)");
+    }
+
+    #[test]
+    fn test_search_param_value_display() {
+        assert_eq!(SearchParamValue::Number(42).to_string(), "42");
+        assert_eq!(
+            SearchParamValue::String("test".to_string()).to_string(),
+            "\"test\""
+        );
+        assert_eq!(
+            SearchParamValue::Identifier("var".to_string()).to_string(),
+            "var"
+        );
+        assert_eq!(SearchParamValue::Boolean(true).to_string(), "true");
     }
 }

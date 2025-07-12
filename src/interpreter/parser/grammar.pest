@@ -8,7 +8,6 @@ COMMENT    = _{ line_comment | block_comment }
 line_comment  = _{ "//" ~ (!("\n" | EOI) ~ ANY)* }
 block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
-
 // =============================================================================
 // Top-Level Program Structure
 // =============================================================================
@@ -58,7 +57,6 @@ glob = { "*" }
 list_import = { "{" ~ (import_item ~ ("," ~ import_item)*)? ~ ","? ~ "}" }
 import_item = { ident ~ ("as" ~ ident)? }
 
-
 // =============================================================================
 // Definitions
 // =============================================================================
@@ -71,11 +69,9 @@ relation_definition = {
 
 parameter = { ident ~ (":" ~ type_name)? }
 type_name = { ident }
-search_strategy = { "@bfs" | "@dfs" }
 pub_keyword = { "pub" }
 attribute = { "@" ~ ident ~ ("(" ~ attribute_args ~ ")")? }
 attribute_args = { ident ~ ("," ~ ident)* }
-
 
 // =============================================================================
 // Goal Structures
@@ -86,8 +82,8 @@ goal_body = { (goal ~ ("," | ";")?)* }
 goal = {
     let_declaration |
     fresh_variables |
-    disjunction |
-    conjunction |
+    any_block |
+    all_block |
     pattern_matching |
     equality_goal |
     disequality_goal |
@@ -101,8 +97,35 @@ let_declaration = { "let" ~ ident ~ ("=" ~ term)? ~ ";" }
 fresh_variables = { "|" ~ (ident ~ ("," ~ ident)*)? ~ "|" ~ "{" ~ goal_body ~ "}" }
 
 // -- Control Flow --
-disjunction = { "conde" ~ "{" ~ goal_body ~ "}" }
-conjunction = { "[" ~ goal_body ~ "]" }
+any_block = {
+    "any" ~ search_params? ~ "{" ~ goal_body ~ "}"
+}
+
+all_block = {
+    "all" ~ search_params? ~ "{" ~ goal_body ~ "}"
+}
+
+search_strategy = { "@" ~ strategy_value }
+
+search_params = {
+    "(" ~ search_param ~ ("," ~ search_param)* ~ ","? ~ ")"
+}
+
+search_param = _{
+    strategy_param |
+    limit_param |
+    depth_param |
+    custom_param
+}
+
+strategy_value = @{ "bfs" | "dfs" }
+strategy_param = { "strategy" ~ "=" ~ (strategy_value | ident) }
+limit_param = { "limit" ~ "=" ~ (number_literal | string_literal) }
+depth_param = { "depth" ~ "=" ~ (number_literal | string_literal) }
+custom_param = { ident ~ "=" ~ param_value }
+
+param_value = { number_literal | string_literal | boolean_literal | ident }
+
 pattern_matching = { "match" ~ term ~ "{" ~ (pattern_arm ~ ("," ~ pattern_arm)* ~ ","?)? ~ "}" }
 pattern_arm = { pattern ~ "=>" ~ "{" ~ goal_body ~ "}" }
 parenthesized_goal = { "(" ~ goal_body ~ ")" }
@@ -112,7 +135,6 @@ equality_goal = { term ~ "==" ~ term }
 disequality_goal = { term ~ "!=" ~ term }
 method_call = { term ~ "." ~ ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
 relation_call = { ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
-
 
 // =============================================================================
 // Terms and Patterns
@@ -155,8 +177,8 @@ compound_pattern = { ident ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ")" }
 // -- Term/Pattern Components --
 literal = { boolean_literal | number_literal | string_literal | char_literal }
 variable = @{ ident }
-list_construction = { "[" ~ (term_list)? ~ "]" }
-term_list = { term ~ ("," ~ term)* ~ (term_tail)? | term_tail }
+list_construction = { "[" ~ term_list? ~ "]" }
+term_list = { term ~ ("," ~ term)* ~ term_tail? }
 term_tail = { "|" ~ term }
 named_struct_construction = {
     ident ~ "{" ~ (field_initializer ~ ("," ~ field_initializer)*)? ~ ","? ~ "}"

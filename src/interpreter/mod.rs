@@ -496,23 +496,22 @@ mod tests {
 
     #[test]
     fn test_end_to_end_complex_goals() {
-        // Test a program with complex goal structures
         let program_source = r#"
             rel complex_goal(x, y, z) {
-                [
+                all {
                     x == 1,
                     |fresh_var| {
                         fresh_var == 2,
                         y == fresh_var
                     },
                     z == 3
-                ]
+                }
             }
             
             rel disjunctive_goal(x) {
-                conde {
-                    x == "option1";
-                    x == "option2";
+                any {
+                    x == "option1",
+                    x == "option2",
                     x == "option3"
                 }
             }

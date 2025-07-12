@@ -115,7 +115,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             AstGoal::PatternMatch(pattern_match) => {
                 self.ast_pattern_match_to_runtime(pattern_match)
             }
-            AstGoal::Conjunction(AstConjunction { body }) => {
+            AstGoal::Conjunction(AstConjunction { body, params: _ }) => {
                 let mut conj_goal = Goal::succeed();
                 for g in body.iter().rev() {
                     let runtime_goal = self.ast_goal_to_runtime(g)?;

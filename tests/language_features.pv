@@ -1,0 +1,47 @@
+// tests/language_features.pv
+
+// --- Conjunction Tests (AND) ---
+
+@test
+rel conjunction_succeeds() {
+    // Both goals must succeed for the conjunction to succeed.
+    assert_eq(1, 1),
+    assert_eq("a", "a")
+}
+
+@test(should_fail)
+rel conjunction_fails_on_second_goal() {
+    // The first goal succeeds, but the second one fails.
+    assert_eq(1, 1),
+    assert_eq(1, 2)
+}
+
+// --- Disjunction Tests (OR) ---
+
+@test
+rel disjunction_succeeds_on_first_branch() {
+    // Match provides a way to express disjunction.
+    // This test succeeds because the first branch is taken.
+    match 1 {
+        1 => { assert_eq(1, 1) },
+        2 => { assert_eq(1, 2) }
+    }
+}
+
+@test
+rel disjunction_succeeds_on_second_branch() {
+    // This test succeeds because the second branch is taken.
+    match 2 {
+        1 => { assert_eq(1, 2) },
+        2 => { assert_eq(1, 1) }
+    }
+}
+
+@test(should_fail)
+rel disjunction_fails_on_no_match() {
+    // This test fails because neither branch of the match can succeed.
+    match 3 {
+        1 => { succeed() },
+        2 => { succeed() }
+    }
+} 

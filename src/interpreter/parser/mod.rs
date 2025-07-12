@@ -272,13 +272,14 @@ fn build_parameter(pair: Pair<Rule>) -> ParseResult<Parameter> {
 }
 
 fn build_search_strategy(pair: Pair<Rule>) -> ParseResult<SearchStrategy> {
-    // The search_strategy rule is "@" ~ ("bfs" | "dfs")
-    // But Pest combines them into a single token like "@dfs"
-    let strategy_str = pair.as_str();
-    match strategy_str {
-        "@bfs" => Ok(SearchStrategy::Bfs),
-        "@dfs" => Ok(SearchStrategy::Dfs),
-        _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
+    let strategy_value = pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| ParseError::MissingRule(Rule::strategy_value))?;
+    match strategy_value.as_str() {
+        "bfs" => Ok(SearchStrategy::Bfs),
+        "dfs" => Ok(SearchStrategy::Dfs),
+        _ => Err(ParseError::UnexpectedRule(Rule::strategy_value)),
     }
 }
 
@@ -300,8 +301,8 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
     match pair.as_rule() {
         Rule::let_declaration => Ok(Goal::Let(build_let_declaration(pair)?)),
         Rule::fresh_variables => Ok(Goal::Fresh(build_fresh_variables(pair)?)),
-        Rule::disjunction => Ok(Goal::Disjunction(build_disjunction(pair)?)),
-        Rule::conjunction => Ok(Goal::Conjunction(build_conjunction(pair)?)),
+        Rule::any_block => build_any_block(pair),
+        Rule::all_block => build_all_block(pair),
         Rule::pattern_matching => Ok(Goal::PatternMatch(build_pattern_matching(pair)?)),
         Rule::relation_call => Ok(Goal::RelationCall(build_relation_call(pair)?)),
         Rule::method_call => Ok(Goal::MethodCall(build_method_call(pair)?)),
@@ -321,6 +322,159 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
             let body = build_goal_body(pair.into_inner().next().unwrap())?;
             Ok(Goal::Parenthesized(body))
         }
+        _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
+    }
+}
+
+fn build_any_block(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let mut inner = pair.into_inner();
+    let mut params = None;
+    let mut body = vec![];
+
+    while let Some(part) = inner.next() {
+        match part.as_rule() {
+            Rule::search_params => {
+                params = Some(build_search_params(part)?);
+            }
+            Rule::goal_body => {
+                body = build_goal_body(part)?;
+            }
+            _ => return Err(ParseError::UnexpectedRule(part.as_rule())),
+        }
+    }
+
+    Ok(Goal::Disjunction(Disjunction { body, params }))
+}
+
+fn build_all_block(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let mut inner = pair.into_inner();
+    let mut params = None;
+    let mut body = vec![];
+
+    while let Some(part) = inner.next() {
+        match part.as_rule() {
+            Rule::search_params => {
+                params = Some(build_search_params(part)?);
+            }
+            Rule::goal_body => {
+                body = build_goal_body(part)?;
+            }
+            _ => return Err(ParseError::UnexpectedRule(part.as_rule())),
+        }
+    }
+
+    Ok(Goal::Conjunction(Conjunction { body, params }))
+}
+
+fn build_search_params(pair: Pair<Rule>) -> ParseResult<SearchParams> {
+    let mut params = SearchParams::new();
+
+    for param_pair in pair.into_inner() {
+        match param_pair.as_rule() {
+            Rule::strategy_param => {
+                let strategy_value = param_pair
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| ParseError::MissingRule(Rule::strategy_value))?;
+                match strategy_value.as_rule() {
+                    Rule::strategy_value => {
+                        let strategy = match strategy_value.as_str() {
+                            "bfs" => SearchStrategy::Bfs,
+                            "dfs" => SearchStrategy::Dfs,
+                            _ => return Err(ParseError::UnexpectedRule(Rule::strategy_value)),
+                        };
+                        params = params.with_strategy(strategy);
+                    }
+                    Rule::ident => return Err(ParseError::UnexpectedRule(Rule::strategy_value)),
+                    _ => return Err(ParseError::UnexpectedRule(strategy_value.as_rule())),
+                }
+            }
+            Rule::limit_param => {
+                let limit_str = param_pair
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| ParseError::MissingRule(Rule::limit_param))?;
+                match limit_str.as_rule() {
+                    Rule::number_literal => {
+                        let limit = limit_str
+                            .as_str()
+                            .parse::<u64>()
+                            .map_err(|_| ParseError::UnexpectedRule(Rule::limit_param))?;
+                        params = params.with_limit(limit);
+                    }
+                    Rule::string_literal => {
+                        return Err(ParseError::UnexpectedRule(Rule::limit_param))
+                    }
+                    _ => return Err(ParseError::UnexpectedRule(limit_str.as_rule())),
+                }
+            }
+            Rule::depth_param => {
+                let depth_str = param_pair
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| ParseError::MissingRule(Rule::depth_param))?;
+                match depth_str.as_rule() {
+                    Rule::number_literal => {
+                        let depth = depth_str
+                            .as_str()
+                            .parse::<u64>()
+                            .map_err(|_| ParseError::UnexpectedRule(Rule::depth_param))?;
+                        params = params.with_depth(depth);
+                    }
+                    Rule::string_literal => {
+                        return Err(ParseError::UnexpectedRule(Rule::depth_param))
+                    }
+                    _ => return Err(ParseError::UnexpectedRule(depth_str.as_rule())),
+                }
+            }
+            Rule::custom_param => {
+                let mut inner = param_pair.into_inner();
+                let name = inner
+                    .next()
+                    .ok_or_else(|| ParseError::MissingRule(Rule::custom_param))?
+                    .as_str()
+                    .to_string();
+                let value_pair = inner
+                    .next()
+                    .ok_or_else(|| ParseError::MissingRule(Rule::custom_param))?;
+                let value = if value_pair.as_rule() == Rule::param_value {
+                    let inner_value = value_pair
+                        .into_inner()
+                        .next()
+                        .ok_or_else(|| ParseError::MissingRule(Rule::param_value))?;
+                    build_param_value(inner_value)?
+                } else {
+                    build_param_value(value_pair)?
+                };
+                params = params.with_custom_param(name, value);
+            }
+            _ => return Err(ParseError::UnexpectedRule(param_pair.as_rule())),
+        }
+    }
+
+    Ok(params)
+}
+
+fn build_param_value(pair: Pair<Rule>) -> ParseResult<SearchParamValue> {
+    match pair.as_rule() {
+        Rule::number_literal => {
+            Ok(SearchParamValue::Number(pair.as_str().parse().map_err(
+                |_| ParseError::UnexpectedRule(Rule::number_literal),
+            )?))
+        }
+        Rule::string_literal => {
+            let s = pair.as_str();
+            Ok(SearchParamValue::String(s[1..s.len() - 1].to_string()))
+        }
+        Rule::boolean_literal => {
+            let b = pair.as_str();
+            match b {
+                "true" => Ok(SearchParamValue::Boolean(true)),
+                "false" => Ok(SearchParamValue::Boolean(false)),
+                _ => Err(ParseError::UnexpectedRule(Rule::boolean_literal)),
+            }
+        }
+        Rule::ident => Ok(SearchParamValue::Identifier(pair.as_str().to_string())),
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
 }
@@ -354,14 +508,44 @@ fn build_fresh_variables(pair: Pair<Rule>) -> ParseResult<FreshVariables> {
     })
 }
 
-fn build_disjunction(pair: Pair<Rule>) -> ParseResult<Disjunction> {
-    let body = build_goal_body(pair.into_inner().next().unwrap())?;
-    Ok(Disjunction { body })
+fn build_disjunction(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let mut inner = pair.into_inner();
+    let mut params = None;
+    let mut body = vec![];
+
+    while let Some(part) = inner.next() {
+        match part.as_rule() {
+            Rule::search_params => {
+                params = Some(build_search_params(part)?);
+            }
+            Rule::goal_body => {
+                body = build_goal_body(part)?;
+            }
+            _ => return Err(ParseError::UnexpectedRule(part.as_rule())),
+        }
+    }
+
+    Ok(Goal::Disjunction(Disjunction { body, params }))
 }
 
-fn build_conjunction(pair: Pair<Rule>) -> ParseResult<Conjunction> {
-    let body = build_goal_body(pair.into_inner().next().unwrap())?;
-    Ok(Conjunction { body })
+fn build_conjunction(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let mut inner = pair.into_inner();
+    let mut params = None;
+    let mut body = vec![];
+
+    while let Some(part) = inner.next() {
+        match part.as_rule() {
+            Rule::search_params => {
+                params = Some(build_search_params(part)?);
+            }
+            Rule::goal_body => {
+                body = build_goal_body(part)?;
+            }
+            _ => return Err(ParseError::UnexpectedRule(part.as_rule())),
+        }
+    }
+
+    Ok(Goal::Conjunction(Conjunction { body, params }))
 }
 
 fn build_pattern_matching(pair: Pair<Rule>) -> ParseResult<PatternMatching> {
@@ -409,32 +593,31 @@ fn build_method_call(pair: Pair<Rule>) -> ParseResult<MethodCall> {
 fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
     if pair.as_rule() == Rule::term {
         // If we get a generic term, we need to extract the specific term type
-        let inner = pair.into_inner().next().unwrap();
+        let inner = pair
+            .into_inner()
+            .next()
+            .ok_or_else(|| ParseError::MissingRule(Rule::term))?;
         return build_term(inner);
     }
 
     match pair.as_rule() {
-        Rule::literal => Ok(Term::Literal(build_literal(
-            pair.into_inner().next().unwrap(),
-        )?)),
-        Rule::variable => Ok(Term::Variable(pair.as_str().to_string())),
-        Rule::list_construction => {
-            if let Some(term_list_pair) = pair.into_inner().next() {
-                Ok(Term::List(build_list_construction(term_list_pair)?))
-            } else {
-                // Empty list
-                Ok(Term::List(ListConstruction {
-                    elements: vec![],
-                    tail: None,
-                }))
-            }
+        Rule::literal => {
+            let lit_pair = pair
+                .into_inner()
+                .next()
+                .ok_or_else(|| ParseError::MissingRule(Rule::literal))?;
+            Ok(Term::Literal(build_literal(lit_pair)?))
         }
+        Rule::variable => Ok(Term::Variable(pair.as_str().to_string())),
+        Rule::list_construction => Ok(Term::List(build_list_construction(pair)?)),
         Rule::named_struct_construction => {
             Ok(Term::NamedStruct(build_named_struct_construction(pair)?))
         }
         Rule::compound_construction => Ok(Term::Compound(build_compound_construction(pair)?)),
         Rule::parenthesized_term => Ok(Term::Parenthesized(Box::new(build_term(
-            pair.into_inner().next().unwrap(),
+            pair.into_inner()
+                .next()
+                .ok_or_else(|| ParseError::MissingRule(Rule::term))?,
         )?))),
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
@@ -562,18 +745,20 @@ fn build_list_construction(pair: Pair<Rule>) -> ParseResult<ListConstruction> {
     let mut elements = vec![];
     let mut tail = None;
 
-    let mut inner = pair.into_inner();
-    while let Some(p) = inner.next() {
-        match p.as_rule() {
-            Rule::term => {
-                elements.push(build_term(p)?);
+    if let Some(term_list_pair) = pair.into_inner().next() {
+        let mut inner = term_list_pair.into_inner();
+        while let Some(part) = inner.next() {
+            match part.as_rule() {
+                Rule::term => {
+                    elements.push(build_term(part)?);
+                }
+                Rule::term_tail => {
+                    if let Some(tail_term) = part.into_inner().next() {
+                        tail = Some(Box::new(build_term(tail_term)?));
+                    }
+                }
+                _ => return Err(ParseError::UnexpectedRule(part.as_rule())),
             }
-            Rule::term_tail => {
-                let tail_term_pair = p.into_inner().next().unwrap();
-                tail = Some(Box::new(build_term(tail_term_pair)?));
-                break; // No more elements after tail
-            }
-            _ => return Err(ParseError::UnexpectedRule(p.as_rule())),
         }
     }
 
@@ -875,7 +1060,7 @@ mod tests {
     #[test]
     fn test_parse_disjunction() {
         let input = r#"rel test() { 
-            conde {
+            any {
                 a == 1,
                 a == 2
             }
@@ -899,6 +1084,7 @@ mod tests {
                             Term::Literal(Literal::Number("2".to_string())),
                         ),
                     ],
+                    params: None,
                 })],
             })],
         };
@@ -907,7 +1093,7 @@ mod tests {
 
     #[test]
     fn test_parse_conjunction() {
-        let input = "rel test() { [a == 1, b == 2] }";
+        let input = "rel test() { all { a == 1, b == 2 } }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
@@ -927,6 +1113,7 @@ mod tests {
                             Term::Literal(Literal::Number("2".to_string())),
                         ),
                     ],
+                    params: None,
                 })],
             })],
         };
@@ -1367,76 +1554,53 @@ mod tests {
 
     #[test]
     fn test_parse_complex_example() {
-        let input = r#"
-        use std::collections::HashMap;
-        
-        pub struct Point { 
-            pub x: i32, 
-            pub y: i32 
-        }
-        
-        impl Point {
-            pub rel new(x, y, p) @dfs {
-                p == Point { x: x, y: y }
-            }
-        }
-        
-        @test
-        pub rel complex_goal(a, b, c) {
-            conde {
-                [a == 1, b == 2],
-                |x, y| {
-                    a == x,
-                    b == y,
-                    c == [x, y]
+        let input = r#"rel test() {
+            all {
+                a == 1,
+                any(strategy = dfs, depth = 3) {
+                    b == 2,
+                    c == 3
                 }
             }
-        }
-        "#;
+        }"#;
         let ast = parse_str(input).unwrap();
-
-        // Just verify that it parses successfully and has the right structure
-        assert_eq!(ast.items.len(), 4);
-
-        // Check use statement
-        if let Item::Use(use_stmt) = &ast.items[0] {
-            assert_eq!(
-                use_stmt.path,
-                UsePath::Simple(vec![
-                    "std".to_string(),
-                    "collections".to_string(),
-                    "HashMap".to_string(),
-                ])
-            );
-        } else {
-            panic!("Expected use statement");
-        }
-
-        // Check struct definition
-        if let Item::Struct(struct_def) = &ast.items[1] {
-            assert_eq!(struct_def.name, "Point");
-            assert!(struct_def.is_pub);
-        } else {
-            panic!("Expected struct definition");
-        }
-
-        // Check impl block
-        if let Item::Impl(impl_block) = &ast.items[2] {
-            assert_eq!(impl_block.type_name, "Point");
-            assert_eq!(impl_block.relations.len(), 1);
-        } else {
-            panic!("Expected impl block");
-        }
-
-        // Check relation definition
-        if let Item::Relation(relation_def) = &ast.items[3] {
-            assert_eq!(relation_def.name, "complex_goal");
-            assert!(relation_def.is_pub);
-            assert_eq!(relation_def.attributes.len(), 1);
-            assert_eq!(relation_def.attributes[0].name, "test");
-        } else {
-            panic!("Expected relation definition");
-        }
+        let expected = Program {
+            items: vec![Item::Relation(RelationDefinition {
+                is_pub: false,
+                attributes: vec![],
+                name: "test".to_string(),
+                parameters: vec![],
+                search_strategy: None,
+                body: vec![Goal::Conjunction(Conjunction {
+                    body: vec![
+                        Goal::Equality(
+                            Term::Variable("a".to_string()),
+                            Term::Literal(Literal::Number("1".to_string())),
+                        ),
+                        Goal::Disjunction(Disjunction {
+                            body: vec![
+                                Goal::Equality(
+                                    Term::Variable("b".to_string()),
+                                    Term::Literal(Literal::Number("2".to_string())),
+                                ),
+                                Goal::Equality(
+                                    Term::Variable("c".to_string()),
+                                    Term::Literal(Literal::Number("3".to_string())),
+                                ),
+                            ],
+                            params: Some(SearchParams {
+                                strategy: Some(SearchStrategy::Dfs),
+                                depth: Some(3),
+                                limit: None,
+                                custom_params: vec![],
+                            }),
+                        }),
+                    ],
+                    params: None,
+                })],
+            })],
+        };
+        assert_eq!(ast, expected);
     }
 
     #[test]
@@ -1462,5 +1626,358 @@ mod tests {
         assert_eq!(rel_def.attributes.len(), 1);
         assert_eq!(rel_def.attributes[0].name, "test");
         assert_eq!(rel_def.search_strategy, None);
+    }
+
+    #[test]
+    fn test_parse_simple_conjunction() {
+        let input = r#"rel test() {
+            all {
+                a == 1,
+                b == 2
+            }
+        }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::Conjunction(conj) => {
+                        let expected = Conjunction::new(vec![
+                            Goal::Equality(
+                                Term::Variable("a".to_string()),
+                                Term::Literal(Literal::Number("1".to_string())),
+                            ),
+                            Goal::Equality(
+                                Term::Variable("b".to_string()),
+                                Term::Literal(Literal::Number("2".to_string())),
+                            ),
+                        ]);
+                        assert_eq!(conj, &expected);
+                    }
+                    _ => panic!("Expected conjunction"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_simple_disjunction() {
+        let input = r#"rel test() {
+            any {
+                a == 1,
+                b == 2
+            }
+        }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::Disjunction(disj) => {
+                        let expected = Disjunction::new(vec![
+                            Goal::Equality(
+                                Term::Variable("a".to_string()),
+                                Term::Literal(Literal::Number("1".to_string())),
+                            ),
+                            Goal::Equality(
+                                Term::Variable("b".to_string()),
+                                Term::Literal(Literal::Number("2".to_string())),
+                            ),
+                        ]);
+                        assert_eq!(disj, &expected);
+                    }
+                    _ => panic!("Expected disjunction"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_conjunction_with_strategy() {
+        let input = r#"rel test() {
+            all(strategy = dfs) {
+                a == 1,
+                b == 2
+            }
+        }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => match &rel.body[0] {
+                Goal::Conjunction(conj) => {
+                    let mut params = SearchParams::new();
+                    params.strategy = Some(SearchStrategy::Dfs);
+                    let expected = Conjunction::with_params(
+                        vec![
+                            Goal::Equality(
+                                Term::Variable("a".to_string()),
+                                Term::Literal(Literal::Number("1".to_string())),
+                            ),
+                            Goal::Equality(
+                                Term::Variable("b".to_string()),
+                                Term::Literal(Literal::Number("2".to_string())),
+                            ),
+                        ],
+                        params,
+                    );
+                    assert_eq!(conj, &expected);
+                }
+                _ => panic!("Expected conjunction"),
+            },
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_disjunction_with_limit() {
+        let input = r#"rel test() {
+            any(limit = 10) {
+                a == 1,
+                b == 2
+            }
+        }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => match &rel.body[0] {
+                Goal::Disjunction(disj) => {
+                    let mut params = SearchParams::new();
+                    params.limit = Some(10);
+                    let expected = Disjunction::with_params(
+                        vec![
+                            Goal::Equality(
+                                Term::Variable("a".to_string()),
+                                Term::Literal(Literal::Number("1".to_string())),
+                            ),
+                            Goal::Equality(
+                                Term::Variable("b".to_string()),
+                                Term::Literal(Literal::Number("2".to_string())),
+                            ),
+                        ],
+                        params,
+                    );
+                    assert_eq!(disj, &expected);
+                }
+                _ => panic!("Expected disjunction"),
+            },
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_conjunction_with_multiple_params() {
+        let input = r#"rel test() {
+            all(strategy = dfs, depth = 5, limit = 100) {
+                a == 1,
+                b == 2
+            }
+        }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => match &rel.body[0] {
+                Goal::Conjunction(conj) => {
+                    assert!(conj.params.is_some());
+                    let params = conj.params.as_ref().unwrap();
+                    assert_eq!(params.strategy, Some(SearchStrategy::Dfs));
+                    assert_eq!(params.depth, Some(5));
+                    assert_eq!(params.limit, Some(100));
+                }
+                _ => panic!("Expected conjunction"),
+            },
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_blocks() {
+        let input = r#"rel test() {
+            all {
+                a == 1,
+                any(strategy = dfs, depth = 3) {
+                    b == 2,
+                    c == 3
+                }
+            }
+        }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => match &rel.body[0] {
+                Goal::Conjunction(conj) => {
+                    assert_eq!(conj.body.len(), 2);
+                    match &conj.body[1] {
+                        Goal::Disjunction(disj) => {
+                            assert!(disj.params.is_some());
+                            let params = disj.params.as_ref().unwrap();
+                            assert_eq!(params.strategy, Some(SearchStrategy::Dfs));
+                            assert_eq!(params.depth, Some(3));
+                        }
+                        _ => panic!("Expected nested disjunction"),
+                    }
+                }
+                _ => panic!("Expected conjunction"),
+            },
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_custom_params() {
+        let input = r#"rel test() { 
+            any(mode = "exhaustive", parallel = true) { a == b } 
+        }"#;
+        let ast = parse_str(input).unwrap();
+        let expected = Program {
+            items: vec![Item::Relation(RelationDefinition {
+                is_pub: false,
+                attributes: vec![],
+                name: "test".to_string(),
+                parameters: vec![],
+                search_strategy: None,
+                body: vec![Goal::Disjunction(Disjunction {
+                    body: vec![Goal::Equality(
+                        Term::Variable("a".to_string()),
+                        Term::Variable("b".to_string()),
+                    )],
+                    params: Some(SearchParams {
+                        strategy: None,
+                        limit: None,
+                        depth: None,
+                        custom_params: vec![
+                            (
+                                "mode".to_string(),
+                                SearchParamValue::String("exhaustive".to_string()),
+                            ),
+                            ("parallel".to_string(), SearchParamValue::Boolean(true)),
+                        ],
+                    }),
+                })],
+            })],
+        };
+        assert_eq!(ast, expected);
+    }
+
+    #[test]
+    fn test_parse_invalid_strategy() {
+        let input = r#"rel test() {
+            all(strategy = invalid) {
+                a == 1
+            }
+        }"#;
+        assert!(parse_str(input).is_err());
+    }
+
+    #[test]
+    fn test_parse_invalid_param_value() {
+        let input = r#"rel test() {
+            all(limit = "not a number") {
+                a == 1
+            }
+        }"#;
+        assert!(parse_str(input).is_err());
+    }
+
+    #[test]
+    fn test_parse_empty_blocks() {
+        let input = r#"rel test() {
+            all { }
+            any { }
+        }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 2);
+                match &rel.body[0] {
+                    Goal::Conjunction(conj) => {
+                        let expected = Conjunction::new(vec![]);
+                        assert_eq!(conj, &expected);
+                    }
+                    _ => panic!("Expected conjunction"),
+                }
+                match &rel.body[1] {
+                    Goal::Disjunction(disj) => {
+                        let expected = Disjunction::new(vec![]);
+                        assert_eq!(disj, &expected);
+                    }
+                    _ => panic!("Expected disjunction"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_search_params() {
+        let input = "rel test() @bfs { a == b }";
+        let ast = parse_str(input).unwrap();
+        let expected = Program {
+            items: vec![Item::Relation(RelationDefinition {
+                is_pub: false,
+                attributes: vec![],
+                name: "test".to_string(),
+                parameters: vec![],
+                search_strategy: Some(SearchStrategy::Bfs),
+                body: vec![Goal::Equality(
+                    Term::Variable("a".to_string()),
+                    Term::Variable("b".to_string()),
+                )],
+            })],
+        };
+        assert_eq!(ast, expected);
+    }
+
+    #[test]
+    fn test_parse_all_block() {
+        let input = "rel test() { all(strategy = dfs, limit = 100) { a == b } }";
+        let ast = parse_str(input).unwrap();
+        let expected = Program {
+            items: vec![Item::Relation(RelationDefinition {
+                is_pub: false,
+                attributes: vec![],
+                name: "test".to_string(),
+                parameters: vec![],
+                search_strategy: None,
+                body: vec![Goal::Conjunction(Conjunction {
+                    body: vec![Goal::Equality(
+                        Term::Variable("a".to_string()),
+                        Term::Variable("b".to_string()),
+                    )],
+                    params: Some(SearchParams {
+                        strategy: Some(SearchStrategy::Dfs),
+                        limit: Some(100),
+                        depth: None,
+                        custom_params: vec![],
+                    }),
+                })],
+            })],
+        };
+        assert_eq!(ast, expected);
+    }
+
+    #[test]
+    fn test_parse_any_block() {
+        let input = "rel test() { any(strategy = bfs, depth = 5) { a == b } }";
+        let ast = parse_str(input).unwrap();
+        let expected = Program {
+            items: vec![Item::Relation(RelationDefinition {
+                is_pub: false,
+                attributes: vec![],
+                name: "test".to_string(),
+                parameters: vec![],
+                search_strategy: None,
+                body: vec![Goal::Disjunction(Disjunction {
+                    body: vec![Goal::Equality(
+                        Term::Variable("a".to_string()),
+                        Term::Variable("b".to_string()),
+                    )],
+                    params: Some(SearchParams {
+                        strategy: Some(SearchStrategy::Bfs),
+                        limit: None,
+                        depth: Some(5),
+                        custom_params: vec![],
+                    }),
+                })],
+            })],
+        };
+        assert_eq!(ast, expected);
     }
 }
