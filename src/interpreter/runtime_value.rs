@@ -1,0 +1,177 @@
+use super::parser::ast::{Literal, RelationDefinition, Term};
+use crate::engine::Engine;
+use crate::lterm::LTerm;
+use crate::user::User;
+
+/// Runtime values that can be stored in the environment
+#[derive(Debug, Clone)]
+pub enum RuntimeValue<U: User, E: Engine<U>> {
+    /// A relation definition
+    Relation(RelationDefinition),
+    /// A runtime term/value
+    Term(LTerm<U, E>),
+    /// A type constructor
+    Type(String),
+}
+
+impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
+    /// Create a runtime value from an AST term
+    pub fn from_ast_term(term: &Term) -> Result<Self, String> {
+        match term {
+            Term::Literal(lit) => {
+                let lterm = Self::literal_to_lterm(lit)?;
+                Ok(RuntimeValue::Term(lterm))
+            }
+            Term::Variable(name) => {
+                let lterm = LTerm::var(Box::leak(name.clone().into_boxed_str()));
+                Ok(RuntimeValue::Term(lterm))
+            }
+            Term::List(items) => {
+                let mut lterms = Vec::new();
+                for item in items {
+                    if let RuntimeValue::Term(lterm) = Self::from_ast_term(item)? {
+                        lterms.push(lterm);
+                    } else {
+                        return Err("List items must be terms".to_string());
+                    }
+                }
+                let lterm = LTerm::from_array(&lterms);
+                Ok(RuntimeValue::Term(lterm))
+            }
+            _ => Err(format!("Unsupported term type: {:?}", term)),
+        }
+    }
+
+    /// Convert AST literal to LTerm
+    fn literal_to_lterm(literal: &Literal) -> Result<LTerm<U, E>, String> {
+        match literal {
+            Literal::Boolean(b) => Ok(LTerm::from(*b)),
+            Literal::Number(n) => {
+                let num: isize = n.parse().map_err(|_| "Invalid number")?;
+                Ok(LTerm::from(num))
+            }
+            Literal::String(s) => Ok(LTerm::from(s.clone())),
+            Literal::Char(c) => Ok(LTerm::from(*c)),
+        }
+    }
+
+    /// Check if this is a relation
+    pub fn is_relation(&self) -> bool {
+        matches!(self, RuntimeValue::Relation(_))
+    }
+
+    /// Get the relation definition if this is a relation
+    pub fn as_relation(&self) -> Option<&RelationDefinition> {
+        match self {
+            RuntimeValue::Relation(rel) => Some(rel),
+            _ => None,
+        }
+    }
+
+    /// Get the term if this is a term
+    pub fn as_term(&self) -> Option<&LTerm<U, E>> {
+        match self {
+            RuntimeValue::Term(term) => Some(term),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::DefaultEngine;
+    use crate::interpreter::parser::ast::*;
+    use crate::user::DefaultUser;
+
+    type TestRuntimeValue = RuntimeValue<DefaultUser, DefaultEngine<DefaultUser>>;
+
+    #[test]
+    fn test_from_ast_literal_boolean() {
+        let term = Term::Literal(Literal::Boolean(true));
+        let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
+
+        assert!(runtime_val.as_term().is_some());
+        let lterm = runtime_val.as_term().unwrap();
+        assert!(lterm.is_val());
+        assert_eq!(lterm.get_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_from_ast_literal_number() {
+        let term = Term::Literal(Literal::Number("42".to_string()));
+        let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
+
+        assert!(runtime_val.as_term().is_some());
+        let lterm = runtime_val.as_term().unwrap();
+        assert!(lterm.is_val());
+        assert_eq!(lterm.get_number(), Some(42));
+    }
+
+    #[test]
+    fn test_from_ast_literal_string() {
+        let term = Term::Literal(Literal::String("hello".to_string()));
+        let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
+
+        assert!(runtime_val.as_term().is_some());
+        let lterm = runtime_val.as_term().unwrap();
+        assert!(lterm.is_val());
+    }
+
+    #[test]
+    fn test_from_ast_literal_char() {
+        let term = Term::Literal(Literal::Char('a'));
+        let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
+
+        assert!(runtime_val.as_term().is_some());
+        let lterm = runtime_val.as_term().unwrap();
+        assert!(lterm.is_val());
+    }
+
+    #[test]
+    fn test_from_ast_variable() {
+        let term = Term::Variable("x".to_string());
+        let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
+
+        assert!(runtime_val.as_term().is_some());
+        let lterm = runtime_val.as_term().unwrap();
+        assert!(lterm.is_var());
+        assert_eq!(lterm.get_name(), Some("x"));
+    }
+
+    #[test]
+    fn test_from_ast_list() {
+        let term = Term::List(vec![
+            Term::Literal(Literal::Number("1".to_string())),
+            Term::Literal(Literal::Number("2".to_string())),
+        ]);
+        let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
+
+        assert!(runtime_val.as_term().is_some());
+        let lterm = runtime_val.as_term().unwrap();
+        assert!(lterm.is_list());
+        assert_eq!(lterm.iter().count(), 2);
+    }
+
+    #[test]
+    fn test_relation_value() {
+        let relation = RelationDefinition {
+            is_pub: false,
+            name: "test_rel".to_string(),
+            parameters: vec![],
+            search_strategy: None,
+            body: vec![],
+        };
+
+        let runtime_val = TestRuntimeValue::Relation(relation.clone());
+        assert!(runtime_val.is_relation());
+        assert_eq!(runtime_val.as_relation().unwrap().name, "test_rel");
+    }
+
+    #[test]
+    fn test_invalid_number() {
+        let term = Term::Literal(Literal::Number("invalid".to_string()));
+        let result = TestRuntimeValue::from_ast_term(&term);
+        assert!(result.is_err());
+    }
+}
