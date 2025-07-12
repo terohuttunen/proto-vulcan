@@ -1,0 +1,11 @@
+// tests/simple_assertions.pv
+
+@test
+rel passing_test() {
+    assert_eq(1, 1)
+}
+
+@test(should_fail)
+rel failing_test() {
+    assert_eq(1, 2)
+} 

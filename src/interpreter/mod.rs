@@ -9,6 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+mod assertions;
 pub mod deferred;
 mod environment;
 mod execution;
@@ -16,6 +17,7 @@ mod integration;
 pub mod parser;
 pub mod query;
 mod runtime_value;
+pub mod test_runner;
 
 #[derive(Debug)]
 pub enum InterpreterError {
@@ -201,6 +203,7 @@ mod tests {
                 // Relation definition
                 Item::Relation(RelationDefinition {
                     is_pub: false,
+                    attributes: vec![],
                     name: "distance".to_string(),
                     parameters: vec![
                         Parameter {
@@ -228,6 +231,7 @@ mod tests {
                     search_strategy: None,
                     items: vec![Item::Relation(RelationDefinition {
                         is_pub: true,
+                        attributes: vec![],
                         name: "area".to_string(),
                         parameters: vec![
                             Parameter {

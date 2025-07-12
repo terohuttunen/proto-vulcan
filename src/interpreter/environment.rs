@@ -4,11 +4,13 @@ use super::parser::ast::{
 use super::runtime_value::RuntimeValue;
 use super::InterpreterError;
 use crate::engine::Engine;
+use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::User;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// Environment manages symbol tables, scopes, and program state
 pub struct Environment<U: User, E: Engine<U>> {
@@ -39,6 +41,17 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     /// Sets the base path for module resolution.
     pub fn set_base_path(&mut self, path: PathBuf) {
         self.base_path = path;
+    }
+
+    /// Adds a native Rust function as a relation to the global scope.
+    pub fn add_native_relation(
+        &mut self,
+        name: String,
+        func: Rc<dyn Fn(Vec<LTerm<U, E>>) -> Goal<U, E>>,
+        arity: usize,
+    ) {
+        let value = RuntimeValue::NativeRelation { func, arity };
+        self.globals.insert(name, value);
     }
 
     /// Load a program into the environment
@@ -267,6 +280,7 @@ mod tests {
 
         let relation = RelationDefinition {
             is_pub: false,
+            attributes: vec![],
             name: "test_rel".to_string(),
             parameters: vec![],
             search_strategy: None,
@@ -318,6 +332,7 @@ mod tests {
             search_strategy: None,
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "module_rel".to_string(),
                 parameters: vec![],
                 search_strategy: None,

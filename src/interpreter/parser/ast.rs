@@ -60,8 +60,15 @@ pub struct ImplBlock {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Attribute {
+    pub name: String,
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct RelationDefinition {
     pub is_pub: bool,
+    pub attributes: Vec<Attribute>,
     pub name: String,
     pub parameters: Vec<Parameter>,
     pub search_strategy: Option<SearchStrategy>,
@@ -332,7 +339,7 @@ impl Display for ImplBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "impl {} {{", self.type_name)?;
         for rel in &self.relations {
-            writeln!(f, "    {}", rel)?;
+            writeln!(f, "{}", rel)?;
         }
         writeln!(f, "}}")
     }
@@ -340,27 +347,45 @@ impl Display for ImplBlock {
 
 impl Display for RelationDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for attr in &self.attributes {
+            writeln!(f, "{}", attr)?;
+        }
         if self.is_pub {
             write!(f, "pub ")?;
         }
         write!(f, "rel {}(", self.name)?;
-        let mut first = true;
-        for param in &self.parameters {
-            if !first {
+        for (i, p) in self.parameters.iter().enumerate() {
+            if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", param)?;
-            first = false;
+            write!(f, "{}", p)?;
         }
         write!(f, ")")?;
-        if let Some(ss) = &self.search_strategy {
-            write!(f, " {}", ss)?;
+        if let Some(s) = &self.search_strategy {
+            write!(f, " {}", s)?;
         }
         writeln!(f, " {{")?;
         for goal in &self.body {
-            writeln!(f, "    {},", goal)?;
+            writeln!(f, "    {};", goal)?;
         }
-        writeln!(f, "}}")
+        write!(f, "}}")
+    }
+}
+
+impl Display for Attribute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "@{}", self.name)?;
+        if !self.args.is_empty() {
+            write!(f, "(")?;
+            for (i, arg) in self.args.iter().enumerate() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", arg)?;
+            }
+            write!(f, ")")?;
+        }
+        Ok(())
     }
 }
 

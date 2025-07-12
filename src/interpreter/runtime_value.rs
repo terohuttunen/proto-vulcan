@@ -1,17 +1,37 @@
-use super::parser::ast::{Literal, RelationDefinition, Term};
+use super::parser::ast::{Literal, RelationDefinition, StructDefinition, Term};
 use crate::engine::Engine;
+use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::User;
+use std::rc::Rc;
+
+// RuntimeValue is not derivable because of the `func` field in NativeRelation.
+// We must implement it manually to just clone the Rc.
+impl<U: User, E: Engine<U>> Clone for RuntimeValue<U, E> {
+    fn clone(&self) -> Self {
+        match self {
+            RuntimeValue::Relation(rd) => RuntimeValue::Relation(rd.clone()),
+            RuntimeValue::NativeRelation { func, arity } => RuntimeValue::NativeRelation {
+                func: func.clone(),
+                arity: *arity,
+            },
+            RuntimeValue::Struct(sd) => RuntimeValue::Struct(sd.clone()),
+            RuntimeValue::Term(t) => RuntimeValue::Term(t.clone()),
+        }
+    }
+}
 
 /// Runtime values that can be stored in the environment
-#[derive(Debug, Clone)]
 pub enum RuntimeValue<U: User, E: Engine<U>> {
     /// A relation definition
     Relation(RelationDefinition),
+    NativeRelation {
+        func: Rc<dyn Fn(Vec<LTerm<U, E>>) -> Goal<U, E>>,
+        arity: usize,
+    },
+    Struct(StructDefinition),
     /// A runtime term/value
     Term(LTerm<U, E>),
-    /// A type constructor
-    Type(String),
 }
 
 impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
@@ -184,6 +204,7 @@ mod tests {
     fn test_relation_value() {
         let relation = RelationDefinition {
             is_pub: false,
+            attributes: vec![],
             name: "test_rel".to_string(),
             parameters: vec![],
             search_strategy: None,

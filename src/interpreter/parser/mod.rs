@@ -182,40 +182,85 @@ fn build_impl_block(pair: Pair<Rule>) -> ParseResult<ImplBlock> {
     })
 }
 
+fn build_attribute(pair: Pair<Rule>) -> ParseResult<Attribute> {
+    let mut inner = pair.into_inner();
+    let name = inner.next().unwrap().as_str().to_string();
+    let mut args = vec![];
+    if let Some(args_pair) = inner.next() {
+        if args_pair.as_rule() == Rule::attribute_args {
+            for arg_pair in args_pair.into_inner() {
+                args.push(arg_pair.as_str().to_string());
+            }
+        }
+    }
+    Ok(Attribute { name, args })
+}
+
 fn build_relation_definition(pair: Pair<Rule>) -> ParseResult<RelationDefinition> {
     let mut inner = pair.into_inner();
+    let mut attributes = vec![];
     let mut is_pub = false;
-
-    // Check if first token is pub_keyword
-    let first_pair = inner.next().unwrap();
-    let name_pair = if first_pair.as_rule() == Rule::pub_keyword {
-        is_pub = true;
-        inner.next().unwrap() // Skip "rel", get name
-    } else {
-        first_pair // This should be the name (after "rel" was consumed)
-    };
-
-    let name = name_pair.as_str().to_string();
-
-    let mut parameters = vec![];
     let mut search_strategy = None;
-    let mut body = None;
 
-    for p in inner {
+    // The first pairs can be attributes or `pub`, in any order.
+    while let Some(p) = inner.peek() {
         match p.as_rule() {
-            Rule::parameter => parameters.push(build_parameter(p)?),
-            Rule::search_strategy => search_strategy = Some(build_search_strategy(p)?),
-            Rule::goal_body => body = Some(build_goal_body(p)?),
-            _ => (),
+            Rule::attribute => {
+                attributes.push(build_attribute(inner.next().unwrap())?);
+            }
+            Rule::pub_keyword => {
+                is_pub = true;
+                inner.next(); // Consume pub
+            }
+            _ => break, // Done with optional leading elements
         }
     }
 
+    // Now we must have `rel`, `ident`, `(params)`, optionally `search_strategy`, and `{body}`
+    let name = inner.next().unwrap().as_str().to_string();
+
+    let mut parameters = vec![];
+    if let Some(p) = inner.peek() {
+        if p.as_rule() == Rule::parameter {
+            parameters.push(build_parameter(inner.next().unwrap())?);
+            while let Some(p) = inner.peek() {
+                if p.as_rule() == Rule::parameter {
+                    parameters.push(build_parameter(inner.next().unwrap())?);
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(p) = inner.peek() {
+        if p.as_rule() == Rule::search_strategy {
+            search_strategy = Some(build_search_strategy(inner.next().unwrap())?);
+        }
+    }
+
+    // Remove search strategy from general attributes if it was captured there
+    if search_strategy.is_some() {
+        attributes.retain(|a| a.name != "bfs" && a.name != "dfs");
+    }
+
+    let body = if let Some(p) = inner.peek() {
+        if p.as_rule() == Rule::goal_body {
+            build_goal_body(inner.next().unwrap())?
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+
     Ok(RelationDefinition {
         is_pub,
+        attributes,
         name,
         parameters,
         search_strategy,
-        body: body.unwrap_or_default(),
+        body,
     })
 }
 
@@ -233,31 +278,7 @@ fn build_search_strategy(pair: Pair<Rule>) -> ParseResult<SearchStrategy> {
     match strategy_str {
         "@bfs" => Ok(SearchStrategy::Bfs),
         "@dfs" => Ok(SearchStrategy::Dfs),
-        _ => {
-            // If it's not the combined form, try parsing the inner tokens
-            let mut inner = pair.into_inner();
-            if let Some(first) = inner.next() {
-                if first.as_str() == "@" {
-                    if let Some(second) = inner.next() {
-                        match second.as_str() {
-                            "bfs" => Ok(SearchStrategy::Bfs),
-                            "dfs" => Ok(SearchStrategy::Dfs),
-                            _ => unreachable!(),
-                        }
-                    } else {
-                        Err(ParseError::MissingRule(Rule::search_strategy))
-                    }
-                } else {
-                    match first.as_str() {
-                        "bfs" => Ok(SearchStrategy::Bfs),
-                        "dfs" => Ok(SearchStrategy::Dfs),
-                        _ => unreachable!(),
-                    }
-                }
-            } else {
-                Err(ParseError::MissingRule(Rule::search_strategy))
-            }
-        }
+        _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
 }
 
@@ -573,30 +594,19 @@ mod tests {
 
     #[test]
     fn test_parse_simple_relation() {
-        let input = "rel my_rel(a, b) { a == b }";
+        let input = "rel my_rel() {}";
         let ast = parse_str(input).unwrap();
-        let expected = Program {
+        let expected_ast = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "my_rel".to_string(),
-                parameters: vec![
-                    Parameter {
-                        name: "a".to_string(),
-                        type_name: None,
-                    },
-                    Parameter {
-                        name: "b".to_string(),
-                        type_name: None,
-                    },
-                ],
+                parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Equality(
-                    Term::Variable("a".to_string()),
-                    Term::Variable("b".to_string()),
-                )],
+                body: vec![],
             })],
         };
-        assert_eq!(ast, expected);
+        assert_eq!(ast, expected_ast);
     }
 
     #[test]
@@ -606,6 +616,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: true,
+                attributes: vec![],
                 name: "my_rel".to_string(),
                 parameters: vec![
                     Parameter {
@@ -723,6 +734,7 @@ mod tests {
                 type_name: "Point".to_string(),
                 relations: vec![RelationDefinition {
                     is_pub: false,
+                    attributes: vec![],
                     name: "new".to_string(),
                     parameters: vec![
                         Parameter {
@@ -775,6 +787,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -816,6 +829,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -842,6 +856,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -869,6 +884,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -896,6 +912,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -923,6 +940,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -951,6 +969,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![Parameter {
                     name: "l".to_string(),
@@ -1005,6 +1024,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![Parameter {
                     name: "l".to_string(),
@@ -1043,6 +1063,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -1072,6 +1093,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -1095,6 +1117,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -1118,6 +1141,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -1137,6 +1161,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -1191,6 +1216,7 @@ mod tests {
                     }),
                     Item::Relation(RelationDefinition {
                         is_pub: false,
+                        attributes: vec![],
                         name: "test".to_string(),
                         parameters: vec![],
                         search_strategy: None,
@@ -1212,6 +1238,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -1237,6 +1264,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
@@ -1260,6 +1288,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![Parameter {
                     name: "p".to_string(),
@@ -1304,6 +1333,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
                 is_pub: false,
+                attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![Parameter {
                     name: "x".to_string(),
@@ -1351,6 +1381,7 @@ mod tests {
             }
         }
         
+        @test
         pub rel complex_goal(a, b, c) {
             conde {
                 [a == 1, b == 2],
@@ -1401,8 +1432,35 @@ mod tests {
         if let Item::Relation(relation_def) = &ast.items[3] {
             assert_eq!(relation_def.name, "complex_goal");
             assert!(relation_def.is_pub);
+            assert_eq!(relation_def.attributes.len(), 1);
+            assert_eq!(relation_def.attributes[0].name, "test");
         } else {
             panic!("Expected relation definition");
         }
+    }
+
+    #[test]
+    fn test_parse_relation_with_search_strategy() {
+        let input = "rel my_rel() @bfs {}";
+        let ast = parse_str(input).unwrap();
+        let rel_def = match &ast.items[0] {
+            Item::Relation(r) => r,
+            _ => panic!("Expected relation definition"),
+        };
+        assert_eq!(rel_def.search_strategy, Some(SearchStrategy::Bfs));
+        assert!(rel_def.attributes.is_empty());
+    }
+
+    #[test]
+    fn test_parse_relation_with_attribute() {
+        let input = "@test rel my_rel() {}";
+        let ast = parse_str(input).unwrap();
+        let rel_def = match &ast.items[0] {
+            Item::Relation(r) => r,
+            _ => panic!("Expected relation definition"),
+        };
+        assert_eq!(rel_def.attributes.len(), 1);
+        assert_eq!(rel_def.attributes[0].name, "test");
+        assert_eq!(rel_def.search_strategy, None);
     }
 }

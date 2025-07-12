@@ -144,21 +144,6 @@ where
         }
     }
 
-    // If no results were found, return empty result set
-    if results.is_empty() {
-        // Only return empty result if the goal could potentially succeed
-        if !runtime_goal.is_fail() {
-            let mut empty_result = QueryResult::new();
-
-            // Extract variables from the original query for fallback
-            let query_vars = extract_variables_from_goal(&query);
-            for var_name in query_vars {
-                empty_result.bind(var_name, QueryResult::any());
-            }
-            results.push(empty_result);
-        }
-    }
-
     Ok(results)
 }
 

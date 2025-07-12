@@ -64,15 +64,17 @@ import_item = { ident ~ ("as" ~ ident)? }
 // =============================================================================
 
 relation_definition = {
-    pub_keyword? ~ "rel" ~ ident ~ "(" ~ (parameter ~ ("," ~ parameter)*)? ~ ","? ~ ")" ~ search_strategy? ~ "{" ~
+    attribute* ~ pub_keyword? ~ "rel" ~ ident ~ "(" ~ (parameter ~ ("," ~ parameter)*)? ~ ","? ~ ")" ~ search_strategy? ~ "{" ~
         goal_body
     ~ "}"
 }
 
 parameter = { ident ~ (":" ~ type_name)? }
 type_name = { ident }
-search_strategy = { "@" ~ ("bfs" | "dfs") }
+search_strategy = { "@bfs" | "@dfs" }
 pub_keyword = { "pub" }
+attribute = { "@" ~ ident ~ ("(" ~ attribute_args ~ ")")? }
+attribute_args = { ident ~ ("," ~ ident)* }
 
 
 // =============================================================================

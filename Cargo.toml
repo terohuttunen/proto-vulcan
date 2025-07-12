@@ -11,10 +11,12 @@ keywords = ["logic", "programming", "language"]
 [dependencies]
 pest = "2.7.10"
 pest_derive = "2.7.10"
-thiserror = "1.0"
-proto-vulcan-macros = { version = "=0.1.6", path = "macros" }
-derivative = "2.1"
-clap = { version = "4.0", features = ["derive"] }
+thiserror = "1.0.58"
+proto-vulcan-macros = { version = "0.1.6", path = "macros" }
+derivative = "2.2.0"
+clap = { version = "4.5.4", features = ["derive"] }
+walkdir = "2.5.0"
+colored = "2.1.0"
 rustyline = "10.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

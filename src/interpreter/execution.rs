@@ -196,24 +196,12 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         &mut self,
         call: &RelationCall,
     ) -> Result<Goal<U, E>, InterpreterError> {
-        let rel_def = self
+        let rel_val = self
             .environment
             .borrow()
             .lookup(&call.name)
-            .and_then(|rv| match rv {
-                RuntimeValue::Relation(rd) => Some(rd.clone()),
-                _ => None,
-            })
+            .cloned()
             .ok_or_else(|| InterpreterError::UnknownRelation(call.name.clone()))?;
-
-        if rel_def.parameters.len() != call.args.len() {
-            return Err(InterpreterError::RuntimeError(format!(
-                "Relation '{}' called with {} arguments, but expected {}",
-                call.name,
-                call.args.len(),
-                rel_def.parameters.len()
-            )));
-        }
 
         // Convert call-site arguments to LTerms.
         let mut arg_terms = Vec::new();
@@ -221,11 +209,37 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             arg_terms.push(self.ast_term_to_runtime(arg)?);
         }
 
-        // Create the deferred goal.
-        let deferred_call =
-            DeferredRelationCall::new(self.environment.clone(), rel_def.into(), arg_terms);
+        match rel_val {
+            RuntimeValue::Relation(rel_def) => {
+                if rel_def.parameters.len() != arg_terms.len() {
+                    return Err(InterpreterError::RuntimeError(format!(
+                        "Relation '{}' called with {} arguments, but expected {}",
+                        call.name,
+                        arg_terms.len(),
+                        rel_def.parameters.len()
+                    )));
+                }
+                let deferred_call =
+                    DeferredRelationCall::new(self.environment.clone(), rel_def.into(), arg_terms);
 
-        Ok(Goal::Dynamic(Rc::new(deferred_call)))
+                Ok(Goal::Dynamic(Rc::new(deferred_call)))
+            }
+            RuntimeValue::NativeRelation { func, arity } => {
+                if arity != arg_terms.len() {
+                    return Err(InterpreterError::RuntimeError(format!(
+                        "Native relation '{}' called with {} arguments, but expected {}",
+                        call.name,
+                        arg_terms.len(),
+                        arity
+                    )));
+                }
+                Ok(func(arg_terms))
+            }
+            _ => Err(InterpreterError::RuntimeError(format!(
+                "'{}' is not a relation.",
+                call.name
+            ))),
+        }
     }
 
     fn ast_pattern_match_to_runtime(
