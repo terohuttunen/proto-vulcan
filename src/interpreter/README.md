@@ -1,8 +1,8 @@
 # Proto-Vulcan Interpreter
 
-This module provides a complete interpreter for the proto-vulcan relational logic programming language. The interpreter bridges the gap between parsed AST and the existing runtime system, enabling direct execution of proto-vulcan programs without macro expansion.
+A comprehensive interpreter for the proto-vulcan relational logic programming language. This interpreter provides a complete pipeline from source code to execution, supporting direct program execution without macro expansion.
 
-## Architecture Overview
+## Architecture
 
 The interpreter follows a layered architecture:
 
@@ -10,219 +10,216 @@ The interpreter follows a layered architecture:
 Source Code → Parser → AST → Interpreter → Runtime Goals → Solver → Results
 ```
 
-### Core Components
+### Components
 
-#### 1. **Parser Module** (`parser/`)
-- **Grammar**: Complete Pest-based grammar for the language (`grammar.pest`)
-- **AST**: Comprehensive Abstract Syntax Tree definitions (`ast.rs`)
-- **Parser**: Converts source code to AST using Pest (`mod.rs`)
+1. **Parser** (`parser/`): Converts source code into Abstract Syntax Tree (AST)
+2. **Environment** (`environment.rs`): Manages symbol tables, scopes, and program state
+3. **Runtime Values** (`runtime_value.rs`): Bridges AST terms with runtime LTerms
+4. **Execution** (`execution.rs`): Converts AST goals to runtime goals for execution
+5. **Query** (`query.rs`): Handles query parsing and execution
+6. **Integration** (`integration.rs`): Utilities for connecting with existing runtime
 
-**Features:**
-- Full language support: relations, goals, modules, structs, patterns
-- Error handling with detailed error messages
-- 29 comprehensive tests covering all language constructs
+## Key Features
 
-#### 2. **Environment Module** (`environment.rs`)
-- **Symbol Table**: Maps identifiers to runtime values
-- **Scope Management**: Handles modules, relations, and variable scoping
-- **Type Registry**: Manages struct definitions and compound types
+### Execution Module
 
-**Features:**
-- Global and module-scoped symbol resolution
-- Relation and struct definition storage
-- Fresh variable generation
-- 5 tests covering scoping and symbol management
+The execution module (`execution.rs`) is the core component that converts AST goals into runtime goals that can be executed by the proto-vulcan solver. It provides:
 
-#### 3. **Runtime Value Module** (`runtime_value.rs`)
-- **Bridge Types**: Converts between AST terms and runtime LTerms
-- **Value System**: Handles relations, terms, and type constructors
-- **Type Conversion**: AST literals to runtime values
+#### ExecutionContext
+- **Variable Management**: Maintains local variable bindings with proper scoping
+- **Fresh Variable Generation**: Creates unique variable names to avoid conflicts
+- **Environment Integration**: Connects with the symbol table for relation lookups
 
-**Features:**
-- Support for all literal types (boolean, number, string, char)
-- Variable and list conversion
-- Relation definition storage
-- 8 tests covering all conversion scenarios
+#### Goal Conversion
+- **Equality/Disequality**: Converts `==` and `!=` goals to runtime equivalents
+- **Conjunction/Disjunction**: Handles `[]` and `conde` goal combinations
+- **Fresh Variables**: Manages `|x|` fresh variable scoping with proper cleanup
+- **Relation Calls**: Resolves relation names and executes relation bodies
+- **Method Calls**: Treats method calls as relation calls with receiver as first argument
 
-#### 4. **Query Module** (`query.rs`)
-- **Query Execution**: Placeholder for query processing
-- **Result Handling**: QueryResult type for variable bindings
-- **Integration**: Connects with environment for query resolution
+#### Pattern Matching
+- **Literal Patterns**: Matches against boolean, number, string, and char literals
+- **Variable Patterns**: Binds variables to matched terms
+- **Wildcard Patterns**: Always succeeds with `_` pattern
+- **List Patterns**: Supports list destructuring with tail patterns
+- **Struct Patterns**: Handles named and compound struct pattern matching
 
-**Features:**
-- QueryResult structure for results
-- Parse query interface (placeholder)
-- 1 test for basic functionality
+#### Term Conversion
+- **Literals**: Converts AST literals to runtime LTerms
+- **Variables**: Manages variable bindings and creates fresh variables as needed
+- **Lists**: Converts list constructions to runtime list terms
+- **Named Structs**: Handles struct construction with field initialization
+- **Compound Terms**: Supports compound constructor calls
 
-#### 5. **Integration Module** (`integration.rs`)
-- **Runtime Integration**: Utilities for connecting with existing runtime
-- **Type Safety**: Proper generic type handling
-
-## Usage Example
-
-```rust
-use proto_vulcan::interpreter::{Interpreter, InterpreterError};
-use proto_vulcan::user::DefaultUser;
-use proto_vulcan::engine::DefaultEngine;
-
-type MyInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
-
-fn main() -> Result<(), InterpreterError> {
-    let mut interpreter = MyInterpreter::new();
-    
-    // Parse and load a program
-    let program_source = r#"
-        pub struct Point {
-            pub x: i32,
-            pub y: i32,
-        }
-        
-        rel distance(p1: Point, p2: Point) @bfs {
-            p1 == p2
-        }
-    "#;
-    
-    let program = proto_vulcan::interpreter::parser::parse_str(program_source)?;
-    interpreter.load_program(program)?;
-    
-    // Verify the program was loaded
-    let env = interpreter.environment();
-    assert!(env.lookup("distance").is_some());
-    assert!(env.get_struct("Point").is_some());
-    
-    Ok(())
-}
-```
+#### Variable Scoping
+- **Lexical Scoping**: Maintains proper variable scope boundaries
+- **Fresh Variable Isolation**: Fresh variables are properly scoped and cleaned up
+- **Binding Restoration**: Previous variable bindings are restored after scope exit
 
 ## Language Support
 
-The interpreter supports the full proto-vulcan language:
+### Complete proto-vulcan Language Support
 
-### **Declarations**
-- **Relations**: `rel name(params) { goals }`
-- **Structures**: `struct Name { fields }` and `struct Name(types);`
-- **Modules**: `mod name { items }`
-- **Imports**: `use path;`, `use path::*;`, `use path::{a, b as c};`
+#### Declarations
+- **Relations** (`rel name(params) { body }`): Function-like logical relations
+- **Structures** (`struct Name { fields }`): Data type definitions
+- **Modules** (`mod name { items }`): Namespace organization
+- **Imports** (`use path`): Module importing (parsing only)
 
-### **Goals**
-- **Equality**: `a == b`
-- **Disequality**: `a != b`
-- **Conjunction**: `[goal1, goal2]`
-- **Disjunction**: `conde { goal1, goal2 }`
-- **Fresh Variables**: `|x, y| { goals }`
-- **Let Declarations**: `let x = value;`
-- **Relation Calls**: `relation(args)`
-- **Method Calls**: `obj.method(args)`
-- **Pattern Matching**: `match term { pattern => goals }`
+#### Goals
+- **Equality** (`x == y`): Unification goals
+- **Disequality** (`x != y`): Disequality constraints
+- **Conjunction** (`[goal1, goal2]`): Logical AND
+- **Disjunction** (`conde { goal1; goal2 }`): Logical OR
+- **Fresh Variables** (`|x| goal`): Introduce fresh variables
+- **Let Declarations** (`let x = value`): Variable binding
+- **Relation Calls** (`relation(args)`): Call defined relations
+- **Method Calls** (`receiver.method(args)`): Method-style calls
+- **Pattern Matching** (`match term { pattern => goal }`): Pattern-based dispatch
 
-### **Terms**
-- **Literals**: `true`, `42`, `"string"`, `'c'`
+#### Terms
+- **Literals**: `true`, `false`, `42`, `"string"`, `'c'`
 - **Variables**: `x`, `my_var`
-- **Lists**: `[1, 2, 3]`, `[]`
-- **Structs**: `Point { x: 1, y: 2 }`
-- **Compounds**: `Some(42)`, `Node(left, right)`
+- **Lists**: `[1, 2, 3]`, `[head | tail]`
+- **Named Structs**: `Point { x: 10, y: 20 }`
+- **Compound Terms**: `Some(value)`, `Node(left, right)`
 
-### **Patterns**
-- **Literals**: `true`, `42`
-- **Variables**: `x`
+#### Patterns
+- **Literals**: `42`, `"hello"`, `true`
+- **Variables**: `x`, `result`
 - **Wildcards**: `_`
-- **Lists**: `[head | tail]`, `[a, b, c]`
-- **Structs**: `Point { x: px, y: py }`
-- **Compounds**: `Some(value)`
+- **List Patterns**: `[a, b, c]`, `[head | tail]`
+- **Struct Patterns**: `Point { x, y }`, `Some(value)`
 
-### **Modifiers**
-- **Visibility**: `pub rel`, `pub struct`
-- **Search Strategy**: `@bfs`, `@dfs`
+#### Modifiers
+- **Visibility**: `pub` for public items
+- **Search Strategies**: `@bfs`, `@dfs` for breadth-first/depth-first search
+
+## Usage
+
+### Basic Usage
+
+```rust
+use proto_vulcan::interpreter::Interpreter;
+use proto_vulcan::engine::DefaultEngine;
+use proto_vulcan::user::DefaultUser;
+
+type MyInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+
+let mut interpreter = MyInterpreter::new();
+
+// Load and parse a program
+let program_source = r#"
+    rel parent(x, y) {
+        x == "alice", y == "bob";
+        x == "bob", y == "charlie"
+    }
+"#;
+
+let program = parser::parse_program(program_source)?;
+interpreter.load_program(program)?;
+
+// Execute queries
+let results = interpreter.query("parent(X, Y)")?;
+```
+
+### Advanced Features
+
+```rust
+// Complex program with structs and pattern matching
+let program_source = r#"
+    struct Point {
+        x: i32,
+        y: i32
+    }
+    
+    rel distance(p1, p2, result) {
+        match p1 {
+            Point { x: x1, y: y1 } => {
+                match p2 {
+                    Point { x: x2, y: y2 } => {
+                        // Calculate distance (simplified)
+                        result == 0
+                    }
+                }
+            }
+        }
+    }
+"#;
+
+let program = parser::parse_program(program_source)?;
+interpreter.load_program(program)?;
+
+let results = interpreter.query("distance(Point{x:0,y:0}, Point{x:3,y:4}, D)")?;
+```
 
 ## Testing
 
-The interpreter includes comprehensive testing:
+The interpreter includes comprehensive tests covering all major functionality:
+
+### Test Coverage
+- **Execution Module**: 12 tests covering goal conversion, pattern matching, and variable scoping
+- **Parser Module**: 29 tests covering all language constructs
+- **Environment Module**: 5 tests covering symbol table and scoping
+- **Runtime Values Module**: 8 tests covering AST to runtime conversion
+- **Integration Tests**: 6 tests covering end-to-end workflows
+
+### Running Tests
 
 ```bash
-# Run all interpreter tests (49 tests)
+# Run all interpreter tests
 cargo test interpreter --lib
 
 # Run specific module tests
-cargo test interpreter::parser --lib      # 29 tests
-cargo test interpreter::environment --lib # 5 tests  
-cargo test interpreter::runtime_value --lib # 8 tests
-cargo test interpreter::query --lib       # 1 test
-cargo test interpreter::tests --lib       # 6 integration tests
+cargo test interpreter::execution --lib
+cargo test interpreter::parser --lib
+cargo test interpreter::environment --lib
 ```
 
-### **Test Coverage**
-- **Parser Tests**: All language constructs, error handling
-- **Environment Tests**: Symbol resolution, scoping, type management
-- **Runtime Value Tests**: AST to runtime conversion
-- **Integration Tests**: End-to-end parser to interpreter workflow
+## Implementation Details
 
-## Design Principles
+### Type System Integration
+- **Generic Design**: Fully generic over User and Engine types
+- **Type Safety**: Comprehensive error handling and type checking
+- **Goal Casting**: Proper conversion between different goal types using GoalCast trait
 
-### **1. Separation of Concerns**
-- Parser handles syntax analysis
-- Environment manages program state
-- Runtime values bridge AST and runtime
-- Integration connects with existing solver
+### Performance Considerations
+- **Lazy Evaluation**: Goals are evaluated lazily by the solver
+- **Memory Management**: Efficient variable lifetime management
+- **Cloning Strategy**: Strategic cloning to avoid borrowing conflicts
 
-### **2. Type Safety**
-- Generic over User and Engine types
-- Proper error handling with InterpreterError
-- Compile-time type checking
+### Error Handling
+- **Comprehensive Errors**: Detailed error types for different failure modes
+- **Parse Errors**: Clear error messages for syntax issues
+- **Runtime Errors**: Helpful error messages for execution problems
+- **Type Errors**: Clear indication of type mismatches
 
-### **3. Incremental Development**
-- Core components implemented and tested
-- Execution module planned for future implementation
-- Modular architecture enables independent development
+## Future Enhancements
 
-### **4. Compatibility**
-- Uses existing runtime infrastructure (LTerm, Goal, Solver)
-- Maintains compatibility with current macro system
-- Enables gradual migration from macros to interpreter
+### Planned Features
+1. **List Relations**: Proper list element extraction and manipulation
+2. **Struct Type Checking**: Runtime verification of struct types
+3. **Module System**: Full import/export functionality
+4. **Optimization**: Performance improvements for large programs
+5. **Debugging**: Enhanced debugging and tracing capabilities
 
-## Future Development
+### Extension Points
+- **Custom Relations**: Easy addition of built-in relations
+- **Type Extensions**: Support for additional data types
+- **Search Strategies**: Pluggable search strategy implementations
+- **Constraint Domains**: Integration with constraint solving domains
 
-### **Execution Module** (Planned)
-The execution module will complete the interpreter by implementing:
-- AST goal to runtime goal conversion
-- Relation body execution
-- Variable binding and unification
-- Integration with the solver system
+## Contributing
 
-### **Query System Enhancement**
-- Complete query parsing implementation
-- Result formatting and display
-- Interactive query interface
+The interpreter is designed to be extensible and maintainable:
 
-### **Performance Optimization**
-- Caching of parsed programs
-- Optimized symbol lookup
-- Lazy evaluation of relation bodies
+1. **Modular Design**: Clear separation of concerns between components
+2. **Comprehensive Tests**: All functionality is thoroughly tested
+3. **Documentation**: Detailed documentation for all public APIs
+4. **Type Safety**: Leverages Rust's type system for correctness
 
-## Error Handling
-
-The interpreter provides comprehensive error handling:
-
-```rust
-#[derive(Debug, Clone)]
-pub enum InterpreterError {
-    ParseError(String),      // Syntax errors
-    RuntimeError(String),    // Execution errors  
-    UnknownRelation(String), // Undefined relations
-    UnknownVariable(String), // Undefined variables
-    TypeMismatch(String),    // Type errors
-    ScopeError(String),      // Scoping issues
-}
-```
-
-All errors implement `std::error::Error` and provide detailed error messages for debugging.
-
-## Integration with Existing System
-
-The interpreter is designed to work alongside the existing macro system:
-
-1. **Parser**: Can be used independently for syntax validation
-2. **Environment**: Provides symbol management for any system
-3. **Runtime Values**: Bridge between AST and existing runtime types
-4. **Gradual Migration**: Enables step-by-step transition from macros
-
-This architecture provides a solid foundation for a complete proto-vulcan interpreter while maintaining compatibility with the existing codebase. 
+When adding new features:
+1. Add comprehensive tests covering the new functionality
+2. Update documentation to reflect changes
+3. Ensure all existing tests continue to pass
+4. Follow the established patterns for error handling and type safety 

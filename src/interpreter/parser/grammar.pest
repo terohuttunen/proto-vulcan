@@ -140,7 +140,7 @@ pattern = {
 wildcard = { "_" }
 
 list_pattern = { "[" ~ (pattern_list)? ~ "]" }
-pattern_list = { pattern ~ ("," ~ pattern)* ~ (list_tail)? | list_tail }
+pattern_list = { (pattern ~ ("," ~ pattern)* ~ (list_tail)?) | list_tail }
 list_tail = { "|" ~ pattern }
 
 named_struct_pattern = {
@@ -153,7 +153,9 @@ compound_pattern = { ident ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ")" }
 // -- Term/Pattern Components --
 literal = { boolean_literal | number_literal | string_literal | char_literal }
 variable = @{ ident }
-list_construction = { "[" ~ (term ~ ("," ~ term)*)? ~ "]" }
+list_construction = { "[" ~ (term_list)? ~ "]" }
+term_list = { term ~ ("," ~ term)* ~ (term_tail)? | term_tail }
+term_tail = { "|" ~ term }
 named_struct_construction = {
     ident ~ "{" ~ (field_initializer ~ ("," ~ field_initializer)*)? ~ ","? ~ "}"
 }

@@ -147,10 +147,16 @@ pub struct MethodCall {
 pub enum Term {
     Literal(Literal),
     Variable(String),
-    List(Vec<Term>),
+    List(ListConstruction),
     NamedStruct(NamedStructConstruction),
     Compound(CompoundConstruction),
     Parenthesized(Box<Term>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ListConstruction {
+    pub elements: Vec<Term>,
+    pub tail: Option<Box<Term>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -495,22 +501,29 @@ impl Display for Term {
         match self {
             Term::Literal(lit) => write!(f, "{}", lit),
             Term::Variable(v) => write!(f, "{}", v),
-            Term::List(terms) => {
-                write!(f, "[")?;
-                let mut first = true;
-                for term in terms {
-                    if !first {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", term)?;
-                    first = false;
-                }
-                write!(f, "]")
-            }
+            Term::List(list) => write!(f, "{}", list),
             Term::NamedStruct(s) => write!(f, "{}", s),
             Term::Compound(c) => write!(f, "{}", c),
             Term::Parenthesized(t) => write!(f, "({})", t),
         }
+    }
+}
+
+impl Display for ListConstruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        let mut first = true;
+        for elem in &self.elements {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", elem)?;
+            first = false;
+        }
+        if let Some(tail) = &self.tail {
+            write!(f, " | {}", tail)?;
+        }
+        write!(f, "]")
     }
 }
 

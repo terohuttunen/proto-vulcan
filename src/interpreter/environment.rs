@@ -1,10 +1,14 @@
-use super::parser::ast::{Item, Program, RelationDefinition, StructDefinition};
+use super::parser::ast::{
+    Item, Program, RelationDefinition, StructDefinition, UsePath, UseStatement,
+};
 use super::runtime_value::RuntimeValue;
 use super::InterpreterError;
 use crate::engine::Engine;
 use crate::lterm::LTerm;
 use crate::user::User;
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 /// Environment manages symbol tables, scopes, and program state
 pub struct Environment<U: User, E: Engine<U>> {
@@ -16,6 +20,8 @@ pub struct Environment<U: User, E: Engine<U>> {
     scope_stack: Vec<String>,
     /// Type definitions
     types: HashMap<String, StructDefinition>,
+    /// The base path for resolving modules.
+    base_path: PathBuf,
 }
 
 impl<U: User, E: Engine<U>> Environment<U, E> {
@@ -26,7 +32,13 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             modules: HashMap::new(),
             scope_stack: vec!["global".to_string()],
             types: HashMap::new(),
+            base_path: PathBuf::new(),
         }
+    }
+
+    /// Sets the base path for module resolution.
+    pub fn set_base_path(&mut self, path: PathBuf) {
+        self.base_path = path;
     }
 
     /// Load a program into the environment
@@ -43,7 +55,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             Item::Relation(rel) => self.load_relation(rel),
             Item::Struct(struct_def) => self.load_struct(struct_def),
             Item::Module(module) => self.load_module(module),
-            Item::Use(_) => Ok(()),  // TODO: Handle imports
+            Item::Use(use_stmt) => self.load_use_statement(use_stmt),
             Item::Impl(_) => Ok(()), // TODO: Handle impl blocks
         }
     }
@@ -89,6 +101,75 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         Ok(())
     }
 
+    /// Load a use statement
+    fn load_use_statement(&mut self, use_stmt: UseStatement) -> Result<(), InterpreterError> {
+        match use_stmt.path {
+            UsePath::Simple(path_segments) => {
+                // Handle simple imports like "use std" or "use std::list"
+                if path_segments.len() == 1 && path_segments[0] == "std" {
+                    self.load_std_library()?;
+                } else if path_segments.len() == 2 && path_segments[0] == "std" {
+                    self.load_std_module(&path_segments[1])?;
+                } else {
+                    // For now, ignore other imports
+                    return Ok(());
+                }
+            }
+            UsePath::Glob(path_segments) => {
+                // Handle glob imports like "use std::*"
+                if path_segments.len() == 1 && path_segments[0] == "std" {
+                    self.load_std_library()?;
+                } else {
+                    return Ok(());
+                }
+            }
+            UsePath::List(_, _) => {
+                // Handle list imports like "use std::{member, append}"
+                // TODO: Implement selective imports
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// Load the entire standard library
+    pub fn load_std_library(&mut self) -> Result<(), InterpreterError> {
+        self.load_std_module("list")?;
+        self.load_std_module("logic")?;
+        self.load_std_module("util")?;
+        Ok(())
+    }
+
+    /// Load a specific standard library module
+    fn load_std_module(&mut self, module_name: &str) -> Result<(), InterpreterError> {
+        let std_path = format!("std/{}.pv", module_name);
+
+        if Path::new(&std_path).exists() {
+            let source = fs::read_to_string(&std_path).map_err(|e| {
+                InterpreterError::RuntimeError(format!(
+                    "Failed to read std module {}: {}",
+                    module_name, e
+                ))
+            })?;
+
+            let program = super::parser::parse_str(&source).map_err(|e| {
+                InterpreterError::ParseError(format!("Parse error in std::{}: {}", module_name, e))
+            })?;
+
+            // Load the module contents into the global scope
+            for item in program.items {
+                self.load_item(item)?;
+            }
+        } else {
+            return Err(InterpreterError::RuntimeError(format!(
+                "Standard library module '{}' not found",
+                module_name
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Look up a symbol in the current scope
     pub fn lookup(&self, name: &str) -> Option<&RuntimeValue<U, E>> {
         // First check current module scope
@@ -119,6 +200,48 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     /// Get current scope name
     pub fn current_scope(&self) -> &str {
         self.scope_stack.last().unwrap()
+    }
+
+    /// Get all relations in the current environment
+    pub fn relations(&self) -> HashMap<String, &RuntimeValue<U, E>> {
+        let mut relations = HashMap::new();
+
+        // Add global relations
+        for (name, value) in &self.globals {
+            if matches!(value, RuntimeValue::Relation(_)) {
+                relations.insert(name.clone(), value);
+            }
+        }
+
+        // Add module relations
+        for module_symbols in self.modules.values() {
+            for (name, value) in module_symbols {
+                if matches!(value, RuntimeValue::Relation(_)) {
+                    relations.insert(name.clone(), value);
+                }
+            }
+        }
+
+        relations
+    }
+
+    /// Get all structs in the current environment
+    pub fn structs(&self) -> &HashMap<String, StructDefinition> {
+        &self.types
+    }
+
+    /// Get all variables in the current scope (placeholder implementation)
+    pub fn variables(&self) -> HashMap<String, &RuntimeValue<U, E>> {
+        let mut variables = HashMap::new();
+
+        // Add global variables (non-relations)
+        for (name, value) in &self.globals {
+            if !matches!(value, RuntimeValue::Relation(_)) {
+                variables.insert(name.clone(), value);
+            }
+        }
+
+        variables
     }
 }
 

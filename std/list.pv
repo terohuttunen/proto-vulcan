@@ -1,0 +1,69 @@
+// List Processing Relations
+// Common relations for working with lists
+
+// Member relation - checks if x is a member of list l
+// Recursive implementation like member.rs
+pub rel member(x, l) {
+    match l {
+        [head | _] => { head == x },
+        [_ | rest] => { member(x, rest) }
+    }
+}
+
+// Append relation - ls is l appended with s
+// Implementation following append.rs pattern
+pub rel append(l, s, ls) {
+    match [l, s, ls] {
+        [[], x, x] => { succeed() },
+        [[x | l1], l2, [x | l3]] => { append(l1, l2, l3) }
+    }
+}
+
+// Cons relation - out is rest with first prepended
+// Implementation following cons.rs pattern
+pub rel cons(first, rest, out) {
+    [first | rest] == out
+}
+
+// First element relation - first is the first element of list
+// Implementation following first.rs pattern using cons
+pub rel first(list, first) {
+    |rest| {
+        cons(first, rest, list)
+    }
+}
+
+// Rest relation - rest is list without its first element
+// Implementation following rest.rs pattern using cons
+pub rel rest(list, rest) {
+    |first| {
+        cons(first, rest, list)
+    }
+}
+
+// Rember relation - out is ls with first occurrence of x removed
+// Implementation following rember.rs pattern
+pub rel rember(x, ls, out) {
+    match [ls, out] {
+        [[], []] => { succeed() },
+        [[a | d], d] => { a == x },
+        [[y | ys], [y | zs]] => { 
+            y != x,
+            rember(x, ys, zs)
+        }
+    }
+}
+
+// Permute relation - yl is a permutation of xl
+// Implementation following permute.rs pattern
+pub rel permute(xl, yl) {
+    match [xl, yl] {
+        [[], []] => { succeed() },
+        [[x | xs], _] => {
+            |ys| {
+                permute(xs, ys),
+                rember(x, yl, ys)
+            }
+        }
+    }
+} 

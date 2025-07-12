@@ -262,14 +262,14 @@ fn build_search_strategy(pair: Pair<Rule>) -> ParseResult<SearchStrategy> {
 }
 
 fn build_goal_body(pair: Pair<Rule>) -> ParseResult<GoalBody> {
-    let mut goals = vec![];
+    let mut body = vec![];
     for goal_pair in pair.into_inner() {
-        goals.push(build_goal(goal_pair)?);
+        body.push(build_goal(goal_pair)?);
     }
-    Ok(goals)
+    Ok(body)
 }
 
-fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
+pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
     if pair.as_rule() == Rule::goal {
         // If we get a generic goal, we need to extract the specific goal type
         let inner = pair.into_inner().next().unwrap();
@@ -398,11 +398,15 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
         )?)),
         Rule::variable => Ok(Term::Variable(pair.as_str().to_string())),
         Rule::list_construction => {
-            let mut terms = vec![];
-            for term_pair in pair.into_inner() {
-                terms.push(build_term(term_pair)?);
+            if let Some(term_list_pair) = pair.into_inner().next() {
+                Ok(Term::List(build_list_construction(term_list_pair)?))
+            } else {
+                // Empty list
+                Ok(Term::List(ListConstruction {
+                    elements: vec![],
+                    tail: None,
+                }))
             }
-            Ok(Term::List(terms))
         }
         Rule::named_struct_construction => {
             Ok(Term::NamedStruct(build_named_struct_construction(pair)?))
@@ -531,6 +535,28 @@ fn build_compound_pattern(pair: Pair<Rule>) -> ParseResult<CompoundPattern> {
         args.push(build_pattern(pattern_pair)?);
     }
     Ok(CompoundPattern { name, args })
+}
+
+fn build_list_construction(pair: Pair<Rule>) -> ParseResult<ListConstruction> {
+    let mut elements = vec![];
+    let mut tail = None;
+
+    let mut inner = pair.into_inner();
+    while let Some(p) = inner.next() {
+        match p.as_rule() {
+            Rule::term => {
+                elements.push(build_term(p)?);
+            }
+            Rule::term_tail => {
+                let tail_term_pair = p.into_inner().next().unwrap();
+                tail = Some(Box::new(build_term(tail_term_pair)?));
+                break; // No more elements after tail
+            }
+            _ => return Err(ParseError::UnexpectedRule(p.as_rule())),
+        }
+    }
+
+    Ok(ListConstruction { elements, tail })
 }
 
 #[cfg(test)]
@@ -795,11 +821,14 @@ mod tests {
                 search_strategy: None,
                 body: vec![Goal::Equality(
                     Term::Variable("a".to_string()),
-                    Term::List(vec![
-                        Term::Literal(Literal::Number("1".to_string())),
-                        Term::Literal(Literal::Number("2".to_string())),
-                        Term::Literal(Literal::Number("3".to_string())),
-                    ]),
+                    Term::List(ListConstruction {
+                        elements: vec![
+                            Term::Literal(Literal::Number("1".to_string())),
+                            Term::Literal(Literal::Number("2".to_string())),
+                            Term::Literal(Literal::Number("3".to_string())),
+                        ],
+                        tail: None,
+                    }),
                 )],
             })],
         };

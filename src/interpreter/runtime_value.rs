@@ -26,17 +26,41 @@ impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
                 let lterm = LTerm::var(Box::leak(name.clone().into_boxed_str()));
                 Ok(RuntimeValue::Term(lterm))
             }
-            Term::List(items) => {
+            Term::List(list_construction) => {
                 let mut lterms = Vec::new();
-                for item in items {
+                for item in &list_construction.elements {
                     if let RuntimeValue::Term(lterm) = Self::from_ast_term(item)? {
                         lterms.push(lterm);
                     } else {
                         return Err("List items must be terms".to_string());
                     }
                 }
-                let lterm = LTerm::from_array(&lterms);
-                Ok(RuntimeValue::Term(lterm))
+
+                // Build either a proper or an improper list depending on whether a tail
+                // expression is present.  When a tail is given we must produce the
+                // classic "dotted list" representation `[a, b | tail]`, i.e. cons all
+                // element terms onto the (already recursively converted) tail term.
+                let list_term = if let Some(tail_term_ast) = &list_construction.tail {
+                    // Convert the tail AST term first so we can cons onto it.
+                    let tail_lterm = match Self::from_ast_term(tail_term_ast)? {
+                        RuntimeValue::Term(t) => t,
+                        _ => {
+                            return Err("List tail must be a term".to_string());
+                        }
+                    };
+
+                    // Starting from the tail, cons each element in reverse order.
+                    let mut acc = tail_lterm;
+                    for elem in lterms.into_iter().rev() {
+                        acc = LTerm::cons(elem, acc);
+                    }
+                    acc
+                } else {
+                    // Proper list – simply convert from array of element terms.
+                    LTerm::from_array(&lterms)
+                };
+
+                Ok(RuntimeValue::Term(list_term))
             }
             _ => Err(format!("Unsupported term type: {:?}", term)),
         }
@@ -141,10 +165,13 @@ mod tests {
 
     #[test]
     fn test_from_ast_list() {
-        let term = Term::List(vec![
-            Term::Literal(Literal::Number("1".to_string())),
-            Term::Literal(Literal::Number("2".to_string())),
-        ]);
+        let term = Term::List(ListConstruction {
+            elements: vec![
+                Term::Literal(Literal::Number("1".to_string())),
+                Term::Literal(Literal::Number("2".to_string())),
+            ],
+            tail: None,
+        });
         let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
 
         assert!(runtime_val.as_term().is_some());

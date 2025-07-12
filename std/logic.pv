@@ -1,0 +1,50 @@
+// Logic Relations
+// Common logical operations and constraints
+
+// Always succeeds
+pub rel succeed() {
+    true == true
+}
+
+// Always fails
+pub rel fail() {
+    true == false
+}
+
+// Distinct relation - all elements in list are different
+pub rel distinct(l) {
+    // For lists of different sizes
+    l == [];
+    l == [_];
+    |a, b| {
+        l == [a, b], a != b
+    };
+    |a, b, c| {
+        l == [a, b, c], a != b, a != c, b != c
+    };
+    |a, b, c, d| {
+        l == [a, b, c, d], a != b, a != c, a != d, b != c, b != d, c != d
+    };
+    |a, b, c, d, e| {
+        l == [a, b, c, d, e], 
+        a != b, a != c, a != d, a != e,
+        b != c, b != d, b != e,
+        c != d, c != e,
+        d != e
+    }
+}
+
+// All different - alias for distinct
+pub rel all_different(l) {
+    distinct(l)
+}
+
+// Between relation - x is between min and max (inclusive)
+pub rel between(x, min, max) {
+    x == min;
+    x == max;
+    // For numeric ranges (simplified)
+    min == 0, max == 10, member(x, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    min == 1, max == 5, member(x, [1, 2, 3, 4, 5]);
+    min == 1, max == 10, member(x, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+} 

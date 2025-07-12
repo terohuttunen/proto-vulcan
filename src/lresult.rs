@@ -1,6 +1,6 @@
+use crate::engine::Engine;
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
-use crate::engine::Engine;
 use crate::relation::diseq::DisequalityConstraint;
 use crate::state::constraint::store::ConstraintStore;
 use crate::state::constraint::Constraint;
@@ -9,8 +9,19 @@ use std::fmt;
 use std::ops::Deref;
 use std::rc::Rc;
 
-#[derive(Clone, Debug)]
+#[derive(Derivative)]
+#[derivative(Clone(bound = "U: User"), Debug(bound = "U: User"))]
 pub struct LResult<U: User, E: Engine<U>>(pub LTerm<U, E>, pub Rc<ConstraintStore<U, E>>);
+
+impl<U, E> PartialEq<LResult<U, E>> for LResult<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn eq(&self, other: &LResult<U, E>) -> bool {
+        self.0 == other.0 && Rc::ptr_eq(&self.1, &other.1)
+    }
+}
 
 impl<U, E> LResult<U, E>
 where
