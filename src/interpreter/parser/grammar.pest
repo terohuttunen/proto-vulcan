@@ -127,7 +127,7 @@ custom_param = { ident ~ "=" ~ param_value }
 param_value = { number_literal | string_literal | boolean_literal | ident }
 
 pattern_matching = { "match" ~ term ~ "{" ~ (pattern_arm ~ ("," ~ pattern_arm)* ~ ","?)? ~ "}" }
-pattern_arm = { pattern ~ "=>" ~ "{" ~ goal_body ~ "}" }
+pattern_arm = { pattern ~ "=>" ~ (goal | "{" ~ goal_body ~ "}") }
 parenthesized_goal = { "(" ~ goal_body ~ ")" }
 
 // -- Basic Goals --

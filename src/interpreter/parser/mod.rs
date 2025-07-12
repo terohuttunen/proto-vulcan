@@ -561,7 +561,12 @@ fn build_pattern_matching(pair: Pair<Rule>) -> ParseResult<PatternMatching> {
 fn build_pattern_arm(pair: Pair<Rule>) -> ParseResult<PatternArm> {
     let mut inner = pair.into_inner();
     let pattern = build_pattern(inner.next().unwrap())?;
-    let body = build_goal_body(inner.next().unwrap())?;
+    let body_part = inner.next().unwrap();
+    let body = match body_part.as_rule() {
+        Rule::goal => vec![build_goal(body_part)?],
+        Rule::goal_body => build_goal_body(body_part)?,
+        _ => return Err(ParseError::UnexpectedRule(body_part.as_rule())),
+    };
     Ok(PatternArm { pattern, body })
 }
 
@@ -1150,6 +1155,63 @@ mod tests {
                 [] => { succeed() },
                 [a] => { a == 1 },
                 _ => { fail() }
+            }
+        }"#;
+        let ast = parse_str(input).unwrap();
+        let expected = Program {
+            items: vec![Item::Relation(RelationDefinition {
+                is_pub: false,
+                attributes: vec![],
+                name: "test".to_string(),
+                parameters: vec![Parameter {
+                    name: "l".to_string(),
+                    type_name: None,
+                }],
+                search_strategy: None,
+                body: vec![Goal::PatternMatch(PatternMatching {
+                    term: Term::Variable("l".to_string()),
+                    arms: vec![
+                        PatternArm {
+                            pattern: Pattern::List(ListPattern {
+                                elements: vec![],
+                                tail: None,
+                            }),
+                            body: vec![Goal::RelationCall(RelationCall {
+                                name: "succeed".to_string(),
+                                args: vec![],
+                            })],
+                        },
+                        PatternArm {
+                            pattern: Pattern::List(ListPattern {
+                                elements: vec![Pattern::Variable("a".to_string())],
+                                tail: None,
+                            }),
+                            body: vec![Goal::Equality(
+                                Term::Variable("a".to_string()),
+                                Term::Literal(Literal::Number("1".to_string())),
+                            )],
+                        },
+                        PatternArm {
+                            pattern: Pattern::Wildcard,
+                            body: vec![Goal::RelationCall(RelationCall {
+                                name: "fail".to_string(),
+                                args: vec![],
+                            })],
+                        },
+                    ],
+                })],
+            })],
+        };
+        assert_eq!(ast, expected);
+    }
+
+    #[test]
+    fn test_parse_pattern_matching_single_goal() {
+        let input = r#"rel test(l) {
+            match l {
+                [] => succeed(),
+                [a] => a == 1,
+                _ => fail()
             }
         }"#;
         let ast = parse_str(input).unwrap();
