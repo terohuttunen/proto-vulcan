@@ -2,35 +2,205 @@
 // Common relations for working with lists
 
 // Member relation - checks if x is a member of list l
-// Recursive implementation like member.rs
 pub rel member(x, l) {
     match l {
-        [head | _] => { head == x },
-        [_ | rest] => { member(x, rest) }
+        [head | _] => head == x,
+        [_ | rest] => member(x, rest)
     }
+}
+
+// Check membership in empty list → no results
+@test(expected = [])
+rel member_test_1(q) {
+    member(q, [])
+}
+
+// Find all members of [1, 2, 3] → [1, 2, 3]
+@test(expected = [1, 2, 3])
+rel member_test_2(q) {
+    member(q, [1, 2, 3])
+}
+
+// Test member with any block (same as member_test_2) → [1, 2, 3]
+@test(expected = [1, 2, 3])
+rel member_test_3(q) {
+    any {
+        member(q, [1, 2, 3])
+    }
+}
+
+// Test member with all block (same as member_test_2) → [1, 2, 3]
+@test(expected = [1, 2, 3])
+rel member_test_4(q) {
+    all {
+        member(q, [1, 2, 3])
+    }
+}
+
+// Check if specific element is member (forward mode)
+@test
+rel member_test_5() {
+    member(2, [1, 2, 3])
+}
+
+// Check if element is NOT member (should fail)
+@test(should_fail)
+rel member_test_6() {
+    member(4, [1, 2, 3])
+}
+
+// Test member with nested lists
+@test(expected = [1, [2, 3], 4])
+rel member_test_7(q) {
+    member(q, [1, [2, 3], 4])
+}
+
+// Test member with duplicates
+@test(expected = [1, 1, 2, 3])
+rel member_test_8(q) {
+    member(q, [1, 1, 2, 3])
 }
 
 // Append relation - ls is l appended with s
-// Implementation following append.rs pattern
 pub rel append(l, s, ls) {
     match [l, s, ls] {
-        [[], x, x] => { succeed() },
-        [[x | l1], l2, [x | l3]] => { append(l1, l2, l3) }
+        [[], x, x] => true,
+        [[x | l1], l2, [x | l3]] => append(l1, l2, l3)
     }
 }
 
+// Append two empty lists → []
+@test(expected = [[]])
+rel append_test_1(q) {
+    append([], [], q)
+}
+
+// Append [1, 2] and [3, 4] → [1, 2, 3, 4]
+@test(expected = [[1, 2, 3, 4]])
+rel append_test_2(q) {
+    append([1, 2], [3, 4], q)
+}
+
+// Append empty list to [1, 2] → [1, 2]
+@test(expected = [[1, 2]])
+rel append_test_3(q) {
+    append([], [1, 2], q)
+}
+
+// Append [1, 2] to empty list → [1, 2]
+@test(expected = [[1, 2]])
+rel append_test_4(q) {
+    append([1, 2], [], q)
+}
+
+// Try to append non-list (should fail)
+@test(should_fail)
+rel append_test_5(q) {
+    append(0, [1, 2], q)
+}
+
+// Append list to non-list creates improper list [1, 2 | 3]
+@test(expected = [[1, 2 | 3]])
+rel append_test_6(q) {
+    append([1, 2], 3, q)
+}
+
+// Test append backward mode: find what lists make [1, 2, 3] when appended
+@test(expected = [[[], [1, 2, 3]], [[1], [2, 3]], [[1, 2], [3]], [[1, 2, 3], []]])
+rel append_test_7(q) {
+    |l, s| {
+        append(l, s, [1, 2, 3]),
+        q == [l, s]
+    }
+}
+
+// Test append with nested lists
+@test(expected = [[[1, [2]], 3, 4]])
+rel append_test_8(q) {
+    append([[1, [2]]], [3, 4], q)
+}
+
+// Test append with longer lists
+@test(expected = [[1, 2, 3, 4, 5, 6]])
+rel append_test_9(q) {
+    append([1, 2, 3], [4, 5, 6], q)
+}
+
+
 // Cons relation - out is rest with first prepended
-// Implementation following cons.rs pattern
 pub rel cons(first, rest, out) {
     [first | rest] == out
 }
 
+// Cons 1 to empty list → [1]
+@test(expected = [[1]])
+rel cons_test_1(q) {
+    cons(1, [], q)
+}
+
+// Cons 1 to [2, 3] → [1, 2, 3]
+@test(expected = [[1, 2, 3]])
+rel cons_test_2(q) {
+    cons(1, [2, 3], q)
+}
+
+// Cons list [1] to [2, 3] → [[1], 2, 3]
+@test(expected = [[[1], 2, 3]])
+rel cons_test_3(q) {
+    cons([1], [2, 3], q)
+}
+
+// Test cons backward mode: deconstruct [1, 2, 3] into first and rest
+@test(expected = [[1, [2, 3]]])
+rel cons_test_4(q) {
+    |first, rest| {
+        cons(first, rest, [1, 2, 3]),
+        q == [first, rest]
+    }
+}
+
+// Test cons with nested structures
+@test(expected = [[[1, [2]], [3, 4]]])
+rel cons_test_5(q) {
+    cons([1, [2]], [[3, 4]], q)
+}
+
 // First element relation - first is the first element of list
-// Implementation following first.rs pattern using cons
 pub rel first(list, first) {
     |rest| {
         cons(first, rest, list)
     }
+}
+
+// Extract first element from [1, 2, 3] → 1
+@test(expected = [1])
+rel first_test_1(q) {
+    first([1, 2, 3], q)
+}
+
+// Extract first element from [[1, 2], 3, 4] → [1, 2]
+@test(expected = [[1, 2]])
+rel first_test_2(q) {
+    first([[1, 2], 3, 4], q)
+}
+
+// Extract first element from empty list [] → no results
+@test(expected = [])
+rel first_test_3(q) {
+    first([], q)
+}
+
+// Construct list with known first element → [1, 2, 3]
+@test(expected = [[1, 2, 3]])
+rel first_test_4(q) {
+    first(q, 1),
+    q == [1, 2, 3]
+}
+
+// Test first with deeply nested structure
+@test(expected = [[[1, [2]], [3]]])
+rel first_test_5(q) {
+    first([[[1, [2]], [3]], 4], q)
 }
 
 // Rest relation - rest is list without its first element
@@ -41,12 +211,49 @@ pub rel rest(list, rest) {
     }
 }
 
+// Get rest of [1, 2, 3] → [2, 3]
+@test(expected = [[2, 3]])
+rel rest_test_1(q) {
+    rest([1, 2, 3], q)
+}
+
+// Get rest of [[1, 2], 3, 4] → [3, 4]
+@test(expected = [[3, 4]])
+rel rest_test_2(q) {
+    rest([[1, 2], 3, 4], q)
+}
+
+// Get rest of empty list [] → no results
+@test(expected = [])
+rel rest_test_3(q) {
+    rest([], q)
+}
+
+// Get rest of single element [1] → []
+@test(expected = [[]])
+rel rest_test_4(q) {
+    rest([1], q)
+}
+
+// Construct list with known rest → [1, 2, 3]
+@test(expected = [[1, 2, 3]])
+rel rest_test_5(q) {
+    rest(q, [2, 3]),
+    q == [1, 2, 3]
+}
+
+// Test rest with deeply nested structure
+@test(expected = [[4]])
+rel rest_test_6(q) {
+    rest([[[1, [2]], [3]], 4], q)
+}
+
 // Rember relation - out is ls with first occurrence of x removed
 // Implementation following rember.rs pattern
 pub rel rember(x, ls, out) {
     match [ls, out] {
-        [[], []] => { succeed() },
-        [[a | d], d] => { a == x },
+        [[], []] => true,
+        [[a | d], d] => a == x,
         [[y | ys], [y | zs]] => { 
             y != x,
             rember(x, ys, zs)
@@ -54,11 +261,65 @@ pub rel rember(x, ls, out) {
     }
 }
 
+// Remove from empty list → []
+@test(expected = [[]])
+rel rember_test_1(q) {
+    rember(1, [], q)
+}
+
+// Remove first element 1 from [1, 2, 3] → [2, 3]
+@test(expected = [[2, 3]])
+rel rember_test_2(q) {
+    rember(1, [1, 2, 3], q)
+}
+
+// Remove middle element 2 from [1, 2, 3] → [1, 3]
+@test(expected = [[1, 3]])
+rel rember_test_3(q) {
+    rember(2, [1, 2, 3], q)
+}
+
+// Remove last element 3 from [1, 2, 3] → [1, 2]
+@test(expected = [[1, 2]])
+rel rember_test_4(q) {
+    rember(3, [1, 2, 3], q)
+}
+
+// Remove non-existent element 4 → [1, 2, 3]
+@test(expected = [[1, 2, 3]])
+rel rember_test_5(q) {
+    rember(4, [1, 2, 3], q)
+}
+
+// Remove first occurrence of 1 from [1, 1, 2, 3] → [1, 2, 3]
+@test(expected = [[1, 2, 3]])
+rel rember_test_6(q) {
+    rember(1, [1, 1, 2, 3], q)
+}
+
+// Find what was removed: rember(q, [1, 2, 3], [2, 3]) → 1
+@test(expected = [1])
+rel rember_test_7(q) {
+    rember(q, [1, 2, 3], [2, 3])
+}
+
+// Test rember with nested lists
+@test(expected = [[1, [3, 4]]])
+rel rember_test_8(q) {
+    rember([2], [1, [2], [3, 4]], q)
+}
+
+// Test rember with complex nested structure
+@test(expected = [[[1, [2]], [4]]])
+rel rember_test_9(q) {
+    rember([3], [[1, [2]], [3], [4]], q)
+}
+
 // Permute relation - yl is a permutation of xl
 // Implementation following permute.rs pattern
 pub rel permute(xl, yl) {
     match [xl, yl] {
-        [[], []] => { succeed() },
+        [[], []] => true,
         [[x | xs], _] => {
             |ys| {
                 permute(xs, ys),
@@ -66,4 +327,64 @@ pub rel permute(xl, yl) {
             }
         }
     }
+}
+
+// Empty lists are permutations → true
+@test
+rel permute_test_1() {
+    permute([], [])
+}
+
+// Single element lists are permutations → true
+@test
+rel permute_test_2() {
+    permute([1], [1])
+}
+
+// [1, 2] and [2, 1] are permutations → true
+@test
+rel permute_test_3() {
+    permute([1, 2], [2, 1])
+}
+
+// [1, 2, 3] and [3, 1, 2] are permutations → true
+@test
+rel permute_test_4() {
+    permute([1, 2, 3], [3, 1, 2]),
+}
+
+// [1, 2] and [1, 3] are not permutations → no results
+@test(should_fail)
+rel permute_test_5() {
+    permute([1, 2], [1, 3]),
+}
+
+// [1, 2, 3] and [4, 5, 6] are not permutations → no results
+@test(should_fail)
+rel permute_test_6() {
+    permute([1, 2, 3], [4, 5, 6]),
+}
+
+// [1, 2, 3] and [2, 3, 1] are permutations → true
+@test
+rel permute_test_7() {
+    permute([1, 2, 3], [2, 3, 1])
+}
+
+// Test permute with duplicates
+@test
+rel permute_test_8() {
+    permute([1, 1, 2], [2, 1, 1])
+}
+
+// Test permute with nested structures
+@test
+rel permute_test_9() {
+    permute([[1, 2], [3]], [[3], [1, 2]])
+}
+
+// Test permute with longer list
+@test
+rel permute_test_10() {
+    permute([1, 2, 3, 4], [4, 2, 1, 3])
 } 
