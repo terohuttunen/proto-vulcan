@@ -86,6 +86,16 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         None
     }
 
+    /// Searches for a variable only in the current (innermost) scope.
+    /// Used for pattern matching to ensure variables within a pattern are unified.
+    fn lookup_var_current_scope(&self, name: &str) -> Option<LTerm<U, E>> {
+        if let Some(scope) = self.locals.last() {
+            scope.get(name).cloned()
+        } else {
+            None
+        }
+    }
+
     /// Binds a variable name to an `LTerm` in the current (innermost) scope.
     pub fn bind_var(&mut self, name: String, var: LTerm<U, E>) {
         if let Some(scope) = self.locals.last_mut() {
@@ -295,9 +305,14 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     ) -> Result<LTerm<U, E>, InterpreterError> {
         match pattern {
             Pattern::Variable(name) => {
-                let var = self.create_fresh_var();
-                self.bind_var(name.clone(), var.clone());
-                Ok(var)
+                // Check if the variable already exists in the current scope
+                if let Some(existing_var) = self.lookup_var_current_scope(name) {
+                    Ok(existing_var)
+                } else {
+                    let var = self.create_fresh_var();
+                    self.bind_var(name.clone(), var.clone());
+                    Ok(var)
+                }
             }
             Pattern::Wildcard => Ok(LTerm::any()),
             Pattern::Literal(lit) => convert_ast_literal_to_runtime(lit),
