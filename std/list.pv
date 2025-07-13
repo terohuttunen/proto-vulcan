@@ -388,3 +388,77 @@ rel permute_test_9() {
 rel permute_test_10() {
     permute([1, 2, 3, 4], [4, 2, 1, 3])
 } 
+
+// Distinct relation - guarantees that all elements of l are distinct from each other
+// Implementation following distinct.rs pattern
+pub rel distinct(l) {
+    match l {
+        [] => true,
+        [_] => true,
+        [first, second | rest] => {
+            first != second,
+            distinct([first | rest]),
+            distinct([second | rest])
+        }
+    }
+}
+
+// Empty list is distinct → true
+@test
+rel distinct_test_1() {
+    distinct([])
+}
+
+// Single element list is distinct → true
+@test
+rel distinct_test_2() {
+    distinct([1])
+}
+
+// Two different elements are distinct → true
+@test
+rel distinct_test_3() {
+    distinct([1, 2])
+}
+
+// Two same elements are not distinct → should fail
+@test(should_fail)
+rel distinct_test_4() {
+    distinct([1, 1])
+}
+
+// Three different elements are distinct → true
+@test
+rel distinct_test_5() {
+    distinct([1, 2, 3])
+}
+
+// Three elements with one duplicate are not distinct → should fail
+@test(should_fail)
+rel distinct_test_6() {
+    distinct([1, 2, 2])
+}
+
+// Four different elements are distinct → true
+@test
+rel distinct_test_7() {
+    distinct([1, 2, 3, 4])
+}
+
+// Four elements with duplicates are not distinct → should fail
+@test(should_fail)
+rel distinct_test_8() {
+    distinct([1, 2, 3, 2])
+}
+
+// Test distinct with nested lists
+@test
+rel distinct_test_9() {
+    distinct([[1, 2], [3, 4], [5]])
+}
+
+// Test distinct with nested lists containing duplicates → should fail
+@test(should_fail)
+rel distinct_test_10() {
+    distinct([[1, 2], [3, 4], [1, 2]])
+} 
