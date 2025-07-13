@@ -1,0 +1,50 @@
+// tests/expected_assertions.pv
+use std::list::*;
+
+// --- Tests for `expected` parameter ---
+
+// This test should pass because the results match the expected list.
+@test(expected = [1, 2, 3])
+rel expected_matches_results(q) {
+    member(q, [1, 2, 3])
+}
+
+// This test should fail, but the test runner should see it as a "pass" because of `should_fail`.
+// The results do not match the expected list.
+@test(should_fail, expected = [1, 2, 4])
+rel expected_mismatched_values(q) {
+    member(q, [1, 2, 3])
+}
+
+// This test should fail, but the test runner should see it as a "pass" because of `should_fail`.
+// The results are in a different order than expected.
+@test(should_fail, expected = [3, 2, 1])
+rel expected_mismatched_order(q) {
+    member(q, [1, 2, 3])
+}
+
+// This test should fail, but the test runner should see it as a "pass" because of `should_fail`.
+// There are more results than expected.
+@test(should_fail, expected = [1, 2])
+rel expected_too_few_results(q) {
+    member(q, [1, 2, 3])
+}
+
+// This test should fail, but the test runner should see it as a "pass" because of `should_fail`.
+// There are fewer results than expected.
+@test(should_fail, expected = [1, 2, 3, 4])
+rel expected_too_many_results(q) {
+    member(q, [1, 2, 3])
+}
+
+// This test should pass with a single result.
+@test(expected = [42])
+rel expected_single_result(q) {
+    q == 42
+}
+
+// This test should pass with string values.
+@test(expected = ["a", "b", "c"])
+rel expected_string_results(q) {
+    member(q, ["a", "b", "c"])
+} 

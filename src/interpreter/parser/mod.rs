@@ -189,7 +189,23 @@ fn build_attribute(pair: Pair<Rule>) -> ParseResult<Attribute> {
     if let Some(args_pair) = inner.next() {
         if args_pair.as_rule() == Rule::attribute_args {
             for arg_pair in args_pair.into_inner() {
-                args.push(arg_pair.as_str().to_string());
+                if arg_pair.as_rule() == Rule::attribute_arg {
+                    let mut inner_arg = arg_pair.into_inner();
+                    let arg_rule_pair = inner_arg.next().unwrap();
+                    match arg_rule_pair.as_rule() {
+                        Rule::named_attribute_arg => {
+                            let mut named_inner = arg_rule_pair.into_inner();
+                            let arg_name = named_inner.next().unwrap().as_str().to_string();
+                            let arg_value = build_term(named_inner.next().unwrap())?;
+                            args.push(AttributeArg::Named(arg_name, arg_value));
+                        }
+                        Rule::flag_attribute_arg => {
+                            let flag_name = arg_rule_pair.as_str().to_string();
+                            args.push(AttributeArg::Flag(flag_name));
+                        }
+                        _ => return Err(ParseError::UnexpectedRule(arg_rule_pair.as_rule())),
+                    }
+                }
             }
         }
     }

@@ -70,8 +70,11 @@ relation_definition = {
 parameter = { ident ~ (":" ~ type_name)? }
 type_name = { ident }
 pub_keyword = { "pub" }
-attribute = { "@" ~ ident ~ ("(" ~ attribute_args ~ ")")? }
-attribute_args = { ident ~ ("," ~ ident)* }
+attribute = { "@" ~ ident ~ ("(" ~ attribute_args? ~ ")")? }
+attribute_args = { attribute_arg ~ ("," ~ attribute_arg)* ~ ","? }
+attribute_arg = { named_attribute_arg | flag_attribute_arg }
+named_attribute_arg = { ident ~ "=" ~ term }
+flag_attribute_arg = { ident }
 
 // =============================================================================
 // Goal Structures

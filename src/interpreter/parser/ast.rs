@@ -60,9 +60,15 @@ pub struct ImplBlock {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum AttributeArg {
+    Flag(String),
+    Named(String, Term),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Attribute {
     pub name: String,
-    pub args: Vec<String>,
+    pub args: Vec<AttributeArg>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -498,26 +504,33 @@ impl Display for RelationDefinition {
 
 impl Display for Attribute {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "@{}", self.name)?;
-        if !self.args.is_empty() {
-            write!(f, "(")?;
-            for (i, arg) in self.args.iter().enumerate() {
-                if i > 0 {
-                    write!(f, ", ")?;
-                }
-                write!(f, "{}", arg)?;
+        write!(f, "@{}(", self.name)?;
+        let mut first = true;
+        for arg in &self.args {
+            if !first {
+                write!(f, ", ")?;
             }
-            write!(f, ")")?;
+            write!(f, "{}", arg)?;
+            first = false;
         }
-        Ok(())
+        write!(f, ")")
+    }
+}
+
+impl Display for AttributeArg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AttributeArg::Flag(name) => write!(f, "{}", name),
+            AttributeArg::Named(name, value) => write!(f, "{} = {}", name, value),
+        }
     }
 }
 
 impl Display for Parameter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)?;
-        if let Some(ty) = &self.type_name {
-            write!(f, ": {}", ty)?;
+        if let Some(type_name) = &self.type_name {
+            write!(f, ": {}", type_name)?;
         }
         Ok(())
     }

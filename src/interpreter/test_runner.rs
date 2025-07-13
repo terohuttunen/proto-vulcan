@@ -3,13 +3,14 @@
 use super::assertions::{assert_eq, assert_neq};
 use super::environment::Environment;
 use super::parser::{
-    ast::{Item, Program, RelationDefinition, SearchStrategy},
+    ast::{self, Item, Program, RelationDefinition, SearchStrategy, Term},
     parse_str,
 };
 use super::query::QueryResult;
+use super::runtime_value::RuntimeValue;
 use super::{Interpreter, InterpreterError};
 use crate::engine::{DefaultEngine, Engine};
-use crate::goal::Goal;
+use crate::goal::{Goal, GoalCast};
 use crate::lterm::LTerm;
 use crate::user::{DefaultUser, User};
 use colored::*;
@@ -30,6 +31,10 @@ pub struct TestItem {
     pub test_name: String,
     /// Whether the test is expected to produce no results.
     pub should_fail: bool,
+    /// An expected list of results for a query-based test.
+    pub expected: Option<Term>,
+    /// The variable to query in a query-based test.
+    pub query_variable: Option<String>,
 }
 
 /// The result of a single test execution.
@@ -98,7 +103,7 @@ impl TestRunner {
     fn execute_test(&self, item: &TestItem) -> TestResult {
         let mut interpreter = DefaultInterpreter::with_stdlib();
 
-        // Manually register assertion relations
+        // Manually register assertion builtins
         self.register_assertion_builtins(&mut interpreter.environment.borrow_mut());
 
         let file_contents = match fs::read_to_string(&item.file_path) {
@@ -115,16 +120,89 @@ impl TestRunner {
             return TestResult::Error(format!("Load error: {}", e));
         }
 
-        let query_string = format!("{}()", item.test_name);
+        let query_string = if let Some(var) = &item.query_variable {
+            format!("{}({})", item.test_name, var)
+        } else {
+            format!("{}()", item.test_name)
+        };
+
         match interpreter.query(&query_string) {
             Ok(results) => {
-                let successful_run = !results.is_empty();
-                // A test passes if its success state matches what's expected.
-                // (Succeeds and shouldn't fail) OR (Fails and should fail)
-                if successful_run != item.should_fail {
-                    TestResult::Pass
+                if let Some(expected_term) = &item.expected {
+                    let query_variable = if let Some(v) = &item.query_variable {
+                        v
+                    } else {
+                        return TestResult::Error(
+                            "`expected` parameter requires a query variable in the test relation."
+                                .to_string(),
+                        );
+                    };
+
+                    let result_lterms: Vec<LTerm<_, _>> = results
+                        .iter()
+                        .filter_map(|r| r.bindings.get(query_variable).map(|res| res.0.clone()))
+                        .collect();
+
+                    let expected_ast_list = if let ast::Term::List(list) = expected_term {
+                        &list.elements
+                    } else {
+                        return TestResult::Error(
+                            "`expected` parameter must be a list literal".to_string(),
+                        );
+                    };
+
+                    if result_lterms.len() != expected_ast_list.len() {
+                        let msg = format!(
+                            "Expected {} results, but got {}.",
+                            expected_ast_list.len(),
+                            result_lterms.len()
+                        );
+                        return if item.should_fail {
+                            TestResult::Pass
+                        } else {
+                            TestResult::Error(msg)
+                        };
+                    }
+
+                    let all_match = result_lterms.iter().zip(expected_ast_list.iter()).all(
+                        |(result_lterm, expected_ast_term)| {
+                            if let Ok(RuntimeValue::Term(expected_lterm)) =
+                                RuntimeValue::from_ast_term(expected_ast_term)
+                            {
+                                &expected_lterm == result_lterm
+                            } else {
+                                false
+                            }
+                        },
+                    );
+
+                    if all_match != item.should_fail {
+                        TestResult::Pass
+                    } else {
+                        if !all_match {
+                            let result_lterms_str: Vec<String> =
+                                result_lterms.iter().map(|t| t.to_string()).collect();
+                            let expected_ast_list_str: Vec<String> =
+                                expected_ast_list.iter().map(|t| format!("{}", t)).collect();
+
+                            TestResult::Error(format!(
+                                "Results did not match expected values. Got: {:?}, Expected: {:?}",
+                                result_lterms_str, expected_ast_list_str
+                            ))
+                        } else {
+                            TestResult::Error(
+                                "Test succeeded but was marked as should_fail".to_string(),
+                            )
+                        }
+                    }
                 } else {
-                    TestResult::Fail
+                    // Fallback to simple success/fail for tests without `expected`
+                    let successful_run = !results.is_empty();
+                    if successful_run != item.should_fail {
+                        TestResult::Pass
+                    } else {
+                        TestResult::Fail
+                    }
                 }
             }
             Err(e) => TestResult::Error(format!("Runtime error: {}", e)),
@@ -145,6 +223,12 @@ impl TestRunner {
             assert_neq(args[0].clone(), args[1].clone())
         });
         env.add_native_relation("assert_neq".to_string(), assert_neq_rel, 2);
+
+        // Register the member relation
+        let member_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+            crate::relation::member::member(args[0].clone(), args[1].clone()).cast_into()
+        });
+        env.add_native_relation("member".to_string(), member_rel, 2);
     }
 
     /// Discovers all tests within the given directory.
@@ -175,11 +259,29 @@ impl TestRunner {
             for item in &program.items {
                 if let Item::Relation(rel_def) = item {
                     if let Some(test_attr) = rel_def.attributes.iter().find(|a| a.name == "test") {
-                        let should_fail = test_attr.args.iter().any(|arg| arg == "should_fail");
+                        let mut should_fail = false;
+                        let mut expected = None;
+
+                        for arg in &test_attr.args {
+                            match arg {
+                                ast::AttributeArg::Flag(name) if name == "should_fail" => {
+                                    should_fail = true;
+                                }
+                                ast::AttributeArg::Named(name, value) if name == "expected" => {
+                                    expected = Some(value.clone());
+                                }
+                                _ => {} // Ignore other args
+                            }
+                        }
+
+                        let query_variable = rel_def.parameters.first().map(|p| p.name.clone());
+
                         tests.push(TestItem {
                             file_path: path.to_path_buf(),
                             test_name: rel_def.name.clone(),
                             should_fail,
+                            expected,
+                            query_variable,
                         });
                     }
                 }
