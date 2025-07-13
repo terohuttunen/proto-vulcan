@@ -17,7 +17,7 @@ use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::lterm::LTerm;
 use crate::operator::conde::Conde;
-use crate::operator::conj::{Conj, InferredConj};
+use crate::operator::conj::Conj;
 
 use crate::relation::eq;
 use crate::solver::{Solve, Solver};
@@ -91,6 +91,11 @@ pub struct ExecutionContext<'a, U: User, E: Engine<U>> {
 
     /// A counter to ensure that every fresh variable created has a unique ID.
     var_counter: usize,
+
+    /// Current search strategy context - tracks whether we're in BFS or DFS mode
+    /// This is used to enforce embedding rules: BFS cannot be embedded in DFS
+    search_strategy_stack: Vec<SearchStrategy>,
+
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
@@ -101,6 +106,8 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             environment,
             locals: vec![HashMap::new()], // Start with one base scope
             var_counter: 0,
+            // Start with BFS as the default search strategy
+            search_strategy_stack: vec![SearchStrategy::Bfs],
             _phantom: std::marker::PhantomData,
         }
     }
@@ -153,6 +160,45 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     /// Returns the top-level variable bindings.
     pub fn get_variable_bindings(&self) -> HashMap<String, LTerm<U, E>> {
         self.locals.first().cloned().unwrap_or_default()
+    }
+
+    /// Get the current search strategy (top of stack)
+    pub fn current_search_strategy(&self) -> SearchStrategy {
+        self.search_strategy_stack
+            .last()
+            .copied()
+            .unwrap_or(SearchStrategy::Bfs)
+    }
+
+    /// Push a new search strategy onto the context stack
+    pub fn push_search_strategy(&mut self, strategy: SearchStrategy) {
+        self.search_strategy_stack.push(strategy);
+    }
+
+    /// Pop the current search strategy from the context stack
+    pub fn pop_search_strategy(&mut self) {
+        if self.search_strategy_stack.len() > 1 {
+            self.search_strategy_stack.pop();
+        }
+        // Always keep at least one strategy (BFS default)
+    }
+
+    /// Validate that a search strategy can be used in the current context
+    /// BFS cannot be embedded in DFS, but DFS can be embedded in BFS
+    pub fn validate_search_strategy(
+        &self,
+        requested_strategy: SearchStrategy,
+    ) -> Result<(), InterpreterError> {
+        let current = self.current_search_strategy();
+        match (current, requested_strategy) {
+            (SearchStrategy::Dfs, SearchStrategy::Bfs) => {
+                Err(InterpreterError::IllegalSearchStrategyEmbedding {
+                    attempted: "BFS".to_string(),
+                    current_context: "DFS".to_string(),
+                })
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Validates that all symbols referenced in a relation body can be found
@@ -243,51 +289,67 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 self.ast_pattern_match_to_runtime(pattern_match)
             }
             AstGoal::Conjunction(AstConjunction { body, params }) => {
-                // Check if DFS strategy is specified
-                let is_dfs = params
+                // Check if explicit search strategy is specified
+                let requested_strategy = params
                     .as_ref()
                     .and_then(|p| p.strategy.as_ref())
-                    .map(|s| matches!(s, SearchStrategy::Dfs))
-                    .unwrap_or(false);
+                    .copied()
+                    .unwrap_or(self.current_search_strategy());
 
-                if is_dfs {
-                    // For DFS, use InferredConj which can be cast to either BFS or DFS
-                    let mut runtime_goals = Vec::new();
-                    for g in body {
-                        runtime_goals.push(self.ast_goal_to_runtime(g)?);
-                    }
-                    let inferred_goal = InferredConj::from_array(&runtime_goals);
-                    Ok(inferred_goal.cast_into())
-                } else {
-                    // Default BFS behavior
-                    let mut conj_goal = Goal::succeed();
-                    for g in body.iter().rev() {
-                        let runtime_goal = self.ast_goal_to_runtime(g)?;
-                        conj_goal = Conj::new(runtime_goal, conj_goal);
-                    }
-                    Ok(conj_goal)
+                // Validate that the strategy embedding is legal
+                self.validate_search_strategy(requested_strategy)?;
+
+                // Push the strategy for the conjunction body
+                self.push_search_strategy(requested_strategy);
+
+                let mut runtime_goals = Vec::new();
+                for g in body {
+                    runtime_goals.push(self.ast_goal_to_runtime(g)?);
                 }
+
+                // Pop the strategy after processing the body
+                self.pop_search_strategy();
+
+                // For conjunctions, the search strategy doesn't affect the operator itself
+                // (conjunction is always sequential), but it affects nested operations
+                let mut conj_goal = Goal::succeed();
+                for goal in runtime_goals.into_iter().rev() {
+                    conj_goal = Conj::new(goal, conj_goal);
+                }
+                Ok(conj_goal)
             }
             AstGoal::Disjunction(disjunction) => {
-                // Check if DFS strategy is specified
-                let is_dfs = disjunction
+                // Check if explicit search strategy is specified
+                let requested_strategy = disjunction
                     .params
                     .as_ref()
                     .and_then(|p| p.strategy.as_ref())
-                    .map(|s| matches!(s, SearchStrategy::Dfs))
-                    .unwrap_or(false);
+                    .copied()
+                    .unwrap_or(self.current_search_strategy());
+
+                // Validate that the strategy embedding is legal
+                self.validate_search_strategy(requested_strategy)?;
+
+                // Push the strategy for the disjunction body
+                self.push_search_strategy(requested_strategy);
 
                 let mut runtime_goals = Vec::new();
                 for g in &disjunction.body {
                     runtime_goals.push(self.ast_goal_to_runtime(g)?);
                 }
 
-                if is_dfs {
-                    // Use our custom DFS disjunction implementation
-                    Ok(DFSDisjunction::new(runtime_goals))
-                } else {
-                    // Default BFS behavior using Comte
-                    Ok(Conde::from_array(&runtime_goals).cast_into())
+                // Pop the strategy after processing the body
+                self.pop_search_strategy();
+
+                match requested_strategy {
+                    SearchStrategy::Dfs => {
+                        // Use our custom DFS disjunction implementation
+                        Ok(DFSDisjunction::new(runtime_goals))
+                    }
+                    SearchStrategy::Bfs => {
+                        // Default BFS behavior using Comte
+                        Ok(Conde::from_array(&runtime_goals).cast_into())
+                    }
                 }
             }
             AstGoal::Parenthesized(body) => {
@@ -392,8 +454,12 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 // This catches UnknownRelation errors early, before deferred execution
                 self.validate_relation_body_symbols(&rel_def.body)?;
 
-                let deferred_call =
-                    DeferredRelationCall::new(self.environment.clone(), rel_def.into(), arg_terms);
+                let deferred_call = DeferredRelationCall::new(
+                    self.environment.clone(),
+                    rel_def.into(),
+                    arg_terms,
+                    self.current_search_strategy(),
+                );
 
                 Ok(Goal::Dynamic(Rc::new(deferred_call)))
             }

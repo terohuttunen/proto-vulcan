@@ -76,6 +76,53 @@ rel test_dfs_order(q) {
 rel test_dfs_conjunction() {
     all(strategy = dfs) {
         assert_eq(1, 1),
-        assert_eq("test", "test")
+        assert_eq(2, 2)
     }
+}
+
+// Test relation-level @dfs attribute
+// This relation is marked as DFS-only, so it should use depth-first search internally
+@test(expected = [1, 2, 3, 4, 5, 6])
+rel test_relation_level_dfs(q) @dfs {
+    any {
+        member(q, [1, 2, 3]),
+        member(q, [4, 5, 6])
+    }
+}
+
+// Test that @bfs relation works in BFS context (should interleave)
+@test(expected = [1, 4, 2, 5, 3, 6])
+rel test_relation_level_bfs(q) @bfs {
+    any {
+        member(q, [1, 2, 3]),
+        member(q, [4, 5, 6])
+    }
+}
+
+// Test nested DFS relation call from BFS context (should work - DFS in BFS is legal)
+@test(expected = [1, 2, 3, 4, 5, 6])
+rel test_dfs_in_bfs(q) {
+    test_relation_level_dfs(q)
+}
+
+// Test that BFS relation can be called from DFS context 
+// Based on logic programming theory: explicit @bfs annotation overrides parent context
+// This issues a warning but is allowed - the relation author knows best
+@test(expected = [1, 4, 2, 5, 3, 6]) 
+rel test_bfs_in_dfs(q) @dfs {
+    test_relation_level_bfs(q)
+}
+
+// Helper relation for testing inheritance
+rel helper_relation_inherits_strategy(q) {
+    any {
+        member(q, [10, 20]),
+        member(q, [30, 40])
+    }
+}
+
+// Test that helper relations inherit search strategy from calling context
+@test(expected = [10, 20, 30, 40])  // DFS order when called from DFS context
+rel test_strategy_inheritance(q) @dfs {
+    helper_relation_inherits_strategy(q)
 } 

@@ -87,7 +87,7 @@ pub struct Parameter {
     pub type_name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum SearchStrategy {
     Bfs, // default
     Dfs,

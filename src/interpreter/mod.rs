@@ -19,7 +19,7 @@ pub mod query;
 mod runtime_value;
 pub mod test_runner;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InterpreterError {
     ParseError(String),
     RuntimeError(String),
@@ -28,6 +28,15 @@ pub enum InterpreterError {
     DuplicateDefinition(String),
     ModuleNotFound(PathBuf),
     IoError(String),
+    IllegalSearchStrategyEmbedding {
+        attempted: String,
+        current_context: String,
+    },
+    SearchStrategyWarning {
+        attempted: String,
+        current_context: String,
+        reason: String,
+    },
 }
 
 impl Display for InterpreterError {
@@ -44,6 +53,23 @@ impl Display for InterpreterError {
                 write!(f, "Module not found: {}", path.display())
             }
             InterpreterError::IoError(msg) => write!(f, "I/O error: {}", msg),
+            InterpreterError::IllegalSearchStrategyEmbedding {
+                attempted,
+                current_context,
+            } => write!(
+                f,
+                "Illegal search strategy embedding: Cannot use {} search within {} context",
+                attempted, current_context
+            ),
+            InterpreterError::SearchStrategyWarning {
+                attempted,
+                current_context,
+                reason,
+            } => write!(
+                f,
+                "Search strategy warning: Using {} search within {} context - {}",
+                attempted, current_context, reason
+            ),
         }
     }
 }

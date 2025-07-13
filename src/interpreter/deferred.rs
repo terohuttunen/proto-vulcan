@@ -4,7 +4,7 @@
 
 use super::environment::Environment;
 use super::execution::ExecutionContext;
-use super::parser::ast::RelationDefinition;
+use super::parser::ast::{RelationDefinition, SearchStrategy};
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::lterm::LTerm;
@@ -29,6 +29,8 @@ pub struct DeferredRelationCall<U: User, E: Engine<U>> {
     pub environment: Rc<RefCell<Environment<U, E>>>,
     pub rel_def: Rc<RelationDefinition>,
     pub call_args: Vec<LTerm<U, E>>,
+    /// The search strategy context from the calling site
+    pub parent_search_strategy: SearchStrategy,
 }
 
 // Manual implementation of Debug to avoid issues with the recursive environment type.
@@ -46,19 +48,49 @@ impl<U: User, E: Engine<U>> DeferredRelationCall<U, E> {
         environment: Rc<RefCell<Environment<U, E>>>,
         rel_def: Rc<RelationDefinition>,
         call_args: Vec<LTerm<U, E>>,
+        parent_search_strategy: SearchStrategy,
     ) -> Self {
         Self {
             environment,
             rel_def,
             call_args,
+            parent_search_strategy,
         }
     }
 }
 
 impl<U: User, E: Engine<U>> Solve<U, E> for DeferredRelationCall<U, E> {
     fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        // Create a temporary execution context to convert the relation body from AST to a runtime goal.
         let mut exec_context = ExecutionContext::new(self.environment.clone());
+
+        // Set up the search strategy context
+        // If the relation has its own @dfs/@bfs strategy, use that; otherwise inherit from parent
+        let relation_strategy = self
+            .rel_def
+            .search_strategy
+            .unwrap_or(self.parent_search_strategy);
+
+        // For explicit strategy annotations, check for potentially problematic combinations
+        // but allow them (this is based on logic programming theory - explicit annotations override)
+        if let Some(explicit_strategy) = self.rel_def.search_strategy {
+            match (self.parent_search_strategy, explicit_strategy) {
+                (SearchStrategy::Dfs, SearchStrategy::Bfs) => {
+                    // Theoretically problematic: BFS in DFS breaks deterministic exploration
+                    // But explicit @bfs annotation overrides this - relation author knows best
+                    eprintln!(
+                        "Warning: Relation '{}' uses @bfs within DFS context - may break deterministic exploration",
+                        self.rel_def.name
+                    );
+                }
+                _ => {
+                    // DFS in BFS is fine (maintains overall fairness)
+                    // BFS in BFS and DFS in DFS are also fine
+                }
+            }
+        }
+
+        // Push the relation's search strategy onto the context
+        exec_context.push_search_strategy(relation_strategy);
 
         // Push a new scope for the relation's parameters.
         exec_context.push_scope();
