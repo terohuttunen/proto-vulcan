@@ -41,7 +41,7 @@ rel disjunction_succeeds_on_second_branch() {
 rel disjunction_fails_on_no_match() {
     // This test fails because neither branch of the match can succeed.
     match 3 {
-        1 => { succeed() },
-        2 => { succeed() }
+        1 => { true },
+        2 => { true }
     }
 } 
