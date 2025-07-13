@@ -92,7 +92,8 @@ goal = {
     disequality_goal |
     method_call |
     call_expr |
-    parenthesized_goal
+    parenthesized_goal |
+    literal
 }
 
 // -- Variable Declarations --

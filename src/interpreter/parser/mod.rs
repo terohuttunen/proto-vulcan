@@ -338,6 +338,13 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
             let body = build_goal_body(pair.into_inner().next().unwrap())?;
             Ok(Goal::Parenthesized(body))
         }
+        Rule::literal => {
+            let literal = build_literal(pair)?;
+            match literal {
+                Literal::Boolean(b) => Ok(Goal::BooleanLiteral(b)),
+                _ => Err(ParseError::UnexpectedRule(Rule::literal)),
+            }
+        }
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
 }

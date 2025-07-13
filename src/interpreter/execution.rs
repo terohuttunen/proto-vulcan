@@ -163,6 +163,13 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 Ok(conj_goal)
             }
             AstGoal::MethodCall(_) => todo!(),
+            AstGoal::BooleanLiteral(b) => {
+                if *b {
+                    Ok(crate::relation::succeed::succeed().cast_into())
+                } else {
+                    Ok(crate::relation::fail::fail().cast_into())
+                }
+            }
         }
     }
 

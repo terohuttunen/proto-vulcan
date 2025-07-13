@@ -203,6 +203,7 @@ pub enum Goal {
     Equality(Term, Term),
     Disequality(Term, Term),
     Parenthesized(GoalBody),
+    BooleanLiteral(bool),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -564,6 +565,7 @@ impl Display for Goal {
                 }
                 write!(f, ")")
             }
+            Goal::BooleanLiteral(b) => write!(f, "{}", b),
         }
     }
 }
