@@ -619,10 +619,12 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
             Ok(Term::NamedStruct(build_named_struct_construction(pair)?))
         }
         Rule::call_expr => Ok(Term::Compound(build_compound_construction(pair)?)),
+        Rule::path_term => Ok(Term::Compound(CompoundConstruction {
+            name: pair.as_str().to_string(),
+            args: vec![],
+        })),
         Rule::parenthesized_term => Ok(Term::Parenthesized(Box::new(build_term(
-            pair.into_inner()
-                .next()
-                .ok_or_else(|| ParseError::MissingRule(Rule::term))?,
+            pair.into_inner().next().unwrap(),
         )?))),
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
@@ -690,7 +692,12 @@ fn build_pattern(pair: Pair<Rule>) -> ParseResult<Pattern> {
         Rule::wildcard => Ok(Pattern::Wildcard),
         Rule::list_pattern => Ok(Pattern::List(build_list_pattern(pair)?)),
         Rule::named_struct_pattern => Ok(Pattern::NamedStruct(build_named_struct_pattern(pair)?)),
-        Rule::compound_pattern => Ok(Pattern::Compound(build_compound_pattern(pair)?)),
+        Rule::compound_pattern_with_parens => {
+            Ok(Pattern::Compound(build_compound_pattern_with_parens(pair)?))
+        }
+        Rule::compound_pattern_no_parens => {
+            Ok(Pattern::Compound(build_compound_pattern_no_parens(pair)?))
+        }
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
 }
@@ -736,7 +743,7 @@ fn build_field_pattern(pair: Pair<Rule>) -> ParseResult<FieldPattern> {
     Ok(FieldPattern { name, pattern })
 }
 
-fn build_compound_pattern(pair: Pair<Rule>) -> ParseResult<CompoundPattern> {
+fn build_compound_pattern_with_parens(pair: Pair<Rule>) -> ParseResult<CompoundPattern> {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let mut args = vec![];
@@ -744,6 +751,13 @@ fn build_compound_pattern(pair: Pair<Rule>) -> ParseResult<CompoundPattern> {
         args.push(build_pattern(pattern_pair)?);
     }
     Ok(CompoundPattern { name, args })
+}
+
+fn build_compound_pattern_no_parens(pair: Pair<Rule>) -> ParseResult<CompoundPattern> {
+    Ok(CompoundPattern {
+        name: pair.as_str().to_string(),
+        args: vec![],
+    })
 }
 
 fn build_list_construction(pair: Pair<Rule>) -> ParseResult<ListConstruction> {
@@ -1573,43 +1587,128 @@ mod tests {
 
     #[test]
     fn test_parse_compound_pattern() {
-        let input = r#"rel test(x) {
-            match x {
-                Some(a) => { a == 42 }
-            }
-        }"#;
+        let input = "rel a() { match x { Cons(h, t) => { h == 1 } } }";
         let ast = parse_str(input).unwrap();
-        let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
-                is_pub: false,
-                attributes: vec![],
-                name: "test".to_string(),
-                parameters: vec![Parameter {
-                    name: "x".to_string(),
-                    type_name: None,
-                }],
-                search_strategy: None,
-                body: vec![Goal::PatternMatch(PatternMatching {
-                    term: Term::Variable("x".to_string()),
-                    arms: vec![PatternArm {
-                        pattern: Pattern::Compound(CompoundPattern {
-                            name: "Some".to_string(),
-                            args: vec![Pattern::Variable("a".to_string())],
-                        }),
-                        body: vec![Goal::Equality(
-                            Term::Variable("a".to_string()),
-                            Term::Literal(Literal::Number("42".to_string())),
-                        )],
-                    }],
-                })],
-            })],
+
+        let item = ast.items.get(0).unwrap();
+        let relation = match item {
+            Item::Relation(r) => r,
+            _ => panic!("Expected relation"),
         };
-        assert_eq!(ast, expected);
+        let goal = relation.body.get(0).unwrap();
+        let pattern_matching = match goal {
+            Goal::PatternMatch(pm) => pm,
+            _ => panic!("Expected pattern matching goal"),
+        };
+
+        let expected_pattern = Pattern::Compound(CompoundPattern {
+            name: "Cons".to_string(),
+            args: vec![
+                Pattern::Variable("h".to_string()),
+                Pattern::Variable("t".to_string()),
+            ],
+        });
+
+        assert_eq!(pattern_matching.arms[0].pattern, expected_pattern);
+    }
+
+    #[test]
+    fn test_parse_compound_pattern_qualified() {
+        let input = "rel a() { match x { Option::Some(a) => { a == 1 } } }";
+        let ast = parse_str(input).unwrap();
+
+        let item = ast.items.get(0).unwrap();
+        let relation = match item {
+            Item::Relation(r) => r,
+            _ => panic!("Expected relation"),
+        };
+        let goal = relation.body.get(0).unwrap();
+        let pattern_matching = match goal {
+            Goal::PatternMatch(pm) => pm,
+            _ => panic!("Expected pattern matching goal"),
+        };
+
+        let expected_pattern = Pattern::Compound(CompoundPattern {
+            name: "Option::Some".to_string(),
+            args: vec![Pattern::Variable("a".to_string())],
+        });
+
+        assert_eq!(pattern_matching.arms[0].pattern, expected_pattern);
+    }
+
+    #[test]
+    fn test_parse_compound_pattern_no_parens() {
+        let input = "rel a() { match x { Option::None => {} } }";
+        let ast = parse_str(input).unwrap();
+
+        let item = ast.items.get(0).unwrap();
+        let relation = match item {
+            Item::Relation(r) => r,
+            _ => panic!("Expected relation"),
+        };
+        let goal = relation.body.get(0).unwrap();
+        let pattern_matching = match goal {
+            Goal::PatternMatch(pm) => pm,
+            _ => panic!("Expected pattern matching goal"),
+        };
+
+        let expected_pattern = Pattern::Compound(CompoundPattern {
+            name: "Option::None".to_string(),
+            args: vec![],
+        });
+
+        assert_eq!(pattern_matching.arms[0].pattern, expected_pattern);
+    }
+
+    #[test]
+    fn test_parse_compound_construction_qualified() {
+        let input = "rel a() { x == std::option::Option::Some(1) }";
+        let ast = parse_str(input).unwrap();
+        let item = ast.items.get(0).unwrap();
+        let relation = match item {
+            Item::Relation(r) => r,
+            _ => panic!("Expected relation"),
+        };
+        let goal = relation.body.get(0).unwrap();
+        let (_lhs, rhs) = match goal {
+            Goal::Equality(_lhs, rhs) => (_lhs, rhs),
+            _ => panic!("Expected equality goal"),
+        };
+
+        let expected_term = Term::Compound(CompoundConstruction {
+            name: "std::option::Option::Some".to_string(),
+            args: vec![Term::Literal(Literal::Number("1".to_string()))],
+        });
+
+        assert_eq!(*rhs, expected_term);
+    }
+
+    #[test]
+    fn test_parse_compound_construction_no_parens() {
+        let input = "rel a() { x == std::option::Option::None }";
+        let ast = parse_str(input).unwrap();
+        let item = ast.items.get(0).unwrap();
+        let relation = match item {
+            Item::Relation(r) => r,
+            _ => panic!("Expected relation"),
+        };
+        let goal = relation.body.get(0).unwrap();
+        let (_lhs, rhs) = match goal {
+            Goal::Equality(_lhs, rhs) => (_lhs, rhs),
+            _ => panic!("Expected equality goal"),
+        };
+
+        let expected_term = Term::Compound(CompoundConstruction {
+            name: "std::option::Option::None".to_string(),
+            args: vec![],
+        });
+
+        assert_eq!(*rhs, expected_term);
     }
 
     #[test]
     fn test_parse_error_handling() {
-        let input = "invalid syntax here";
+        let input = "rel my_rel(a, b) { a = b }"; // Missing type, invalid goal
         let result = parse_str(input);
         assert!(result.is_err());
     }

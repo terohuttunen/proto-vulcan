@@ -134,7 +134,7 @@ parenthesized_goal = { "(" ~ goal_body ~ ")" }
 equality_goal = { term ~ "==" ~ term }
 disequality_goal = { term ~ "!=" ~ term }
 method_call = { term ~ "." ~ ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
-call_expr = { ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
+call_expr = { path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
 
 // =============================================================================
 // Terms and Patterns
@@ -146,6 +146,7 @@ term = {
     named_struct_construction |
     call_expr |
     parenthesized_term |
+    path_term |
     variable
 }
 
@@ -157,7 +158,8 @@ pattern = {
     wildcard |
     list_pattern |
     named_struct_pattern |
-    compound_pattern |
+    compound_pattern_with_parens |
+    compound_pattern_no_parens |
     variable
 }
 
@@ -172,10 +174,13 @@ named_struct_pattern = {
 }
 field_pattern = { ident ~ ":" ~ pattern }
 
-compound_pattern = { ident ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ")" }
+path = @{ ident ~ ("::" ~ ident)* }
+compound_pattern_with_parens = { path ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ","? ~ ")" }
+compound_pattern_no_parens = @{ ident ~ ("::" ~ ident)+ }
 
 // -- Term/Pattern Components --
 literal = { boolean_literal | number_literal | string_literal | char_literal }
+path_term = @{ ident ~ ("::" ~ ident)+ }
 variable = @{ ident }
 list_construction = { "[" ~ term_list? ~ "]" }
 term_list = { term ~ ("," ~ term)* ~ term_tail? }
