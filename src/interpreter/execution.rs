@@ -9,7 +9,7 @@ use super::deferred::DeferredRelationCall;
 use super::environment::Environment;
 use super::parser::ast::{
     Conjunction as AstConjunction, Goal as AstGoal, Literal, Pattern, PatternMatching,
-    RelationCall, Term,
+    RelationCall, SearchStrategy, Term,
 };
 use super::runtime_value::RuntimeValue;
 use super::InterpreterError;
@@ -17,12 +17,59 @@ use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::lterm::LTerm;
 use crate::operator::conde::Conde;
-use crate::operator::conj::Conj;
+use crate::operator::conj::{Conj, InferredConj};
+
 use crate::relation::eq;
+use crate::solver::{Solve, Solver};
+use crate::state::State;
+use crate::stream::{LazyStream, Stream};
 use crate::user::User;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+
+/// A custom disjunction that uses DFS (depth-first search) semantics
+/// This works within the BFS Goal<U, E> framework but uses DFS stream operations
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
+struct DFSDisjunction<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    goals: Vec<Goal<U, E>>,
+}
+
+impl<U, E> DFSDisjunction<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn new(goals: Vec<Goal<U, E>>) -> Goal<U, E> {
+        Goal::dynamic(Rc::new(DFSDisjunction { goals }))
+    }
+}
+
+impl<U, E> Solve<U, E> for DFSDisjunction<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+        // Implement DFS by exploring the first goal completely before moving to the next
+        // This is the opposite of the interleaving behavior in BFS
+        let mut stream = Stream::empty();
+
+        // Process goals in reverse order, using DFS stream operations
+        for goal in self.goals.iter().rev() {
+            let new_stream = goal.solve(solver, state.clone());
+            // Use mplus_dfs to get depth-first semantics
+            stream = Stream::mplus_dfs(new_stream, LazyStream::delay(stream));
+        }
+
+        stream
+    }
+}
 
 /// The `ExecutionContext` is the primary state manager for the interpreter's
 /// runtime. It holds a reference to the broader `Environment` (which contains
@@ -195,20 +242,53 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             AstGoal::PatternMatch(pattern_match) => {
                 self.ast_pattern_match_to_runtime(pattern_match)
             }
-            AstGoal::Conjunction(AstConjunction { body, params: _ }) => {
-                let mut conj_goal = Goal::succeed();
-                for g in body.iter().rev() {
-                    let runtime_goal = self.ast_goal_to_runtime(g)?;
-                    conj_goal = Conj::new(runtime_goal, conj_goal);
+            AstGoal::Conjunction(AstConjunction { body, params }) => {
+                // Check if DFS strategy is specified
+                let is_dfs = params
+                    .as_ref()
+                    .and_then(|p| p.strategy.as_ref())
+                    .map(|s| matches!(s, SearchStrategy::Dfs))
+                    .unwrap_or(false);
+
+                if is_dfs {
+                    // For DFS, use InferredConj which can be cast to either BFS or DFS
+                    let mut runtime_goals = Vec::new();
+                    for g in body {
+                        runtime_goals.push(self.ast_goal_to_runtime(g)?);
+                    }
+                    let inferred_goal = InferredConj::from_array(&runtime_goals);
+                    Ok(inferred_goal.cast_into())
+                } else {
+                    // Default BFS behavior
+                    let mut conj_goal = Goal::succeed();
+                    for g in body.iter().rev() {
+                        let runtime_goal = self.ast_goal_to_runtime(g)?;
+                        conj_goal = Conj::new(runtime_goal, conj_goal);
+                    }
+                    Ok(conj_goal)
                 }
-                Ok(conj_goal)
             }
             AstGoal::Disjunction(disjunction) => {
+                // Check if DFS strategy is specified
+                let is_dfs = disjunction
+                    .params
+                    .as_ref()
+                    .and_then(|p| p.strategy.as_ref())
+                    .map(|s| matches!(s, SearchStrategy::Dfs))
+                    .unwrap_or(false);
+
                 let mut runtime_goals = Vec::new();
                 for g in &disjunction.body {
                     runtime_goals.push(self.ast_goal_to_runtime(g)?);
                 }
-                Ok(Conde::from_array(&runtime_goals).cast_into())
+
+                if is_dfs {
+                    // Use our custom DFS disjunction implementation
+                    Ok(DFSDisjunction::new(runtime_goals))
+                } else {
+                    // Default BFS behavior using Comte
+                    Ok(Conde::from_array(&runtime_goals).cast_into())
+                }
             }
             AstGoal::Parenthesized(body) => {
                 let mut conj_goal = Goal::succeed();
