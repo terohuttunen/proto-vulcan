@@ -1,0 +1,47 @@
+// tests/import_tests.pv
+// Comprehensive tests for import functionality
+
+// Test standard library imports
+use std::list::*;
+
+// Test simple selective imports
+use std::list::{member, append};
+
+// Test imports with aliases
+use std::list::{member as mem, append as app};
+
+// --- Test Standard Library Imports ---
+
+@test(expected = [1, 2, 3])
+rel test_std_member(q) {
+    member(q, [1, 2, 3])
+}
+
+@test(expected = [[1, 2, 3, 4]])
+rel test_std_append(result) {
+    append([1, 2], [3, 4], result)
+}
+
+// --- Test Selective Imports ---
+
+@test(expected = [1, 2, 3])
+rel test_selective_member(q) {
+    member(q, [1, 2, 3])
+}
+
+@test(expected = [[1, 2, 3, 4]])
+rel test_selective_append(result) {
+    append([1, 2], [3, 4], result)
+}
+
+// --- Test Import Aliases ---
+
+@test(expected = [1, 2, 3])
+rel test_alias_member(q) {
+    mem(q, [1, 2, 3])
+}
+
+@test(expected = [[1, 2, 3, 4]])
+rel test_alias_append(result) {
+    app([1, 2], [3, 4], result)
+} 

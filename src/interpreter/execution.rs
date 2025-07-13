@@ -108,6 +108,76 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         self.locals.first().cloned().unwrap_or_default()
     }
 
+    /// Validates that all symbols referenced in a relation body can be found
+    /// This catches UnknownRelation errors early, before deferred execution
+    fn validate_relation_body_symbols(
+        &self,
+        body: &[super::parser::ast::Goal],
+    ) -> Result<(), InterpreterError> {
+        for goal in body {
+            self.validate_goal_symbols(goal)?;
+        }
+        Ok(())
+    }
+
+    /// Recursively validates symbols in a goal
+    fn validate_goal_symbols(
+        &self,
+        goal: &super::parser::ast::Goal,
+    ) -> Result<(), InterpreterError> {
+        use super::parser::ast::Goal as AstGoal;
+
+        match goal {
+            AstGoal::RelationCall(call) => {
+                // Check if the relation exists
+                self.environment
+                    .borrow()
+                    .lookup(&call.name)
+                    .ok_or_else(|| InterpreterError::UnknownRelation(call.name.clone()))?;
+                Ok(())
+            }
+            AstGoal::Conjunction(conj) => {
+                for g in &conj.body {
+                    self.validate_goal_symbols(g)?;
+                }
+                Ok(())
+            }
+            AstGoal::Disjunction(disj) => {
+                for g in &disj.body {
+                    self.validate_goal_symbols(g)?;
+                }
+                Ok(())
+            }
+            AstGoal::PatternMatch(pattern_match) => {
+                for arm in &pattern_match.arms {
+                    for g in &arm.body {
+                        self.validate_goal_symbols(g)?;
+                    }
+                }
+                Ok(())
+            }
+            AstGoal::Parenthesized(body) => {
+                for g in body {
+                    self.validate_goal_symbols(g)?;
+                }
+                Ok(())
+            }
+            AstGoal::Let(_) => {
+                // Let declarations don't contain relation calls to validate
+                Ok(())
+            }
+            AstGoal::Fresh(_) => {
+                // Fresh variable declarations don't contain relation calls to validate
+                Ok(())
+            }
+            // These goal types don't contain relation calls
+            AstGoal::Equality(_, _)
+            | AstGoal::Disequality(_, _)
+            | AstGoal::BooleanLiteral(_)
+            | AstGoal::MethodCall(_) => Ok(()),
+        }
+    }
+
     // Main dispatcher for converting an AST goal to a runtime goal.
     pub fn ast_goal_to_runtime(&mut self, goal: &AstGoal) -> Result<Goal<U, E>, InterpreterError> {
         match goal {
@@ -236,6 +306,11 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                         rel_def.parameters.len()
                     )));
                 }
+
+                // Validate that all symbols in the relation body can be found
+                // This catches UnknownRelation errors early, before deferred execution
+                self.validate_relation_body_symbols(&rel_def.body)?;
+
                 let deferred_call =
                     DeferredRelationCall::new(self.environment.clone(), rel_def.into(), arg_terms);
 

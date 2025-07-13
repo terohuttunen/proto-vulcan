@@ -1,0 +1,33 @@
+// tests/test_module.pv
+// Test module for testing user-defined imports
+
+// Public relation for testing imports
+pub rel test_relation(x) {
+    x == "test_value"
+}
+
+// Private relation - should not be importable
+rel private_relation(x) {
+    x == "private_value"
+}
+
+// Public struct for testing type imports
+pub struct TestStruct {
+    pub field: String,
+}
+
+// Private struct - should not be importable  
+struct PrivateStruct {
+    field: String,
+}
+
+// Public helper relation
+pub rel helper_relation(x, y) {
+    x == "helper",
+    y == "result"
+}
+
+// Test relation using the struct
+pub rel test_struct_relation(s) {
+    s == TestStruct { field: "test" }
+} 

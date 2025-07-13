@@ -7,10 +7,32 @@ use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::user::User;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+
+/// Information about a loaded module
+#[derive(Debug, Clone)]
+pub struct ModuleInfo<U: User, E: Engine<U>> {
+    pub path: PathBuf,
+    pub public_symbols: HashMap<String, RuntimeValue<U, E>>,
+    pub private_symbols: HashMap<String, RuntimeValue<U, E>>,
+    pub public_types: HashMap<String, StructDefinition>,
+    pub private_types: HashMap<String, StructDefinition>,
+}
+
+impl<U: User, E: Engine<U>> ModuleInfo<U, E> {
+    pub fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            public_symbols: HashMap::new(),
+            private_symbols: HashMap::new(),
+            public_types: HashMap::new(),
+            private_types: HashMap::new(),
+        }
+    }
+}
 
 /// Environment manages symbol tables, scopes, and program state
 pub struct Environment<U: User, E: Engine<U>> {
@@ -24,6 +46,12 @@ pub struct Environment<U: User, E: Engine<U>> {
     types: HashMap<String, StructDefinition>,
     /// The base path for resolving modules.
     base_path: PathBuf,
+    /// Module search paths
+    search_paths: Vec<PathBuf>,
+    /// Loaded modules with their metadata
+    loaded_modules: HashMap<String, ModuleInfo<U, E>>,
+    /// Currently loading modules (for circular import detection)
+    loading_modules: HashSet<String>,
 }
 
 impl<U: User, E: Engine<U>> Environment<U, E> {
@@ -35,12 +63,20 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             scope_stack: vec!["global".to_string()],
             types: HashMap::new(),
             base_path: PathBuf::new(),
+            search_paths: vec![],
+            loaded_modules: HashMap::new(),
+            loading_modules: HashSet::new(),
         }
     }
 
     /// Sets the base path for module resolution.
     pub fn set_base_path(&mut self, path: PathBuf) {
         self.base_path = path;
+    }
+
+    /// Add a search path for module resolution
+    pub fn add_search_path(&mut self, path: PathBuf) {
+        self.search_paths.push(path);
     }
 
     /// Adds a native Rust function as a relation to the global scope.
@@ -52,6 +88,171 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     ) {
         let value = RuntimeValue::NativeRelation { func, arity };
         self.globals.insert(name, value);
+    }
+
+    /// Resolve a module path from path segments
+    fn resolve_module_path(&self, path_segments: &[String]) -> Result<PathBuf, InterpreterError> {
+        let module_path = path_segments.join("/");
+        let module_file = format!("{}.pv", module_path);
+
+        // Special handling for std library
+        if path_segments.first() == Some(&"std".to_string()) {
+            if path_segments.len() == 1 {
+                // "std" alone refers to std/mod.pv
+                let std_path = PathBuf::from("std/mod.pv");
+                if std_path.exists() {
+                    return Ok(std_path);
+                }
+            } else {
+                // "std::list" refers to std/list.pv
+                let std_path = PathBuf::from(&module_file);
+                if std_path.exists() {
+                    return Ok(std_path);
+                }
+            }
+        }
+
+        // Try direct file path (e.g., "tests/test_module.pv")
+        let direct_file = PathBuf::from(&module_file);
+        if direct_file.exists() {
+            return Ok(direct_file);
+        }
+
+        // Try base path first
+        if !self.base_path.as_os_str().is_empty() {
+            let candidate = self.base_path.join(&module_file);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+
+        // Try search paths
+        for search_path in &self.search_paths {
+            let candidate = search_path.join(&module_file);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+
+        // Try current directory
+        let candidate = PathBuf::from(&module_file);
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+
+        // Try as directory with mod.pv
+        let directory_candidate = PathBuf::from(&module_path).join("mod.pv");
+        if directory_candidate.exists() {
+            return Ok(directory_candidate);
+        }
+
+        Err(InterpreterError::ModuleNotFound(PathBuf::from(module_path)))
+    }
+
+    /// Load a module from a file path
+    fn load_module_from_path(
+        &mut self,
+        path: &Path,
+        module_name: &str,
+    ) -> Result<(), InterpreterError> {
+        // Check for circular imports
+        if self.loading_modules.contains(module_name) {
+            return Err(InterpreterError::RuntimeError(format!(
+                "Circular import detected: {}",
+                module_name
+            )));
+        }
+
+        // Check if already loaded
+        if self.loaded_modules.contains_key(module_name) {
+            return Ok(());
+        }
+
+        // Mark as loading
+        self.loading_modules.insert(module_name.to_string());
+
+        // Read and parse module
+        let source = fs::read_to_string(path).map_err(|e| {
+            InterpreterError::IoError(format!("Failed to read module {}: {}", module_name, e))
+        })?;
+
+        let program = super::parser::parse_str(&source).map_err(|e| {
+            InterpreterError::ParseError(format!("Parse error in module {}: {}", module_name, e))
+        })?;
+
+        // Create module info
+        let mut module_info = ModuleInfo::new(path.to_path_buf());
+
+        // Enter module scope
+        self.scope_stack.push(module_name.to_string());
+
+        // Load module items
+        for item in program.items {
+            match item {
+                Item::Relation(rel) => {
+                    let name = rel.name.clone();
+                    let is_public = rel.is_pub;
+                    let value = RuntimeValue::Relation(rel);
+
+                    if is_public {
+                        module_info
+                            .public_symbols
+                            .insert(name.clone(), value.clone());
+                    } else {
+                        module_info
+                            .private_symbols
+                            .insert(name.clone(), value.clone());
+                    }
+
+                    // Also add to module scope for internal use
+                    self.modules
+                        .entry(module_name.to_string())
+                        .or_insert_with(HashMap::new)
+                        .insert(name, value);
+                }
+                Item::Struct(struct_def) => {
+                    let name = struct_def.name.clone();
+                    let is_public = struct_def.is_pub;
+
+                    if is_public {
+                        module_info
+                            .public_types
+                            .insert(name.clone(), struct_def.clone());
+                    } else {
+                        module_info
+                            .private_types
+                            .insert(name.clone(), struct_def.clone());
+                    }
+
+                    // Also add to global types for internal use
+                    self.types.insert(name, struct_def);
+                }
+                Item::Module(nested_module) => {
+                    // Handle nested modules
+                    let nested_name = format!("{}::{}", module_name, nested_module.name);
+                    self.load_module(nested_module)?;
+                }
+                Item::Use(use_stmt) => {
+                    // Handle use statements within modules
+                    self.load_use_statement(use_stmt)?;
+                }
+                Item::Impl(_) => {
+                    // TODO: Handle impl blocks
+                }
+            }
+        }
+
+        // Exit module scope
+        self.scope_stack.pop();
+
+        // Store module info
+        self.loaded_modules
+            .insert(module_name.to_string(), module_info);
+
+        // Remove from loading set
+        self.loading_modules.remove(module_name);
+
+        Ok(())
     }
 
     /// Load a program into the environment
@@ -118,61 +319,168 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     fn load_use_statement(&mut self, use_stmt: UseStatement) -> Result<(), InterpreterError> {
         match use_stmt.path {
             UsePath::Simple(path_segments) => {
-                // Handle simple imports like "use std" or "use std::list"
-                if path_segments.len() == 1 && path_segments[0] == "std" {
-                    self.load_std_library()?;
-                } else if path_segments.len() == 2 && path_segments[0] == "std" {
-                    self.load_std_module(&path_segments[1])?;
-                } else {
-                    // For now, ignore other imports
-                    return Ok(());
-                }
+                self.import_simple(path_segments)?;
             }
             UsePath::Glob(path_segments) => {
-                // Handle glob imports like "use std::*"
-                if path_segments.len() == 1 && path_segments[0] == "std" {
-                    self.load_std_library()?;
-                } else {
-                    return Ok(());
-                }
+                self.import_glob(path_segments)?;
             }
-            UsePath::List(_, _) => {
-                // Handle list imports like "use std::{member, append}"
-                // TODO: Implement selective imports
-                return Ok(());
+            UsePath::List(path_segments, imports) => {
+                self.import_selective(path_segments, imports)?;
             }
         }
         Ok(())
     }
 
+    /// Handle simple imports like "use std::list"
+    fn import_simple(&mut self, path_segments: Vec<String>) -> Result<(), InterpreterError> {
+        if path_segments.is_empty() {
+            return Ok(());
+        }
+
+        // Special handling for std library
+        if path_segments.len() == 1 && path_segments[0] == "std" {
+            return self.load_std_library();
+        }
+
+        // Special handling for std library modules
+        if path_segments.len() == 2 && path_segments[0] == "std" {
+            return self.load_std_module(&path_segments[1]);
+        }
+
+        // Regular module loading
+        let module_name = path_segments.join("::");
+        let module_path = self.resolve_module_path(&path_segments)?;
+        self.load_module_from_path(&module_path, &module_name)?;
+
+        // For simple imports, do NOT import symbols into global namespace
+        // The module is loaded but symbols remain in their module namespace
+        // This respects namespace boundaries and requires explicit glob imports
+
+        Ok(())
+    }
+
+    /// Handle glob imports like "use std::*"
+    fn import_glob(&mut self, path_segments: Vec<String>) -> Result<(), InterpreterError> {
+        if path_segments.is_empty() {
+            return Ok(());
+        }
+
+        // Special handling for std library
+        if path_segments.len() == 1 && path_segments[0] == "std" {
+            return self.load_std_library();
+        }
+
+        // Regular module loading (including std library modules)
+        let module_name = path_segments.join("::");
+        let module_path = self.resolve_module_path(&path_segments)?;
+        self.load_module_from_path(&module_path, &module_name)?;
+
+        // Import all public symbols from the module into global namespace
+        if let Some(module_info) = self.loaded_modules.get(&module_name) {
+            for (name, value) in &module_info.public_symbols {
+                self.globals.insert(name.clone(), value.clone());
+            }
+            for (name, struct_def) in &module_info.public_types {
+                self.types.insert(name.clone(), struct_def.clone());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Handle selective imports like "use std::{member, append}"
+    fn import_selective(
+        &mut self,
+        path_segments: Vec<String>,
+        imports: Vec<(String, Option<String>)>,
+    ) -> Result<(), InterpreterError> {
+        if path_segments.is_empty() {
+            return Ok(());
+        }
+
+        // Special handling for std library modules
+        if path_segments.len() == 1 && path_segments[0] == "std" {
+            // For "use std::{member, append}" we need to load the list module
+            // and then import selective symbols
+            self.load_std_module("list")?;
+
+            // Import only the requested symbols from global scope
+            for (symbol_name, alias) in imports {
+                let import_name = alias.unwrap_or(symbol_name.clone());
+
+                if let Some(value) = self.globals.get(&symbol_name) {
+                    if import_name != symbol_name {
+                        self.globals.insert(import_name, value.clone());
+                    }
+                } else if let Some(struct_def) = self.types.get(&symbol_name) {
+                    if import_name != symbol_name {
+                        self.types.insert(import_name, struct_def.clone());
+                    }
+                } else {
+                    return Err(InterpreterError::UnknownRelation(format!(
+                        "Symbol '{}' not found in std library",
+                        symbol_name
+                    )));
+                }
+            }
+            return Ok(());
+        }
+
+        // Load the module first
+        let module_name = path_segments.join("::");
+        let module_path = self.resolve_module_path(&path_segments)?;
+        self.load_module_from_path(&module_path, &module_name)?;
+
+        // Import only the requested symbols
+        if let Some(module_info) = self.loaded_modules.get(&module_name) {
+            for (symbol_name, alias) in imports {
+                let import_name = alias.unwrap_or(symbol_name.clone());
+
+                // Try to find the symbol in public symbols
+                if let Some(value) = module_info.public_symbols.get(&symbol_name) {
+                    self.globals.insert(import_name, value.clone());
+                } else if let Some(struct_def) = module_info.public_types.get(&symbol_name) {
+                    self.types.insert(import_name, struct_def.clone());
+                } else {
+                    return Err(InterpreterError::UnknownRelation(format!(
+                        "Symbol '{}' not found in module '{}'",
+                        symbol_name, module_name
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Load the entire standard library
     pub fn load_std_library(&mut self) -> Result<(), InterpreterError> {
-        self.load_std_module("list")?;
-        self.load_std_module("logic")?;
-        self.load_std_module("util")?;
+        // Load the std root module (which may be empty)
+        let std_path = PathBuf::from("std/mod.pv");
+        if std_path.exists() {
+            self.load_module_from_path(&std_path, "std")?;
+        }
+
+        // Always load the core modules so they're available for import
+        // but don't automatically import them to global namespace
+        if PathBuf::from("std/list.pv").exists() {
+            self.load_module_from_path(&PathBuf::from("std/list.pv"), "std::list")?;
+        }
+
         Ok(())
     }
 
     /// Load a specific standard library module
     fn load_std_module(&mut self, module_name: &str) -> Result<(), InterpreterError> {
         let std_path = format!("std/{}.pv", module_name);
+        let full_module_name = format!("std::{}", module_name);
 
         if Path::new(&std_path).exists() {
-            let source = fs::read_to_string(&std_path).map_err(|e| {
-                InterpreterError::RuntimeError(format!(
-                    "Failed to read std module {}: {}",
-                    module_name, e
-                ))
-            })?;
+            // Use the new module loading system
+            self.load_module_from_path(&PathBuf::from(std_path), &full_module_name)?;
 
-            let program = super::parser::parse_str(&source).map_err(|e| {
-                InterpreterError::ParseError(format!("Parse error in std::{}: {}", module_name, e))
-            })?;
-
-            // Load the module contents into the global scope
-            for item in program.items {
-                self.load_item(item)?;
-            }
+            // Do NOT automatically import symbols into global scope
+            // This preserves namespace boundaries and requires explicit imports
         } else {
             return Err(InterpreterError::RuntimeError(format!(
                 "Standard library module '{}' not found",
@@ -185,6 +493,11 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
     /// Look up a symbol in the current scope
     pub fn lookup(&self, name: &str) -> Option<&RuntimeValue<U, E>> {
+        // Check if this is a qualified name (e.g., "std::list::member")
+        if name.contains("::") {
+            return self.lookup_qualified(name);
+        }
+
         // First check current module scope
         if let Some(current_scope) = self.scope_stack.last() {
             if current_scope != "global" {
@@ -198,6 +511,39 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
         // Then check globals
         self.globals.get(name)
+    }
+
+    /// Look up a qualified symbol name like "std::list::member"
+    fn lookup_qualified(&self, qualified_name: &str) -> Option<&RuntimeValue<U, E>> {
+        let parts: Vec<&str> = qualified_name.split("::").collect();
+        if parts.len() < 2 {
+            return None;
+        }
+
+        let symbol_name = parts.last().unwrap();
+        let module_path = parts[..parts.len() - 1].join("::");
+
+        // Check if the module is loaded
+        if let Some(module_info) = self.loaded_modules.get(&module_path) {
+            // Check public symbols first
+            if let Some(value) = module_info.public_symbols.get(*symbol_name) {
+                return Some(value);
+            }
+
+            // If we're in the same module, check private symbols too
+            if self.scope_stack.contains(&module_path) {
+                if let Some(value) = module_info.private_symbols.get(*symbol_name) {
+                    return Some(value);
+                }
+            }
+        }
+
+        // Also check the modules HashMap for backward compatibility
+        if let Some(module_symbols) = self.modules.get(&module_path) {
+            return module_symbols.get(*symbol_name);
+        }
+
+        None
     }
 
     /// Get a struct definition

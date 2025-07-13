@@ -113,11 +113,21 @@ impl TestRunner {
 
         let program = match parse_str(&file_contents) {
             Ok(p) => p,
-            Err(e) => return TestResult::Error(format!("Parse error: {}", e)),
+            Err(e) => {
+                return TestResult::Error(format!(
+                    "Parse error in file {}: {}",
+                    item.file_path.display(),
+                    e
+                ))
+            }
         };
 
         if let Err(e) = interpreter.load_program(program) {
-            return TestResult::Error(format!("Load error: {}", e));
+            return TestResult::Error(format!(
+                "Load error in file {}: {}",
+                item.file_path.display(),
+                e
+            ));
         }
 
         let query_string = if let Some(var) = &item.query_variable {
@@ -205,7 +215,12 @@ impl TestRunner {
                     }
                 }
             }
-            Err(e) => TestResult::Error(format!("Runtime error: {}", e)),
+            Err(e) => TestResult::Error(format!(
+                "Runtime error in test '{}' ({}): {}",
+                item.test_name,
+                item.file_path.display(),
+                e
+            )),
         }
     }
 
@@ -223,12 +238,6 @@ impl TestRunner {
             assert_neq(args[0].clone(), args[1].clone())
         });
         env.add_native_relation("assert_neq".to_string(), assert_neq_rel, 2);
-
-        // Register the member relation
-        let member_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
-            crate::relation::member::member(args[0].clone(), args[1].clone()).cast_into()
-        });
-        env.add_native_relation("member".to_string(), member_rel, 2);
     }
 
     /// Discovers all tests within the given directory.

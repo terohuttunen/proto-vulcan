@@ -21,6 +21,23 @@ impl<U: User, E: Engine<U>> Clone for RuntimeValue<U, E> {
     }
 }
 
+// RuntimeValue is not derivable because of the `func` field in NativeRelation.
+// We must implement Debug manually to handle the function pointer.
+impl<U: User, E: Engine<U>> std::fmt::Debug for RuntimeValue<U, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeValue::Relation(rd) => f.debug_tuple("Relation").field(rd).finish(),
+            RuntimeValue::NativeRelation { arity, .. } => f
+                .debug_struct("NativeRelation")
+                .field("func", &"<function>")
+                .field("arity", arity)
+                .finish(),
+            RuntimeValue::Struct(sd) => f.debug_tuple("Struct").field(sd).finish(),
+            RuntimeValue::Term(t) => f.debug_tuple("Term").field(t).finish(),
+        }
+    }
+}
+
 /// Runtime values that can be stored in the environment
 pub enum RuntimeValue<U: User, E: Engine<U>> {
     /// A relation definition
