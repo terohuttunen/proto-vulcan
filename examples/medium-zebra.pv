@@ -1,0 +1,105 @@
+// examples/medium-zebra.pv
+use std::list::*;
+
+/* The puzzle:
+        1. There are five houses.
+        2. The Englishman lives in the red house.
+        3. The Spaniard owns the dog.
+        4. Coffee is drunk in the green house.
+        5. The Ukrainian drinks tea.
+        6. The green house is immediately to the right of the ivory house.
+        7. The Old Gold smoker owns snails.
+        8. Kools are smoked in the yellow house.
+        9. Milk is drunk in the middle house.
+        10. The Norwegian lives in the first house.
+        11. The man who smokes Chesterfields lives in the house next to the man with the fox.
+        12. Kools are smoked in the house next to the house where the horse is kept.
+        13. The Lucky Strike smoker drinks orange juice.
+        14. The Japanese smokes Parliaments.
+        15. The Norwegian lives next to the blue house.
+
+    Now, who drinks water? Who owns the zebra?
+
+    In the interest of clarity, it must be added that each of the five houses is painted a
+    different color, and their inhabitants are of different national extractions, own
+    different pets, drink different beverages and smoke different brands of American cigarets
+    [sic]. One other thing: in statement 6, right means your right.
+
+    — Life International, December 17, 1962
+*/
+
+// Helper relation for "immediately to the right"
+rel righto(x, y, l) {
+    match l {
+        [first, second | _] => {
+            first == y,
+            second == x
+        },
+        [_ | rest] => righto(x, y, rest)
+    }
+}
+
+// Helper relation for "next to" (either direction)
+rel nexto(x, y, l) {
+    any {
+        righto(x, y, l),
+        righto(y, x, l)
+    }
+}
+
+// Main zebra puzzle relation with all 15 constraints
+rel medium_zebrao(houses) {
+    // Constraint 9: Milk is drunk in the middle house
+    [_, _, [_, _, "milk", _, _], _, _] == houses,
+    
+    // Constraint 10: The Norwegian lives in the first house
+    first(houses, ["norwegian", _, _, _, _]),
+    
+    // Constraint 15: The Norwegian lives next to the blue house
+    nexto(["norwegian", _, _, _, _], [_, _, _, _, "blue"], houses),
+    
+    // Constraint 6: The green house is immediately to the right of the ivory house
+    righto([_, _, _, _, "ivory"], [_, _, _, _, "green"], houses),
+    
+    // Constraint 2: The Englishman lives in the red house
+    member(["englishman", _, _, _, "red"], houses),
+    
+    // Constraint 8: Kools are smoked in the yellow house
+    member([_, "kools", _, _, "yellow"], houses),
+    
+    // Constraint 3: The Spaniard owns the dog
+    member(["spaniard", _, _, "dog", _], houses),
+    
+    // Constraint 4: Coffee is drunk in the green house
+    member([_, _, "coffee", _, "green"], houses),
+    
+    // Constraint 5: The Ukrainian drinks tea
+    member(["ukrainian", _, "tea", _, _], houses),
+    
+    // Constraint 13: The Lucky Strike smoker drinks orange juice
+    member([_, "lucky-strikes", "oj", _, _], houses),
+    
+    // Constraint 14: The Japanese smokes Parliaments
+    member(["japanese", "parliaments", _, _, _], houses),
+    
+    // Constraint 7: The Old Gold smoker owns snails
+    member([_, "oldgolds", _, "snails", _], houses),
+    
+    // Constraint 12: Kools are smoked in the house next to the house where the horse is kept
+    nexto([_, _, _, "horse", _], [_, "kools", _, _, _], houses),
+    
+    // Constraint 11: The man who smokes Chesterfields lives in the house next to the man with the fox
+    nexto([_, _, _, "fox", _], [_, "chesterfields", _, _, _], houses)
+}
+
+// Test case to run the medium zebra puzzle - verifies a solution exists
+@test
+rel medium_zebra_test(houses) {
+    medium_zebrao(houses)
+}
+
+// Test with expected solution to verify correctness
+@test(expected = [[["norwegian", "kools", _, "fox", "yellow"], ["ukrainian", "chesterfields", "tea", "horse", "blue"], ["englishman", "oldgolds", "milk", "snails", "red"], ["japanese", "parliaments", "coffee", _, "green"], ["spaniard", "lucky-strikes", "oj", "dog", "ivory"]]])
+rel medium_zebra_solution_test(houses) {
+    medium_zebrao(houses)
+} 
