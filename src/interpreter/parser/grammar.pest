@@ -146,6 +146,7 @@ call_expr = { path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
 
 term = {
     literal |
+    wildcard |
     list_construction |
     named_struct_construction |
     call_expr |

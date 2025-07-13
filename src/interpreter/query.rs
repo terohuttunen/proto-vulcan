@@ -226,6 +226,9 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
         Term::Variable(var_name) => {
             vars.push(var_name.clone());
         }
+        Term::Wildcard => {
+            // Wildcards don't contain variables to extract
+        }
         Term::List(list_construction) => {
             for element in &list_construction.elements {
                 extract_variables_from_term(element, vars);

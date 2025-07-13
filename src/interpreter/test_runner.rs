@@ -3,18 +3,15 @@
 use super::assertions::{assert_eq, assert_neq};
 use super::environment::Environment;
 use super::parser::{
-    ast::{self, Item, Program, RelationDefinition, SearchStrategy, Term},
+    ast::{self, Item},
     parse_str,
 };
-use super::query::QueryResult;
-use super::runtime_value::RuntimeValue;
 use super::{Interpreter, InterpreterError};
 use crate::engine::{DefaultEngine, Engine};
-use crate::goal::{Goal, GoalCast};
-use crate::lterm::LTerm;
+use crate::goal::Goal;
+use crate::lterm::{LTerm, LTermInner, LValue};
 use crate::user::{DefaultUser, User};
 use colored::*;
-use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -32,7 +29,7 @@ pub struct TestItem {
     /// Whether the test is expected to produce no results.
     pub should_fail: bool,
     /// An expected list of results for a query-based test.
-    pub expected: Option<Term>,
+    pub expected: Option<ast::Term>,
     /// The variable to query in a query-based test.
     pub query_variable: Option<String>,
 }
@@ -100,6 +97,137 @@ impl TestRunner {
         failed == 0
     }
 
+    fn register_assertion_builtins<U, E>(&self, env: &mut Environment<U, E>)
+    where
+        U: User,
+        E: Engine<U>,
+    {
+        let assert_eq_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+            assert_eq(args[0].clone(), args[1].clone())
+        });
+        env.add_native_relation("assert_eq".to_string(), assert_eq_rel, 2);
+
+        let assert_neq_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+            assert_neq(args[0].clone(), args[1].clone())
+        });
+        env.add_native_relation("assert_neq".to_string(), assert_neq_rel, 2);
+    }
+
+    /// Matches an LTerm against an AST Term, supporting wildcards.
+    fn matches_pattern<U: User, E: Engine<U>>(lterm: &LTerm<U, E>, term: &ast::Term) -> bool {
+        match term {
+            ast::Term::Wildcard => true, // Wildcard matches anything
+            ast::Term::Literal(literal) => Self::matches_literal(lterm, literal),
+            ast::Term::Variable(_) => {
+                // Variables in expected terms act as wildcards for matching
+                true
+            }
+            ast::Term::List(list_construction) => {
+                Self::matches_list_structure(lterm, list_construction)
+            }
+            ast::Term::NamedStruct(_) => {
+                // TODO: Implement struct pattern matching if needed
+                false
+            }
+            ast::Term::Compound(_) => {
+                // TODO: Implement compound pattern matching if needed
+                false
+            }
+            ast::Term::Parenthesized(inner) => Self::matches_pattern(lterm, inner),
+        }
+    }
+
+    /// Match an LTerm against a literal pattern.
+    fn matches_literal<U: User, E: Engine<U>>(lterm: &LTerm<U, E>, literal: &ast::Literal) -> bool {
+        match literal {
+            ast::Literal::Boolean(expected) => {
+                lterm.is_bool() && lterm.get_bool() == Some(*expected)
+            }
+            ast::Literal::Number(expected_str) => {
+                if let Ok(expected_num) = expected_str.parse::<isize>() {
+                    lterm.is_number() && lterm.get_number() == Some(expected_num)
+                } else {
+                    false
+                }
+            }
+            ast::Literal::String(expected) => {
+                // Check if the LTerm is a string value by examining the inner LValue
+                if let LTermInner::Val(LValue::String(actual)) = lterm.as_ref() {
+                    actual == expected
+                } else {
+                    false
+                }
+            }
+            ast::Literal::Char(expected) => {
+                // Check if the LTerm is a char value by examining the inner LValue
+                if let LTermInner::Val(LValue::Char(actual)) = lterm.as_ref() {
+                    actual == expected
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Match an LTerm against a list pattern structure.
+    fn matches_list_structure<U: User, E: Engine<U>>(
+        lterm: &LTerm<U, E>,
+        list_construction: &ast::ListConstruction,
+    ) -> bool {
+        // The LTerm must be a list
+        if !lterm.is_list() {
+            return false;
+        }
+
+        // Handle empty list case
+        if list_construction.elements.is_empty() && list_construction.tail.is_none() {
+            return lterm.is_empty();
+        }
+
+        // Collect LTerm elements into a vector for easier comparison
+        let lterm_elements: Vec<&LTerm<U, E>> = lterm.iter().collect();
+
+        // Check if we have enough elements for the pattern
+        if lterm_elements.len() < list_construction.elements.len() {
+            return false;
+        }
+
+        // Match each term element against corresponding LTerm element
+        for (i, term_element) in list_construction.elements.iter().enumerate() {
+            if !Self::matches_pattern(lterm_elements[i], term_element) {
+                return false;
+            }
+        }
+
+        // Handle tail pattern
+        if let Some(tail_term) = &list_construction.tail {
+            // If there's a tail term, create an LTerm for the remaining elements
+            let remaining_count = lterm_elements.len() - list_construction.elements.len();
+
+            if remaining_count == 0 {
+                // No remaining elements - tail should match empty list
+                let empty_list: LTerm<U, E> = LTerm::empty_list();
+                return Self::matches_pattern(&empty_list, tail_term);
+            } else if remaining_count == 1 {
+                // Single remaining element - match directly
+                let remaining_element = lterm_elements[list_construction.elements.len()];
+                return Self::matches_pattern(remaining_element, tail_term);
+            } else {
+                // Multiple remaining elements - construct a list from them
+                let remaining_elements: Vec<LTerm<U, E>> = lterm_elements
+                    [list_construction.elements.len()..]
+                    .iter()
+                    .map(|&e| e.clone())
+                    .collect();
+                let remaining_list = LTerm::from_vec(remaining_elements);
+                return Self::matches_pattern(&remaining_list, tail_term);
+            }
+        } else {
+            // No tail term - list lengths must match exactly
+            return lterm_elements.len() == list_construction.elements.len();
+        }
+    }
+
     fn execute_test(&self, item: &TestItem) -> TestResult {
         let mut interpreter = DefaultInterpreter::with_stdlib();
 
@@ -157,7 +285,7 @@ impl TestRunner {
                         &list.elements
                     } else {
                         return TestResult::Error(
-                            "`expected` parameter must be a list literal".to_string(),
+                            "`expected` parameter must be a list term".to_string(),
                         );
                     };
 
@@ -176,13 +304,7 @@ impl TestRunner {
 
                     let all_match = result_lterms.iter().zip(expected_ast_list.iter()).all(
                         |(result_lterm, expected_ast_term)| {
-                            if let Ok(RuntimeValue::Term(expected_lterm)) =
-                                RuntimeValue::from_ast_term(expected_ast_term)
-                            {
-                                &expected_lterm == result_lterm
-                            } else {
-                                false
-                            }
+                            Self::matches_pattern(result_lterm, expected_ast_term)
                         },
                     );
 
@@ -222,22 +344,6 @@ impl TestRunner {
                 e
             )),
         }
-    }
-
-    fn register_assertion_builtins<U, E>(&self, env: &mut Environment<U, E>)
-    where
-        U: User,
-        E: Engine<U>,
-    {
-        let assert_eq_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
-            assert_eq(args[0].clone(), args[1].clone())
-        });
-        env.add_native_relation("assert_eq".to_string(), assert_eq_rel, 2);
-
-        let assert_neq_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
-            assert_neq(args[0].clone(), args[1].clone())
-        });
-        env.add_native_relation("assert_neq".to_string(), assert_neq_rel, 2);
     }
 
     /// Discovers all tests within the given directory.

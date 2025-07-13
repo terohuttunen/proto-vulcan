@@ -637,6 +637,7 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
             Ok(Term::Literal(build_literal(lit_pair)?))
         }
         Rule::variable => Ok(Term::Variable(pair.as_str().to_string())),
+        Rule::wildcard => Ok(Term::Wildcard),
         Rule::list_construction => Ok(Term::List(build_list_construction(pair)?)),
         Rule::named_struct_construction => {
             Ok(Term::NamedStruct(build_named_struct_construction(pair)?))

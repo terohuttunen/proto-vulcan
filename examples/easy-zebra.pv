@@ -1,0 +1,29 @@
+// examples/easy-zebra.pv
+use std::list::*;
+
+// Helper relation for "right next to" logic
+rel righto(x, y, l) {
+    match l {
+        [first, second | _] => {
+            first == y,
+            second == x
+        },
+        [_ | rest] => righto(x, y, rest)
+    }
+}
+
+// Main zebra puzzle relation
+rel easy_zebrao(houses) {
+    // Italian lives in the second house
+    [_, ["italian", _], _] == houses,
+    // Spanish lives right next to red house
+    righto(["spanish", _], [_, "red"], houses),
+    // The Norwegian lives in the blue house
+    member(["norwegian", "blue"], houses)
+}
+
+// Test case to run the puzzle with wildcard pattern in expected
+@test(expected = [[["norwegian", "blue"], ["italian", "red"], ["spanish", _]]])
+rel easy_zebra_test(houses) {
+    easy_zebrao(houses)
+} 

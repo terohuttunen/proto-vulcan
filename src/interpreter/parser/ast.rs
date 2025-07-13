@@ -285,6 +285,7 @@ pub struct MethodCall {
 pub enum Term {
     Literal(Literal),
     Variable(String),
+    Wildcard,
     List(ListConstruction),
     NamedStruct(NamedStructConstruction),
     Compound(CompoundConstruction),
@@ -673,6 +674,7 @@ impl Display for Term {
         match self {
             Term::Literal(lit) => write!(f, "{}", lit),
             Term::Variable(v) => write!(f, "{}", v),
+            Term::Wildcard => write!(f, "_"),
             Term::List(list) => write!(f, "{}", list),
             Term::NamedStruct(s) => write!(f, "{}", s),
             Term::Compound(c) => write!(f, "{}", c),

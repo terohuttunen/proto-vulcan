@@ -259,6 +259,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             Term::Variable(name) => self
                 .lookup_var(name)
                 .ok_or_else(|| InterpreterError::UnknownVariable(name.clone())),
+            Term::Wildcard => Ok(LTerm::any()),
             Term::Literal(literal) => convert_ast_literal_to_runtime(literal),
             Term::List(list) => {
                 let mut elements = Vec::new();
