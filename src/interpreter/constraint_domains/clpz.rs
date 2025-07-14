@@ -1,0 +1,433 @@
+//! CLPZ (Constraint Logic Programming over Integers) Implementation
+//!
+//! This domain provides integer constraint syntax like:
+//! - x + y == z (arithmetic constraints)
+//! - x * y == z (multiplication constraints)
+//! - x < y (comparison constraints)
+
+use super::{ConstraintDomain, DomainConstraints};
+use crate::engine::Engine;
+use crate::goal::{AnyGoal, Goal, GoalCast};
+use crate::interpreter::execution::ExecutionContext;
+use crate::interpreter::parser::ast::ConstraintBody;
+use crate::interpreter::InterpreterError;
+use crate::lterm::LTerm;
+use crate::operator::conj::Conj;
+use crate::user::User;
+use pest::Parser;
+use pest_derive::Parser;
+
+#[derive(Parser)]
+#[grammar = "interpreter/constraint_domains/grammars/clpz.pest"]
+pub struct ClpzParser;
+
+/// CLPZ constraint domain
+pub struct ClpzDomain;
+
+impl ClpzDomain {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
+    fn name(&self) -> &str {
+        "clpz"
+    }
+
+    fn parse_constraints(
+        &self,
+        body: &ConstraintBody,
+    ) -> Result<Box<dyn DomainConstraints<U, E>>, InterpreterError> {
+        let trimmed_content = body.raw_content.trim();
+
+        let pairs = ClpzParser::parse(Rule::constraints, trimmed_content).map_err(|e| {
+            InterpreterError::InvalidConstraintSyntax {
+                domain: "clpz".to_string(),
+                error: format!("Parse error: {}", e),
+            }
+        })?;
+
+        let mut constraints = Vec::new();
+
+        for pair in pairs {
+            for inner in pair.into_inner() {
+                if inner.as_rule() == Rule::constraint {
+                    let constraint = Self::build_constraint(inner)?;
+                    constraints.push(constraint);
+                }
+            }
+        }
+
+        Ok(Box::new(ClpzConstraints { constraints }))
+    }
+
+    fn syntax_help(&self) -> &str {
+        r#"CLPZ Syntax:
+- Arithmetic: x + y == z, x - y == z, x * y == z
+- Comparison: x < y, x <= y, x > y, x >= y, x != y, x == y
+- Fresh: |x, y| { x + y == z }"#
+    }
+}
+
+impl ClpzDomain {
+    fn build_constraint<U: User, E: Engine<U>>(
+        pair: pest::iterators::Pair<Rule>,
+    ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
+        let constraint_pair = pair.into_inner().next().unwrap();
+
+        match constraint_pair.as_rule() {
+            Rule::fresh_constraint => Self::build_fresh_constraint(constraint_pair),
+            Rule::arith_constraint => Self::build_arith_constraint(constraint_pair),
+            _ => unreachable!(
+                "Unexpected rule in constraint_expr: {:?}",
+                constraint_pair.as_rule()
+            ),
+        }
+    }
+
+    fn build_fresh_constraint<U: User, E: Engine<U>>(
+        pair: pest::iterators::Pair<Rule>,
+    ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
+        let mut inner = pair.into_inner();
+        let mut vars = vec![];
+        let mut constraints = vec![];
+
+        while let Some(part) = inner.next() {
+            match part.as_rule() {
+                Rule::var_list => {
+                    vars = part.into_inner().map(|v| v.as_str().to_string()).collect();
+                }
+                Rule::constraints => {
+                    for constraint_pair in part.into_inner() {
+                        if constraint_pair.as_rule() == Rule::constraint {
+                            constraints.push(Self::build_constraint(constraint_pair)?);
+                        }
+                    }
+                }
+                _ => unreachable!("Unexpected rule in fresh_constraint"),
+            }
+        }
+
+        Ok(ClpzConstraint::Fresh {
+            vars,
+            constraints,
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    fn build_arith_constraint<U: User, E: Engine<U>>(
+        pair: pest::iterators::Pair<Rule>,
+    ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
+        let mut inner = pair.into_inner();
+        let left = Self::build_arith_expr(inner.next().unwrap());
+        let op = Self::build_comp_op(inner.next().unwrap());
+        let right = Self::build_arith_expr(inner.next().unwrap());
+
+        Ok(ClpzConstraint::Expression {
+            left,
+            op,
+            right,
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    fn build_arith_expr(pair: pest::iterators::Pair<Rule>) -> ArithExpr {
+        match pair.as_rule() {
+            Rule::integer => ArithExpr::Integer(pair.as_str().parse().unwrap()),
+            Rule::variable => ArithExpr::Variable(pair.as_str().to_string()),
+            Rule::factor => {
+                // A factor is either an integer, variable, or parenthesized expression
+                let inner = pair.into_inner().next().unwrap();
+                Self::build_arith_expr(inner)
+            }
+            Rule::term => {
+                // A term is one or more factors separated by * or /
+                let mut inner = pair.into_inner();
+                let mut result = Self::build_arith_expr(inner.next().unwrap());
+
+                while let Some(op_pair) = inner.next() {
+                    let op = match op_pair.as_str() {
+                        "*" => ArithOp::Multiply,
+                        "/" => ArithOp::Divide,
+                        _ => continue, // Skip non-operator rules
+                    };
+                    if let Some(right_pair) = inner.next() {
+                        let right = Self::build_arith_expr(right_pair);
+                        result = ArithExpr::BinaryOp {
+                            left: Box::new(result),
+                            op,
+                            right: Box::new(right),
+                        };
+                    }
+                }
+                result
+            }
+            Rule::arith_expr => {
+                // An arith_expr is one or more terms separated by + or -
+                let mut inner = pair.into_inner();
+                let mut result = Self::build_arith_expr(inner.next().unwrap());
+
+                while let Some(op_pair) = inner.next() {
+                    let op = match op_pair.as_str() {
+                        "+" => ArithOp::Add,
+                        "-" => ArithOp::Subtract,
+                        _ => continue, // Skip non-operator rules
+                    };
+                    if let Some(right_pair) = inner.next() {
+                        let right = Self::build_arith_expr(right_pair);
+                        result = ArithExpr::BinaryOp {
+                            left: Box::new(result),
+                            op,
+                            right: Box::new(right),
+                        };
+                    }
+                }
+                result
+            }
+            _ => unreachable!("Unexpected rule in arith_expr: {:?}", pair.as_rule()),
+        }
+    }
+
+    fn build_comp_op(pair: pest::iterators::Pair<Rule>) -> CompOp {
+        match pair.as_str() {
+            "==" => CompOp::Equal,
+            "!=" => CompOp::NotEqual,
+            "<" => CompOp::LessThan,
+            "<=" => CompOp::LessEqual,
+            ">" => CompOp::GreaterThan,
+            ">=" => CompOp::GreaterEqual,
+            _ => unreachable!("Unexpected comparison operator: {}", pair.as_str()),
+        }
+    }
+}
+
+/// Parsed CLPZ constraints
+struct ClpzConstraints<U: User, E: Engine<U>> {
+    constraints: Vec<ClpzConstraint<U, E>>,
+}
+
+impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpzConstraints<U, E> {
+    fn convert_to_goals(
+        &self,
+        execution_context: &mut ExecutionContext<U, E>,
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        let goals: Result<Vec<_>, _> = self
+            .constraints
+            .iter()
+            .map(|c| c.convert_to_goal(execution_context))
+            .collect();
+        let goals = goals?;
+
+        if goals.is_empty() {
+            return Ok(Goal::succeed());
+        }
+
+        let mut iter = goals.into_iter();
+        let first = iter.next().unwrap();
+
+        Ok(iter.fold(first, |acc, next_goal| Conj::new(acc, next_goal)))
+    }
+
+    fn extract_variables(&self) -> Vec<String> {
+        let mut vars = Vec::new();
+        for constraint in &self.constraints {
+            vars.extend(constraint.extract_variables());
+        }
+        vars.sort();
+        vars.dedup();
+        vars
+    }
+}
+
+// Data model for CLPZ constraints
+#[derive(Debug, Clone)]
+pub enum ClpzConstraint<U: User, E: Engine<U>> {
+    Expression {
+        left: ArithExpr,
+        op: CompOp,
+        right: ArithExpr,
+        _phantom: std::marker::PhantomData<(U, E)>,
+    },
+    Fresh {
+        vars: Vec<String>,
+        constraints: Vec<ClpzConstraint<U, E>>,
+        _phantom: std::marker::PhantomData<(U, E)>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum ArithExpr {
+    Integer(i32),
+    Variable(String),
+    BinaryOp {
+        left: Box<ArithExpr>,
+        op: ArithOp,
+        right: Box<ArithExpr>,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ArithOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CompOp {
+    Equal,
+    NotEqual,
+    LessThan,
+    LessEqual,
+    GreaterThan,
+    GreaterEqual,
+}
+
+impl<U: User, E: Engine<U>> ClpzConstraint<U, E> {
+    fn convert_to_goal(
+        &self,
+        execution_context: &mut ExecutionContext<U, E>,
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        match self {
+            ClpzConstraint::Expression {
+                left, op, right, ..
+            } => {
+                let left_term = eval_arith_expr(left, execution_context)?;
+                let right_term = eval_arith_expr(right, execution_context)?;
+                build_comparison_goal(left_term, *op, right_term)
+            }
+            ClpzConstraint::Fresh {
+                vars, constraints, ..
+            } => {
+                execution_context.push_scope();
+                for var in vars {
+                    execution_context.get_or_create_variable(var)?;
+                }
+
+                let mut goals = vec![];
+                for constraint in constraints {
+                    goals.push(constraint.convert_to_goal(execution_context)?);
+                }
+
+                execution_context.pop_scope();
+
+                if goals.is_empty() {
+                    Ok(Goal::succeed())
+                } else {
+                    let mut iter = goals.into_iter();
+                    let first = iter.next().unwrap();
+                    Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+                }
+            }
+        }
+    }
+
+    fn extract_variables(&self) -> Vec<String> {
+        let mut vars = Vec::new();
+        match self {
+            ClpzConstraint::Expression { left, right, .. } => {
+                fn collect_vars(expr: &ArithExpr, vars: &mut Vec<String>) {
+                    match expr {
+                        ArithExpr::Variable(name) => vars.push(name.clone()),
+                        ArithExpr::Integer(_) => {}
+                        ArithExpr::BinaryOp { left, right, .. } => {
+                            collect_vars(left, vars);
+                            collect_vars(right, vars);
+                        }
+                    }
+                }
+                collect_vars(left, &mut vars);
+                collect_vars(right, &mut vars);
+            }
+            ClpzConstraint::Fresh {
+                vars: _,
+                constraints,
+                ..
+            } => {
+                for c in constraints {
+                    vars.extend(c.extract_variables());
+                }
+            }
+        }
+        vars
+    }
+}
+
+/// Evaluates an arithmetic expression using CLPZ relations
+fn eval_arith_expr<U: User, E: Engine<U>>(
+    expr: &ArithExpr,
+    execution_context: &mut ExecutionContext<U, E>,
+) -> Result<LTerm<U, E>, InterpreterError> {
+    match expr {
+        ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
+        ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
+        ArithExpr::BinaryOp { left, op, right } => {
+            let left_term = eval_arith_expr(left, execution_context)?;
+            let right_term = eval_arith_expr(right, execution_context)?;
+            let result_term = execution_context.create_fresh_var();
+
+            let goal = match op {
+                ArithOp::Add => {
+                    use crate::relation::clpz::plusz::plusz;
+                    plusz(left_term, right_term, result_term.clone()).cast_into()
+                }
+                ArithOp::Subtract => {
+                    use crate::relation::clpz::plusz::plusz;
+                    // For x - y = z, we use x = y + z, so plusz(right_term, result_term, left_term)
+                    plusz(right_term, result_term.clone(), left_term).cast_into()
+                }
+                ArithOp::Multiply => {
+                    use crate::relation::clpz::timesz::timesz;
+                    timesz(left_term, right_term, result_term.clone()).cast_into()
+                }
+                ArithOp::Divide => {
+                    use crate::relation::clpz::timesz::timesz;
+                    // For x / y = z, we use z * y = x
+                    timesz(result_term.clone(), right_term, left_term).cast_into()
+                }
+            };
+
+            execution_context.add_deferred_goal(goal);
+            Ok(result_term)
+        }
+    }
+}
+
+fn build_comparison_goal<U: User, E: Engine<U>>(
+    left: LTerm<U, E>,
+    op: CompOp,
+    right: LTerm<U, E>,
+) -> Result<Goal<U, E>, InterpreterError> {
+    match op {
+        CompOp::Equal => {
+            use crate::relation::eq::eq;
+            Ok(eq(left, right).cast_into())
+        }
+        CompOp::NotEqual => {
+            use crate::relation::diseq::diseq;
+            Ok(diseq(left, right).cast_into())
+        }
+        CompOp::LessThan => {
+            // CLPZ doesn't have comparison relations, so we'll convert to an arithmetic check
+            // We could implement these using goals that check the values when ground
+            Err(InterpreterError::InvalidConstraintSyntax {
+                domain: "clpz".to_string(),
+                error: "Comparison operators not yet implemented for clpz".to_string(),
+            })
+        }
+        CompOp::LessEqual => Err(InterpreterError::InvalidConstraintSyntax {
+            domain: "clpz".to_string(),
+            error: "Comparison operators not yet implemented for clpz".to_string(),
+        }),
+        CompOp::GreaterThan => Err(InterpreterError::InvalidConstraintSyntax {
+            domain: "clpz".to_string(),
+            error: "Comparison operators not yet implemented for clpz".to_string(),
+        }),
+        CompOp::GreaterEqual => Err(InterpreterError::InvalidConstraintSyntax {
+            domain: "clpz".to_string(),
+            error: "Comparison operators not yet implemented for clpz".to_string(),
+        }),
+    }
+}

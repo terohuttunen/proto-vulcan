@@ -13,6 +13,7 @@ use crate::user::User;
 use std::collections::HashMap;
 
 pub mod clpfd;
+pub mod clpz;
 
 /// Trait that all constraint domains must implement
 pub trait ConstraintDomain<U: User, E: Engine<U>> {
@@ -87,6 +88,7 @@ impl<U: User, E: Engine<U>> Default for ConstraintDomainRegistry<U, E> {
     fn default() -> Self {
         let mut registry = Self::new();
         registry.register(Box::new(clpfd::ClpfdDomain::new()));
+        registry.register(Box::new(clpz::ClpzDomain::new()));
         registry
     }
 }

@@ -1,0 +1,35 @@
+// Grammar for CLP(Z) Constraints
+
+// -- Basic building blocks --
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+integer    = @{ "-"? ~ ASCII_DIGIT+ }
+variable   = @{ (ASCII_ALPHANUMERIC | "_")+ }
+
+// -- Operators --
+add_op  = { "+" | "-" }
+mul_op  = { "*" | "/" }
+comp_op = { "==" | "!=" | "<" | "<=" | ">" | ">=" }
+
+// -- Arithmetic Expressions --
+factor      = { integer | variable | "(" ~ arith_expr ~ ")" }
+term        = { factor ~ (mul_op ~ factor)* }
+arith_expr  = { term ~ (add_op ~ term)* }
+
+// -- Constraint Types --
+
+// Arithmetic Constraint: `expr op expr`
+// Example: x + y * 2 == z
+arith_constraint = { arith_expr ~ comp_op ~ arith_expr }
+
+// Fresh variable block
+var_list = { variable ~ ("," ~ variable)* }
+fresh_constraint = { "|" ~ var_list? ~ "|" ~ "{" ~ constraints ~ "}" }
+
+// -- Main Entry Point --
+constraint_expr = _{ fresh_constraint | arith_constraint }
+
+// Single constraint
+constraint = { constraint_expr }
+
+// Multiple constraints separated by commas
+constraints = { constraint ~ ("," ~ constraint)* } 

@@ -43,10 +43,11 @@ rel member_test_5() {
     member(2, [1, 2, 3])
 }
 
-// Check if element is NOT member (should fail)
-@test(should_fail)
-rel member_test_6() {
-    member(4, [1, 2, 3])
+// Check if element is NOT member (no solutions)
+@test(expected = [])
+rel member_test_6(result) {
+    member(4, [1, 2, 3]),
+    result == true
 }
 
 // Test member with nested lists
@@ -93,8 +94,8 @@ rel append_test_4(q) {
     append([1, 2], [], q)
 }
 
-// Try to append non-list (should fail)
-@test(should_fail)
+// Try to append non-list (no solutions)
+@test(expected = [])
 rel append_test_5(q) {
     append(0, [1, 2], q)
 }
@@ -354,15 +355,17 @@ rel permute_test_4() {
 }
 
 // [1, 2] and [1, 3] are not permutations → no results
-@test(should_fail)
-rel permute_test_5() {
+@test(expected = [])
+rel permute_test_5(result) {
     permute([1, 2], [1, 3]),
+    result == true
 }
 
 // [1, 2, 3] and [4, 5, 6] are not permutations → no results
-@test(should_fail)
-rel permute_test_6() {
+@test(expected = [])
+rel permute_test_6(result) {
     permute([1, 2, 3], [4, 5, 6]),
+    result == true
 }
 
 // [1, 2, 3] and [2, 3, 1] are permutations → true
@@ -421,10 +424,11 @@ rel distinct_test_3() {
     distinct([1, 2])
 }
 
-// Two same elements are not distinct → should fail
-@test(should_fail)
-rel distinct_test_4() {
-    distinct([1, 1])
+// Two same elements are not distinct → no solutions
+@test(expected = [])
+rel distinct_test_4(result) {
+    distinct([1, 1]),
+    result == true
 }
 
 // Three different elements are distinct → true
@@ -433,10 +437,11 @@ rel distinct_test_5() {
     distinct([1, 2, 3])
 }
 
-// Three elements with one duplicate are not distinct → should fail
-@test(should_fail)
-rel distinct_test_6() {
-    distinct([1, 2, 2])
+// Three elements with one duplicate are not distinct → no solutions
+@test(expected = [])
+rel distinct_test_6(result) {
+    distinct([1, 2, 2]),
+    result == true
 }
 
 // Four different elements are distinct → true
@@ -445,10 +450,11 @@ rel distinct_test_7() {
     distinct([1, 2, 3, 4])
 }
 
-// Four elements with duplicates are not distinct → should fail
-@test(should_fail)
-rel distinct_test_8() {
-    distinct([1, 2, 3, 2])
+// Four elements with duplicates are not distinct → no solutions
+@test(expected = [])
+rel distinct_test_8(result) {
+    distinct([1, 2, 3, 2]),
+    result == true
 }
 
 // Test distinct with nested lists
@@ -457,8 +463,9 @@ rel distinct_test_9() {
     distinct([[1, 2], [3, 4], [5]])
 }
 
-// Test distinct with nested lists containing duplicates → should fail
-@test(should_fail)
-rel distinct_test_10() {
-    distinct([[1, 2], [3, 4], [1, 2]])
+// Test distinct with nested lists containing duplicates → no solutions
+@test(expected = [])
+rel distinct_test_10(result) {
+    distinct([[1, 2], [3, 4], [1, 2]]),
+    result == true
 } 

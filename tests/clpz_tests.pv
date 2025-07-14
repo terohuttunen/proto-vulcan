@@ -1,0 +1,193 @@
+// tests/clpz_tests.pv  
+// Basic test suite for CLP(Z) - Constraint Logic Programming over Integers
+
+// Test simple equality
+@test(expected = [5])
+rel test_simple_equality(x) {
+    constraint(domain="clpz") {
+        x == 5
+    }
+}
+
+// Test simple addition (ported from test_plusz_1)
+@test(expected = [1])
+rel test_simple_addition(q) {
+    constraint(domain="clpz") {
+        0 + 1 == q
+    }
+}
+
+// Test simple multiplication (ported from test_timesz_1)
+@test(expected = [8])
+rel test_simple_multiplication(q) {
+    constraint(domain="clpz") {
+        4 * 2 == q
+    }
+}
+
+// Test addition constraint
+@test(expected = [7])
+rel test_addition_constraint(z) {
+    |x, y| {
+        constraint(domain="clpz") {
+            x + y == z,
+            x == 3,
+            y == 4
+        }
+    }
+}
+
+// Test subtraction constraint
+@test(expected = [7])
+rel test_subtraction_constraint(z) {
+    |x, y| {
+        constraint(domain="clpz") {
+            x - y == z,
+            x == 10,
+            y == 3
+        }
+    }
+}
+
+// Test multiplication constraint
+@test(expected = [42])
+rel test_multiplication_constraint(z) {
+    |x, y| {
+        constraint(domain="clpz") {
+            x * y == z,
+            x == 6,
+            y == 7
+        }
+    }
+}
+
+// Test simple comparison constraint
+@test(expected = [4])
+rel test_comparison_constraint(x) {
+    constraint(domain="clpz") {
+        x == 4,
+        x <= 5
+    }
+}
+
+// Test negative numbers
+@test(expected = [-3])
+rel test_negative_numbers(z) {
+    |x, y| {
+        constraint(domain="clpz") {
+            x + y == z,
+            x == -5,
+            y == 2
+        }
+    }
+}
+
+// Test negative multiplication
+@test(expected = [-20])
+rel test_negative_multiplication(z) {
+    |x, y| {
+        constraint(domain="clpz") {
+            x * y == z,
+            x == -4,
+            y == 5
+        }
+    }
+}
+
+// Test complex chaining (based on timesz macro tests)
+@test(expected = [4])
+rel test_chained_constraints(q) {
+    |r, p| {
+        constraint(domain="clpz") {
+            2 * r == q,
+            r * 10 == p,
+            p == 20
+        }
+    }
+}
+
+// Test complex addition chaining (based on plusz macro tests)
+@test(expected = [6])
+rel test_chained_addition(q) {
+    |r, p| {
+        constraint(domain="clpz") {
+            1 + r == q,
+            r + 10 == p,
+            p == 15
+        }
+    }
+}
+
+// Test division via multiplication (reverse multiplication)
+@test(expected = [8])
+rel test_division_constraint(q) {
+    |x| {
+        constraint(domain="clpz") {
+            x * q == 32,
+            x == 4
+        }
+    }
+}
+
+// Test subtraction with negative result
+@test(expected = [-7])
+rel test_subtraction_negative(z) {
+    |x, y| {
+        constraint(domain="clpz") {
+            x - y == z,
+            x == 3,
+            y == 10
+        }
+    }
+}
+
+// Test zero handling in multiplication
+@test(expected = [0])
+rel test_zero_multiplication(z) {
+    |x, y| {
+        constraint(domain="clpz") {
+            x * y == z,
+            x == 0,
+            y == 100
+        }
+    }
+}
+
+// Test multiple arithmetic operations
+@test(expected = [15])
+rel test_multiple_operations(result) {
+    |a, b, c, d| {
+        constraint(domain="clpz") {
+            a + b == c,
+            c * d == result,
+            a == 3,
+            b == 2,
+            d == 3
+        }
+    }
+}
+
+// Test constraint solving with partial information
+@test(expected = [6])
+rel test_partial_solving(x) {
+    |y, z| {
+        constraint(domain="clpz") {
+            x + y == 10,
+            y * 2 == z,
+            z == 8
+        }
+    }
+}
+
+// Test mixed positive and negative constraints
+@test(expected = [75])
+rel test_mixed_signs(result) {
+    |a, b, c| {
+        constraint(domain="clpz") {
+            a - b == c,
+            c * 5 == result,
+            a == 10,
+            b == -5
+        }
+    }
+} 
