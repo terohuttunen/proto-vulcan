@@ -70,9 +70,11 @@ use crate::goal::Goal;
 use crate::lterm::{LTerm, LTermInner, LValue};
 use crate::user::{DefaultUser, User};
 use colored::*;
+use regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Instant;
 use walkdir::WalkDir;
 
 type DefaultInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
@@ -107,6 +109,61 @@ pub enum TestResult {
     Error(String),
 }
 
+/// Options for filtering and running tests.
+#[derive(Debug, Clone)]
+pub struct TestRunOptions {
+    /// Filter tests by name pattern (supports basic glob patterns like * and ?)
+    pub filter: Option<String>,
+    /// Show only failed tests in output
+    pub show_failures_only: bool,
+    /// Show timing information for each test
+    pub show_timing: bool,
+    /// Run tests in parallel (if supported in the future)
+    pub parallel: bool,
+}
+
+impl Default for TestRunOptions {
+    fn default() -> Self {
+        Self {
+            filter: None,
+            show_failures_only: false,
+            show_timing: false,
+            parallel: false,
+        }
+    }
+}
+
+/// Detailed statistics about test execution.
+#[derive(Debug, Clone)]
+pub struct TestStats {
+    pub total_tests: usize,
+    pub passed: usize,
+    pub failed: usize,
+    pub errors: usize,
+    pub filtered_out: usize,
+    pub total_duration: std::time::Duration,
+}
+
+impl TestStats {
+    pub fn new() -> Self {
+        Self {
+            total_tests: 0,
+            passed: 0,
+            failed: 0,
+            errors: 0,
+            filtered_out: 0,
+            total_duration: std::time::Duration::from_secs(0),
+        }
+    }
+}
+
+/// The result of a single test execution with timing information.
+#[derive(Debug, Clone)]
+pub struct TestExecutionResult {
+    pub result: TestResult,
+    pub duration: std::time::Duration,
+}
+
 /// The main struct for finding and running tests.
 pub struct TestRunner {
     /// A list of all discovered tests.
@@ -120,46 +177,171 @@ impl TestRunner {
         Ok(Self { discovered_tests })
     }
 
-    /// The main entry point for the test runner. Returns `true` if all tests pass.
-    pub fn run(&self) -> bool {
-        println!("\nRunning {} tests", self.discovered_tests.len());
-        let mut passed = 0;
-        let mut failed = 0;
+    /// Filter tests by name pattern. Supports basic glob patterns:
+    /// - `*` matches any sequence of characters
+    /// - `?` matches any single character
+    /// - Otherwise performs exact substring matching
+    pub fn filter_tests(&self, pattern: &str) -> Vec<&TestItem> {
+        if pattern.is_empty() {
+            return self.discovered_tests.iter().collect();
+        }
 
-        for item in &self.discovered_tests {
+        // Convert simple glob patterns to regex
+        let regex_pattern = if pattern.contains('*') || pattern.contains('?') {
+            let escaped = regex::escape(pattern);
+            let with_wildcards = escaped.replace("\\*", ".*").replace("\\?", ".");
+            format!("^{}$", with_wildcards)
+        } else {
+            // Simple substring matching
+            pattern.to_string()
+        };
+
+        self.discovered_tests
+            .iter()
+            .filter(|test| {
+                if pattern.contains('*') || pattern.contains('?') {
+                    // Use regex for glob patterns
+                    if let Ok(re) = regex::Regex::new(&regex_pattern) {
+                        re.is_match(&test.test_name)
+                    } else {
+                        // Fallback to substring matching if regex fails
+                        test.test_name.contains(pattern)
+                    }
+                } else {
+                    // Simple substring matching
+                    test.test_name.contains(pattern)
+                }
+            })
+            .collect()
+    }
+
+    /// Run tests with the given options and return detailed statistics.
+    pub fn run_with_options(&self, options: &TestRunOptions) -> TestStats {
+        let filtered_tests = if let Some(filter) = &options.filter {
+            self.filter_tests(filter)
+        } else {
+            self.discovered_tests.iter().collect()
+        };
+
+        let mut stats = TestStats::new();
+        stats.total_tests = self.discovered_tests.len();
+        stats.filtered_out = stats.total_tests - filtered_tests.len();
+
+        if filtered_tests.is_empty() {
+            if let Some(filter) = &options.filter {
+                println!("No tests match pattern '{}'", filter);
+            } else {
+                println!("No tests found.");
+            }
+            return stats;
+        }
+
+        println!(
+            "\nRunning {} tests (filtered from {} total)",
+            filtered_tests.len(),
+            stats.total_tests
+        );
+
+        let start_time = Instant::now();
+        let mut test_results = Vec::new();
+
+        for item in &filtered_tests {
+            let test_start = Instant::now();
             let test_name = format!("test {} ... ", item.test_name);
-            print!("{}", test_name);
+
+            if !options.show_failures_only {
+                print!("{}", test_name);
+            }
 
             let result = self.execute_test(item);
+            let duration = test_start.elapsed();
+
+            let execution_result = TestExecutionResult {
+                result: result.clone(),
+                duration,
+            };
+            test_results.push((item, execution_result));
+
             match result {
                 TestResult::Pass => {
-                    println!("{}", "ok".green());
-                    passed += 1;
+                    stats.passed += 1;
+                    if !options.show_failures_only {
+                        if options.show_timing {
+                            println!("{} ({:.3}s)", "ok".green(), duration.as_secs_f64());
+                        } else {
+                            println!("{}", "ok".green());
+                        }
+                    }
                 }
                 TestResult::Fail => {
-                    println!("{}", "FAILED".red());
-                    failed += 1;
+                    stats.failed += 1;
+                    if options.show_failures_only {
+                        print!("{}", test_name);
+                    }
+                    if options.show_timing {
+                        println!("{} ({:.3}s)", "FAILED".red(), duration.as_secs_f64());
+                    } else {
+                        println!("{}", "FAILED".red());
+                    }
                 }
-                TestResult::Error(e) => {
-                    println!("{}", "ERROR".red());
+                TestResult::Error(ref e) => {
+                    stats.errors += 1;
+                    if options.show_failures_only {
+                        print!("{}", test_name);
+                    }
+                    if options.show_timing {
+                        println!("{} ({:.3}s)", "ERROR".red(), duration.as_secs_f64());
+                    } else {
+                        println!("{}", "ERROR".red());
+                    }
                     println!("  Error: {}", e);
-                    failed += 1; // Errors are considered failures
                 }
             }
         }
 
+        stats.total_duration = start_time.elapsed();
+
+        // Print summary
+        self.print_test_summary(&stats, &options);
+
+        stats
+    }
+
+    /// The main entry point for the test runner. Returns `true` if all tests pass.
+    /// This method is kept for backward compatibility.
+    pub fn run(&self) -> bool {
+        let options = TestRunOptions::default();
+        let stats = self.run_with_options(&options);
+        stats.failed == 0 && stats.errors == 0
+    }
+
+    /// Print a detailed test summary.
+    fn print_test_summary(&self, stats: &TestStats, options: &TestRunOptions) {
+        println!();
+
+        if options.show_timing {
+            println!(
+                "Test execution completed in {:.3}s",
+                stats.total_duration.as_secs_f64()
+            );
+        }
+
+        if stats.filtered_out > 0 {
+            println!("Filtered out {} tests", stats.filtered_out);
+        }
+
+        let _total_run = stats.passed + stats.failed + stats.errors;
         println!(
-            "\nTest result: {}. {} passed; {} failed.",
-            if failed == 0 {
+            "Test result: {}. {} passed; {} failed; {} errors.",
+            if stats.failed == 0 && stats.errors == 0 {
                 "ok".green()
             } else {
                 "FAILED".red()
             },
-            passed,
-            failed,
+            stats.passed,
+            stats.failed,
+            stats.errors,
         );
-
-        failed == 0
     }
 
     fn register_assertion_builtins<U, E>(&self, env: &mut Environment<U, E>)
