@@ -1,0 +1,183 @@
+// Comprehensive runtime tests for metaprogramming features
+// Tests the template expansion engine and CPS integration
+
+// Test basic meta let statement execution
+@test(expected = [5])
+rel test_meta_let_basic(result) {
+    let x: int = 5;
+    let message: string = "hello";
+    let flag: bool = true;
+    result == x
+}
+
+// Test meta if statement with true condition
+@test
+rel test_meta_if_true(result) {
+    let condition: bool = true;
+    if condition {
+        result == "then_branch"
+    } else {
+        result == "else_branch"
+    }
+}
+
+// Test meta if statement with false condition
+@test
+rel test_meta_if_false(result) {
+    let condition: bool = false;
+    if condition {
+        result == "then_branch"
+    } else {
+        result == "else_branch"
+    }
+}
+
+// Test meta for loop with simple range
+@test(expected = [1, 2, 3])
+rel test_meta_for_simple(result) {
+    for i: int in 1..4 {
+        result == i
+    }
+}
+
+// Test interpolation with meta variables
+@test(expected = [42])
+rel test_interpolation_basic(result) {
+    let value: int = 42;
+    let name: string = "test";
+    result == {value}
+}
+
+// Test complex nested metaprogramming
+@test
+rel test_nested_metaprogramming(result) {
+    let count: int = 3;
+    let use_loop: bool = true;
+    if use_loop {
+        for i: int in 1..count {
+            let item_name: string = "item";
+            result == {item_name}
+        }
+    } else {
+        result == "no_loop"
+    }
+}
+
+// Test arithmetic expressions in meta context
+@test(expected = [8])
+rel test_meta_arithmetic(result) {
+    let a: int = 5;
+    let b: int = 3;
+    let sum: int = a + b;
+    let product: int = a * b;
+    if sum > 7 && product < 20 {
+        result == sum
+    } else {
+        result == 0
+    }
+}
+
+// Test meta for loop with computed range
+@test(expected = [2, 3, 4])
+rel test_meta_for_computed_range(result) {
+    let start: int = 2;
+    let end: int = start + 3;
+    for i: int in start..end {
+        result == i
+    }
+}
+
+// Test string operations in metaprogramming 
+@test(expected = ["hello world"])
+rel test_meta_string_ops(result) {
+    let prefix: string = "hello";
+    let suffix: string = "world"; 
+    let space: string = " ";
+    let temp: string = prefix + space;
+    let combined: string = temp + suffix;
+    if combined == "hello world" {
+        result == combined
+    } else {
+        result == "string_failure"
+    }
+}
+
+// Test meta if with complex boolean expressions
+@test(expected = [2])
+rel test_meta_complex_boolean(result) {
+    let x: int = 10;
+    let y: int = 5;
+    let flag: bool = true;
+    let quotient: int = x / y;
+    if (x > y) && flag && (quotient == 2) {
+        result == quotient
+    } else {
+        result == 0
+    }
+}
+
+// Test interpolation in different contexts
+@test(expected = [123, "value", true])
+rel test_interpolation_contexts(result) {
+    let number: int = 123;
+    let text: string = "value";
+    let truth: bool = true;
+    
+    // Interpolation in equality using any for disjunction
+    any {
+        result == {number},
+        result == {text},
+        result == {truth}
+    }
+}
+
+// Test meta for loop generating multiple goals
+@test
+rel test_meta_for_multiple_goals(result) {
+    for i: int in 1..3 {
+        for j: int in 1..2 {
+            result == "nested_loop_item"
+        }
+    }
+}
+
+// Test meta programming with regular logic programming
+@test
+rel test_mixed_meta_and_regular(result) {
+    let base: int = 10;
+    |x| {
+        x == {base},
+        regular_helper(x, result)
+    }
+}
+
+rel regular_helper(input, output) {
+    input == 10,
+    output == "mixed_success"
+}
+
+// Test edge cases
+@test
+rel test_empty_for_loop(result) {
+    // This should produce no goals
+    for i: int in 5..5 {
+        result == "should_not_appear"
+    }
+    // This should always succeed since no constraints are added
+    result == "empty_loop_default"
+}
+
+@test
+rel test_nested_if_statements(result) {
+    let outer: bool = true;
+    let inner: bool = false;
+    if outer {
+        if inner {
+            result == "both_true"
+        } else {
+            result == "outer_true_inner_false"
+        }
+    } else {
+        result == "outer_false"
+    }
+} 

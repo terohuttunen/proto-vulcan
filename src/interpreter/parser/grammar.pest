@@ -67,7 +67,8 @@ relation_definition = {
     ~ "}"
 }
 
-parameter = { ident ~ (":" ~ type_name)? }
+parameter = { ident ~ (":" ~ meta_type_annotation)? }
+meta_type_annotation = { "int" | "string" | "bool" | type_name }
 type_name = { ident }
 pub_keyword = { "pub" }
 attribute = { "@" ~ ident ~ ("(" ~ attribute_args? ~ ")")? }
@@ -77,6 +78,79 @@ named_attribute_arg = { ident ~ "=" ~ term }
 flag_attribute_arg = { ident }
 
 // =============================================================================
+// Meta Programming Constructs  
+// =============================================================================
+
+meta_statement = {
+    meta_let_statement |
+    meta_if_statement |
+    meta_for_statement
+}
+
+meta_let_statement = { "let" ~ ident ~ ":" ~ meta_type_annotation ~ "=" ~ meta_expression ~ ";" }
+
+meta_if_statement = {
+    "if" ~ meta_expression ~ "{" ~ goal_body ~ "}" ~ ("else" ~ "{" ~ goal_body ~ "}")?
+}
+
+meta_for_statement = {
+    "for" ~ ident ~ ":" ~ meta_type_annotation ~ "in" ~ meta_expression ~ "{" ~ goal_body ~ "}"
+}
+
+meta_expression = {
+    meta_or_expression
+}
+
+meta_or_expression = {
+    meta_and_expression ~ ("||" ~ meta_and_expression)*
+}
+
+meta_and_expression = {
+    meta_equality_expression ~ ("&&" ~ meta_equality_expression)*
+}
+
+meta_equality_expression = {
+    meta_comparison_expression ~ (("==" | "!=") ~ meta_comparison_expression)*
+}
+
+meta_comparison_expression = {
+    meta_additive_expression ~ (("<=" | "<" | ">=" | ">") ~ meta_additive_expression)*
+}
+
+meta_additive_expression = {
+    meta_multiplicative_expression ~ (("+" | "-") ~ meta_multiplicative_expression)*
+}
+
+meta_multiplicative_expression = {
+    meta_range_expression ~ (("*" | "/") ~ meta_range_expression)*
+}
+
+meta_range_expression = {
+    meta_primary_expression ~ (".." ~ meta_primary_expression)?
+}
+
+meta_primary_expression = {
+    meta_literal |
+    meta_variable |
+    "(" ~ meta_expression ~ ")"
+}
+
+meta_literal = { 
+    meta_integer_literal | 
+    meta_string_literal | 
+    meta_boolean_literal 
+}
+
+meta_integer_literal = @{ "-"? ~ ASCII_DIGIT+ }
+meta_string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+meta_boolean_literal = @{ "true" | "false" }
+meta_variable = @{ ident }
+
+
+
+interpolation_expression = { "{" ~ meta_expression ~ "}" }
+
+// =============================================================================
 // Goal Structures
 // =============================================================================
 
@@ -84,6 +158,7 @@ goal_body = { (goal ~ ("," | ";")?)* }
 
 goal = {
     constraint_block | // Moved up to prioritize its unique keyword
+    meta_statement |   // NEW: Meta programming statements
     let_declaration |
     fresh_variables |
     any_block |
@@ -163,6 +238,7 @@ call_expr = { path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
 // =============================================================================
 
 term = {
+    interpolation_expression | // NEW: {variable} interpolation syntax
     literal |
     wildcard |
     list_construction |

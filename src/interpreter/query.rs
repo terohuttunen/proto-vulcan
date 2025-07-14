@@ -219,6 +219,10 @@ fn extract_variables_from_goal_recursive(goal: &Goal, vars: &mut Vec<String>) {
         Goal::ConstraintBlock(_) => {
             // TODO: Extract variables from constraint blocks
         }
+        Goal::MetaStatement(_) => {
+            // TODO: Implement meta statement variable extraction
+            // For now, do nothing as meta statements don't introduce variables
+        }
     }
 }
 
@@ -255,6 +259,10 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
         }
         Term::Parenthesized(inner) => {
             extract_variables_from_term(inner, vars);
+        }
+        Term::Interpolation(_) => {
+            // TODO: Extract variables from meta expressions in interpolations
+            // For now, do nothing
         }
     }
 }

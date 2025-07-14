@@ -381,6 +381,10 @@ impl TestRunner {
                 false
             }
             ast::Term::Parenthesized(inner) => Self::matches_pattern(lterm, inner),
+            ast::Term::Interpolation(_) => {
+                // TODO: Implement interpolation pattern matching
+                false
+            }
         }
     }
 

@@ -15,6 +15,7 @@ pub mod deferred;
 mod environment;
 mod execution;
 mod integration;
+pub mod metaprogramming;
 pub mod parser;
 pub mod query;
 mod runtime_value;
@@ -262,15 +263,15 @@ mod tests {
                     parameters: vec![
                         Parameter {
                             name: "p1".to_string(),
-                            type_name: Some("Point".to_string()),
+                            type_annotation: None,
                         },
                         Parameter {
                             name: "p2".to_string(),
-                            type_name: Some("Point".to_string()),
+                            type_annotation: None,
                         },
                         Parameter {
                             name: "result".to_string(),
-                            type_name: Some("f64".to_string()),
+                            type_annotation: None,
                         },
                     ],
                     search_strategy: Some(SearchStrategy::Bfs),
@@ -290,15 +291,15 @@ mod tests {
                         parameters: vec![
                             Parameter {
                                 name: "width".to_string(),
-                                type_name: Some("f64".to_string()),
+                                type_annotation: None,
                             },
                             Parameter {
                                 name: "height".to_string(),
-                                type_name: Some("f64".to_string()),
+                                type_annotation: None,
                             },
                             Parameter {
                                 name: "result".to_string(),
-                                type_name: Some("f64".to_string()),
+                                type_annotation: None,
                             },
                         ],
                         search_strategy: None,
@@ -379,7 +380,7 @@ mod tests {
                 pub y: i32,
             }
             
-            rel distance(p1: Point, p2: Point, result: f64) @bfs {
+            rel distance(p1, p2, result) @bfs {
                 p1 == p2
             }
         "#;

@@ -7,6 +7,9 @@
 
 use super::deferred::DeferredRelationCall;
 use super::environment::Environment;
+use super::metaprogramming::{
+    expand_goal_body, expand_meta_statement, expand_term, MetaError, TemplateExpansionContext,
+};
 use super::parser::ast::{
     Conjunction as AstConjunction, Goal as AstGoal, Literal, Pattern, PatternMatching,
     RelationCall, SearchStrategy, Term,
@@ -298,6 +301,10 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             | AstGoal::BooleanLiteral(_)
             | AstGoal::MethodCall(_)
             | AstGoal::ConstraintBlock(_) => Ok(()),
+            AstGoal::MetaStatement(_) => {
+                // TODO: Implement meta statement validation
+                Ok(())
+            }
         }
     }
 
@@ -321,16 +328,28 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             }
             AstGoal::RelationCall(call) => self.ast_relation_call_to_runtime(call),
             AstGoal::Conjunction(conj) => {
-                let mut goals = vec![];
-                for g in &conj.body {
-                    goals.push(self.ast_goal_to_runtime(g)?);
-                }
-                if goals.is_empty() {
-                    Ok(Goal::succeed())
+                // Check if any goals in the body are meta statements or contain interpolation
+                let has_meta_features = conj
+                    .body
+                    .iter()
+                    .any(|g| self.goal_contains_meta_features(g));
+
+                if has_meta_features {
+                    // Use template-aware processing for goal bodies with meta statements
+                    self.process_goal_body_with_template_expansion(&conj.body)
                 } else {
-                    let mut iter = goals.into_iter();
-                    let first = iter.next().unwrap();
-                    Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+                    // Use regular processing for goal bodies without meta statements
+                    let mut goals = vec![];
+                    for g in &conj.body {
+                        goals.push(self.ast_goal_to_runtime(g)?);
+                    }
+                    if goals.is_empty() {
+                        Ok(Goal::succeed())
+                    } else {
+                        let mut iter = goals.into_iter();
+                        let first = iter.next().unwrap();
+                        Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+                    }
                 }
             }
             AstGoal::Disjunction(disj) => {
@@ -363,16 +382,25 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             }
             AstGoal::PatternMatch(pm) => self.ast_pattern_match_to_runtime(pm),
             AstGoal::Parenthesized(goals) => {
-                let mut conj_goals = Vec::new();
-                for g in goals {
-                    conj_goals.push(self.ast_goal_to_runtime(g)?);
-                }
-                if conj_goals.is_empty() {
-                    Ok(Goal::succeed())
+                // Check if any goals in the body are meta statements or contain interpolation
+                let has_meta_features = goals.iter().any(|g| self.goal_contains_meta_features(g));
+
+                if has_meta_features {
+                    // Use template-aware processing for goal bodies with meta statements
+                    self.process_goal_body_with_template_expansion(goals)
                 } else {
-                    let mut iter = conj_goals.into_iter();
-                    let first = iter.next().unwrap();
-                    Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+                    // Use regular processing for goal bodies without meta statements
+                    let mut conj_goals = Vec::new();
+                    for g in goals {
+                        conj_goals.push(self.ast_goal_to_runtime(g)?);
+                    }
+                    if conj_goals.is_empty() {
+                        Ok(Goal::succeed())
+                    } else {
+                        let mut iter = conj_goals.into_iter();
+                        let first = iter.next().unwrap();
+                        Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+                    }
                 }
             }
             AstGoal::Let(let_decl) => {
@@ -415,6 +443,10 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 } else {
                     Ok(Goal::fail())
                 }
+            }
+            AstGoal::MetaStatement(meta_stmt) => {
+                // Expand the meta statement into concrete goals using template expansion
+                self.expand_and_execute_meta_statement(meta_stmt)
             }
         }?;
 
@@ -499,6 +531,10 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             Term::Parenthesized(inner) => self.ast_term_to_runtime(inner),
             Term::NamedStruct(_) => todo!(),
             Term::Compound(_) => todo!(),
+            Term::Interpolation(expr) => {
+                // Expand interpolation using template expansion context
+                self.expand_and_evaluate_interpolation(expr)
+            }
         }
     }
 
@@ -634,6 +670,153 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             Pattern::NamedStruct(_) => todo!(),
             Pattern::Compound(_) => todo!(),
         }
+    }
+
+    /// Check if a goal contains meta features (meta statements or interpolation)
+    pub fn goal_contains_meta_features(&self, goal: &super::parser::ast::Goal) -> bool {
+        use super::parser::ast::{Goal as AstGoal, Term};
+
+        match goal {
+            AstGoal::MetaStatement(_) => true,
+            AstGoal::Equality(lhs, rhs) => {
+                self.term_contains_interpolation(lhs) || self.term_contains_interpolation(rhs)
+            }
+            AstGoal::Disequality(lhs, rhs) => {
+                self.term_contains_interpolation(lhs) || self.term_contains_interpolation(rhs)
+            }
+            AstGoal::RelationCall(call) => call
+                .args
+                .iter()
+                .any(|arg| self.term_contains_interpolation(arg)),
+            AstGoal::Conjunction(conj) => conj
+                .body
+                .iter()
+                .any(|g| self.goal_contains_meta_features(g)),
+            AstGoal::Disjunction(disj) => disj
+                .body
+                .iter()
+                .any(|g| self.goal_contains_meta_features(g)),
+            AstGoal::Parenthesized(goals) => {
+                goals.iter().any(|g| self.goal_contains_meta_features(g))
+            }
+            AstGoal::Fresh(fresh) => fresh
+                .body
+                .iter()
+                .any(|g| self.goal_contains_meta_features(g)),
+            AstGoal::PatternMatch(pm) => pm
+                .arms
+                .iter()
+                .any(|arm| arm.body.iter().any(|g| self.goal_contains_meta_features(g))),
+            _ => false,
+        }
+    }
+
+    /// Check if a term contains interpolation expressions
+    fn term_contains_interpolation(&self, term: &super::parser::ast::Term) -> bool {
+        use super::parser::ast::Term;
+
+        match term {
+            Term::Interpolation(_) => true,
+            Term::List(list) => {
+                list.elements
+                    .iter()
+                    .any(|el| self.term_contains_interpolation(el))
+                    || list
+                        .tail
+                        .as_ref()
+                        .map_or(false, |tail| self.term_contains_interpolation(tail))
+            }
+            Term::Parenthesized(inner) => self.term_contains_interpolation(inner),
+            Term::NamedStruct(named_struct) => named_struct
+                .fields
+                .iter()
+                .any(|field| self.term_contains_interpolation(&field.value)),
+            Term::Compound(compound) => compound
+                .args
+                .iter()
+                .any(|arg| self.term_contains_interpolation(arg)),
+            _ => false,
+        }
+    }
+
+    /// Process a goal body with template expansion awareness
+    /// This ensures meta variables from let statements are available to subsequent statements
+    pub fn process_goal_body_with_template_expansion(
+        &mut self,
+        goals: &[super::parser::ast::Goal],
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        use super::metaprogramming::{expand_goal_body, TemplateExpansionContext};
+
+        // Create a shared template expansion context for all goals in this body
+        let mut template_context = TemplateExpansionContext::new(100);
+
+        // First, expand all goals using the shared template context
+        let goals_vec = goals.to_vec();
+        let expanded_goals = expand_goal_body(&goals_vec, &mut template_context).map_err(|e| {
+            InterpreterError::RuntimeError(format!("Template expansion error: {}", e))
+        })?;
+
+        // Convert all expanded goals to runtime goals
+        let mut runtime_goals = Vec::new();
+        for goal in &expanded_goals {
+            runtime_goals.push(self.ast_goal_to_runtime(goal)?);
+        }
+
+        // Combine all runtime goals into a single conjunction
+        if runtime_goals.is_empty() {
+            Ok(Goal::succeed())
+        } else {
+            let mut iter = runtime_goals.into_iter();
+            let first = iter.next().unwrap();
+            Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+        }
+    }
+
+    /// Expand and execute a meta statement using template expansion
+    fn expand_and_execute_meta_statement(
+        &mut self,
+        meta_stmt: &super::metaprogramming::MetaStatement,
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        // Create template expansion context with a reasonable recursion limit
+        let mut context = TemplateExpansionContext::new(100);
+
+        // Expand the meta statement into concrete goals
+        let expanded_goals = expand_meta_statement(meta_stmt, &mut context).map_err(|e| {
+            InterpreterError::RuntimeError(format!("Template expansion error: {}", e))
+        })?;
+
+        // Convert expanded goals to runtime goals
+        let mut runtime_goals = Vec::new();
+        for goal in &expanded_goals {
+            runtime_goals.push(self.ast_goal_to_runtime(goal)?);
+        }
+
+        // Combine all runtime goals into a single conjunction
+        if runtime_goals.is_empty() {
+            Ok(Goal::succeed())
+        } else {
+            let mut iter = runtime_goals.into_iter();
+            let first = iter.next().unwrap();
+            Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+        }
+    }
+
+    /// Expand and evaluate an interpolation expression
+    fn expand_and_evaluate_interpolation(
+        &mut self,
+        expr: &super::metaprogramming::MetaExpression,
+    ) -> Result<LTerm<U, E>, InterpreterError> {
+        // Create empty template expansion context (interpolation should only use existing bindings)
+        let context = TemplateExpansionContext::new(100);
+
+        // Create a dummy term with the interpolation and expand it
+        let dummy_term = Term::Interpolation(expr.clone());
+        let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+            InterpreterError::RuntimeError(format!("Interpolation expansion error: {}", e))
+        })?;
+
+        // Convert the expanded term to runtime
+        self.ast_term_to_runtime(&expanded_term)
     }
 }
 

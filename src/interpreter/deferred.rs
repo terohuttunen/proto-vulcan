@@ -112,18 +112,32 @@ impl<U: User, E: Engine<U>> Solve<U, E> for DeferredRelationCall<U, E> {
             .collect();
 
         // Convert the relation's body (AST) into a runtime goal. This is the core of the lazy evaluation.
-        let body_goals = self
+        // Check if the relation body contains meta statements or interpolation
+        let has_meta_features = self
             .rel_def
             .body
             .iter()
-            .map(|g| exec_context.ast_goal_to_runtime(g))
-            .collect::<Result<Vec<_>, _>>();
+            .any(|g| exec_context.goal_contains_meta_features(g));
+
+        let body_goals_result = if has_meta_features {
+            // Use template-aware processing for relation bodies with meta statements
+            exec_context
+                .process_goal_body_with_template_expansion(&self.rel_def.body)
+                .map(|goal| vec![goal])
+        } else {
+            // Use regular processing for relation bodies without meta statements
+            self.rel_def
+                .body
+                .iter()
+                .map(|g| exec_context.ast_goal_to_runtime(g))
+                .collect::<Result<Vec<_>, _>>()
+        };
 
         // Pop the scope now that the body has been converted.
         exec_context.pop_scope();
 
         // Check if body conversion was successful.
-        let mut body_goals = match body_goals {
+        let mut body_goals = match body_goals_result {
             Ok(goals) => goals,
             Err(_) => return Stream::empty(), // If conversion fails, the goal fails.
         };

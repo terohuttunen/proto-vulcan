@@ -1,3 +1,4 @@
+use crate::interpreter::metaprogramming::{MetaExpression, MetaStatement, TypeAnnotation};
 use std::fmt::{self, Display};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -84,7 +85,7 @@ pub struct RelationDefinition {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
     pub name: String,
-    pub type_name: Option<String>,
+    pub type_annotation: Option<TypeAnnotation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -205,6 +206,8 @@ pub enum Goal {
     Parenthesized(GoalBody),
     BooleanLiteral(bool),
     ConstraintBlock(ConstraintBlock),
+    // NEW: Meta programming constructs
+    MetaStatement(MetaStatement),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -291,6 +294,8 @@ pub enum Term {
     NamedStruct(NamedStructConstruction),
     Compound(CompoundConstruction),
     Parenthesized(Box<Term>),
+    // NEW: Interpolation for meta expressions
+    Interpolation(MetaExpression),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -550,8 +555,8 @@ impl Display for AttributeArg {
 impl Display for Parameter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)?;
-        if let Some(type_name) = &self.type_name {
-            write!(f, ": {}", type_name)?;
+        if let Some(type_annotation) = &self.type_annotation {
+            write!(f, ": {}", type_annotation)?;
         }
         Ok(())
     }
@@ -593,6 +598,7 @@ impl Display for Goal {
                 }
                 write!(f, "}}")
             }
+            Goal::MetaStatement(meta) => write!(f, "{}", meta),
         }
     }
 }
@@ -705,6 +711,7 @@ impl Display for Term {
             Term::NamedStruct(s) => write!(f, "{}", s),
             Term::Compound(c) => write!(f, "{}", c),
             Term::Parenthesized(t) => write!(f, "({})", t),
+            Term::Interpolation(expr) => write!(f, "{{{}}}", expr),
         }
     }
 }

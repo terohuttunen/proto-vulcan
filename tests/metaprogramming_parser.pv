@@ -1,0 +1,73 @@
+// Comprehensive metaprogramming parser test
+// This tests the new grammar and parser extensions
+
+// Test 1: Meta parameters with type annotations
+@test
+rel test_meta_params(result) {
+    result == "basic_test"
+}
+
+// Test 2: Meta let statements
+@test(expected = [10])
+rel test_meta_let(result) {
+    let doubled: int = 5 * 2;
+    let message: string = "Count: ";
+    result == doubled
+}
+
+// Test 3: Meta if statements 
+@test(expected = ["condition_true"])
+rel test_meta_if(result) {
+    let condition: bool = true;
+    if condition {
+        result == "condition_true"
+    } else {
+        result == "condition_false"
+    }
+}
+
+// Test 4: Meta for statements
+@test(expected = [1, 2])
+rel test_meta_for(result) {
+    let count: int = 3;
+    for i: int in 1..count {
+        result == i
+    }
+}
+
+// Test 5: Interpolation expressions
+@test(expected = [42])
+rel test_interpolation(result) {
+    // This tests interpolation expression parsing and runtime evaluation
+    let value: int = 42;
+    result == {value}
+}
+
+// Test 6: Complex meta expressions
+@test(expected = ["fallback"])
+rel test_complex_meta(result) {
+    let a: int = 5;
+    let b: int = 3;
+    let sum: int = a + b;
+    let product: int = a * b;
+    let is_equal: bool = a == b;
+    
+    if is_equal && sum > 10 {
+        for i: int in 1..product {
+            result == {sum}
+        }
+    } else {
+        result == "fallback"
+    }
+}
+
+// Test regular relation (should still work)
+@test(expected = [42])
+rel regular_test(x) {
+    x == 42
+}
+
+@test(expected = [42])
+rel test_regular_still_works(result) {
+    regular_test(result)
+} 

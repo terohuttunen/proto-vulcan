@@ -1,0 +1,30 @@
+// Simple metaprogramming test to verify basic functionality
+
+@test(expected = [5])
+rel test_simple_let(result) {
+    let x: int = 5;
+    result == x
+}
+
+@test(expected = [100])
+rel test_simple_if_true(result) {
+    let condition: bool = true;
+    if condition {
+        result == 100
+    } else {
+        result == 0
+    }
+}
+
+@test(expected = [1, 2])
+rel test_simple_for_loop(result) {
+    for i: int in 1..3 {
+        result == i
+    }
+}
+
+@test(expected = [42])
+rel test_simple_interpolation(result) {
+    let value: int = 42;
+    result == {value}
+} 
