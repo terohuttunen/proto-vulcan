@@ -23,6 +23,10 @@ enum Commands {
         /// The path to the file to run
         #[arg(short, long)]
         file: PathBuf,
+
+        /// The query to execute (defaults to "main()")
+        #[arg(short, long, default_value = "main()")]
+        query: String,
     },
     /// Runs the test suite
     Test {
@@ -52,8 +56,8 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { file } => {
-            if let Err(e) = run_file(file) {
+        Commands::Run { file, query } => {
+            if let Err(e) = run_file(file, query) {
                 eprintln!("Error: {}", e);
             }
         }
@@ -82,7 +86,7 @@ fn main() {
     }
 }
 
-fn run_file(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn run_file(path: PathBuf, query: String) -> Result<(), Box<dyn std::error::Error>> {
     let mut interpreter = DefaultInterpreter::with_stdlib();
     let file_contents = std::fs::read_to_string(path)?;
 
@@ -90,7 +94,7 @@ fn run_file(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         parse_str(&file_contents).map_err(|e| InterpreterError::ParseError(e.to_string()))?;
     interpreter.load_program(program)?;
 
-    match interpreter.query("main()") {
+    match interpreter.query(&query) {
         Ok(results) => {
             if !results.is_empty() {
                 println!("Query results:");
@@ -98,11 +102,11 @@ fn run_file(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                     println!("{:?}", result);
                 }
             } else {
-                println!("Query 'main()' succeeded with no results.");
+                println!("Query '{}' succeeded with no results.", query);
             }
         }
         Err(e) => {
-            eprintln!("Error running query 'main()': {}", e);
+            eprintln!("Error running query '{}': {}", query, e);
         }
     }
     Ok(())
