@@ -89,6 +89,10 @@ pub struct ExecutionContext<'a, U: User, E: Engine<U>> {
     /// variable name (String) to its corresponding logical term (`LTerm`).
     pub locals: Vec<HashMap<String, LTerm<U, E>>>,
 
+    /// A list of goals that need to be executed as part of the current goal's conjunction.
+    /// This is used for complex operations that create intermediate goals, like arithmetic.
+    deferred_goals: Vec<Goal<U, E>>,
+
     /// A counter to ensure that every fresh variable created has a unique ID.
     var_counter: usize,
 
@@ -105,6 +109,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         Self {
             environment,
             locals: vec![HashMap::new()], // Start with one base scope
+            deferred_goals: vec![],
             var_counter: 0,
             // Start with BFS as the default search strategy
             search_strategy_stack: vec![SearchStrategy::Bfs],
@@ -160,6 +165,30 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     /// Returns the top-level variable bindings.
     pub fn get_variable_bindings(&self) -> HashMap<String, LTerm<U, E>> {
         self.locals.first().cloned().unwrap_or_default()
+    }
+
+    /// Gets an existing variable by name or creates a fresh one if it doesn't exist.
+    /// This is useful for constraint domains that need to reference variables.
+    pub fn get_or_create_variable(&mut self, name: &str) -> Result<LTerm<U, E>, InterpreterError> {
+        if let Some(var) = self.lookup_var(name) {
+            Ok(var)
+        } else {
+            let fresh_var = self.create_fresh_var();
+            self.bind_var(name.to_string(), fresh_var.clone());
+            Ok(fresh_var)
+        }
+    }
+
+    /// Gets an existing variable by name, returns an error if it doesn't exist.
+    /// This is useful for constraint domains that should only reference existing variables.
+    pub fn get_existing_variable(&self, name: &str) -> Result<LTerm<U, E>, InterpreterError> {
+        self.lookup_var(name)
+            .ok_or_else(|| InterpreterError::UnknownVariable(name.to_string()))
+    }
+
+    /// Adds a goal to the list of deferred goals to be executed.
+    pub fn add_deferred_goal(&mut self, goal: Goal<U, E>) {
+        self.deferred_goals.push(goal);
     }
 
     /// Get the current search strategy (top of stack)
@@ -267,136 +296,187 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             AstGoal::Equality(_, _)
             | AstGoal::Disequality(_, _)
             | AstGoal::BooleanLiteral(_)
-            | AstGoal::MethodCall(_) => Ok(()),
+            | AstGoal::MethodCall(_)
+            | AstGoal::ConstraintBlock(_) => Ok(()),
         }
     }
 
-    // Main dispatcher for converting an AST goal to a runtime goal.
+    /// This is the main entry point for converting an AST goal into a runtime goal
+    /// that can be solved. It dispatches to the appropriate helper function based
+    /// on the AST goal type.
     pub fn ast_goal_to_runtime(&mut self, goal: &AstGoal) -> Result<Goal<U, E>, InterpreterError> {
-        match goal {
-            AstGoal::Equality(left, right) => {
-                let left_term = self.ast_term_to_runtime(left)?;
-                let right_term = self.ast_term_to_runtime(right)?;
-                Ok(eq(left_term, right_term).cast_into())
+        // Clear any deferred goals from a previous run
+        self.deferred_goals.clear();
+
+        let main_goal = match goal {
+            AstGoal::Equality(lhs, rhs) => {
+                let lhs_term = self.ast_term_to_runtime(lhs)?;
+                let rhs_term = self.ast_term_to_runtime(rhs)?;
+                Ok(eq(lhs_term, rhs_term).cast_into())
             }
-            AstGoal::Disequality(left, right) => {
-                let left_term = self.ast_term_to_runtime(left)?;
-                let right_term = self.ast_term_to_runtime(right)?;
-                Ok(crate::relation::diseq::diseq(left_term, right_term).cast_into())
+            AstGoal::Disequality(lhs, rhs) => {
+                let lhs_term = self.ast_term_to_runtime(lhs)?;
+                let rhs_term = self.ast_term_to_runtime(rhs)?;
+                Ok(crate::relation::diseq::diseq(lhs_term, rhs_term).cast_into())
             }
             AstGoal::RelationCall(call) => self.ast_relation_call_to_runtime(call),
-            AstGoal::PatternMatch(pattern_match) => {
-                self.ast_pattern_match_to_runtime(pattern_match)
+            AstGoal::Conjunction(conj) => {
+                let mut goals = vec![];
+                for g in &conj.body {
+                    goals.push(self.ast_goal_to_runtime(g)?);
+                }
+                if goals.is_empty() {
+                    Ok(Goal::succeed())
+                } else {
+                    let mut iter = goals.into_iter();
+                    let first = iter.next().unwrap();
+                    Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+                }
             }
-            AstGoal::Conjunction(AstConjunction { body, params }) => {
-                // Check if explicit search strategy is specified
-                let requested_strategy = params
-                    .as_ref()
-                    .and_then(|p| p.strategy.as_ref())
-                    .copied()
-                    .unwrap_or(self.current_search_strategy());
-
-                // Validate that the strategy embedding is legal
-                self.validate_search_strategy(requested_strategy)?;
-
-                // Push the strategy for the conjunction body
-                self.push_search_strategy(requested_strategy);
-
-                let mut runtime_goals = Vec::new();
-                for g in body {
-                    runtime_goals.push(self.ast_goal_to_runtime(g)?);
+            AstGoal::Disjunction(disj) => {
+                let mut goals = vec![];
+                for g in &disj.body {
+                    goals.push(self.ast_goal_to_runtime(g)?);
                 }
 
-                // Pop the strategy after processing the body
-                self.pop_search_strategy();
+                // Determine the search strategy to use for this disjunction
+                let strategy = if let Some(params) = &disj.params {
+                    // If explicit strategy is specified in the any block, use that
+                    params
+                        .strategy
+                        .unwrap_or_else(|| self.current_search_strategy())
+                } else {
+                    // No params, inherit strategy from current context (e.g., relation-level @dfs)
+                    self.current_search_strategy()
+                };
 
-                // For conjunctions, the search strategy doesn't affect the operator itself
-                // (conjunction is always sequential), but it affects nested operations
-                let mut conj_goal = Goal::succeed();
-                for goal in runtime_goals.into_iter().rev() {
-                    conj_goal = Conj::new(goal, conj_goal);
-                }
-                Ok(conj_goal)
-            }
-            AstGoal::Disjunction(disjunction) => {
-                // Check if explicit search strategy is specified
-                let requested_strategy = disjunction
-                    .params
-                    .as_ref()
-                    .and_then(|p| p.strategy.as_ref())
-                    .copied()
-                    .unwrap_or(self.current_search_strategy());
-
-                // Validate that the strategy embedding is legal
-                self.validate_search_strategy(requested_strategy)?;
-
-                // Push the strategy for the disjunction body
-                self.push_search_strategy(requested_strategy);
-
-                let mut runtime_goals = Vec::new();
-                for g in &disjunction.body {
-                    runtime_goals.push(self.ast_goal_to_runtime(g)?);
-                }
-
-                // Pop the strategy after processing the body
-                self.pop_search_strategy();
-
-                match requested_strategy {
+                match strategy {
                     SearchStrategy::Dfs => {
-                        // Use our custom DFS disjunction implementation
-                        Ok(DFSDisjunction::new(runtime_goals))
+                        // Use DFS disjunction for depth-first search
+                        Ok(DFSDisjunction::new(goals))
                     }
                     SearchStrategy::Bfs => {
-                        // Default BFS behavior using Comte
-                        Ok(Conde::from_array(&runtime_goals).cast_into())
+                        // Use regular BFS disjunction (Conde)
+                        Ok(Conde::from_array(&goals).cast_into())
                     }
                 }
             }
-            AstGoal::Parenthesized(body) => {
-                let mut conj_goal = Goal::succeed();
-                for g in body.iter().rev() {
-                    let runtime_goal = self.ast_goal_to_runtime(g)?;
-                    conj_goal = Conj::new(runtime_goal, conj_goal);
+            AstGoal::PatternMatch(pm) => self.ast_pattern_match_to_runtime(pm),
+            AstGoal::Parenthesized(goals) => {
+                let mut conj_goals = Vec::new();
+                for g in goals {
+                    conj_goals.push(self.ast_goal_to_runtime(g)?);
                 }
-                Ok(conj_goal)
+                if conj_goals.is_empty() {
+                    Ok(Goal::succeed())
+                } else {
+                    let mut iter = conj_goals.into_iter();
+                    let first = iter.next().unwrap();
+                    Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+                }
             }
             AstGoal::Let(let_decl) => {
-                let value_term = match &let_decl.value {
-                    Some(term) => self.ast_term_to_runtime(term)?,
-                    None => self.create_fresh_var(),
+                let value_term = if let Some(val) = &let_decl.value {
+                    self.ast_term_to_runtime(val)?
+                } else {
+                    self.create_fresh_var()
                 };
                 self.bind_var(let_decl.var_name.clone(), value_term);
-                // A `let` doesn't produce a goal itself, it modifies the context.
-                // We'll represent this with a success goal.
-                Ok(crate::relation::succeed::succeed().cast_into())
+                Ok(Goal::succeed())
             }
-            AstGoal::Fresh(fresh) => {
+            AstGoal::Fresh(fresh_vars) => {
                 self.push_scope();
-                for var_name in &fresh.vars {
+                for var_name in &fresh_vars.vars {
                     let fresh_var = self.create_fresh_var();
                     self.bind_var(var_name.clone(), fresh_var);
                 }
-                let mut conj_goal = Goal::succeed();
-                for g in fresh.body.iter().rev() {
-                    let runtime_goal = self.ast_goal_to_runtime(g)?;
-                    conj_goal = Conj::new(runtime_goal, conj_goal);
+
+                let mut goals = Vec::new();
+                for g in &fresh_vars.body {
+                    goals.push(self.ast_goal_to_runtime(g)?);
                 }
+
                 self.pop_scope();
-                Ok(conj_goal)
-            }
-            AstGoal::MethodCall(_) => todo!(),
-            AstGoal::BooleanLiteral(b) => {
-                if *b {
-                    Ok(crate::relation::succeed::succeed().cast_into())
+                if goals.is_empty() {
+                    Ok(Goal::succeed())
                 } else {
-                    Ok(crate::relation::fail::fail().cast_into())
+                    let mut iter = goals.into_iter();
+                    let first = iter.next().unwrap();
+                    Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
                 }
             }
+            AstGoal::MethodCall(_) => Err(InterpreterError::RuntimeError(
+                "Method calls not implemented yet".to_string(),
+            )),
+            AstGoal::ConstraintBlock(block) => self.convert_constraint_block(block),
+            AstGoal::BooleanLiteral(val) => {
+                if *val {
+                    Ok(Goal::succeed())
+                } else {
+                    Ok(Goal::fail())
+                }
+            }
+        }?;
+
+        if self.deferred_goals.is_empty() {
+            Ok(main_goal)
+        } else {
+            let mut all_goals = vec![main_goal];
+            all_goals.extend(self.deferred_goals.drain(..));
+            let mut iter = all_goals.into_iter();
+            let first = iter.next().unwrap();
+            Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
         }
     }
 
-    // Converts an AST term to a runtime LTerm.
-    fn ast_term_to_runtime(&mut self, term: &Term) -> Result<LTerm<U, E>, InterpreterError> {
+    /// Converts an AST conjunction into a runtime goal.
+    /// It respects the search strategy specified in the `all` block.
+    fn ast_conjunction_to_runtime(
+        &mut self,
+        conj: &AstConjunction,
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        let mut goals = vec![];
+        for g in &conj.body {
+            goals.push(self.ast_goal_to_runtime(g)?);
+        }
+        if goals.is_empty() {
+            Ok(Goal::succeed())
+        } else {
+            let mut iter = goals.into_iter();
+            let first = iter.next().unwrap();
+            Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+        }
+    }
+
+    /// Converts an AST disjunction into a runtime goal.
+    /// It respects the search strategy specified in the `any` block.
+    fn ast_disjunction_to_runtime(
+        &mut self,
+        disj: &super::parser::ast::Disjunction,
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        let mut goals = vec![];
+        for g in &disj.body {
+            goals.push(self.ast_goal_to_runtime(g)?);
+        }
+        Ok(Conde::from_array(&goals).cast_into())
+    }
+
+    /// Private helper to handle constraint blocks.
+    fn convert_constraint_block(
+        &mut self,
+        block: &super::parser::ast::ConstraintBlock,
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        use super::constraint_domains::ConstraintDomainRegistry;
+        let registry = ConstraintDomainRegistry::default();
+        let domain = registry
+            .get_domain(&block.domain)
+            .ok_or_else(|| InterpreterError::UnknownConstraintDomain(block.domain.clone()))?;
+        let parsed_constraints = domain.parse_constraints(&block.body)?;
+        parsed_constraints.convert_to_goals(self)
+    }
+
+    /// Converts an AST term to a runtime LTerm.
+    pub fn ast_term_to_runtime(&mut self, term: &Term) -> Result<LTerm<U, E>, InterpreterError> {
         match term {
             Term::Variable(name) => self
                 .lookup_var(name)

@@ -83,6 +83,7 @@ flag_attribute_arg = { ident }
 goal_body = { (goal ~ ("," | ";")?)* }
 
 goal = {
+    constraint_block | // Moved up to prioritize its unique keyword
     let_declaration |
     fresh_variables |
     any_block |
@@ -108,6 +109,23 @@ any_block = {
 all_block = {
     "all" ~ search_params? ~ "{" ~ goal_body ~ "}"
 }
+
+// -- Constraint Block --
+constraint_block = { "constraint" ~ constraint_params? ~ "{" ~ constraint_body ~ "}" }
+
+constraint_params = {
+    "(" ~ constraint_param ~ ("," ~ constraint_param)* ~ ","? ~ ")"
+}
+
+constraint_param = _{
+    domain_param |
+    custom_constraint_param
+}
+
+domain_param = { "domain" ~ "=" ~ string_literal }
+custom_constraint_param = { ident ~ "=" ~ param_value }
+
+constraint_body = @{ ( !("}" | EOI) ~ ANY )* }
 
 search_strategy = { "@" ~ strategy_value }
 

@@ -319,6 +319,7 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
         Rule::fresh_variables => Ok(Goal::Fresh(build_fresh_variables(pair)?)),
         Rule::any_block => build_any_block(pair),
         Rule::all_block => build_all_block(pair),
+        Rule::constraint_block => build_constraint_block(pair),
         Rule::pattern_matching => Ok(Goal::PatternMatch(build_pattern_matching(pair)?)),
         Rule::call_expr => Ok(Goal::RelationCall(build_relation_call(pair)?)),
         Rule::method_call => Ok(Goal::MethodCall(build_method_call(pair)?)),
@@ -387,6 +388,58 @@ fn build_all_block(pair: Pair<Rule>) -> ParseResult<Goal> {
     }
 
     Ok(Goal::Conjunction(Conjunction { body, params }))
+}
+
+fn build_constraint_block(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let mut inner = pair.into_inner();
+    let mut domain = "clpfd".to_string(); // Default domain
+    let mut raw_content = "".to_string();
+
+    // The first pairs can be constraint_params
+    if let Some(p) = inner.peek() {
+        if p.as_rule() == Rule::constraint_params {
+            domain = parse_constraint_params(inner.next().unwrap())?;
+        }
+    }
+
+    // The next part must be the constraint_body
+    if let Some(body_pair) = inner.next() {
+        if body_pair.as_rule() == Rule::constraint_body {
+            raw_content = body_pair.as_str().to_string();
+        }
+    }
+
+    Ok(Goal::ConstraintBlock(ConstraintBlock {
+        domain,
+        body: ConstraintBody {
+            raw_content,
+            // The domain parser is now responsible for splitting the content.
+            parsed_expressions: vec![],
+        },
+    }))
+}
+
+fn parse_constraint_params(pair: Pair<Rule>) -> ParseResult<String> {
+    let mut domain = "clpfd".to_string();
+
+    for param in pair.into_inner() {
+        match param.as_rule() {
+            Rule::domain_param => {
+                let mut param_inner = param.into_inner();
+                if let Some(domain_value) = param_inner.next() {
+                    // Extract string value without quotes
+                    let domain_str = domain_value.as_str();
+                    domain = domain_str.trim_matches('"').to_string();
+                }
+            }
+            Rule::custom_constraint_param => {
+                // Handle custom parameters if needed in the future
+            }
+            _ => return Err(ParseError::UnexpectedRule(param.as_rule())),
+        }
+    }
+
+    Ok(domain)
 }
 
 fn build_search_params(pair: Pair<Rule>) -> ParseResult<SearchParams> {

@@ -216,6 +216,9 @@ fn extract_variables_from_goal_recursive(goal: &Goal, vars: &mut Vec<String>) {
         Goal::BooleanLiteral(_) => {
             // Boolean literals don't contain variables
         }
+        Goal::ConstraintBlock(_) => {
+            // TODO: Extract variables from constraint blocks
+        }
     }
 }
 

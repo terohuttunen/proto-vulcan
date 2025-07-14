@@ -204,6 +204,7 @@ pub enum Goal {
     Disequality(Term, Term),
     Parenthesized(GoalBody),
     BooleanLiteral(bool),
+    ConstraintBlock(ConstraintBlock),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -356,6 +357,24 @@ pub struct FieldPattern {
 pub struct CompoundPattern {
     pub name: String,
     pub args: Vec<Pattern>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstraintBlock {
+    pub domain: String,
+    pub body: ConstraintBody,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstraintBody {
+    pub raw_content: String,
+    pub parsed_expressions: Vec<RawConstraintExpression>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawConstraintExpression {
+    pub content: String,
+    pub span: (usize, usize), // For error reporting
 }
 
 impl Display for Program {
@@ -567,6 +586,13 @@ impl Display for Goal {
                 write!(f, ")")
             }
             Goal::BooleanLiteral(b) => write!(f, "{}", b),
+            Goal::ConstraintBlock(c) => {
+                writeln!(f, "constraint {} {{", c.domain)?;
+                for expr in &c.body.parsed_expressions {
+                    writeln!(f, "    {}", expr)?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -802,6 +828,28 @@ impl Display for CompoundPattern {
             first = false;
         }
         write!(f, ")")
+    }
+}
+
+impl Display for ConstraintBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "constraint(domain = \"{}\") {{", self.domain)?;
+        for expr in &self.body.parsed_expressions {
+            writeln!(f, "    {}", expr)?;
+        }
+        write!(f, "}}")
+    }
+}
+
+impl Display for ConstraintBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.raw_content)
+    }
+}
+
+impl Display for RawConstraintExpression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.content)
     }
 }
 

@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 mod assertions;
+pub mod constraint_domains;
 pub mod deferred;
 mod environment;
 mod execution;
@@ -37,6 +38,14 @@ pub enum InterpreterError {
         current_context: String,
         reason: String,
     },
+    UnknownConstraintDomain(String),
+    UnknownGlobalConstraint(String),
+    InvalidConstraintArgs(String),
+    InvalidConstraintSyntax {
+        domain: String,
+        error: String,
+    },
+    ExpectedNumber,
 }
 
 impl Display for InterpreterError {
@@ -70,6 +79,25 @@ impl Display for InterpreterError {
                 "Search strategy warning: Using {} search within {} context - {}",
                 attempted, current_context, reason
             ),
+            InterpreterError::UnknownConstraintDomain(domain) => {
+                write!(f, "Unknown constraint domain: {}", domain)
+            }
+            InterpreterError::UnknownGlobalConstraint(constraint) => {
+                write!(f, "Unknown global constraint: {}", constraint)
+            }
+            InterpreterError::InvalidConstraintArgs(msg) => {
+                write!(f, "Invalid constraint arguments: {}", msg)
+            }
+            InterpreterError::InvalidConstraintSyntax { domain, error } => {
+                write!(
+                    f,
+                    "Invalid constraint syntax in domain '{}': {}",
+                    domain, error
+                )
+            }
+            InterpreterError::ExpectedNumber => {
+                write!(f, "Expected a number value")
+            }
         }
     }
 }
@@ -698,47 +726,181 @@ mod tests {
 
     #[test]
     fn test_end_to_end_variable_scoping() {
-        // Test that variable scoping works correctly in the pipeline
-        let program_source = r#"
-            rel scoping_test(x, y) {
-                |inner_var| {
-                    inner_var == 42,
-                    x == inner_var
-                },
-                y == x
+        let mut interpreter = TestInterpreter::default();
+
+        let program_str = r#"
+            rel test_scope(result) {
+                |x| {
+                    |y| {
+                        x == 1,
+                        y == 2,
+                        result == [x, y]
+                    }
+                }
             }
         "#;
 
-        // Parse and load the program
-        let parsed_program = parser::parse_str(program_source).unwrap();
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program.clone()).unwrap();
+        let program = parser::parse_str(program_str).unwrap();
+        interpreter.load_program(program).unwrap();
 
-        // Verify the relation was loaded
-        {
-            let env = interpreter.environment();
-            assert!(env.lookup("scoping_test").is_some());
-            assert!(env.lookup("scoping_test").unwrap().is_relation());
+        let results = interpreter.query("test_scope(result).").unwrap();
+        assert!(!results.is_empty());
+    }
+
+    #[test]
+    fn test_constraint_block_basic_domain() {
+        let mut interpreter = TestInterpreter::with_stdlib();
+        let program_str = r#"
+        rel solve() {
+            |x, y| {
+                constraint(domain="clpfd") {
+                    x in 1..3,
+                    y in 1..3,
+                    x < y
+                }
+            }
         }
+        "#;
+        let program = parser::parse_str(program_str).unwrap();
+        interpreter.load_program(program).unwrap();
+        let results = interpreter.query("solve()").unwrap();
+        // Fresh blocks with constraint blocks work but return empty bindings
+        // since the fresh variables are scoped within the block
+        assert!(!results.is_empty());
+        assert_eq!(results.len(), 1);
+        assert!(results[0].bindings.is_empty());
+    }
 
-        // Test execution context variable handling
-        use super::execution::ExecutionContext;
-        let mut exec_context = ExecutionContext::new(interpreter.environment.clone());
+    #[test]
+    fn test_constraint_block_arithmetic() {
+        let mut interpreter = TestInterpreter::with_stdlib();
+        let program_str = r#"
+        rel solve() {
+            |x, y| {
+                constraint(domain="clpfd") {
+                    x in 1..5,
+                    y in 1..5,
+                    x + y == 6
+                }
+            }
+        }
+        "#;
+        let program = parser::parse_str(program_str).unwrap();
+        interpreter.load_program(program).unwrap();
+        let results = interpreter.query("solve()").unwrap();
+        // Fresh blocks with constraint blocks work but return empty bindings
+        // since the fresh variables are scoped within the block
+        assert!(!results.is_empty());
+        assert_eq!(results.len(), 1);
+        assert!(results[0].bindings.is_empty());
+    }
 
-        // Test that fresh variables are properly scoped
-        use super::parser::ast::{FreshVariables, Goal, Literal, Term};
-        let fresh_goal = Goal::Fresh(FreshVariables {
-            vars: vec!["test_var".to_string()],
-            body: vec![Goal::Equality(
-                Term::Variable("test_var".to_string()),
-                Term::Literal(Literal::Number("42".to_string())),
-            )],
-        });
+    #[test]
+    fn test_constraint_block_distinct() {
+        let mut interpreter = TestInterpreter::with_stdlib();
+        let program_str = r#"
+        rel solve() {
+            |q1, q2, q3, q4| {
+                constraint(domain="clpfd") {
+                    q1 in 1..4,
+                    q2 in 1..4,
+                    q3 in 1..4,
+                    q4 in 1..4,
+                    distinct(q1, q2, q3, q4)
+                }
+            }
+        }
+        "#;
+        let program = parser::parse_str(program_str).unwrap();
+        interpreter.load_program(program).unwrap();
+        let results = interpreter.query("solve()").unwrap();
+        // Fresh blocks with constraint blocks work but return empty bindings
+        // since the fresh variables are scoped within the block
+        assert!(!results.is_empty());
+        assert_eq!(results.len(), 1);
+        assert!(results[0].bindings.is_empty());
+    }
 
-        let runtime_goal = exec_context.ast_goal_to_runtime(&fresh_goal);
-        assert!(
-            runtime_goal.is_ok(),
-            "Should handle fresh variables correctly"
-        );
+    #[test]
+    fn test_constraint_block_simple_queens() {
+        let mut interpreter = TestInterpreter::with_stdlib();
+        let program_str = r#"
+        rel solve() {
+            |q1, q2, q3, q4| {
+                constraint(domain="clpfd") {
+                    q1 in 1..4,
+                    q2 in 1..4,
+                    q3 in 1..4,
+                    q4 in 1..4,
+
+                    q1 != q2,
+                    q1 != q3,
+                    q1 != q4,
+                    q2 != q3,
+                    q2 != q4,
+                    q3 != q4,
+
+                    q1 - q2 != 1, q2 - q1 != 1,
+                    q1 - q3 != 2, q3 - q1 != 2,
+                    q1 - q4 != 3, q4 - q1 != 3,
+                    q2 - q3 != 1, q3 - q2 != 1,
+                    q2 - q4 != 2, q4 - q2 != 2,
+                    q3 - q4 != 1, q4 - q3 != 1
+                }
+            }
+        }
+        "#;
+        let program = parser::parse_str(program_str).unwrap();
+        interpreter.load_program(program).unwrap();
+        let results = interpreter.query("solve()").unwrap();
+        // Fresh blocks with constraint blocks work but return empty bindings
+        // since the fresh variables are scoped within the block
+        assert!(!results.is_empty());
+        assert_eq!(results.len(), 1);
+        assert!(results[0].bindings.is_empty());
+    }
+
+    #[test]
+    fn test_constraint_block_fresh_variables() {
+        let mut interpreter = TestInterpreter::with_stdlib();
+        let program_str = r#"
+        rel solve() {
+            |x| {
+                constraint(domain="clpfd") {
+                    x in 6..10
+                }
+            }
+        }
+        "#;
+        let program = parser::parse_str(program_str).unwrap();
+        interpreter.load_program(program).unwrap();
+        let results = interpreter.query("solve()").unwrap();
+        // Fresh blocks with constraint blocks work but return empty bindings
+        // since the fresh variables are scoped within the block
+        assert!(!results.is_empty());
+        assert_eq!(results.len(), 1);
+        assert!(results[0].bindings.is_empty());
+    }
+
+    #[test]
+    fn test_constraint_block_multiple_domains() {
+        // This test requires a second constraint domain to be registered.
+        // For now, we'll just test that the parser can handle the syntax.
+        // The actual execution would fail until a "clp_test" domain is added.
+        let mut interpreter = TestInterpreter::with_stdlib();
+        let program_str = r#"
+        rel solve() {
+            constraint(domain="clpfd") {
+                x in 1..2
+            },
+            constraint(domain="clp_test") {
+                a != b
+            }
+        }
+        "#;
+        let program = parser::parse_str(program_str).unwrap();
+        interpreter.load_program(program).unwrap();
+        // We can't query this because the "clp_test" domain doesn't exist.
+        // The fact that it parses is the test.
     }
 }

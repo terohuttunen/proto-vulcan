@@ -1,0 +1,59 @@
+// Grammar for CLP(FD) Constraints
+
+// -- Basic building blocks --
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+integer    = @{ "-"? ~ ASCII_DIGIT+ }
+variable   = @{ (ASCII_ALPHANUMERIC | "_")+ }
+
+// -- Keywords (atomic so they aren't matched as part of 'variable') --
+in_kw       = @{ "in" }
+distinct_kw = @{ "distinct" }
+
+// -- Operators --
+add_op  = { "+" | "-" }
+mul_op  = { "*" | "/" }
+comp_op = { "==" | "!=" | "<" | "<=" | ">" | ">=" }
+
+// -- Arithmetic Expressions --
+// This structure correctly handles operator precedence (multiplication before addition)
+// and allows for grouping with parentheses.
+factor      = { integer | variable | "(" ~ arith_expr ~ ")" }
+term        = { factor ~ (mul_op ~ factor)* }
+arith_expr  = { term ~ (add_op ~ term)* }
+
+// -- Top-Level Constraint Type Rules --
+
+// 1. Domain Constraint: `var in ...`
+// Examples: x in 1..10, y in {1,5,9}, z in 42
+range_dotdot = { integer ~ ".." ~ integer }
+range_set    = { "{" ~ integer ~ ("," ~ integer)* ~ "}" }
+range_single = { integer }
+range_spec   = { range_dotdot | range_set | range_single }
+domain_constraint = { variable ~ in_kw ~ range_spec }
+
+// 2. Arithmetic Constraint: `expr op expr`
+// Example: x + y * 2 >= z
+arith_constraint = { arith_expr ~ comp_op ~ arith_expr }
+
+// 3. Distinct Constraint: `distinct(...)`
+// Example: distinct(a, b, c)
+var_list = { variable ~ ("," ~ variable)* }
+distinct_constraint = { distinct_kw ~ "(" ~ var_list ~ ")" }
+
+
+// -- Main Entry Point --
+// We list the most specific rules first to guide the parser. `distinct` and `domain`
+// constraints start with unique patterns (`distinct(...)` and `variable in ...`).
+// `arith_constraint` is the most general. This ordering prevents ambiguity.
+constraint_expr = _{ fresh_constraint | distinct_constraint | domain_constraint | arith_constraint }
+
+// Fresh variable block
+fresh_constraint = { "|" ~ var_list? ~ "|" ~ "{" ~ constraints ~ "}" }
+
+// The rule for parsing a single, complete constraint expression, used by the list parser.
+constraint = { constraint_expr }
+
+// A list of constraints, which is what a whole block contains.
+// Separated by commas, and whitespace/newlines are handled.
+// Allows an optional trailing comma.
+constraints = { SOI ~ constraint ~ ("," ~ constraint)* ~ ","? ~ EOI } 
