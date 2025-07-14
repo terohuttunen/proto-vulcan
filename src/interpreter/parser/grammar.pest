@@ -87,68 +87,28 @@ meta_statement = {
     meta_for_statement
 }
 
-meta_let_statement = { "let" ~ ident ~ ":" ~ meta_type_annotation ~ "=" ~ meta_expression ~ ";" }
+meta_let_statement = { "let" ~ ident ~ ":" ~ meta_type_annotation ~ "=" ~ meta_expr_content ~ ";" }
 
 meta_if_statement = {
-    "if" ~ meta_expression ~ "{" ~ goal_body ~ "}" ~ ("else" ~ "{" ~ goal_body ~ "}")?
+    "if" ~ meta_expr_content ~ "{" ~ goal_body ~ "}" ~ ("else" ~ "{" ~ goal_body ~ "}")?
 }
 
 meta_for_statement = {
-    "for" ~ ident ~ ":" ~ meta_type_annotation ~ "in" ~ meta_expression ~ "{" ~ goal_body ~ "}"
+    "for" ~ ident ~ ":" ~ meta_type_annotation ~ "in" ~ meta_for_range ~ "{" ~ goal_body ~ "}"
 }
 
-meta_expression = {
-    meta_or_expression
+meta_for_range = {
+    meta_expr_content ~ ".." ~ meta_expr_content
 }
 
-meta_or_expression = {
-    meta_and_expression ~ ("||" ~ meta_and_expression)*
-}
+meta_expr_content = @{ ( !(";" | "{" | "..") ~ ANY )* }
 
-meta_and_expression = {
-    meta_equality_expression ~ ("&&" ~ meta_equality_expression)*
-}
+// =============================================================================
+// Interpolation Expression (for goals and terms)
+// =============================================================================
 
-meta_equality_expression = {
-    meta_comparison_expression ~ (("==" | "!=") ~ meta_comparison_expression)*
-}
-
-meta_comparison_expression = {
-    meta_additive_expression ~ (("<=" | "<" | ">=" | ">") ~ meta_additive_expression)*
-}
-
-meta_additive_expression = {
-    meta_multiplicative_expression ~ (("+" | "-") ~ meta_multiplicative_expression)*
-}
-
-meta_multiplicative_expression = {
-    meta_range_expression ~ (("*" | "/") ~ meta_range_expression)*
-}
-
-meta_range_expression = {
-    meta_primary_expression ~ (".." ~ meta_primary_expression)?
-}
-
-meta_primary_expression = {
-    meta_literal |
-    meta_variable |
-    "(" ~ meta_expression ~ ")"
-}
-
-meta_literal = { 
-    meta_integer_literal | 
-    meta_string_literal | 
-    meta_boolean_literal 
-}
-
-meta_integer_literal = @{ "-"? ~ ASCII_DIGIT+ }
-meta_string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-meta_boolean_literal = @{ "true" | "false" }
-meta_variable = @{ ident }
-
-
-
-interpolation_expression = { "{" ~ meta_expression ~ "}" }
+interpolation_expression = { "{" ~ interpolation_content ~ "}" }
+interpolation_content = @{ ( !("}" | EOI) ~ ANY )* }
 
 // =============================================================================
 // Goal Structures

@@ -5,13 +5,17 @@ WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 integer    = @{ "-"? ~ ASCII_DIGIT+ }
 variable   = @{ (ASCII_ALPHANUMERIC | "_")+ }
 
+// -- Interpolation expressions --
+interpolation_expression = { "{" ~ interpolation_content ~ "}" }
+interpolation_content = @{ ( !("}" | EOI) ~ ANY )* }
+
 // -- Operators --
 add_op  = { "+" | "-" }
 mul_op  = { "*" | "/" }
 comp_op = { "==" | "!=" | "<" | "<=" | ">" | ">=" }
 
 // -- Arithmetic Expressions --
-factor      = { integer | variable | "(" ~ arith_expr ~ ")" }
+factor      = { integer | variable | interpolation_expression | "(" ~ arith_expr ~ ")" }
 term        = { factor ~ (mul_op ~ factor)* }
 arith_expr  = { term ~ (add_op ~ term)* }
 
@@ -22,7 +26,7 @@ arith_expr  = { term ~ (add_op ~ term)* }
 arith_constraint = { arith_expr ~ comp_op ~ arith_expr }
 
 // Fresh variable block
-var_list = { variable ~ ("," ~ variable)* }
+var_list = { (variable | interpolation_expression) ~ ("," ~ (variable | interpolation_expression))* }
 fresh_constraint = { "|" ~ var_list? ~ "|" ~ "{" ~ constraints ~ "}" }
 
 // -- Main Entry Point --

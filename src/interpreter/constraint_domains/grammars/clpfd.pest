@@ -5,6 +5,10 @@ WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 integer    = @{ "-"? ~ ASCII_DIGIT+ }
 variable   = @{ (ASCII_ALPHANUMERIC | "_")+ }
 
+// -- Interpolation expressions --
+interpolation_expression = { "{" ~ interpolation_content ~ "}" }
+interpolation_content = @{ ( !("}" | EOI) ~ ANY )* }
+
 // -- Keywords (atomic so they aren't matched as part of 'variable') --
 in_kw       = @{ "in" }
 distinct_kw = _{ "distinct" }
@@ -18,7 +22,7 @@ comp_op = { "==" | "!=" | "<=" | "<" | ">=" | ">" }
 // -- Arithmetic Expressions --
 // This structure correctly handles operator precedence (multiplication before addition)
 // and allows for grouping with parentheses.
-factor      = { integer | variable | "(" ~ arith_expr ~ ")" }
+factor      = { integer | variable | interpolation_expression | "(" ~ arith_expr ~ ")" }
 term        = { factor ~ (mul_op ~ factor)* }
 arith_expr  = { term ~ (add_op ~ term)* }
 
@@ -26,11 +30,11 @@ arith_expr  = { term ~ (add_op ~ term)* }
 
 // 1. Domain Constraint: `var in ...` or `[vars...] in ...`
 // Examples: x in 1..10, y in {1,5,9}, z in 42, [x, y, z] in 0..2
-range_dotdot = { integer ~ ".." ~ integer }
-range_set    = { "{" ~ integer ~ ("," ~ integer)* ~ "}" }
-range_single = { integer }
+range_dotdot = { (integer | interpolation_expression) ~ ".." ~ (integer | interpolation_expression) }
+range_set    = { "{" ~ (integer | interpolation_expression) ~ ("," ~ (integer | interpolation_expression))* ~ "}" }
+range_single = { integer | interpolation_expression }
 range_spec   = { range_dotdot | range_set | range_single }
-domain_constraint = { variable ~ in_kw ~ range_spec }
+domain_constraint = { (variable | interpolation_expression) ~ in_kw ~ range_spec }
 list_domain_constraint = { "[" ~ var_list ~ "]" ~ in_kw ~ range_spec }
 
 // 2. Arithmetic Constraint: `expr op expr`
@@ -39,8 +43,8 @@ arith_constraint = { arith_expr ~ comp_op ~ arith_expr }
 
 // 3. Distinct/Alldiff Constraint: `distinct(...)` or `alldiff [...] `
 // Examples: distinct(a, b, c), alldiff [a, b, c], alldiff [1, 2, 3]
-var_or_const = { variable | integer }
-var_list = { variable ~ ("," ~ variable)* }
+var_or_const = { variable | integer | interpolation_expression }
+var_list = { (variable | interpolation_expression) ~ ("," ~ (variable | interpolation_expression))* }
 var_or_const_list = { var_or_const ~ ("," ~ var_or_const)* }
 distinct_constraint = { distinct_kw ~ "(" ~ var_list ~ ")" }
 alldiff_constraint = { alldiff_kw ~ "[" ~ var_or_const_list ~ "]" }

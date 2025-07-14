@@ -4,6 +4,7 @@ use pest_derive::Parser;
 use thiserror::Error;
 
 pub mod ast;
+pub mod meta_parser;
 use crate::interpreter::metaprogramming::TypeAnnotation;
 use ast::*;
 
@@ -700,7 +701,9 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
 
     match pair.as_rule() {
         Rule::interpolation_expression => {
-            let expr = build_meta_expression(pair.into_inner().next().unwrap())?;
+            let content = pair.into_inner().next().unwrap().as_str();
+            let expr = meta_parser::parse_meta_expression(content)
+                .map_err(|_| ParseError::UnexpectedRule(Rule::interpolation_expression))?;
             Ok(Term::Interpolation(expr))
         }
         Rule::literal => {
@@ -923,7 +926,9 @@ fn build_meta_let_statement(
     let mut inner = pair.into_inner();
     let variable = inner.next().unwrap().as_str().to_string();
     let variable_type = parse_type_annotation(inner.next().unwrap().as_str())?;
-    let expression = build_meta_expression(inner.next().unwrap())?;
+    let content = inner.next().unwrap().as_str();
+    let expression = meta_parser::parse_meta_expression(content)
+        .map_err(|_| ParseError::UnexpectedRule(Rule::meta_let_statement))?;
 
     Ok(LetStatement {
         variable,
@@ -940,7 +945,9 @@ fn build_meta_if_statement(
     Option<GoalBody>,
 )> {
     let mut inner = pair.into_inner();
-    let condition = build_meta_expression(inner.next().unwrap())?;
+    let content = inner.next().unwrap().as_str();
+    let condition = meta_parser::parse_meta_expression(content)
+        .map_err(|_| ParseError::UnexpectedRule(Rule::meta_if_statement))?;
     let then_body = build_goal_body(inner.next().unwrap())?;
     let else_body = inner.next().map(|p| build_goal_body(p)).transpose()?;
 
@@ -952,266 +959,32 @@ fn build_meta_for_statement(
 ) -> ParseResult<(
     String,
     TypeAnnotation,
-    crate::interpreter::metaprogramming::MetaExpression,
+    crate::interpreter::metaprogramming::MetaForRange,
     GoalBody,
 )> {
     let mut inner = pair.into_inner();
     let variable = inner.next().unwrap().as_str().to_string();
     let variable_type = parse_type_annotation(inner.next().unwrap().as_str())?;
-    let range = build_meta_expression(inner.next().unwrap())?;
+    let range_pair = inner.next().unwrap(); // meta_for_range
+    let range = build_meta_for_range(range_pair)?;
     let body = build_goal_body(inner.next().unwrap())?;
 
     Ok((variable, variable_type, range, body))
 }
 
-fn build_meta_expression(
+fn build_meta_for_range(
     pair: Pair<Rule>,
-) -> ParseResult<crate::interpreter::metaprogramming::MetaExpression> {
-    use crate::interpreter::metaprogramming::{MetaBinaryOp, MetaExpression, MetaValue};
+) -> ParseResult<crate::interpreter::metaprogramming::MetaForRange> {
+    let mut inner = pair.into_inner();
+    let start_content = inner.next().unwrap().as_str();
+    let end_content = inner.next().unwrap().as_str();
 
-    match pair.as_rule() {
-        Rule::meta_expression => build_meta_expression(pair.into_inner().next().unwrap()),
+    let start = meta_parser::parse_meta_expression(start_content)
+        .map_err(|_| ParseError::UnexpectedRule(Rule::meta_for_range))?;
+    let end = meta_parser::parse_meta_expression(end_content)
+        .map_err(|_| ParseError::UnexpectedRule(Rule::meta_for_range))?;
 
-        Rule::meta_or_expression => {
-            let mut inner = pair.into_inner();
-            let mut expr = build_meta_expression(inner.next().unwrap())?;
-
-            for next_pair in inner {
-                let right = build_meta_expression(next_pair)?;
-                expr = MetaExpression::BinaryOp(MetaBinaryOp::Or, Box::new(expr), Box::new(right));
-            }
-            Ok(expr)
-        }
-
-        Rule::meta_and_expression => {
-            let mut inner = pair.into_inner();
-            let mut expr = build_meta_expression(inner.next().unwrap())?;
-
-            for next_pair in inner {
-                let right = build_meta_expression(next_pair)?;
-                expr = MetaExpression::BinaryOp(MetaBinaryOp::And, Box::new(expr), Box::new(right));
-            }
-            Ok(expr)
-        }
-
-        Rule::meta_equality_expression => {
-            let rule = pair.as_rule();
-            let original_str = pair.as_str();
-            let inner_pairs: Vec<_> = pair.into_inner().collect();
-
-            if inner_pairs.is_empty() {
-                return Err(ParseError::UnexpectedRule(rule));
-            }
-
-            let mut expr = build_meta_expression(inner_pairs[0].clone())?;
-
-            // For equality expressions, we need to determine the operator from the original string
-            // since pest doesn't include operators in the inner pairs
-            let mut i = 1;
-            while i < inner_pairs.len() {
-                let right = build_meta_expression(inner_pairs[i].clone())?;
-
-                // Determine the operator by looking at the original string
-                // Find the operator between the left and right operands
-                let left_str = inner_pairs[i - 1].as_str();
-                let right_str = inner_pairs[i].as_str();
-
-                // Find the operator in the original string between left and right
-                let left_end = original_str.find(left_str).unwrap() + left_str.len();
-                let right_start = original_str.rfind(right_str).unwrap();
-                let operator_section = &original_str[left_end..right_start];
-
-                let op = if operator_section.contains("!=") {
-                    MetaBinaryOp::NotEqual
-                } else if operator_section.contains("==") {
-                    MetaBinaryOp::Equal
-                } else {
-                    return Err(ParseError::UnexpectedRule(rule));
-                };
-
-                expr = MetaExpression::BinaryOp(op, Box::new(expr), Box::new(right));
-                i += 1;
-            }
-            Ok(expr)
-        }
-
-        Rule::meta_comparison_expression => {
-            let rule = pair.as_rule();
-            let original_str = pair.as_str();
-            let inner_pairs: Vec<_> = pair.into_inner().collect();
-
-            if inner_pairs.is_empty() {
-                return Err(ParseError::UnexpectedRule(rule));
-            }
-
-            let mut expr = build_meta_expression(inner_pairs[0].clone())?;
-
-            // For comparison expressions, we need to determine the operator from the original string
-            // since pest doesn't include operators in the inner pairs
-            let mut i = 1;
-            while i < inner_pairs.len() {
-                let right = build_meta_expression(inner_pairs[i].clone())?;
-
-                // Determine the operator by looking at the original string
-                // Find the operator between the left and right operands
-                let left_str = inner_pairs[i - 1].as_str();
-                let right_str = inner_pairs[i].as_str();
-
-                // Find the operator in the original string between left and right
-                let left_end = original_str.find(left_str).unwrap() + left_str.len();
-                let right_start = original_str.rfind(right_str).unwrap();
-                let operator_section = &original_str[left_end..right_start];
-
-                let op = if operator_section.contains("<=") {
-                    MetaBinaryOp::LessEqual
-                } else if operator_section.contains(">=") {
-                    MetaBinaryOp::GreaterEqual
-                } else if operator_section.contains('<') {
-                    MetaBinaryOp::LessThan
-                } else if operator_section.contains('>') {
-                    MetaBinaryOp::GreaterThan
-                } else {
-                    return Err(ParseError::UnexpectedRule(rule));
-                };
-
-                expr = MetaExpression::BinaryOp(op, Box::new(expr), Box::new(right));
-                i += 1;
-            }
-            Ok(expr)
-        }
-
-        Rule::meta_additive_expression => {
-            let rule = pair.as_rule();
-            let original_str = pair.as_str();
-            let inner_pairs: Vec<_> = pair.into_inner().collect();
-
-            if inner_pairs.is_empty() {
-                return Err(ParseError::UnexpectedRule(rule));
-            }
-
-            let mut expr = build_meta_expression(inner_pairs[0].clone())?;
-
-            // For additive expressions, we need to determine the operator from the original string
-            // since pest doesn't include operators in the inner pairs
-            let mut i = 1;
-            while i < inner_pairs.len() {
-                let right = build_meta_expression(inner_pairs[i].clone())?;
-
-                // Determine the operator by looking at the original string
-                // Find the operator between the left and right operands
-                let left_str = inner_pairs[i - 1].as_str();
-                let right_str = inner_pairs[i].as_str();
-
-                // Find the operator in the original string between left and right
-                let left_end = original_str.find(left_str).unwrap() + left_str.len();
-                let right_start = original_str.rfind(right_str).unwrap();
-                let operator_section = &original_str[left_end..right_start];
-
-                let op = if operator_section.contains('+') {
-                    MetaBinaryOp::Add
-                } else if operator_section.contains('-') {
-                    MetaBinaryOp::Subtract
-                } else {
-                    return Err(ParseError::UnexpectedRule(rule));
-                };
-
-                expr = MetaExpression::BinaryOp(op, Box::new(expr), Box::new(right));
-                i += 1;
-            }
-            Ok(expr)
-        }
-
-        Rule::meta_multiplicative_expression => {
-            let rule = pair.as_rule();
-            let original_str = pair.as_str();
-            let inner_pairs: Vec<_> = pair.into_inner().collect();
-
-            if inner_pairs.is_empty() {
-                return Err(ParseError::UnexpectedRule(rule));
-            }
-
-            let mut expr = build_meta_expression(inner_pairs[0].clone())?;
-
-            // For multiplicative expressions, we need to determine the operator from the original string
-            // since pest doesn't include operators in the inner pairs
-            let mut i = 1;
-            while i < inner_pairs.len() {
-                let right = build_meta_expression(inner_pairs[i].clone())?;
-
-                // Determine the operator by looking at the original string
-                // Find the operator between the left and right operands
-                let left_str = inner_pairs[i - 1].as_str();
-                let right_str = inner_pairs[i].as_str();
-
-                // Find the operator in the original string between left and right
-                let left_end = original_str.find(left_str).unwrap() + left_str.len();
-                let right_start = original_str.rfind(right_str).unwrap();
-                let operator_section = &original_str[left_end..right_start];
-
-                let op = if operator_section.contains('*') {
-                    MetaBinaryOp::Multiply
-                } else if operator_section.contains('/') {
-                    MetaBinaryOp::Divide
-                } else {
-                    return Err(ParseError::UnexpectedRule(rule));
-                };
-
-                expr = MetaExpression::BinaryOp(op, Box::new(expr), Box::new(right));
-                i += 1;
-            }
-            Ok(expr)
-        }
-
-        Rule::meta_range_expression => {
-            let mut inner = pair.into_inner();
-            let start = build_meta_expression(inner.next().unwrap())?;
-
-            if let Some(end_pair) = inner.next() {
-                let end = build_meta_expression(end_pair)?;
-                Ok(MetaExpression::Range(Box::new(start), Box::new(end)))
-            } else {
-                Ok(start)
-            }
-        }
-
-        Rule::meta_primary_expression => {
-            let inner = pair.into_inner().next().unwrap();
-            build_meta_expression(inner)
-        }
-
-        Rule::meta_literal => {
-            let inner = pair.into_inner().next().unwrap();
-            match inner.as_rule() {
-                Rule::meta_integer_literal => {
-                    let value = inner
-                        .as_str()
-                        .parse::<i64>()
-                        .map_err(|_| ParseError::UnexpectedRule(Rule::meta_integer_literal))?;
-                    Ok(MetaExpression::Literal(MetaValue::Integer(value)))
-                }
-                Rule::meta_string_literal => {
-                    let value = inner.as_str();
-                    // Remove quotes
-                    let unquoted = &value[1..value.len() - 1];
-                    Ok(MetaExpression::Literal(MetaValue::String(
-                        unquoted.to_string(),
-                    )))
-                }
-                Rule::meta_boolean_literal => {
-                    let value = inner
-                        .as_str()
-                        .parse::<bool>()
-                        .map_err(|_| ParseError::UnexpectedRule(Rule::meta_boolean_literal))?;
-                    Ok(MetaExpression::Literal(MetaValue::Boolean(value)))
-                }
-                _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
-            }
-        }
-
-        Rule::meta_variable => Ok(MetaExpression::Variable(pair.as_str().to_string())),
-
-        _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
-    }
+    Ok(crate::interpreter::metaprogramming::MetaForRange { start, end })
 }
 
 #[cfg(test)]

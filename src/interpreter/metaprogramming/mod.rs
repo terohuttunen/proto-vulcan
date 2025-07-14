@@ -33,7 +33,6 @@ pub enum MetaExpression {
     Variable(String),
     Literal(MetaValue),
     BinaryOp(MetaBinaryOp, Box<MetaExpression>, Box<MetaExpression>),
-    Range(Box<MetaExpression>, Box<MetaExpression>),
 }
 
 /// Binary operators for meta expressions
@@ -61,6 +60,19 @@ pub struct LetStatement {
     pub expression: MetaExpression,
 }
 
+/// Range specification for for-loops (not a meta expression)
+#[derive(Debug, Clone, PartialEq)]
+pub struct MetaForRange {
+    pub start: MetaExpression,
+    pub end: MetaExpression,
+}
+
+impl fmt::Display for MetaForRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}..{}", self.start, self.end)
+    }
+}
+
 /// Meta statements for control flow
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetaStatement {
@@ -73,7 +85,7 @@ pub enum MetaStatement {
     For {
         variable: String,
         variable_type: TypeAnnotation,
-        range: MetaExpression,
+        range: MetaForRange,
         body: super::parser::ast::GoalBody,
     },
 }
@@ -130,14 +142,7 @@ pub fn evaluate_meta_expression(
             let left_val = evaluate_meta_expression(left, bindings)?;
             let right_val = evaluate_meta_expression(right, bindings)?;
             apply_binary_operation(op, &left_val, &right_val)
-        }
-        MetaExpression::Range(start_expr, end_expr) => {
-            // Range expressions are handled specially by the caller
-            // For now, return an error
-            Err(MetaError::TypeMismatch(
-                "Range expressions cannot be evaluated directly".to_string(),
-            ))
-        }
+        } // Range case removed
     }
 }
 
@@ -321,22 +326,7 @@ impl MetaRange {
     }
 }
 
-/// Evaluate a range expression to get start and end values
-pub fn evaluate_range_expression(
-    start_expr: &MetaExpression,
-    end_expr: &MetaExpression,
-    context: &TemplateExpansionContext,
-) -> Result<MetaRange, MetaError> {
-    let start_val = evaluate_meta_expression(start_expr, &context.bindings)?;
-    let end_val = evaluate_meta_expression(end_expr, &context.bindings)?;
-
-    match (start_val, end_val) {
-        (MetaValue::Integer(start), MetaValue::Integer(end)) => MetaRange::new(start, end),
-        _ => Err(MetaError::TypeMismatch(
-            "Range expressions must have integer bounds".to_string(),
-        )),
-    }
-}
+// evaluate_range_expression removed - ranges are handled directly in for-loop expansion
 
 /// Result of template expansion - either generates new goals or fails
 pub type TemplateExpansionResult = Result<Vec<super::parser::ast::Goal>, MetaError>;
@@ -435,26 +425,20 @@ fn expand_if_statement(
 fn expand_for_statement(
     variable: &str,
     variable_type: &TypeAnnotation,
-    range_expr: &MetaExpression,
+    for_range: &MetaForRange,
     body: &super::parser::ast::GoalBody,
     context: &mut TemplateExpansionContext,
 ) -> TemplateExpansionResult {
-    // Check if it's a range expression
-    let range = match range_expr {
-        MetaExpression::Range(start_expr, end_expr) => {
-            evaluate_range_expression(start_expr, end_expr, context)?
-        }
+    // Evaluate the start and end expressions
+    let start_val = evaluate_meta_expression(&for_range.start, &context.bindings)?;
+    let end_val = evaluate_meta_expression(&for_range.end, &context.bindings)?;
+
+    let range = match (start_val, end_val) {
+        (MetaValue::Integer(start), MetaValue::Integer(end)) => MetaRange::new(start, end)?,
         _ => {
-            // If not a range, try to evaluate as a single value and create a single-item range
-            let value = evaluate_meta_expression(range_expr, &context.bindings)?;
-            match value {
-                MetaValue::Integer(n) => MetaRange::new(n, n + 1)?,
-                _ => {
-                    return Err(MetaError::TypeMismatch(
-                        "For loop range must be a range expression or integer".to_string(),
-                    ))
-                }
-            }
+            return Err(MetaError::TypeMismatch(
+                "For loop range bounds must be integers".to_string(),
+            ))
         }
     };
 
@@ -697,9 +681,6 @@ impl fmt::Display for MetaExpression {
             MetaExpression::Literal(value) => write!(f, "{}", value),
             MetaExpression::BinaryOp(op, left, right) => {
                 write!(f, "{} {} {}", left, op, right)
-            }
-            MetaExpression::Range(start, end) => {
-                write!(f, "{}..{}", start, end)
             }
         }
     }

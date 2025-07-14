@@ -1,0 +1,62 @@
+// tests/interpolation_tests.pv
+// Basic interpolation tests for meta expression features
+
+// Test basic meta programming addition
+@test(expected = [7])
+rel test_basic_meta_addition(result) {
+    let a: int = 3;
+    let b: int = 4;
+    result == {a + b}
+}
+
+// Test basic meta programming multiplication
+@test(expected = [12])
+rel test_basic_meta_multiplication(result) {
+    let x: int = 3;
+    let y: int = 4;
+    result == {x * y}
+}
+
+// Test meta programming subtraction
+@test(expected = [5])
+rel test_basic_meta_subtraction(result) {
+    let a: int = 12;
+    let b: int = 7;
+    result == {a - b}
+}
+
+// Test meta if condition
+@test(expected = [20])
+rel test_meta_if_condition(result) {
+    let condition: int = 5;
+    if condition > 3 {
+        result == 20
+    }
+}
+
+// Test meta for loop
+@test(expected = [6, 9])
+rel test_meta_for_simple(result) {
+    for i: int in 2..4 {
+        result == {i * 3}
+    }
+}
+
+// Test complex meta expression
+@test(expected = [50])
+rel test_complex_meta_expression(result) {
+    let base: int = 5;
+    let multiplier: int = 10;
+    result == {base * multiplier}
+}
+
+// Test interpolation with variables
+@test(expected = [15])
+rel test_interpolation_with_variables(result) {
+    let x: int = 5;
+    let y: int = 3;
+    |temp| {
+        temp == {x * y},
+        result == temp
+    }
+}

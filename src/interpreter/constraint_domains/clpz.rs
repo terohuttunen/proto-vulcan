@@ -136,10 +136,37 @@ impl ClpzDomain {
         match pair.as_rule() {
             Rule::integer => ArithExpr::Integer(pair.as_str().parse().unwrap()),
             Rule::variable => ArithExpr::Variable(pair.as_str().to_string()),
+            Rule::interpolation_expression => {
+                let content = pair.into_inner().next().unwrap().as_str();
+                let meta_expr = super::super::parser::meta_parser::parse_meta_expression(content)
+                    .unwrap_or_else(|_| {
+                        // Fallback to a variable if parsing fails
+                        crate::interpreter::metaprogramming::MetaExpression::Variable(
+                            content.to_string(),
+                        )
+                    });
+                ArithExpr::Interpolation(meta_expr)
+            }
             Rule::factor => {
-                // A factor is either an integer, variable, or parenthesized expression
+                // A factor is either an integer, variable, interpolation expression, or parenthesized expression
                 let inner = pair.into_inner().next().unwrap();
-                Self::build_arith_expr(inner)
+                match inner.as_rule() {
+                    Rule::integer => ArithExpr::Integer(inner.as_str().parse().unwrap()),
+                    Rule::variable => ArithExpr::Variable(inner.as_str().to_string()),
+                    Rule::interpolation_expression => {
+                        let content = inner.into_inner().next().unwrap().as_str();
+                        let meta_expr =
+                            super::super::parser::meta_parser::parse_meta_expression(content)
+                                .unwrap_or_else(|_| {
+                                    crate::interpreter::metaprogramming::MetaExpression::Variable(
+                                        content.to_string(),
+                                    )
+                                });
+                        ArithExpr::Interpolation(meta_expr)
+                    }
+                    Rule::arith_expr => Self::build_arith_expr(inner),
+                    _ => unreachable!("Unexpected factor inner rule: {:?}", inner.as_rule()),
+                }
             }
             Rule::term => {
                 // A term is one or more factors separated by * or /
@@ -260,6 +287,7 @@ pub enum ClpzConstraint<U: User, E: Engine<U>> {
 pub enum ArithExpr {
     Integer(i32),
     Variable(String),
+    Interpolation(crate::interpreter::metaprogramming::MetaExpression),
     BinaryOp {
         left: Box<ArithExpr>,
         op: ArithOp,
@@ -332,6 +360,10 @@ impl<U: User, E: Engine<U>> ClpzConstraint<U, E> {
                     match expr {
                         ArithExpr::Variable(name) => vars.push(name.clone()),
                         ArithExpr::Integer(_) => {}
+                        ArithExpr::Interpolation(_) => {
+                            // Interpolation expressions don't contribute to static variable extraction
+                            // as they're evaluated at runtime
+                        }
                         ArithExpr::BinaryOp { left, right, .. } => {
                             collect_vars(left, vars);
                             collect_vars(right, vars);
@@ -363,6 +395,26 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
     match expr {
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
         ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
+        ArithExpr::Interpolation(meta_expr) => {
+            // Evaluate the meta expression using template expansion
+            use crate::interpreter::metaprogramming::{expand_term, TemplateExpansionContext};
+            use crate::interpreter::parser::ast::Term;
+
+            // Create empty template context - interpolation should work without meta bindings in constraint context
+            let context = TemplateExpansionContext::new(100);
+
+            // Create dummy term and expand it
+            let dummy_term = Term::Interpolation(meta_expr.clone());
+            let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+                InterpreterError::RuntimeError(format!(
+                    "Meta expression expansion error in CLPZ arithmetic: {}",
+                    e
+                ))
+            })?;
+
+            // Convert to runtime term
+            execution_context.ast_term_to_runtime(&expanded_term)
+        }
         ArithExpr::BinaryOp { left, op, right } => {
             let left_term = eval_arith_expr(left, execution_context)?;
             let right_term = eval_arith_expr(right, execution_context)?;

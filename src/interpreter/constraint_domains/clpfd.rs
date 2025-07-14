@@ -11,6 +11,7 @@ use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::execution::ExecutionContext;
 use crate::interpreter::parser::ast::ConstraintBody;
+use crate::interpreter::parser::meta_parser;
 use crate::interpreter::InterpreterError;
 use crate::lterm::LTerm;
 use crate::operator::conj::Conj;
@@ -150,7 +151,16 @@ impl ClpfdDomain {
         pair: pest::iterators::Pair<Rule>,
     ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
         let mut inner = pair.into_inner();
-        let variable = inner.next().unwrap().as_str().to_string();
+        let var_pair = inner.next().unwrap();
+        let variable = match var_pair.as_rule() {
+            Rule::variable => var_pair.as_str().to_string(),
+            Rule::interpolation_expression => {
+                // Store interpolated variables with special format for later evaluation
+                let content = var_pair.into_inner().next().unwrap().as_str();
+                format!("{{{}}}", content) // Store with braces to indicate it's an interpolation
+            }
+            _ => var_pair.as_str().to_string(),
+        };
         let _in_kw = inner.next().unwrap(); // Skip the "in" keyword
         let range_spec_pair = inner.next().unwrap();
         let domain_spec = Self::build_domain_spec(range_spec_pair)?;
@@ -189,28 +199,86 @@ impl ClpfdDomain {
         match inner_pair.as_rule() {
             Rule::range_dotdot => {
                 let mut inner = inner_pair.into_inner();
-                let start = inner.next().unwrap().as_str().parse().unwrap();
-                let end = inner.next().unwrap().as_str().parse().unwrap();
-                Ok(DomainSpec::Range(start, end))
+                let start_pair = inner.next().unwrap();
+                let end_pair = inner.next().unwrap();
+
+                let start_bound = Self::build_domain_bound(start_pair)?;
+                let end_bound = Self::build_domain_bound(end_pair)?;
+
+                // Check if both bounds are simple integers
+                if let (DomainBound::Integer(start), DomainBound::Integer(end)) =
+                    (&start_bound, &end_bound)
+                {
+                    Ok(DomainSpec::Range(*start, *end))
+                } else {
+                    Ok(DomainSpec::InterpolatedRange(start_bound, end_bound))
+                }
             }
             Rule::range_set => {
-                let values = inner_pair
-                    .into_inner()
-                    .map(|p| p.as_str().parse().unwrap())
-                    .collect();
-                Ok(DomainSpec::Set(values))
+                let mut bounds = Vec::new();
+                let mut all_integers = true;
+
+                for p in inner_pair.into_inner() {
+                    let bound = Self::build_domain_bound(p)?;
+                    if !matches!(bound, DomainBound::Integer(_)) {
+                        all_integers = false;
+                    }
+                    bounds.push(bound);
+                }
+
+                if all_integers {
+                    let values: Vec<i32> = bounds
+                        .into_iter()
+                        .map(|b| {
+                            if let DomainBound::Integer(val) = b {
+                                val
+                            } else {
+                                unreachable!()
+                            }
+                        })
+                        .collect();
+                    Ok(DomainSpec::Set(values))
+                } else {
+                    Ok(DomainSpec::InterpolatedSet(bounds))
+                }
             }
             Rule::range_single => {
-                let value = inner_pair
-                    .into_inner()
-                    .next()
-                    .unwrap()
-                    .as_str()
-                    .parse()
-                    .unwrap();
-                Ok(DomainSpec::Set(vec![value]))
+                let bound = Self::build_domain_bound(inner_pair.into_inner().next().unwrap())?;
+
+                if let DomainBound::Integer(value) = bound {
+                    Ok(DomainSpec::Set(vec![value]))
+                } else {
+                    Ok(DomainSpec::InterpolatedSet(vec![bound]))
+                }
             }
             _ => unreachable!("Unexpected rule in range_spec"),
+        }
+    }
+
+    fn build_domain_bound(
+        pair: pest::iterators::Pair<Rule>,
+    ) -> Result<DomainBound, InterpreterError> {
+        match pair.as_rule() {
+            Rule::integer => {
+                let value = pair.as_str().parse().map_err(|_| {
+                    InterpreterError::InvalidConstraintSyntax {
+                        domain: "clpfd".to_string(),
+                        error: format!("Invalid integer: {}", pair.as_str()),
+                    }
+                })?;
+                Ok(DomainBound::Integer(value))
+            }
+            Rule::interpolation_expression => {
+                let content = pair.into_inner().next().unwrap().as_str();
+                let meta_expr = meta_parser::parse_meta_expression(content).map_err(|_| {
+                    InterpreterError::InvalidConstraintSyntax {
+                        domain: "clpfd".to_string(),
+                        error: format!("Invalid meta expression: {}", content),
+                    }
+                })?;
+                Ok(DomainBound::Interpolation(meta_expr))
+            }
+            _ => unreachable!("Unexpected rule in domain bound: {:?}", pair.as_rule()),
         }
     }
 
@@ -286,6 +354,17 @@ impl ClpfdDomain {
             .map_primary(|primary| match primary.as_rule() {
                 Rule::integer => ArithExpr::Integer(primary.as_str().parse().unwrap()),
                 Rule::variable => ArithExpr::Variable(primary.as_str().to_string()),
+                Rule::interpolation_expression => {
+                    let content = primary.into_inner().next().unwrap().as_str();
+                    let meta_expr =
+                        meta_parser::parse_meta_expression(content).unwrap_or_else(|_| {
+                            // Fallback to a variable if parsing fails
+                            crate::interpreter::metaprogramming::MetaExpression::Variable(
+                                content.to_string(),
+                            )
+                        });
+                    ArithExpr::Interpolation(meta_expr)
+                }
                 Rule::arith_expr => Self::build_arith_expr(primary), // for parentheses
                 Rule::factor => {
                     // Handle factor rule by extracting its inner content
@@ -293,6 +372,16 @@ impl ClpfdDomain {
                     match inner.as_rule() {
                         Rule::integer => ArithExpr::Integer(inner.as_str().parse().unwrap()),
                         Rule::variable => ArithExpr::Variable(inner.as_str().to_string()),
+                        Rule::interpolation_expression => {
+                            let content = inner.into_inner().next().unwrap().as_str();
+                            let meta_expr = meta_parser::parse_meta_expression(content)
+                                .unwrap_or_else(|_| {
+                                    crate::interpreter::metaprogramming::MetaExpression::Variable(
+                                        content.to_string(),
+                                    )
+                                });
+                            ArithExpr::Interpolation(meta_expr)
+                        }
                         Rule::arith_expr => Self::build_arith_expr(inner),
                         _ => unreachable!("Unexpected factor inner rule: {:?}", inner.as_rule()),
                     }
@@ -432,12 +521,21 @@ pub enum ClpfdConstraint<U: User, E: Engine<U>> {
 pub enum DomainSpec {
     Range(i32, i32),
     Set(Vec<i32>),
+    InterpolatedRange(DomainBound, DomainBound),
+    InterpolatedSet(Vec<DomainBound>),
+}
+
+#[derive(Debug, Clone)]
+pub enum DomainBound {
+    Integer(i32),
+    Interpolation(crate::interpreter::metaprogramming::MetaExpression),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ArithExpr {
     Integer(i32),
     Variable(String),
+    Interpolation(crate::interpreter::metaprogramming::MetaExpression),
     BinaryOp {
         left: Box<ArithExpr>,
         op: ArithOp,
@@ -476,7 +574,35 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                 domain_spec,
                 ..
             } => {
-                let var_term = execution_context.get_existing_variable(variable)?;
+                let var_term = if variable.starts_with('{') && variable.ends_with('}') {
+                    // This is an interpolated variable stored as "{content}"
+                    let content = &variable[1..variable.len() - 1]; // Remove braces
+                    let meta_expr = meta_parser::parse_meta_expression(content).map_err(|_| {
+                        InterpreterError::RuntimeError(format!(
+                            "Invalid meta expression in domain variable: {}",
+                            content
+                        ))
+                    })?;
+
+                    // Evaluate the meta expression to get the variable term
+                    use crate::interpreter::metaprogramming::{
+                        expand_term, TemplateExpansionContext,
+                    };
+                    use crate::interpreter::parser::ast::Term;
+
+                    let context = TemplateExpansionContext::new(100);
+                    let dummy_term = Term::Interpolation(meta_expr);
+                    let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+                        InterpreterError::RuntimeError(format!(
+                            "Meta expression expansion error in domain variable: {}",
+                            e
+                        ))
+                    })?;
+
+                    execution_context.ast_term_to_runtime(&expanded_term)?
+                } else {
+                    execution_context.get_existing_variable(variable)?
+                };
                 match domain_spec {
                     DomainSpec::Range(start, end) => {
                         use crate::relation::clpfd::infd::infdrange;
@@ -488,6 +614,21 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                         let domain_values: Vec<isize> =
                             values.iter().map(|&v| v as isize).collect();
                         Ok(infd(var_term, &domain_values).cast_into())
+                    }
+                    DomainSpec::InterpolatedRange(start, end) => {
+                        let start_val = eval_domain_bound(start, execution_context)?;
+                        let end_val = eval_domain_bound(end, execution_context)?;
+                        use crate::relation::clpfd::infd::infdrange;
+                        let range = start_val..=end_val;
+                        Ok(infdrange(var_term, &range).cast_into())
+                    }
+                    DomainSpec::InterpolatedSet(values) => {
+                        let domain_values: Result<Vec<isize>, InterpreterError> = values
+                            .iter()
+                            .map(|bound| eval_domain_bound(bound, execution_context))
+                            .collect();
+                        use crate::relation::clpfd::infd::infd;
+                        Ok(infd(var_term, &domain_values?).cast_into())
                     }
                 }
             }
@@ -521,6 +662,21 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                         let domain_values: Vec<isize> =
                             values.iter().map(|&v| v as isize).collect();
                         Ok(infd(var_list, &domain_values).cast_into())
+                    }
+                    DomainSpec::InterpolatedRange(start, end) => {
+                        let start_val = eval_domain_bound(start, execution_context)?;
+                        let end_val = eval_domain_bound(end, execution_context)?;
+                        use crate::relation::clpfd::infd::infdrange;
+                        let range = start_val..=end_val;
+                        Ok(infdrange(var_list, &range).cast_into())
+                    }
+                    DomainSpec::InterpolatedSet(values) => {
+                        let domain_values: Result<Vec<isize>, InterpreterError> = values
+                            .iter()
+                            .map(|bound| eval_domain_bound(bound, execution_context))
+                            .collect();
+                        use crate::relation::clpfd::infd::infd;
+                        Ok(infd(var_list, &domain_values?).cast_into())
                     }
                 }
             }
@@ -627,6 +783,10 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                     match expr {
                         ArithExpr::Variable(name) => vars.push(name.clone()),
                         ArithExpr::Integer(_) => {}
+                        ArithExpr::Interpolation(_) => {
+                            // Interpolation expressions don't contribute to static variable extraction
+                            // as they're evaluated at runtime
+                        }
                         ArithExpr::BinaryOp { left, right, .. } => {
                             collect_vars(left, vars);
                             collect_vars(right, vars);
@@ -661,6 +821,26 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
     match expr {
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
         ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
+        ArithExpr::Interpolation(meta_expr) => {
+            // Evaluate the meta expression using template expansion
+            use crate::interpreter::metaprogramming::{expand_term, TemplateExpansionContext};
+            use crate::interpreter::parser::ast::Term;
+
+            // Create empty template context - interpolation should work without meta bindings in constraint context
+            let context = TemplateExpansionContext::new(100);
+
+            // Create dummy term and expand it
+            let dummy_term = Term::Interpolation(meta_expr.clone());
+            let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+                InterpreterError::RuntimeError(format!(
+                    "Meta expression expansion error in arithmetic: {}",
+                    e
+                ))
+            })?;
+
+            // Convert to runtime term
+            execution_context.ast_term_to_runtime(&expanded_term)
+        }
         ArithExpr::BinaryOp { left, op, right } => {
             let left_term = eval_arith_expr(left, execution_context)?;
             let right_term = eval_arith_expr(right, execution_context)?;
@@ -690,6 +870,39 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
 
             execution_context.add_deferred_goal(goal);
             Ok(result_term)
+        }
+    }
+}
+
+fn eval_domain_bound<U: User, E: Engine<U>>(
+    bound: &DomainBound,
+    execution_context: &mut ExecutionContext<U, E>,
+) -> Result<isize, InterpreterError> {
+    match bound {
+        DomainBound::Integer(val) => Ok(*val as isize),
+        DomainBound::Interpolation(meta_expr) => {
+            // For now, create a simple evaluation that uses the template expansion approach
+            use crate::interpreter::metaprogramming::{expand_term, TemplateExpansionContext};
+            use crate::interpreter::parser::ast::Term;
+
+            // Create empty template context - interpolation should work without meta bindings in constraint context
+            let context = TemplateExpansionContext::new(100);
+
+            // Create dummy term and expand it
+            let dummy_term = Term::Interpolation(meta_expr.clone());
+            let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+                InterpreterError::RuntimeError(format!("Meta expression expansion error: {}", e))
+            })?;
+
+            // Convert to runtime and extract integer
+            let runtime_term = execution_context.ast_term_to_runtime(&expanded_term)?;
+
+            // Extract integer value using get_number()
+            runtime_term.get_number().ok_or_else(|| {
+                InterpreterError::RuntimeError(
+                    "Domain bound meta expression must evaluate to an integer".to_string(),
+                )
+            })
         }
     }
 }

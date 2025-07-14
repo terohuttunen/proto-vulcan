@@ -1,0 +1,73 @@
+// =============================================================================
+// Meta Expression Grammar
+// =============================================================================
+// This grammar handles meta expressions that can be used for template expansion
+// and compile-time computation in interpolation contexts like {variable}.
+
+// -- Whitespace and Comments --
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ line_comment | block_comment }
+line_comment  = _{ "//" ~ (!("\n" | EOI) ~ ANY)* }
+block_comment = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// =============================================================================
+// Meta Expression Structure
+// =============================================================================
+
+// Top-level meta expression
+meta_expression = {
+    SOI ~ meta_or_expression ~ EOI
+}
+
+meta_or_expression = {
+    meta_and_expression ~ ("||" ~ meta_and_expression)*
+}
+
+meta_and_expression = {
+    meta_equality_expression ~ ("&&" ~ meta_equality_expression)*
+}
+
+meta_equality_expression = {
+    meta_comparison_expression ~ (("==" | "!=") ~ meta_comparison_expression)*
+}
+
+meta_comparison_expression = {
+    meta_additive_expression ~ (("<=" | "<" | ">=" | ">") ~ meta_additive_expression)*
+}
+
+meta_additive_expression = {
+    meta_multiplicative_expression ~ (("+" | "-") ~ meta_multiplicative_expression)*
+}
+
+meta_multiplicative_expression = {
+    meta_primary_expression ~ (("*" | "/") ~ meta_primary_expression)*
+}
+
+// Remove meta_range_expression entirely since ranges are not meta expressions
+
+meta_primary_expression = {
+    meta_literal |
+    meta_variable |
+    "(" ~ meta_or_expression ~ ")"
+}
+
+// =============================================================================
+// Meta Literals and Variables
+// =============================================================================
+
+meta_literal = { 
+    meta_integer_literal | 
+    meta_string_literal | 
+    meta_boolean_literal 
+}
+
+meta_integer_literal = @{ "-"? ~ ASCII_DIGIT+ }
+meta_string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+meta_boolean_literal = @{ "true" | "false" }
+meta_variable = @{ ident }
+
+// =============================================================================
+// Basic Lexical Elements
+// =============================================================================
+
+ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* } 
