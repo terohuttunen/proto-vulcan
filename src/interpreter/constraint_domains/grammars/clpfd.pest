@@ -7,12 +7,13 @@ variable   = @{ (ASCII_ALPHANUMERIC | "_")+ }
 
 // -- Keywords (atomic so they aren't matched as part of 'variable') --
 in_kw       = @{ "in" }
-distinct_kw = @{ "distinct" }
+distinct_kw = _{ "distinct" }
+alldiff_kw  = _{ "alldiff" }
 
 // -- Operators --
 add_op  = { "+" | "-" }
 mul_op  = { "*" | "/" }
-comp_op = { "==" | "!=" | "<" | "<=" | ">" | ">=" }
+comp_op = { "==" | "!=" | "<=" | "<" | ">=" | ">" }
 
 // -- Arithmetic Expressions --
 // This structure correctly handles operator precedence (multiplication before addition)
@@ -23,29 +24,33 @@ arith_expr  = { term ~ (add_op ~ term)* }
 
 // -- Top-Level Constraint Type Rules --
 
-// 1. Domain Constraint: `var in ...`
-// Examples: x in 1..10, y in {1,5,9}, z in 42
+// 1. Domain Constraint: `var in ...` or `[vars...] in ...`
+// Examples: x in 1..10, y in {1,5,9}, z in 42, [x, y, z] in 0..2
 range_dotdot = { integer ~ ".." ~ integer }
 range_set    = { "{" ~ integer ~ ("," ~ integer)* ~ "}" }
 range_single = { integer }
 range_spec   = { range_dotdot | range_set | range_single }
 domain_constraint = { variable ~ in_kw ~ range_spec }
+list_domain_constraint = { "[" ~ var_list ~ "]" ~ in_kw ~ range_spec }
 
 // 2. Arithmetic Constraint: `expr op expr`
 // Example: x + y * 2 >= z
 arith_constraint = { arith_expr ~ comp_op ~ arith_expr }
 
-// 3. Distinct Constraint: `distinct(...)`
-// Example: distinct(a, b, c)
+// 3. Distinct/Alldiff Constraint: `distinct(...)` or `alldiff [...] `
+// Examples: distinct(a, b, c), alldiff [a, b, c], alldiff [1, 2, 3]
+var_or_const = { variable | integer }
 var_list = { variable ~ ("," ~ variable)* }
+var_or_const_list = { var_or_const ~ ("," ~ var_or_const)* }
 distinct_constraint = { distinct_kw ~ "(" ~ var_list ~ ")" }
+alldiff_constraint = { alldiff_kw ~ "[" ~ var_or_const_list ~ "]" }
 
 
 // -- Main Entry Point --
 // We list the most specific rules first to guide the parser. `distinct` and `domain`
 // constraints start with unique patterns (`distinct(...)` and `variable in ...`).
 // `arith_constraint` is the most general. This ordering prevents ambiguity.
-constraint_expr = _{ fresh_constraint | distinct_constraint | domain_constraint | arith_constraint }
+constraint_expr = _{ fresh_constraint | distinct_constraint | alldiff_constraint | list_domain_constraint | domain_constraint | arith_constraint }
 
 // Fresh variable block
 fresh_constraint = { "|" ~ var_list? ~ "|" ~ "{" ~ constraints ~ "}" }

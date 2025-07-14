@@ -67,7 +67,7 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
 
     fn syntax_help(&self) -> &str {
         r#"CLPFD Syntax:
-- Domain constraints: x in 1..10, x in [1,2,3], vars in [1..10; 5]
+- Domain constraints: x in 1..10, x in [1,2,3], [x, y, z] in 0..2
 - Arithmetic: x + y == z, x - y == z, x * y == z
 - Comparison: x < y, x <= y, x > y, x >= y, x != y
 - Global: distinct [x, y, z], alldiff [x, y, z]
@@ -103,17 +103,15 @@ impl ClpfdDomain {
     fn build_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
     ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
-        let constraint_pair = pair.into_inner().next().unwrap();
-
-        match constraint_pair.as_rule() {
-            Rule::fresh_constraint => Self::build_fresh_constraint(constraint_pair),
-            Rule::domain_constraint => Self::build_domain_constraint(constraint_pair),
-            Rule::arith_constraint => Self::build_arith_constraint(constraint_pair),
-            Rule::distinct_constraint => Self::build_distinct_constraint(constraint_pair),
-            _ => unreachable!(
-                "Unexpected rule in constraint_expr: {:?}",
-                constraint_pair.as_rule()
-            ),
+        let inner_pair = pair.into_inner().next().unwrap();
+        match inner_pair.as_rule() {
+            Rule::fresh_constraint => Self::build_fresh_constraint(inner_pair),
+            Rule::domain_constraint => Self::build_domain_constraint(inner_pair),
+            Rule::list_domain_constraint => Self::build_list_domain_constraint(inner_pair),
+            Rule::distinct_constraint => Self::build_distinct_constraint(inner_pair),
+            Rule::alldiff_constraint => Self::build_alldiff_constraint(inner_pair),
+            Rule::arith_constraint => Self::build_arith_constraint(inner_pair),
+            _ => unreachable!("Unexpected rule in constraint"),
         }
     }
 
@@ -164,6 +162,26 @@ impl ClpfdDomain {
         })
     }
 
+    fn build_list_domain_constraint<U: User, E: Engine<U>>(
+        pair: pest::iterators::Pair<Rule>,
+    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+        let mut inner = pair.into_inner();
+        let var_list_pair = inner.next().unwrap(); // var_list
+        let variables = var_list_pair
+            .into_inner()
+            .map(|p| p.as_str().to_string())
+            .collect();
+        let _in_kw = inner.next().unwrap(); // Skip the "in" keyword
+        let range_spec_pair = inner.next().unwrap();
+        let domain_spec = Self::build_domain_spec(range_spec_pair)?;
+
+        Ok(ClpfdConstraint::ListDomain {
+            variables,
+            domain_spec,
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
     fn build_domain_spec(
         pair: pest::iterators::Pair<Rule>,
     ) -> Result<DomainSpec, InterpreterError> {
@@ -200,8 +218,10 @@ impl ClpfdDomain {
         pair: pest::iterators::Pair<Rule>,
     ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
         let mut inner = pair.into_inner();
-        // a silent `distinct_kw` is first
+
+        // The grammar now excludes the keyword with _{ "distinct" }, so var_list is first
         let var_list_pair = inner.next().unwrap();
+
         let args = var_list_pair
             .into_inner()
             .map(|p| p.as_str().to_string())
@@ -209,6 +229,26 @@ impl ClpfdDomain {
 
         Ok(ClpfdConstraint::Global {
             name: "distinct".to_string(),
+            args,
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    fn build_alldiff_constraint<U: User, E: Engine<U>>(
+        pair: pest::iterators::Pair<Rule>,
+    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+        let mut inner = pair.into_inner();
+
+        // The grammar now excludes the keyword with _alldiff_kw, so var_or_const_list is first
+        let var_list_pair = inner.next().unwrap();
+
+        let args = var_list_pair
+            .into_inner()
+            .map(|p| p.as_str().to_string())
+            .collect();
+
+        Ok(ClpfdConstraint::Global {
+            name: "alldiff".to_string(),
             args,
             _phantom: std::marker::PhantomData,
         })
@@ -258,16 +298,27 @@ impl ClpfdDomain {
                     }
                 }
                 Rule::term => {
-                    // Handle term rule - if it's a simple term with just one factor, extract it
-                    let inner_pairs: Vec<_> = primary.into_inner().collect();
-                    if inner_pairs.len() == 1 {
-                        // Simple term with just one factor
-                        Self::build_arith_expr(inner_pairs.into_iter().next().unwrap())
-                    } else {
-                        // Complex term with multiplication - need to handle this properly
-                        // For now, just extract the first factor as a simple case
-                        Self::build_arith_expr(inner_pairs.into_iter().next().unwrap())
+                    // Handle term = factor ~ (mul_op ~ factor)*
+                    let mut inner = primary.into_inner();
+                    let mut left = Self::build_arith_expr(inner.next().unwrap());
+
+                    // Process any multiplication operations
+                    while let Some(op_pair) = inner.next() {
+                        if op_pair.as_rule() == Rule::mul_op {
+                            let op = match op_pair.as_str() {
+                                "*" => ArithOp::Multiply,
+                                "/" => ArithOp::Divide,
+                                _ => unreachable!(),
+                            };
+                            let right = Self::build_arith_expr(inner.next().unwrap());
+                            left = ArithExpr::BinaryOp {
+                                left: Box::new(left),
+                                op,
+                                right: Box::new(right),
+                            };
+                        }
                     }
+                    left
                 }
                 _ => unreachable!("Unexpected primary rule: {:?}", primary.as_rule()),
             })
@@ -354,6 +405,11 @@ pub enum ClpfdConstraint<U: User, E: Engine<U>> {
         domain_spec: DomainSpec,
         _phantom: std::marker::PhantomData<(U, E)>,
     },
+    ListDomain {
+        variables: Vec<String>,
+        domain_spec: DomainSpec,
+        _phantom: std::marker::PhantomData<(U, E)>,
+    },
     Expression {
         left: ArithExpr,
         op: CompOp,
@@ -378,7 +434,7 @@ pub enum DomainSpec {
     Set(Vec<i32>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArithExpr {
     Integer(i32),
     Variable(String),
@@ -389,7 +445,7 @@ pub enum ArithExpr {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArithOp {
     Add,
     Subtract,
@@ -397,7 +453,7 @@ pub enum ArithOp {
     Divide,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompOp {
     Equal,
     NotEqual,
@@ -435,27 +491,94 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                     }
                 }
             }
+            ClpfdConstraint::ListDomain {
+                variables,
+                domain_spec,
+                ..
+            } => {
+                // Convert variable names to LTerms
+                let var_terms: Result<Vec<_>, _> = variables
+                    .iter()
+                    .map(|var| execution_context.get_existing_variable(var))
+                    .collect();
+                let var_terms = var_terms?;
+
+                // Create a list from the variables
+                let mut var_list = LTerm::empty_list();
+                for var in var_terms.into_iter().rev() {
+                    var_list = LTerm::cons(var, var_list);
+                }
+
+                // Use infdrange with the list (like the working macro approach)
+                match domain_spec {
+                    DomainSpec::Range(start, end) => {
+                        use crate::relation::clpfd::infd::infdrange;
+                        let range = *start as isize..=*end as isize;
+                        Ok(infdrange(var_list, &range).cast_into())
+                    }
+                    DomainSpec::Set(values) => {
+                        use crate::relation::clpfd::infd::infd;
+                        let domain_values: Vec<isize> =
+                            values.iter().map(|&v| v as isize).collect();
+                        Ok(infd(var_list, &domain_values).cast_into())
+                    }
+                }
+            }
             ClpfdConstraint::Expression {
                 left, op, right, ..
             } => {
+                // Check for arithmetic equality patterns that should use specialized CLPFD constraints
+                if *op == CompOp::Equal {
+                    // Try to detect patterns like: arith_expr == value or value == arith_expr
+                    if let Some(goal) =
+                        try_build_arithmetic_constraint(left, right, execution_context)?
+                    {
+                        return Ok(goal);
+                    }
+                    if let Some(goal) =
+                        try_build_arithmetic_constraint(right, left, execution_context)?
+                    {
+                        return Ok(goal);
+                    }
+                }
+
+                // Fall back to generic constraint handling
                 let left_term = eval_arith_expr(left, execution_context)?;
                 let right_term = eval_arith_expr(right, execution_context)?;
                 build_comparison_goal(left_term, *op, right_term)
             }
             ClpfdConstraint::Global { name, args, .. } => {
+                // Handle both variables and constants in the arguments
                 let var_terms: Result<Vec<_>, _> = args
                     .iter()
-                    .map(|arg| execution_context.get_existing_variable(arg))
+                    .map(|arg| {
+                        // Try to parse as integer first, then as variable
+                        if let Ok(int_val) = arg.parse::<i32>() {
+                            Ok(LTerm::from(int_val as isize))
+                        } else {
+                            execution_context.get_existing_variable(arg)
+                        }
+                    })
                     .collect();
                 let var_terms = var_terms?;
 
                 match name.as_str() {
                     "distinct" => {
                         use crate::relation::clpfd::distinctfd::distinctfd;
-                        // Convert Vec<LTerm> to LTerm (list)
-                        let list_term = var_terms
-                            .into_iter()
-                            .fold(LTerm::empty_list(), |acc, var| LTerm::cons(var, acc));
+                        // Convert Vec<LTerm> to LTerm (list) in correct order
+                        let mut list_term = LTerm::empty_list();
+                        for var in var_terms.into_iter().rev() {
+                            list_term = LTerm::cons(var, list_term);
+                        }
+                        Ok(distinctfd(list_term).cast_into())
+                    }
+                    "alldiff" => {
+                        use crate::relation::clpfd::distinctfd::distinctfd;
+                        // Convert Vec<LTerm> to LTerm (list) in correct order
+                        let mut list_term = LTerm::empty_list();
+                        for var in var_terms.into_iter().rev() {
+                            list_term = LTerm::cons(var, list_term);
+                        }
                         Ok(distinctfd(list_term).cast_into())
                     }
                     _ => Err(InterpreterError::UnknownGlobalConstraint(name.clone())),
@@ -495,6 +618,9 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
         match self {
             ClpfdConstraint::Domain { variable, .. } => {
                 vars.push(variable.clone());
+            }
+            ClpfdConstraint::ListDomain { variables, .. } => {
+                vars.extend(variables.clone());
             }
             ClpfdConstraint::Expression { left, right, .. } => {
                 fn collect_vars(expr: &ArithExpr, vars: &mut Vec<String>) {
@@ -575,6 +701,12 @@ fn build_comparison_goal<U: User, E: Engine<U>>(
 ) -> Result<Goal<U, E>, InterpreterError> {
     match op {
         CompOp::Equal => {
+            // Check if this is an arithmetic equality that should use specialized CLPFD constraints
+            // Pattern: arith_expr == value  or  value == arith_expr
+            // We need to detect patterns like x + y == z, x * y == z, etc.
+
+            // For now, use generic equality - we'll need to enhance this to detect arithmetic patterns
+            // TODO: Detect arithmetic expressions and convert to plusfd, timesfd, minusfd
             use crate::relation::eq::eq;
             Ok(eq(left, right).cast_into())
         }
@@ -598,5 +730,108 @@ fn build_comparison_goal<U: User, E: Engine<U>>(
             use crate::relation::clpfd::ltefd::ltefd;
             Ok(ltefd(right, left).cast_into())
         }
+    }
+}
+
+fn try_build_arithmetic_constraint<U: User, E: Engine<U>>(
+    left: &ArithExpr,
+    right: &ArithExpr,
+    execution_context: &mut ExecutionContext<U, E>,
+) -> Result<Option<Goal<U, E>>, InterpreterError> {
+    // Detect patterns like: x * y == 6, x + y == z, etc.
+    // Left side should be arithmetic expression, right side should be simple value or variable
+
+    match (left, right) {
+        // Pattern: x * y == value
+        (
+            ArithExpr::BinaryOp {
+                left: x,
+                op: ArithOp::Multiply,
+                right: y,
+            },
+            ArithExpr::Integer(value),
+        ) => {
+            use crate::relation::clpfd::timesfd::timesfd;
+            let x_term = eval_arith_expr(x, execution_context)?;
+            let y_term = eval_arith_expr(y, execution_context)?;
+            let value_term = LTerm::from(*value as isize);
+            Ok(Some(timesfd(x_term, y_term, value_term).cast_into()))
+        }
+        // Pattern: x * y == variable
+        (
+            ArithExpr::BinaryOp {
+                left: x,
+                op: ArithOp::Multiply,
+                right: y,
+            },
+            ArithExpr::Variable(_),
+        ) => {
+            use crate::relation::clpfd::timesfd::timesfd;
+            let x_term = eval_arith_expr(x, execution_context)?;
+            let y_term = eval_arith_expr(y, execution_context)?;
+            let z_term = eval_arith_expr(right, execution_context)?;
+            Ok(Some(timesfd(x_term, y_term, z_term).cast_into()))
+        }
+        // Pattern: x + y == value
+        (
+            ArithExpr::BinaryOp {
+                left: x,
+                op: ArithOp::Add,
+                right: y,
+            },
+            ArithExpr::Integer(value),
+        ) => {
+            use crate::relation::clpfd::plusfd::plusfd;
+            let x_term = eval_arith_expr(x, execution_context)?;
+            let y_term = eval_arith_expr(y, execution_context)?;
+            let value_term = LTerm::from(*value as isize);
+            Ok(Some(plusfd(x_term, y_term, value_term).cast_into()))
+        }
+        // Pattern: x + y == variable
+        (
+            ArithExpr::BinaryOp {
+                left: x,
+                op: ArithOp::Add,
+                right: y,
+            },
+            ArithExpr::Variable(_),
+        ) => {
+            use crate::relation::clpfd::plusfd::plusfd;
+            let x_term = eval_arith_expr(x, execution_context)?;
+            let y_term = eval_arith_expr(y, execution_context)?;
+            let z_term = eval_arith_expr(right, execution_context)?;
+            Ok(Some(plusfd(x_term, y_term, z_term).cast_into()))
+        }
+        // Pattern: x - y == value
+        (
+            ArithExpr::BinaryOp {
+                left: x,
+                op: ArithOp::Subtract,
+                right: y,
+            },
+            ArithExpr::Integer(value),
+        ) => {
+            use crate::relation::clpfd::minusfd::minusfd;
+            let x_term = eval_arith_expr(x, execution_context)?;
+            let y_term = eval_arith_expr(y, execution_context)?;
+            let value_term = LTerm::from(*value as isize);
+            Ok(Some(minusfd(x_term, y_term, value_term).cast_into()))
+        }
+        // Pattern: x - y == variable
+        (
+            ArithExpr::BinaryOp {
+                left: x,
+                op: ArithOp::Subtract,
+                right: y,
+            },
+            ArithExpr::Variable(_),
+        ) => {
+            use crate::relation::clpfd::minusfd::minusfd;
+            let x_term = eval_arith_expr(x, execution_context)?;
+            let y_term = eval_arith_expr(y, execution_context)?;
+            let z_term = eval_arith_expr(right, execution_context)?;
+            Ok(Some(minusfd(x_term, y_term, z_term).cast_into()))
+        }
+        _ => Ok(None),
     }
 }

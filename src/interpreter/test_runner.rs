@@ -1,4 +1,62 @@
 //! This module contains the logic for discovering and running Proto-Vulcan tests.
+//!
+//! # Test Attributes: Architectural Distinction
+//!
+//! Proto-Vulcan supports two different test patterns for handling failure scenarios,
+//! each designed for different types of execution outcomes:
+//!
+//! ## `@test(should_fail)` - Runtime Exceptions and Errors
+//!
+//! Use this attribute when you expect the **goal execution to throw an actual exception**.
+//! This is appropriate for:
+//! - Assertion failures: `assert_eq(1, 2)`
+//! - Undefined relations: `undefined_relation(x)`
+//! - Type errors or malformed queries
+//! - Parse errors and syntax issues
+//! - Non-exhaustive pattern matches
+//!
+//! Example:
+//! ```prolog
+//! @test(should_fail)
+//! rel test_assertion_failure() {
+//!     assert_eq(1, 2)  // Throws assertion exception
+//! }
+//! ```
+//!
+//! ## `@test(expected = [])` - Successful Execution with No Solutions
+//!
+//! Use this attribute when you expect the **query to execute successfully but find no valid solutions**.
+//! This is appropriate for:
+//! - Constraint domain failures (impossible constraint satisfaction)
+//! - List operations with no matches (e.g., `member(x, [])`, `member(4, [1,2,3])`)
+//! - Logical operations that fail (e.g., `distinct([1,1])`)
+//! - Over-constrained systems in CLPFD/CLPZ domains
+//! - Any scenario where the solver successfully determines no solutions exist
+//!
+//! Example:
+//! ```prolog
+//! @test(expected = [])
+//! rel test_impossible_constraints(result) {
+//!     |x, y, z| {
+//!         constraint(domain="clpfd") {
+//!             [x, y, z] in 1..2,     // Domain has only 2 values
+//!             alldiff [x, y, z]      // But need 3 distinct values
+//!         },
+//!         result == [x, y, z]
+//!     }
+//! }
+//! ```
+//!
+//! ## The Key Architectural Difference
+//!
+//! - **`should_fail`**: Query execution throws an exception (`interpreter.query()` returns `Err`)
+//! - **`expected = []`**: Query execution succeeds but finds no valid solutions (`interpreter.query()` returns `Ok(empty_vector)`)
+//!
+//! ## Important Note on Constraint Domains
+//!
+//! Constraint domain solvers (CLPFD, CLPZ) do NOT throw exceptions when constraints cannot be satisfied.
+//! Instead, they return empty result sets. Therefore, impossible constraint scenarios should use
+//! `@test(expected = [])`, not `@test(should_fail)`.
 
 use super::assertions::{assert_eq, assert_neq};
 use super::environment::Environment;
@@ -26,9 +84,16 @@ pub struct TestItem {
     pub file_path: PathBuf,
     /// The name of the test relation.
     pub test_name: String,
-    /// Whether the test is expected to produce no results.
+    /// Whether the test is expected to fail during goal execution (throw an exception).
+    ///
+    /// This is distinct from tests that execute successfully but return no results.
+    /// See module documentation for the architectural distinction between
+    /// `@test(should_fail)` and `@test(expected = [])`.
     pub should_fail: bool,
     /// An expected list of results for a query-based test.
+    ///
+    /// When `Some([])`, the test expects successful execution with no solutions found.
+    /// When `None`, the test uses simple pass/fail logic based on `should_fail`.
     pub expected: Option<ast::Term>,
     /// The variable to query in a query-based test.
     pub query_variable: Option<String>,
@@ -264,6 +329,17 @@ impl TestRunner {
             format!("{}()", item.test_name)
         };
 
+        // ARCHITECTURAL DISTINCTION: Here we implement the key difference between
+        // @test(should_fail) and @test(expected = [])
+        //
+        // - Ok(results): Query executed successfully (may have 0 or more solutions)
+        //   * If expected = Some([]), we check if results are empty (constraint solver found no solutions)
+        //   * If expected = None and should_fail = false, we check if results are non-empty
+        //   * If expected = None and should_fail = true, we fail because query should have thrown error
+        //
+        // - Err(e): Query failed during execution (goal resolution error)
+        //   * If should_fail = true, this is expected behavior (TestResult::Pass)
+        //   * If should_fail = false, this is an unexpected error (TestResult::Error)
         match interpreter.query(&query_string) {
             Ok(results) => {
                 if let Some(expected_term) = &item.expected {
@@ -290,10 +366,18 @@ impl TestRunner {
                     };
 
                     if result_lterms.len() != expected_ast_list.len() {
+                        // Convert results to strings for display
+                        let result_lterms_str: Vec<String> =
+                            result_lterms.iter().map(|t| t.to_string()).collect();
+                        let expected_ast_list_str: Vec<String> =
+                            expected_ast_list.iter().map(|t| format!("{}", t)).collect();
+
                         let msg = format!(
-                            "Expected {} results, but got {}.",
+                            "Expected {} results, but got {}.\nExpected: {:?}\nActual:   {:?}",
                             expected_ast_list.len(),
-                            result_lterms.len()
+                            result_lterms.len(),
+                            expected_ast_list_str,
+                            result_lterms_str
                         );
                         return if item.should_fail {
                             TestResult::Pass
@@ -318,8 +402,8 @@ impl TestRunner {
                                 expected_ast_list.iter().map(|t| format!("{}", t)).collect();
 
                             TestResult::Error(format!(
-                                "Results did not match expected values. Got: {:?}, Expected: {:?}",
-                                result_lterms_str, expected_ast_list_str
+                                "Results did not match expected values.\nExpected: {:?}\nActual:   {:?}",
+                                expected_ast_list_str, result_lterms_str
                             ))
                         } else {
                             TestResult::Error(
@@ -329,6 +413,9 @@ impl TestRunner {
                     }
                 } else {
                     // Fallback to simple success/fail for tests without `expected`
+                    // This handles the architectural distinction:
+                    // - should_fail = true expects query to fail (Err), but we got Ok(results)
+                    // - should_fail = false expects query to succeed with results
                     let successful_run = !results.is_empty();
                     if successful_run != item.should_fail {
                         TestResult::Pass
@@ -337,12 +424,21 @@ impl TestRunner {
                     }
                 }
             }
-            Err(e) => TestResult::Error(format!(
-                "Runtime error in test '{}' ({}): {}",
-                item.test_name,
-                item.file_path.display(),
-                e
-            )),
+            Err(e) => {
+                // Query failed during execution (goal resolution error)
+                if item.should_fail {
+                    // This is expected for @test(should_fail) - goal was supposed to fail
+                    TestResult::Pass
+                } else {
+                    // Unexpected error for regular tests
+                    TestResult::Error(format!(
+                        "Runtime error in test '{}' ({}): {}",
+                        item.test_name,
+                        item.file_path.display(),
+                        e
+                    ))
+                }
+            }
         }
     }
 
