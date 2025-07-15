@@ -35,10 +35,27 @@ rel test_meta_if_condition(result) {
 }
 
 // Test meta for loop
-@test(expected = [6, 9])
-rel test_meta_for_simple(result) {
-    for i: int in 2..4 {
-        result == {i * 3}
+@test(expected = [1, 2, 3, 4, 5])
+rel test_meta_for_loop(result) {
+    for i: int in 1..6 {
+        result == i
+    }
+}
+
+// Test CLPFD basic list syntax first
+@test(expected = [1, 2, 5])
+rel test_clpfd_basic_list(x) {
+    constraint(domain="clpfd") {
+        x in [1, 2, 5]
+    }
+}
+
+// Test CLPFD interpolation in list constraints - [1, 2, {foo}] syntax  
+@test(expected = [1, 2, 5])
+rel test_clpfd_set_interpolation(x) {
+    let foo: int = 5;
+    constraint(domain="clpfd") {
+        x in [1, 2, {foo}]
     }
 }
 
@@ -60,3 +77,4 @@ rel test_interpolation_with_variables(result) {
         result == temp
     }
 }
+

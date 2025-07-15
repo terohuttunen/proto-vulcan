@@ -160,7 +160,17 @@ constraint_param = _{
 domain_param = { "domain" ~ "=" ~ string_literal }
 custom_constraint_param = { ident ~ "=" ~ param_value }
 
-constraint_body = @{ ( !("}" | EOI) ~ ANY )* }
+constraint_body = @{ constraint_content* }
+
+// Content within constraint blocks that properly handles balanced braces and strings
+constraint_content = _{
+    string_literal |           // Handle strings first to ignore braces inside them
+    balanced_braces |          // Handle nested braced content
+    (!("}" | "{" | "\"") ~ ANY) // Regular content (not brace or quote)
+}
+
+// Balanced braces: { ... } where the content can contain more balanced braces
+balanced_braces = @{ "{" ~ constraint_content* ~ "}" }
 
 search_strategy = { "@" ~ strategy_value }
 
