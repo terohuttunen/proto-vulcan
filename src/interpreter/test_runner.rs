@@ -177,6 +177,12 @@ impl TestRunner {
         Ok(Self { discovered_tests })
     }
 
+    /// Creates a new `TestRunner` from a single file.
+    pub fn from_file(file_path: &Path) -> Result<Self, InterpreterError> {
+        let discovered_tests = Self::discover_from_file(file_path)?;
+        Ok(Self { discovered_tests })
+    }
+
     /// Filter tests by name pattern. Supports basic glob patterns:
     /// - `*` matches any sequence of characters
     /// - `?` matches any single character
@@ -823,6 +829,66 @@ impl TestRunner {
                             query_variable,
                         });
                     }
+                }
+            }
+        }
+
+        Ok(tests)
+    }
+
+    /// Discovers all tests within a single file.
+    fn discover_from_file(file_path: &Path) -> Result<Vec<TestItem>, InterpreterError> {
+        let mut tests = Vec::new();
+
+        // Check if the file has the correct extension
+        if !file_path.extension().map_or(false, |ext| ext == "pv") {
+            return Err(InterpreterError::IoError(format!(
+                "File {} is not a .pv file",
+                file_path.display()
+            )));
+        }
+
+        let content =
+            fs::read_to_string(file_path).map_err(|e| InterpreterError::IoError(e.to_string()))?;
+
+        let program = match parse_str(&content) {
+            Ok(prog) => prog,
+            Err(e) => {
+                return Err(InterpreterError::ParseError(format!(
+                    "Could not parse file {}: {}",
+                    file_path.display(),
+                    e
+                )));
+            }
+        };
+
+        for item in &program.items {
+            if let Item::Relation(rel_def) = item {
+                if let Some(test_attr) = rel_def.attributes.iter().find(|a| a.name == "test") {
+                    let mut should_fail = false;
+                    let mut expected = None;
+
+                    for arg in &test_attr.args {
+                        match arg {
+                            ast::AttributeArg::Flag(name) if name == "should_fail" => {
+                                should_fail = true;
+                            }
+                            ast::AttributeArg::Named(name, value) if name == "expected" => {
+                                expected = Some(value.clone());
+                            }
+                            _ => {} // Ignore other args
+                        }
+                    }
+
+                    let query_variable = rel_def.parameters.first().map(|p| p.name.clone());
+
+                    tests.push(TestItem {
+                        file_path: file_path.to_path_buf(),
+                        test_name: rel_def.name.clone(),
+                        should_fail,
+                        expected,
+                        query_variable,
+                    });
                 }
             }
         }
