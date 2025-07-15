@@ -1,0 +1,251 @@
+use crate::engine::Engine;
+/// Constrains u <= v for integers
+use crate::goal::{AnyGoal, InferredGoal};
+use crate::lterm::{LTerm, LTermInner};
+use crate::lvalue::LValue;
+use crate::solver::{Solve, Solver};
+use crate::state::{Constraint, SResult, State};
+use crate::stream::Stream;
+use crate::user::User;
+use derivative::Derivative;
+use std::fmt::{Display, Formatter};
+use std::rc::Rc;
+
+/// CLPZ Less-than-or-equal constraint: u <= v for integers
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
+pub struct LessEqualZConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    u: LTerm<U, E>,
+    v: LTerm<U, E>,
+}
+
+impl<U, E> LessEqualZConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Rc<Self> {
+        Rc::new(LessEqualZConstraint { u, v })
+    }
+}
+
+impl<U, E> Constraint<U, E> for LessEqualZConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
+        // Walk the terms to get their current values
+        let u_walk = state.smap_ref().walk(&self.u).clone();
+        let v_walk = state.smap_ref().walk(&self.v).clone();
+
+        // Pattern match like other CLPZ constraints to handle all cases
+        match (u_walk.as_ref(), v_walk.as_ref()) {
+            (LTermInner::Val(LValue::Number(u_num)), LTermInner::Val(LValue::Number(v_num))) => {
+                // Both are ground integers - check constraint immediately
+                if u_num <= v_num {
+                    Ok(state) // Constraint satisfied, drop it
+                } else {
+                    Err(()) // Constraint violated, fail
+                }
+            }
+            (LTermInner::Val(LValue::Number(_)), LTermInner::Var(_, _))
+            | (LTermInner::Var(_, _), LTermInner::Val(LValue::Number(_))) => {
+                // One ground, one variable - keep constraint for re-evaluation when variable is bound
+                let walked_constraint = LessEqualZConstraint::new(u_walk, v_walk);
+                Ok(state.with_constraint(walked_constraint))
+            }
+            (LTermInner::Var(_, _), LTermInner::Var(_, _)) => {
+                // Both are variables - keep constraint for later evaluation
+                let walked_constraint = LessEqualZConstraint::new(u_walk, v_walk);
+                Ok(state.with_constraint(walked_constraint))
+            }
+            _ => {
+                // Some operands grounded to terms of invalid type
+                Err(())
+            }
+        }
+    }
+
+    fn operands(&self) -> Vec<LTerm<U, E>> {
+        vec![self.u.clone(), self.v.clone()]
+    }
+}
+
+impl<U, E> Display for LessEqualZConstraint<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} <= {}", self.u, self.v)
+    }
+}
+
+/// CLPZ Less-than-or-equal goal (the relation interface)
+#[derive(Derivative)]
+#[derivative(Debug(bound = "U: User"))]
+pub struct LessEqualZ<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    u: LTerm<U, E>,
+    v: LTerm<U, E>,
+}
+
+impl<U, E> LessEqualZ<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+        InferredGoal::new(G::dynamic(Rc::new(LessEqualZ { u, v })))
+    }
+}
+
+impl<U, E> Solve<U, E> for LessEqualZ<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+        match LessEqualZConstraint::new(self.u.clone(), self.v.clone()).run(state) {
+            Ok(state) => Stream::unit(Box::new(state)),
+            Err(_) => Stream::empty(),
+        }
+    }
+}
+
+/// Public interface function for less-than-or-equal constraint
+pub fn ltez<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
+where
+    U: User,
+    E: Engine<U>,
+    G: AnyGoal<U, E>,
+{
+    LessEqualZ::new(u, v)
+}
+
+#[cfg(test)]
+mod test {
+    use super::ltez;
+    use crate::prelude::*;
+
+    #[test]
+    fn test_ltez_ground_true() {
+        // Test u <= v where 5 <= 10 (should succeed)
+        let query = proto_vulcan_query!(|result| {
+            result == 5,
+            ltez(result, 10)
+        });
+
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().result, 5);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_ltez_ground_false() {
+        // Test u <= v where 10 <= 5 (should fail)
+        let query = proto_vulcan_query!(|result| {
+            result == 10,
+            ltez(result, 5)
+        });
+
+        let mut iter = query.run();
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_ltez_equal_boundary() {
+        // Test u <= v where 5 <= 5 (should succeed)
+        let query = proto_vulcan_query!(|result| {
+            result == 5,
+            ltez(result, 5)
+        });
+
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().result, 5);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_ltez_constraint_generation() {
+        // Test constraint propagation: x <= y, y = 10, should constrain x
+        let query = proto_vulcan_query!(|x| {
+            |y| {
+                ltez(x, y),
+                y == 10,
+                x == 8  // This should satisfy x <= 10
+            }
+        });
+
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().x, 8);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_ltez_constraint_generation_fail() {
+        // Test constraint propagation failure: x <= y, y = 5, x = 10 should fail
+        let query = proto_vulcan_query!(|x| {
+            |y| {
+                ltez(x, y),
+                y == 5,
+                x == 10  // This should fail since 10 > 5
+            }
+        });
+
+        let mut iter = query.run();
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_ltez_negative_numbers() {
+        // Test with negative numbers: -5 <= -2 (should succeed)
+        let query = proto_vulcan_query!(|result| {
+            result == -5,
+            ltez(result, -2)
+        });
+
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().result, -5);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_ltez_zero_boundary() {
+        // Test zero boundary: 0 <= 1 (should succeed)
+        let query = proto_vulcan_query!(|result| {
+            result == 0,
+            ltez(result, 1)
+        });
+
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().result, 0);
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_ltez_chained_constraints() {
+        // Test multiple constraints: x <= y <= z
+        let query = proto_vulcan_query!(|x| {
+            |y, z| {
+                ltez(x, y),
+                ltez(y, z),
+                x == 3,
+                z == 7,
+                y == 5  // Should satisfy 3 <= 5 <= 7
+            }
+        });
+
+        let mut iter = query.run();
+        assert_eq!(iter.next().unwrap().x, 3);
+        assert!(iter.next().is_none());
+    }
+}

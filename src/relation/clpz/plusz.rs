@@ -100,7 +100,7 @@ where
                 LTermInner::Val(LValue::Number(w)),
             ) => {
                 /* All operands grounded. */
-                if u * v == *w {
+                if u + v == *w {
                     Ok(state)
                 } else {
                     Err(())
