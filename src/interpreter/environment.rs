@@ -97,6 +97,25 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
         // Special handling for std library
         if path_segments.first() == Some(&"std".to_string()) {
+            // Try to find std library using the same logic as the interpreter
+            if let Ok(std_base_path) = Self::find_stdlib_path() {
+                if path_segments.len() == 1 {
+                    // "std" alone refers to std/mod.pv
+                    let std_path = std_base_path.join("mod.pv");
+                    if std_path.exists() {
+                        return Ok(std_path);
+                    }
+                } else {
+                    // "std::list" refers to std/list.pv
+                    let std_path =
+                        std_base_path.join(format!("{}.pv", &path_segments[1..].join("/")));
+                    if std_path.exists() {
+                        return Ok(std_path);
+                    }
+                }
+            }
+
+            // Fallback to old behavior
             if path_segments.len() == 1 {
                 // "std" alone refers to std/mod.pv
                 let std_path = PathBuf::from("std/mod.pv");
@@ -147,6 +166,46 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         }
 
         Err(InterpreterError::ModuleNotFound(PathBuf::from(module_path)))
+    }
+
+    /// Find the standard library path by trying different locations
+    fn find_stdlib_path() -> Result<PathBuf, InterpreterError> {
+        // Try different locations for the standard library
+        let candidates = vec![
+            // 1. Relative to current directory (current behavior)
+            PathBuf::from("std"),
+            // 2. Relative to executable (preferred for installed binaries)
+            Self::executable_relative_path("std"),
+            // 3. Relative to executable's parent directory (for development)
+            Self::executable_relative_path("../std"),
+            // 4. In parent of executable's parent (for target/release structure)
+            Self::executable_relative_path("../../std"),
+        ];
+
+        for candidate in candidates {
+            if candidate.exists() && candidate.is_dir() {
+                // Found a valid std directory, return it
+                return Ok(candidate);
+            }
+        }
+
+        Err(InterpreterError::IoError(
+            "Standard library not found. Tried searching relative to current directory and executable location.".to_string()
+        ))
+    }
+
+    /// Get a path relative to the current executable
+    fn executable_relative_path(relative_path: &str) -> PathBuf {
+        match std::env::current_exe() {
+            Ok(exe_path) => {
+                if let Some(exe_dir) = exe_path.parent() {
+                    exe_dir.join(relative_path)
+                } else {
+                    PathBuf::from(relative_path)
+                }
+            }
+            Err(_) => PathBuf::from(relative_path),
+        }
     }
 
     /// Load a module from a file path

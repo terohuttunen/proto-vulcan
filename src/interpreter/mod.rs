@@ -220,17 +220,15 @@ where
 
     /// Load the standard library.
     pub fn load_stdlib(&mut self) -> Result<(), InterpreterError> {
-        let std_path = PathBuf::from("std");
-        if !std_path.exists() || !std_path.is_dir() {
-            return Err(InterpreterError::IoError(
-                "Standard library not found.".to_string(),
-            ));
-        }
+        // Try to find standard library relative to executable first
+        let std_path = Self::find_stdlib_path()?;
+
         let mod_file = std_path.join("mod.pv");
         if !mod_file.exists() {
-            return Err(InterpreterError::IoError(
-                "Standard library entrypoint (std/mod.pv) not found.".to_string(),
-            ));
+            return Err(InterpreterError::IoError(format!(
+                "Standard library entrypoint not found at: {}",
+                mod_file.display()
+            )));
         }
 
         let source =
@@ -243,6 +241,46 @@ where
         let result = env.load_program(program);
         env.set_base_path(PathBuf::new());
         result
+    }
+
+    /// Find the standard library path by trying different locations
+    fn find_stdlib_path() -> Result<PathBuf, InterpreterError> {
+        // Try different locations for the standard library
+        let candidates = vec![
+            // 1. Relative to current directory (current behavior)
+            PathBuf::from("std"),
+            // 2. Relative to executable (preferred for installed binaries)
+            Self::executable_relative_path("std"),
+            // 3. Relative to executable's parent directory (for development)
+            Self::executable_relative_path("../std"),
+            // 4. In parent of executable's parent (for target/release structure)
+            Self::executable_relative_path("../../std"),
+        ];
+
+        for candidate in candidates {
+            if candidate.exists() && candidate.is_dir() {
+                // Found a valid std directory, return it
+                return Ok(candidate);
+            }
+        }
+
+        Err(InterpreterError::IoError(
+            "Standard library not found. Tried searching relative to current directory and executable location.".to_string()
+        ))
+    }
+
+    /// Get a path relative to the current executable
+    fn executable_relative_path(relative_path: &str) -> PathBuf {
+        match std::env::current_exe() {
+            Ok(exe_path) => {
+                if let Some(exe_dir) = exe_path.parent() {
+                    exe_dir.join(relative_path)
+                } else {
+                    PathBuf::from(relative_path)
+                }
+            }
+            Err(_) => PathBuf::from(relative_path),
+        }
     }
 
     /// Execute a query string

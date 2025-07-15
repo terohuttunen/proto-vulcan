@@ -1,6 +1,8 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use colored::*;
 use proto_vulcan::engine::DefaultEngine;
 use proto_vulcan::interpreter::parser::parse_str;
+use proto_vulcan::interpreter::query::QueryResult;
 use proto_vulcan::interpreter::test_runner::{TestRunOptions, TestRunner};
 use proto_vulcan::interpreter::{
     create_main_query, find_main_relation, Interpreter, InterpreterError,
@@ -11,32 +13,63 @@ use std::path::PathBuf;
 
 type DefaultInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum ColorChoice {
+    /// Automatically detect if colors should be used (default)
+    Auto,
+    /// Always use colors
+    Always,
+    /// Never use colors
+    Never,
+}
+
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-#[command(after_help = "EXAMPLES:
-    proto-vulcan file.pv                    # Run a proto-vulcan file (executes @main relation)
-    proto-vulcan run --file file.pv         # Same as above (explicit)
-    proto-vulcan file.pv --query \"goal()\"    # Run with specific query instead of @main
-    proto-vulcan check file.pv              # Check syntax without running
-    proto-vulcan test                       # Run all tests
-    proto-vulcan test my_test               # Run specific test
-    proto-vulcan test --file file.pv        # Run tests from specific file")]
+#[command(name = "proto-vulcan")]
+#[command(about = "A logic programming language")]
+#[command(long_about = r#"Proto-Vulcan Logic Programming Language
+
+EXAMPLES:
+    # Run a file with @main relation
+    proto-vulcan examples/zebra.pv
+    
+    # Run a specific query  
+    proto-vulcan --query "member(X, [1, 2, 3])" std/list.pv
+    
+    # Control output format and limit results
+    proto-vulcan --format table --limit 10 --query "append(X, Y, [1, 2, 3])" std/list.pv
+    proto-vulcan --format numbered --limit 5 examples/zebra.pv
+    proto-vulcan --format json --query "member(X, [1, 2, 3])" std/list.pv
+    
+    # Control colors (auto-enabled for console output)
+    proto-vulcan --color always examples/zebra.pv
+    proto-vulcan --color never --format table examples/zebra.pv
+    proto-vulcan --color auto examples/zebra.pv   # default behavior
+    
+    # Run tests
+    proto-vulcan test
+    proto-vulcan test --file examples/zebra.pv"#)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 
-    /// The proto-vulcan file to run (shorthand for 'run --file FILE')
-    #[arg(value_name = "FILE", help = "Proto-vulcan file to run")]
+    /// File to run (when not using subcommands)
     file: Option<PathBuf>,
 
-    /// The query to execute when using positional file argument (overrides @main relation)
-    #[arg(
-        short,
-        long,
-        default_value = "main()",
-        help = "Query to execute (overrides @main relation if present)"
-    )]
+    /// Query to execute instead of @main relation
+    #[arg(short, long)]
     query: Option<String>,
+
+    /// Output format for results
+    #[arg(short, long, value_enum, default_value = "numbered")]
+    format: OutputFormat,
+
+    /// Maximum number of results to show (0 = unlimited)
+    #[arg(short, long, default_value = "0")]
+    limit: usize,
+
+    /// When to use colors in output
+    #[arg(long, value_enum, default_value = "auto")]
+    color: ColorChoice,
 }
 
 #[derive(Subcommand)]
@@ -89,39 +122,31 @@ enum Commands {
     },
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum OutputFormat {
+    /// Automatically choose format based on result characteristics
+    Auto,
+    /// Numbered list format (1: X = value, 2: Y = value)
+    Numbered,
+    /// Table format with aligned columns
+    Table,
+    /// JSON format for programmatic consumption
+    Json,
+    /// Debug format showing internal structure
+    Debug,
+}
+
 fn main() {
     let cli = Cli::parse();
 
-    // Handle positional file argument (shorthand for run command)
-    if let Some(file) = cli.file {
-        if cli.command.is_some() {
-            eprintln!("Error: Cannot specify both a file argument and a subcommand.");
-            eprintln!("Use either 'proto-vulcan file.pv' or 'proto-vulcan run --file file.pv'");
-            std::process::exit(1);
-        }
+    // Set up colors based on CLI choice
+    setup_colors(cli.color);
 
-        let query = cli.query.unwrap_or_else(|| "main()".to_string());
-        if let Err(e) = run_file(file, query) {
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
-        }
-        return;
-    }
-
-    // Handle subcommands
-    match cli.command {
+    let result = match &cli.command {
         Some(Commands::Run { file, query }) => {
-            if let Err(e) = run_file(file, query) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
+            run_file(file.clone(), query.clone(), cli.format, cli.limit)
         }
-        Some(Commands::Check { file, show_ast }) => {
-            if let Err(e) = parse_file(file, show_ast) {
-                eprintln!("Error: {}", e);
-                std::process::exit(1);
-            }
-        }
+        Some(Commands::Check { file, show_ast }) => parse_file(file.clone(), *show_ast),
         Some(Commands::Test {
             test_name,
             filter,
@@ -131,31 +156,46 @@ fn main() {
             parallel,
         }) => {
             // Use filter if provided, otherwise use test_name
-            let effective_filter = filter.or(test_name);
+            let effective_filter = filter.clone().or(test_name.clone());
 
             let options = TestRunOptions {
                 filter: effective_filter,
-                show_failures_only: failures_only,
-                show_timing: timing,
-                parallel,
+                show_failures_only: *failures_only,
+                show_timing: *timing,
+                parallel: *parallel,
             };
 
-            if let Err(e) = run_tests_with_options(options, file) {
-                eprintln!("Error running tests: {}", e);
+            run_tests_with_options(options, file.clone())
+        }
+        None => {
+            if let Some(file) = &cli.file {
+                let query_str = cli.query.clone().unwrap_or_else(|| "main()".to_string());
+                run_file(file.clone(), query_str, cli.format, cli.limit)
+            } else {
+                eprintln!("Error: Please provide a file to run or specify a subcommand.");
                 std::process::exit(1);
             }
         }
-        None => {
-            // No subcommand and no file provided - show help
-            eprintln!("Error: No file or command specified.");
-            eprintln!("Use 'proto-vulcan --help' for usage information.");
-            eprintln!();
-            eprintln!("Quick examples:");
-            eprintln!("  proto-vulcan file.pv          # Run a file (executes @main relation)");
-            eprintln!("  proto-vulcan check file.pv    # Check syntax");
-            eprintln!("  proto-vulcan test             # Run tests");
-            eprintln!("  proto-vulcan test --file file.pv  # Run tests from file");
-            std::process::exit(1);
+    };
+
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+/// Set up color output based on user choice
+fn setup_colors(choice: ColorChoice) {
+    match choice {
+        ColorChoice::Always => {
+            colored::control::set_override(true);
+        }
+        ColorChoice::Never => {
+            colored::control::set_override(false);
+        }
+        ColorChoice::Auto => {
+            // colored crate automatically detects TTY by default, so do nothing
+            // This will enable colors when outputting to terminal, disable when piping to file
         }
     }
 }
@@ -180,7 +220,12 @@ fn parse_file(path: PathBuf, show_ast: bool) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn run_file(path: PathBuf, query: String) -> Result<(), Box<dyn std::error::Error>> {
+fn run_file(
+    path: PathBuf,
+    query: String,
+    format: OutputFormat,
+    limit: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut interpreter = DefaultInterpreter::with_stdlib();
     let file_contents = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
@@ -192,10 +237,6 @@ fn run_file(path: PathBuf, query: String) -> Result<(), Box<dyn std::error::Erro
     let actual_query = match find_main_relation(&program)? {
         Some(main_rel) => {
             let main_query = create_main_query(main_rel);
-            println!(
-                "Found @main relation '{}', executing: {}",
-                main_rel.name, main_query
-            );
             main_query
         }
         None => {
@@ -208,10 +249,6 @@ fn run_file(path: PathBuf, query: String) -> Result<(), Box<dyn std::error::Erro
                 )
                 .into());
             }
-            println!(
-                "No @main relation found, executing provided query: {}",
-                query
-            );
             query
         }
     };
@@ -219,14 +256,25 @@ fn run_file(path: PathBuf, query: String) -> Result<(), Box<dyn std::error::Erro
     interpreter.load_program(program)?;
 
     match interpreter.query(&actual_query) {
-        Ok(results) => {
-            if !results.is_empty() {
-                println!("Results:");
-                for (i, result) in results.iter().enumerate() {
-                    println!("  Solution {}: {:?}", i + 1, result);
+        Ok(mut results) => {
+            // Apply limit if specified (0 means unlimited)
+            let was_limited = limit > 0 && results.len() > limit;
+            if was_limited {
+                results.truncate(limit);
+                if format != OutputFormat::Json {
+                    println!("Note: Showing first {} of many results.", limit);
                 }
+            }
+
+            if !results.is_empty() {
+                print_query_results(&results, format, was_limited, &actual_query);
             } else {
-                println!("Query succeeded with no results.");
+                if format == OutputFormat::Json {
+                    print_json_results(&[], false, &actual_query);
+                } else {
+                    println!("Query: {}", actual_query);
+                    println!("Query succeeded with no results.");
+                }
             }
         }
         Err(e) => {
@@ -268,4 +316,197 @@ fn run_tests_with_options(
 fn run_tests() -> Result<(), Box<dyn std::error::Error>> {
     let options = TestRunOptions::default();
     run_tests_with_options(options, None)
+}
+
+/// Pretty print query results with mathematical formatting and where-clauses
+fn print_query_results(
+    results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>],
+    format: OutputFormat,
+    was_limited: bool,
+    query: &str,
+) {
+    match format {
+        OutputFormat::Auto => {
+            println!("{} {}", "Query:".bright_blue().bold(), query.bright_white());
+            // Choose formatting style based on result complexity
+            let result_count = results.len();
+            if result_count <= 5 {
+                print_numbered_results(results);
+            } else {
+                print_compact_results(results);
+            }
+        }
+        OutputFormat::Numbered => {
+            println!("{} {}", "Query:".bright_blue().bold(), query.bright_white());
+            print_numbered_results(results);
+        }
+        OutputFormat::Table => {
+            println!("{} {}", "Query:".bright_blue().bold(), query.bright_white());
+            if results.is_empty() {
+                println!("{}", "Query succeeded with no results.".bright_green());
+                return;
+            }
+            let first_result = &results[0];
+            let mut all_var_names: Vec<String> = first_result.bindings.keys().cloned().collect();
+            all_var_names.sort();
+            print_table_format(results, &all_var_names);
+        }
+        OutputFormat::Json => print_json_results(results, was_limited, query),
+        OutputFormat::Debug => {
+            println!("{} {}", "Query:".bright_blue().bold(), query.bright_white());
+            println!("{}", "Results:".bright_blue().bold());
+            for (i, result) in results.iter().enumerate() {
+                println!(
+                    "  {} {}: {:?}",
+                    "Solution".bright_green(),
+                    format!("{}", i + 1).bright_yellow().bold(),
+                    result
+                );
+            }
+        }
+    }
+}
+
+/// Print multiple results with clear numbering
+fn print_numbered_results(results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>]) {
+    println!("{}", "Solutions:".bright_blue().bold());
+    for (i, result) in results.iter().enumerate() {
+        print!("  {}: ", format!("{}", i + 1).bright_yellow().bold());
+        if result.bindings.is_empty() {
+            println!("{}", "true".bright_green());
+        } else {
+            let mut vars: Vec<_> = result.bindings.iter().collect();
+            vars.sort_by_key(|(name, _)| name.as_str());
+
+            for (j, (var_name, lresult)) in vars.iter().enumerate() {
+                if j == 0 {
+                    print!("{} {} {}", var_name.bright_cyan(), "=".white(), lresult);
+                } else {
+                    print!(", {} {} {}", var_name.bright_cyan(), "=".white(), lresult);
+                }
+            }
+            println!();
+        }
+    }
+}
+
+/// Print many results in compact tabular format
+fn print_compact_results(results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>]) {
+    if results.is_empty() {
+        return;
+    }
+
+    // Get all variable names and determine if we can use table format
+    let first_result = &results[0];
+    let mut all_var_names: Vec<String> = first_result.bindings.keys().cloned().collect();
+    all_var_names.sort();
+
+    // Check if all results have the same variables (for table format)
+    let can_use_table = results.iter().all(|result| {
+        let mut result_vars: Vec<String> = result.bindings.keys().cloned().collect();
+        result_vars.sort();
+        result_vars == all_var_names
+    });
+
+    if can_use_table
+        && all_var_names.len() <= 4
+        && all_var_names.iter().all(|name| name.len() <= 20)
+    {
+        print_table_format(results, &all_var_names);
+    } else {
+        print_numbered_results(results);
+    }
+}
+
+/// Print results in table format (for uniform, simple results)
+fn print_table_format(
+    results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>],
+    var_names: &[String],
+) {
+    println!(
+        "{} ({} {})",
+        "Solutions".bright_blue().bold(),
+        format!("{}", results.len()).bright_yellow().bold(),
+        "found):".bright_blue().bold()
+    );
+
+    // Print header
+    print!("  ");
+    for (i, var_name) in var_names.iter().enumerate() {
+        if i == 0 {
+            print!("{:15}", var_name.bright_cyan().bold());
+        } else {
+            print!(" {} {:15}", "|".white(), var_name.bright_cyan().bold());
+        }
+    }
+    println!();
+
+    // Print separator
+    print!("  ");
+    for i in 0..var_names.len() {
+        if i == 0 {
+            print!("{}", format!("{:-<15}", "").white());
+        } else {
+            print!("{}{}", "-|-".white(), format!("{:-<15}", "").white());
+        }
+    }
+    println!();
+
+    // Print data rows
+    for result in results.iter() {
+        print!("  ");
+        for (i, var_name) in var_names.iter().enumerate() {
+            let value_str = if let Some(lresult) = result.bindings.get(var_name) {
+                // For table format, only show the term without constraints to keep it compact
+                format!("{}", lresult.0)
+            } else {
+                "unbound".bright_red().to_string()
+            };
+
+            let truncated = if value_str.len() > 15 {
+                format!("{}...", &value_str[..12])
+            } else {
+                value_str
+            };
+
+            if i == 0 {
+                print!("{:15}", truncated.bright_white());
+            } else {
+                print!(" {} {:15}", "|".white(), truncated.bright_white());
+            }
+        }
+        println!();
+    }
+}
+
+/// Print results in JSON format for programmatic consumption
+fn print_json_results(
+    results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>],
+    was_limited: bool,
+    query: &str,
+) {
+    use serde_json::{json, Map, Value};
+
+    let mut solutions = Vec::new();
+
+    for result in results {
+        let mut solution = Map::new();
+
+        for (var_name, lresult) in &result.bindings {
+            // Convert LResult to string representation for JSON
+            let value_str = format!("{}", lresult);
+            solution.insert(var_name.clone(), Value::String(value_str));
+        }
+
+        solutions.push(Value::Object(solution));
+    }
+
+    let json_output = json!({
+        "query": query,
+        "solutions": solutions,
+        "count": results.len(),
+        "limited": was_limited
+    });
+
+    println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
 }
