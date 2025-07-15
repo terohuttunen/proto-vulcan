@@ -170,18 +170,6 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         self.locals.first().cloned().unwrap_or_default()
     }
 
-    /// Gets an existing variable by name or creates a fresh one if it doesn't exist.
-    /// This is useful for constraint domains that need to reference variables.
-    pub fn get_or_create_variable(&mut self, name: &str) -> Result<LTerm<U, E>, InterpreterError> {
-        if let Some(var) = self.lookup_var(name) {
-            Ok(var)
-        } else {
-            let fresh_var = self.create_fresh_var();
-            self.bind_var(name.to_string(), fresh_var.clone());
-            Ok(fresh_var)
-        }
-    }
-
     /// Gets an existing variable by name, returns an error if it doesn't exist.
     /// This is useful for constraint domains that should only reference existing variables.
     pub fn get_existing_variable(&self, name: &str) -> Result<LTerm<U, E>, InterpreterError> {

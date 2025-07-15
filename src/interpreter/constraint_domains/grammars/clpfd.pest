@@ -32,8 +32,9 @@ arith_expr  = { term ~ (add_op ~ term)* }
 // Examples: x in 1..10, y in {1,5,9}, z in 42, [x, y, z] in 0..2
 range_dotdot = { (integer | interpolation_expression) ~ ".." ~ (integer | interpolation_expression) }
 range_set    = { "{" ~ (integer | interpolation_expression) ~ ("," ~ (integer | interpolation_expression))* ~ "}" }
+range_list   = { "[" ~ (integer | interpolation_expression) ~ ("," ~ (integer | interpolation_expression))* ~ "]" }
 range_single = { integer | interpolation_expression }
-range_spec   = { range_dotdot | range_set | range_single }
+range_spec   = { range_dotdot | range_set | range_list | range_single }
 domain_constraint = { (variable | interpolation_expression) ~ in_kw ~ range_spec }
 list_domain_constraint = { "[" ~ var_list ~ "]" ~ in_kw ~ range_spec }
 

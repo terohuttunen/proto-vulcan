@@ -58,7 +58,7 @@
 //! Instead, they return empty result sets. Therefore, impossible constraint scenarios should use
 //! `@test(expected = [])`, not `@test(should_fail)`.
 
-use super::assertions::{assert_eq, assert_neq};
+use super::assertions::{assert_bound, assert_domain_size, assert_eq, assert_neq, assert_unbound};
 use super::environment::Environment;
 use super::parser::{
     ast::{self, Item},
@@ -66,7 +66,7 @@ use super::parser::{
 };
 use super::{Interpreter, InterpreterError};
 use crate::engine::{DefaultEngine, Engine};
-use crate::goal::Goal;
+use crate::goal::{Goal, GoalCast};
 use crate::lterm::{LTerm, LTermInner, LValue};
 use crate::user::{DefaultUser, User};
 use colored::*;
@@ -358,6 +358,43 @@ impl TestRunner {
             assert_neq(args[0].clone(), args[1].clone())
         });
         env.add_native_relation("assert_neq".to_string(), assert_neq_rel, 2);
+
+        let assert_bound_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+            if args.len() != 1 {
+                crate::relation::fail().cast_into()
+            } else {
+                assert_bound(args[0].clone())
+            }
+        });
+        env.add_native_relation("assert_bound".to_string(), assert_bound_rel, 1);
+
+        let assert_unbound_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+            if args.len() != 1 {
+                crate::relation::fail().cast_into()
+            } else {
+                assert_unbound(args[0].clone())
+            }
+        });
+        env.add_native_relation("assert_unbound".to_string(), assert_unbound_rel, 1);
+
+        let assert_domain_size_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+            if args.len() != 2 {
+                crate::relation::fail().cast_into()
+            } else {
+                // Extract the expected size from the second argument
+                if let Some(size_val) = args[1].get_number() {
+                    if size_val >= 0 {
+                        let size = size_val as usize;
+                        assert_domain_size(args[0].clone(), size)
+                    } else {
+                        crate::relation::fail().cast_into()
+                    }
+                } else {
+                    crate::relation::fail().cast_into()
+                }
+            }
+        });
+        env.add_native_relation("assert_domain_size".to_string(), assert_domain_size_rel, 2);
     }
 
     /// Matches an LTerm against an AST Term, supporting wildcards.
@@ -515,6 +552,16 @@ impl TestRunner {
             format!("{}()", item.test_name)
         };
 
+        // ENHANCED DEBUG: Try to provide detailed failure information
+        let enhanced_debug = std::env::var("PROTO_VULCAN_DEBUG_TESTS").is_ok();
+
+        if enhanced_debug {
+            println!("RUNNING TEST: {}", item.test_name);
+            println!("File: {}", item.file_path.display());
+            println!("Debug mode enabled - assertion evaluations will be shown");
+            println!("============================================================");
+        }
+
         // ARCHITECTURAL DISTINCTION: Here we implement the key difference between
         // @test(should_fail) and @test(expected = [])
         //
@@ -528,7 +575,21 @@ impl TestRunner {
         //   * If should_fail = false, this is an unexpected error (TestResult::Error)
         match interpreter.query(&query_string) {
             Ok(results) => {
-                if let Some(expected_term) = &item.expected {
+                if enhanced_debug {
+                    println!("============================================================");
+                    println!("TEST EXECUTION COMPLETE");
+                    println!("Solutions found: {}", results.len());
+                    if !results.is_empty() {
+                        println!("First solution bindings:");
+                        for (var, binding) in &results[0].bindings {
+                            println!("   {} = {:?}", var, binding.0);
+                        }
+                    }
+                    println!("============================================================");
+                }
+
+                if let Some(expected) = &item.expected {
+                    // Query-based test: compare results with expected values
                     let query_variable = if let Some(v) = &item.query_variable {
                         v
                     } else {
@@ -543,12 +604,13 @@ impl TestRunner {
                         .filter_map(|r| r.bindings.get(query_variable).map(|res| res.0.clone()))
                         .collect();
 
-                    let expected_ast_list = if let ast::Term::List(list) = expected_term {
-                        &list.elements
-                    } else {
-                        return TestResult::Error(
-                            "`expected` parameter must be a list term".to_string(),
-                        );
+                    let expected_ast_list = match expected {
+                        ast::Term::List(list_construction) => &list_construction.elements,
+                        _ => {
+                            return TestResult::Error(
+                                "Expected term must be a list for query-based tests".to_string(),
+                            )
+                        }
                     };
 
                     if result_lterms.len() != expected_ast_list.len() {
@@ -606,6 +668,10 @@ impl TestRunner {
                     if successful_run != item.should_fail {
                         TestResult::Pass
                     } else {
+                        if enhanced_debug && !successful_run && !item.should_fail {
+                            // ENHANCED DEBUG: Provide better failure context
+                            return self.enhanced_failure_context(item);
+                        }
                         TestResult::Fail
                     }
                 }
@@ -625,6 +691,82 @@ impl TestRunner {
                     ))
                 }
             }
+        }
+    }
+
+    /// Enhanced failure context method to provide better debugging information
+    fn enhanced_failure_context(&self, item: &TestItem) -> TestResult {
+        // Read the test file and analyze its structure
+        let file_contents = match fs::read_to_string(&item.file_path) {
+            Ok(c) => c,
+            Err(e) => return TestResult::Error(format!("Could not read file for debug: {}", e)),
+        };
+
+        // Look for assertions and constraint blocks in the test
+        let lines: Vec<&str> = file_contents.lines().collect();
+        let mut assertions = Vec::new();
+        let mut constraint_blocks = Vec::new();
+        let mut fresh_variables = Vec::new();
+
+        for (line_num, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("assert_") {
+                assertions.push(format!("Line {}: {}", line_num + 1, trimmed));
+            } else if trimmed.contains("constraint(domain=") {
+                constraint_blocks.push(format!("Line {}: {}", line_num + 1, trimmed));
+            } else if trimmed.starts_with("|") && trimmed.contains("|") {
+                fresh_variables.push(format!("Line {}: {}", line_num + 1, trimmed));
+            }
+        }
+
+        let mut debug_info = vec![
+            format!("Test '{}' failed with no solutions found.", item.test_name),
+            format!("File: {}", item.file_path.display()),
+        ];
+
+        if !constraint_blocks.is_empty() {
+            debug_info.push("".to_string());
+            debug_info.push("🔍 CONSTRAINT BLOCKS FOUND:".to_string());
+            debug_info.extend(constraint_blocks);
+            debug_info.push("".to_string());
+            debug_info.push(
+                "💡 LIKELY ISSUE: Fresh variables inside constraint blocks may not work correctly."
+                    .to_string(),
+            );
+            debug_info.push(
+                "   Consider moving variable declarations outside constraint blocks.".to_string(),
+            );
+        }
+
+        if !fresh_variables.is_empty() {
+            debug_info.push("".to_string());
+            debug_info.push("🔍 FRESH VARIABLE DECLARATIONS:".to_string());
+            debug_info.extend(fresh_variables);
+        }
+
+        if !assertions.is_empty() {
+            debug_info.push("".to_string());
+            debug_info.push("🔍 ASSERTIONS IN TEST:".to_string());
+            debug_info.extend(assertions);
+            debug_info.push("".to_string());
+            debug_info
+                .push("💡 DEBUG TIP: One or more of these assertions is failing.".to_string());
+            debug_info.push(
+                "   The most likely cause is unbound variables from constraint domains."
+                    .to_string(),
+            );
+        }
+
+        TestResult::Error(debug_info.join("\n"))
+    }
+
+    /// Extract a simple assertion from a line of code
+    fn extract_assertion(&self, line: &str) -> Option<String> {
+        let trimmed = line.trim();
+        if trimmed.ends_with(',') || trimmed.ends_with(';') {
+            Some(trimmed[..trimmed.len() - 1].to_string())
+        } else {
+            Some(trimmed.to_string())
         }
     }
 

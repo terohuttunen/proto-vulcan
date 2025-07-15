@@ -18,6 +18,7 @@ use crate::operator::conj::Conj;
 use crate::user::User;
 use pest::Parser;
 use pest_derive::Parser;
+use std::rc::Rc;
 
 #[derive(Parser)]
 #[grammar = "interpreter/constraint_domains/grammars/clpfd.pest"]
@@ -220,6 +221,35 @@ impl ClpfdDomain {
 
                 for p in inner_pair.into_inner() {
                     let bound = Self::build_domain_bound(p)?;
+                    if !matches!(bound, DomainBound::Integer(_)) {
+                        all_integers = false;
+                    }
+                    bounds.push(bound);
+                }
+
+                if all_integers {
+                    let values: Vec<i32> = bounds
+                        .into_iter()
+                        .map(|b| {
+                            if let DomainBound::Integer(val) = b {
+                                val
+                            } else {
+                                unreachable!()
+                            }
+                        })
+                        .collect();
+                    Ok(DomainSpec::Set(values))
+                } else {
+                    Ok(DomainSpec::InterpolatedSet(bounds))
+                }
+            }
+            Rule::range_list => {
+                // Handle [1, 2, {foo}] syntax - same as range_set but with square brackets
+                let mut bounds = Vec::new();
+                let mut all_integers = true;
+
+                for element_pair in inner_pair.into_inner() {
+                    let bound = Self::build_domain_bound(element_pair)?;
                     if !matches!(bound, DomainBound::Integer(_)) {
                         all_integers = false;
                     }
@@ -746,7 +776,8 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                 // Create a new scope for the fresh variables
                 execution_context.push_scope();
                 for var in vars {
-                    execution_context.get_or_create_variable(var)?;
+                    let fresh_var = execution_context.create_fresh_var();
+                    execution_context.bind_var(var.clone(), fresh_var);
                 }
 
                 let mut goals = vec![];
@@ -822,24 +853,53 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
         ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
         ArithExpr::Interpolation(meta_expr) => {
-            // Evaluate the meta expression using template expansion
-            use crate::interpreter::metaprogramming::{expand_term, TemplateExpansionContext};
-            use crate::interpreter::parser::ast::Term;
+            // For simple variable interpolations, directly access the execution context
+            match meta_expr {
+                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name) => {
+                    // Directly look up the variable in the execution context
+                    execution_context
+                        .get_existing_variable(var_name)
+                        .map_err(|_| {
+                            InterpreterError::RuntimeError(format!(
+                                "Interpolation variable '{}' not found in constraint context",
+                                var_name
+                            ))
+                        })
+                }
+                _ => {
+                    // For complex expressions, use template expansion with execution context bindings
+                    use crate::interpreter::metaprogramming::{
+                        expand_term, MetaBindings, MetaValue, TemplateExpansionContext,
+                    };
+                    use crate::interpreter::parser::ast::Term;
 
-            // Create empty template context - interpolation should work without meta bindings in constraint context
-            let context = TemplateExpansionContext::new(100);
+                    // Create template context with current variable bindings from execution context
+                    let mut bindings = MetaBindings::new();
 
-            // Create dummy term and expand it
-            let dummy_term = Term::Interpolation(meta_expr.clone());
-            let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
-                InterpreterError::RuntimeError(format!(
-                    "Meta expression expansion error in arithmetic: {}",
-                    e
-                ))
-            })?;
+                    // Get all variable bindings from execution context and convert them to meta values
+                    let var_bindings = execution_context.get_variable_bindings();
+                    for (var_name, var_term) in var_bindings {
+                        if let Some(number) = var_term.get_number() {
+                            bindings.insert(var_name, MetaValue::Integer(number as i64));
+                        }
+                        // Could add support for other types here in the future
+                    }
 
-            // Convert to runtime term
-            execution_context.ast_term_to_runtime(&expanded_term)
+                    let context = TemplateExpansionContext::with_bindings(bindings, 100);
+
+                    // Create dummy term and expand it
+                    let dummy_term = Term::Interpolation(meta_expr.clone());
+                    let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+                        InterpreterError::RuntimeError(format!(
+                            "Meta expression expansion error in arithmetic: {}",
+                            e
+                        ))
+                    })?;
+
+                    // Convert to runtime term
+                    execution_context.ast_term_to_runtime(&expanded_term)
+                }
+            }
         }
         ArithExpr::BinaryOp { left, op, right } => {
             let left_term = eval_arith_expr(left, execution_context)?;
@@ -881,28 +941,69 @@ fn eval_domain_bound<U: User, E: Engine<U>>(
     match bound {
         DomainBound::Integer(val) => Ok(*val as isize),
         DomainBound::Interpolation(meta_expr) => {
-            // For now, create a simple evaluation that uses the template expansion approach
-            use crate::interpreter::metaprogramming::{expand_term, TemplateExpansionContext};
-            use crate::interpreter::parser::ast::Term;
+            // For simple variable interpolations, directly access the execution context
+            match meta_expr {
+                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name) => {
+                    // Directly look up the variable in the execution context
+                    let var_term =
+                        execution_context
+                            .get_existing_variable(var_name)
+                            .map_err(|_| {
+                                InterpreterError::RuntimeError(format!(
+                                    "Interpolation variable '{}' not found in constraint context",
+                                    var_name
+                                ))
+                            })?;
 
-            // Create empty template context - interpolation should work without meta bindings in constraint context
-            let context = TemplateExpansionContext::new(100);
+                    // Extract integer value using get_number()
+                    var_term.get_number().ok_or_else(|| {
+                        InterpreterError::RuntimeError(format!(
+                            "Interpolation variable '{}' must evaluate to an integer",
+                            var_name
+                        ))
+                    })
+                }
+                _ => {
+                    // For complex expressions, use template expansion with execution context bindings
+                    use crate::interpreter::metaprogramming::{
+                        expand_term, MetaBindings, MetaValue, TemplateExpansionContext,
+                    };
+                    use crate::interpreter::parser::ast::Term;
 
-            // Create dummy term and expand it
-            let dummy_term = Term::Interpolation(meta_expr.clone());
-            let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
-                InterpreterError::RuntimeError(format!("Meta expression expansion error: {}", e))
-            })?;
+                    // Create template context with current variable bindings from execution context
+                    let mut bindings = MetaBindings::new();
 
-            // Convert to runtime and extract integer
-            let runtime_term = execution_context.ast_term_to_runtime(&expanded_term)?;
+                    // Get all variable bindings from execution context and convert them to meta values
+                    let var_bindings = execution_context.get_variable_bindings();
+                    for (var_name, var_term) in var_bindings {
+                        if let Some(number) = var_term.get_number() {
+                            bindings.insert(var_name, MetaValue::Integer(number as i64));
+                        }
+                        // Could add support for other types here in the future
+                    }
 
-            // Extract integer value using get_number()
-            runtime_term.get_number().ok_or_else(|| {
-                InterpreterError::RuntimeError(
-                    "Domain bound meta expression must evaluate to an integer".to_string(),
-                )
-            })
+                    let context = TemplateExpansionContext::with_bindings(bindings, 100);
+
+                    // Create dummy term and expand it
+                    let dummy_term = Term::Interpolation(meta_expr.clone());
+                    let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+                        InterpreterError::RuntimeError(format!(
+                            "Meta expression expansion error: {}",
+                            e
+                        ))
+                    })?;
+
+                    // Convert to runtime and extract integer
+                    let runtime_term = execution_context.ast_term_to_runtime(&expanded_term)?;
+
+                    // Extract integer value using get_number()
+                    runtime_term.get_number().ok_or_else(|| {
+                        InterpreterError::RuntimeError(
+                            "Domain bound meta expression must evaluate to an integer".to_string(),
+                        )
+                    })
+                }
+            }
         }
     }
 }

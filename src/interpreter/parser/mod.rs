@@ -2344,4 +2344,219 @@ mod tests {
         };
         assert_eq!(ast, expected);
     }
+
+    // =============================================================================
+    // Constraint Block Parsing Tests
+    // =============================================================================
+
+    #[test]
+    fn test_parse_constraint_block_simple() {
+        let input = r#"rel test() { constraint(domain="clpfd") { x in 1..5 } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd");
+                        assert_eq!(block.body.raw_content, "x in 1..5 ");
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_balanced_braces() {
+        let input = r#"rel test() { constraint(domain="clpfd") { x in {{foo}, 1, 2} } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd");
+                        assert_eq!(block.body.raw_content, "x in {{foo}, 1, 2} ");
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_string_with_braces() {
+        let input = r#"rel test() { constraint(domain="clpfd") { x in {"}", 1, 2}, y != {"{"} } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd");
+                        assert_eq!(block.body.raw_content, r#"x in {"}", 1, 2}, y != {"{"} "#);
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_complex_nested_braces() {
+        let input = r#"rel test() { constraint(domain="clpfd") { x in {{min_val}, {max_val}}, y in {{start}, {end}..10} } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd");
+                        assert_eq!(
+                            block.body.raw_content,
+                            "x in {{min_val}, {max_val}}, y in {{start}, {end}..10} "
+                        );
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_mixed_braces_and_strings() {
+        let input = r#"rel test() { constraint(domain="clpfd") { x in {{foo}, "}", 2}, y in {"{", {bar}, "}"} } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd");
+                        assert_eq!(
+                            block.body.raw_content,
+                            r#"x in {{foo}, "}", 2}, y in {"{", {bar}, "}"} "#
+                        );
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_deeply_nested_braces() {
+        let input = r#"rel test() { constraint(domain="clpfd") { x in {{{nested}, {values}}, 1}, y in {{{{deep}}, nested}} } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd");
+                        assert_eq!(
+                            block.body.raw_content,
+                            "x in {{{nested}, {values}}, 1}, y in {{{{deep}}, nested}} "
+                        );
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_strings_with_nested_quotes() {
+        let input = r#"rel test() { constraint(domain="clpfd") { x in {"}", "}", "{"}, y != {"{{inner}}"} } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd");
+                        assert_eq!(
+                            block.body.raw_content,
+                            r#"x in {"}", "}", "{"}, y != {"{{inner}}"} "#
+                        );
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_multiline_with_braces() {
+        let input = r#"rel test() { 
+            constraint(domain="clpfd") { 
+                x in {{foo}, 1, 2},
+                y in {"}", {bar}},
+                z != {"{", "}"} 
+            } 
+        }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd");
+                        // The raw content should preserve the original formatting
+                        assert!(block.body.raw_content.contains("x in {{foo}, 1, 2}"));
+                        assert!(block.body.raw_content.contains(r#"y in {"}", {bar}}"#));
+                        assert!(block.body.raw_content.contains(r#"z != {"{", "}"}"#));
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_default_domain() {
+        let input = r#"rel test() { constraint { x in {{foo}, 1} } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpfd"); // Default domain
+                        assert_eq!(block.body.raw_content, "x in {{foo}, 1} ");
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_parse_constraint_block_custom_domain() {
+        let input = r#"rel test() { constraint(domain="clpz") { x + y == {{sum}} } }"#;
+        let ast = parse_str(input).unwrap();
+        match &ast.items[0] {
+            Item::Relation(rel) => {
+                assert_eq!(rel.body.len(), 1);
+                match &rel.body[0] {
+                    Goal::ConstraintBlock(block) => {
+                        assert_eq!(block.domain, "clpz");
+                        assert_eq!(block.body.raw_content, "x + y == {{sum}} ");
+                    }
+                    _ => panic!("Expected constraint block"),
+                }
+            }
+            _ => panic!("Expected relation"),
+        }
+    }
 }

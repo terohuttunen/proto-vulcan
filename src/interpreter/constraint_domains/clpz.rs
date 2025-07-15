@@ -331,7 +331,8 @@ impl<U: User, E: Engine<U>> ClpzConstraint<U, E> {
             } => {
                 execution_context.push_scope();
                 for var in vars {
-                    execution_context.get_or_create_variable(var)?;
+                    let fresh_var = execution_context.create_fresh_var();
+                    execution_context.bind_var(var.clone(), fresh_var);
                 }
 
                 let mut goals = vec![];
@@ -396,24 +397,53 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
         ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
         ArithExpr::Interpolation(meta_expr) => {
-            // Evaluate the meta expression using template expansion
-            use crate::interpreter::metaprogramming::{expand_term, TemplateExpansionContext};
-            use crate::interpreter::parser::ast::Term;
+            // For simple variable interpolations, directly access the execution context
+            match meta_expr {
+                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name) => {
+                    // Directly look up the variable in the execution context
+                    execution_context
+                        .get_existing_variable(var_name)
+                        .map_err(|_| {
+                            InterpreterError::RuntimeError(format!(
+                                "Interpolation variable '{}' not found in constraint context",
+                                var_name
+                            ))
+                        })
+                }
+                _ => {
+                    // For complex expressions, use template expansion with execution context bindings
+                    use crate::interpreter::metaprogramming::{
+                        expand_term, MetaBindings, MetaValue, TemplateExpansionContext,
+                    };
+                    use crate::interpreter::parser::ast::Term;
 
-            // Create empty template context - interpolation should work without meta bindings in constraint context
-            let context = TemplateExpansionContext::new(100);
+                    // Create template context with current variable bindings from execution context
+                    let mut bindings = MetaBindings::new();
 
-            // Create dummy term and expand it
-            let dummy_term = Term::Interpolation(meta_expr.clone());
-            let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
-                InterpreterError::RuntimeError(format!(
-                    "Meta expression expansion error in CLPZ arithmetic: {}",
-                    e
-                ))
-            })?;
+                    // Get all variable bindings from execution context and convert them to meta values
+                    let var_bindings = execution_context.get_variable_bindings();
+                    for (var_name, var_term) in var_bindings {
+                        if let Some(number) = var_term.get_number() {
+                            bindings.insert(var_name, MetaValue::Integer(number as i64));
+                        }
+                        // Could add support for other types here in the future
+                    }
 
-            // Convert to runtime term
-            execution_context.ast_term_to_runtime(&expanded_term)
+                    let context = TemplateExpansionContext::with_bindings(bindings, 100);
+
+                    // Create dummy term and expand it
+                    let dummy_term = Term::Interpolation(meta_expr.clone());
+                    let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+                        InterpreterError::RuntimeError(format!(
+                            "Meta expression expansion error in CLPZ arithmetic: {}",
+                            e
+                        ))
+                    })?;
+
+                    // Convert to runtime term
+                    execution_context.ast_term_to_runtime(&expanded_term)
+                }
+            }
         }
         ArithExpr::BinaryOp { left, op, right } => {
             let left_term = eval_arith_expr(left, execution_context)?;
