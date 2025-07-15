@@ -385,6 +385,7 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
             let span = pair_to_span(&pair);
             let mut inner = pair.into_inner();
             let lhs = build_term(inner.next().unwrap())?;
+            let _equality_op = inner.next().unwrap(); // Skip the atomic equality_op
             let rhs = build_term(inner.next().unwrap())?;
             Ok(Goal::Equality(lhs, rhs, span))
         }
@@ -392,6 +393,7 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
             let span = pair_to_span(&pair);
             let mut inner = pair.into_inner();
             let lhs = build_term(inner.next().unwrap())?;
+            let _inequality_op = inner.next().unwrap(); // Skip the atomic inequality_op
             let rhs = build_term(inner.next().unwrap())?;
             Ok(Goal::Disequality(lhs, rhs, span))
         }
@@ -708,6 +710,8 @@ fn build_pattern_matching(pair: Pair<Rule>) -> ParseResult<PatternMatching> {
 fn build_pattern_arm(pair: Pair<Rule>) -> ParseResult<PatternArm> {
     let mut inner = pair.into_inner();
     let pattern = build_pattern(inner.next().unwrap())?;
+    // Skip the pattern_arrow token
+    let _arrow = inner.next().unwrap(); // This should be the pattern_arrow rule
     let body_part = inner.next().unwrap();
     let body = match body_part.as_rule() {
         Rule::goal => vec![build_goal(body_part)?],
