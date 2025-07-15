@@ -241,7 +241,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         use super::parser::ast::Goal as AstGoal;
 
         match goal {
-            AstGoal::RelationCall(call) => {
+            AstGoal::RelationCall(call, _) => {
                 // Check if the relation exists
                 self.environment
                     .borrow()
@@ -249,19 +249,19 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     .ok_or_else(|| InterpreterError::UnknownRelation(call.name.clone()))?;
                 Ok(())
             }
-            AstGoal::Conjunction(conj) => {
+            AstGoal::Conjunction(conj, _) => {
                 for g in &conj.body {
                     self.validate_goal_symbols(g)?;
                 }
                 Ok(())
             }
-            AstGoal::Disjunction(disj) => {
+            AstGoal::Disjunction(disj, _) => {
                 for g in &disj.body {
                     self.validate_goal_symbols(g)?;
                 }
                 Ok(())
             }
-            AstGoal::PatternMatch(pattern_match) => {
+            AstGoal::PatternMatch(pattern_match, _) => {
                 for arm in &pattern_match.arms {
                     for g in &arm.body {
                         self.validate_goal_symbols(g)?;
@@ -269,27 +269,27 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 }
                 Ok(())
             }
-            AstGoal::Parenthesized(body) => {
+            AstGoal::Parenthesized(body, _) => {
                 for g in body {
                     self.validate_goal_symbols(g)?;
                 }
                 Ok(())
             }
-            AstGoal::Let(_) => {
+            AstGoal::Let(_, _) => {
                 // Let declarations don't contain relation calls to validate
                 Ok(())
             }
-            AstGoal::Fresh(_) => {
+            AstGoal::Fresh(_, _) => {
                 // Fresh variable declarations don't contain relation calls to validate
                 Ok(())
             }
             // These goal types don't contain relation calls
-            AstGoal::Equality(_, _)
-            | AstGoal::Disequality(_, _)
-            | AstGoal::BooleanLiteral(_)
-            | AstGoal::MethodCall(_)
-            | AstGoal::ConstraintBlock(_) => Ok(()),
-            AstGoal::MetaStatement(_) => {
+            AstGoal::Equality(_, _, _)
+            | AstGoal::Disequality(_, _, _)
+            | AstGoal::BooleanLiteral(..)
+            | AstGoal::MethodCall(..)
+            | AstGoal::ConstraintBlock(..) => Ok(()),
+            AstGoal::MetaStatement(..) => {
                 // TODO: Implement meta statement validation
                 Ok(())
             }
@@ -304,18 +304,18 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         self.deferred_goals.clear();
 
         let main_goal = match goal {
-            AstGoal::Equality(lhs, rhs) => {
+            AstGoal::Equality(lhs, rhs, _) => {
                 let lhs_term = self.ast_term_to_runtime(lhs)?;
                 let rhs_term = self.ast_term_to_runtime(rhs)?;
                 Ok(eq(lhs_term, rhs_term).cast_into())
             }
-            AstGoal::Disequality(lhs, rhs) => {
+            AstGoal::Disequality(lhs, rhs, _) => {
                 let lhs_term = self.ast_term_to_runtime(lhs)?;
                 let rhs_term = self.ast_term_to_runtime(rhs)?;
                 Ok(crate::relation::diseq::diseq(lhs_term, rhs_term).cast_into())
             }
-            AstGoal::RelationCall(call) => self.ast_relation_call_to_runtime(call),
-            AstGoal::Conjunction(conj) => {
+            AstGoal::RelationCall(call, _) => self.ast_relation_call_to_runtime(call),
+            AstGoal::Conjunction(conj, _) => {
                 // Check if any goals in the body are meta statements or contain interpolation
                 let has_meta_features = conj
                     .body
@@ -340,7 +340,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     }
                 }
             }
-            AstGoal::Disjunction(disj) => {
+            AstGoal::Disjunction(disj, _) => {
                 let mut goals = vec![];
                 for g in &disj.body {
                     goals.push(self.ast_goal_to_runtime(g)?);
@@ -368,8 +368,8 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     }
                 }
             }
-            AstGoal::PatternMatch(pm) => self.ast_pattern_match_to_runtime(pm),
-            AstGoal::Parenthesized(goals) => {
+            AstGoal::PatternMatch(pm, _) => self.ast_pattern_match_to_runtime(pm),
+            AstGoal::Parenthesized(goals, _) => {
                 // Check if any goals in the body are meta statements or contain interpolation
                 let has_meta_features = goals.iter().any(|g| self.goal_contains_meta_features(g));
 
@@ -391,7 +391,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     }
                 }
             }
-            AstGoal::Let(let_decl) => {
+            AstGoal::Let(let_decl, _) => {
                 let value_term = if let Some(val) = &let_decl.value {
                     self.ast_term_to_runtime(val)?
                 } else {
@@ -400,7 +400,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 self.bind_var(let_decl.var_name.clone(), value_term);
                 Ok(Goal::succeed())
             }
-            AstGoal::Fresh(fresh_vars) => {
+            AstGoal::Fresh(fresh_vars, _) => {
                 self.push_scope();
                 for var_name in &fresh_vars.vars {
                     let fresh_var = self.create_fresh_var();
@@ -421,20 +421,20 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
                 }
             }
-            AstGoal::MethodCall(_) => Err(InterpreterError::RuntimeError(
+            AstGoal::MethodCall(..) => Err(InterpreterError::RuntimeError(
                 "Method calls not implemented yet".to_string(),
             )),
-            AstGoal::ConstraintBlock(block) => self.convert_constraint_block(block),
-            AstGoal::BooleanLiteral(val) => {
+            AstGoal::ConstraintBlock(block, span) => self.convert_constraint_block(block, span),
+            AstGoal::BooleanLiteral(val, _) => {
                 if *val {
                     Ok(Goal::succeed())
                 } else {
                     Ok(Goal::fail())
                 }
             }
-            AstGoal::MetaStatement(meta_stmt) => {
+            AstGoal::MetaStatement(meta_stmt, span) => {
                 // Expand the meta statement into concrete goals using template expansion
-                self.expand_and_execute_meta_statement(meta_stmt)
+                self.expand_and_execute_meta_statement(meta_stmt, span)
             }
         }?;
 
@@ -485,25 +485,26 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     fn convert_constraint_block(
         &mut self,
         block: &super::parser::ast::ConstraintBlock,
+        span: &super::parser::ast::Span,
     ) -> Result<Goal<U, E>, InterpreterError> {
         use super::constraint_domains::ConstraintDomainRegistry;
         let registry = ConstraintDomainRegistry::default();
         let domain = registry
             .get_domain(&block.domain)
             .ok_or_else(|| InterpreterError::UnknownConstraintDomain(block.domain.clone()))?;
-        let parsed_constraints = domain.parse_constraints(&block.body)?;
+        let parsed_constraints = domain.parse_constraints(&block.body, span)?;
         parsed_constraints.convert_to_goals(self)
     }
 
     /// Converts an AST term to a runtime LTerm.
     pub fn ast_term_to_runtime(&mut self, term: &Term) -> Result<LTerm<U, E>, InterpreterError> {
         match term {
-            Term::Variable(name) => self
+            Term::Variable(name, _) => self
                 .lookup_var(name)
                 .ok_or_else(|| InterpreterError::UnknownVariable(name.clone())),
-            Term::Wildcard => Ok(LTerm::any()),
-            Term::Literal(literal) => convert_ast_literal_to_runtime(literal),
-            Term::List(list) => {
+            Term::Wildcard(_) => Ok(LTerm::any()),
+            Term::Literal(literal, _) => convert_ast_literal_to_runtime(literal),
+            Term::List(list, _) => {
                 let mut elements = Vec::new();
                 for el in &list.elements {
                     elements.push(self.ast_term_to_runtime(el)?);
@@ -516,10 +517,10 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
                 Ok(lterm_from_vec_and_tail(elements, tail))
             }
-            Term::Parenthesized(inner) => self.ast_term_to_runtime(inner),
-            Term::NamedStruct(_) => todo!(),
-            Term::Compound(_) => todo!(),
-            Term::Interpolation(expr) => {
+            Term::Parenthesized(inner, _) => self.ast_term_to_runtime(inner),
+            Term::NamedStruct(..) => todo!(),
+            Term::Compound(..) => todo!(),
+            Term::Interpolation(expr, _) => {
                 // Expand interpolation using template expansion context
                 self.expand_and_evaluate_interpolation(expr)
             }
@@ -665,33 +666,33 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         use super::parser::ast::{Goal as AstGoal, Term};
 
         match goal {
-            AstGoal::MetaStatement(_) => true,
-            AstGoal::Equality(lhs, rhs) => {
+            AstGoal::MetaStatement(..) => true,
+            AstGoal::Equality(lhs, rhs, _) => {
                 self.term_contains_interpolation(lhs) || self.term_contains_interpolation(rhs)
             }
-            AstGoal::Disequality(lhs, rhs) => {
+            AstGoal::Disequality(lhs, rhs, _) => {
                 self.term_contains_interpolation(lhs) || self.term_contains_interpolation(rhs)
             }
-            AstGoal::RelationCall(call) => call
+            AstGoal::RelationCall(call, _) => call
                 .args
                 .iter()
                 .any(|arg| self.term_contains_interpolation(arg)),
-            AstGoal::Conjunction(conj) => conj
+            AstGoal::Conjunction(conj, _) => conj
                 .body
                 .iter()
                 .any(|g| self.goal_contains_meta_features(g)),
-            AstGoal::Disjunction(disj) => disj
+            AstGoal::Disjunction(disj, _) => disj
                 .body
                 .iter()
                 .any(|g| self.goal_contains_meta_features(g)),
-            AstGoal::Parenthesized(goals) => {
+            AstGoal::Parenthesized(goals, _) => {
                 goals.iter().any(|g| self.goal_contains_meta_features(g))
             }
-            AstGoal::Fresh(fresh) => fresh
+            AstGoal::Fresh(fresh, _) => fresh
                 .body
                 .iter()
                 .any(|g| self.goal_contains_meta_features(g)),
-            AstGoal::PatternMatch(pm) => pm
+            AstGoal::PatternMatch(pm, _) => pm
                 .arms
                 .iter()
                 .any(|arm| arm.body.iter().any(|g| self.goal_contains_meta_features(g))),
@@ -704,8 +705,8 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         use super::parser::ast::Term;
 
         match term {
-            Term::Interpolation(_) => true,
-            Term::List(list) => {
+            Term::Interpolation(..) => true,
+            Term::List(list, _) => {
                 list.elements
                     .iter()
                     .any(|el| self.term_contains_interpolation(el))
@@ -714,12 +715,12 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                         .as_ref()
                         .map_or(false, |tail| self.term_contains_interpolation(tail))
             }
-            Term::Parenthesized(inner) => self.term_contains_interpolation(inner),
-            Term::NamedStruct(named_struct) => named_struct
+            Term::Parenthesized(inner, _) => self.term_contains_interpolation(inner),
+            Term::NamedStruct(named_struct, _) => named_struct
                 .fields
                 .iter()
                 .any(|field| self.term_contains_interpolation(&field.value)),
-            Term::Compound(compound) => compound
+            Term::Compound(compound, _) => compound
                 .args
                 .iter()
                 .any(|arg| self.term_contains_interpolation(arg)),
@@ -764,12 +765,13 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     fn expand_and_execute_meta_statement(
         &mut self,
         meta_stmt: &super::metaprogramming::MetaStatement,
+        span: &super::parser::ast::Span,
     ) -> Result<Goal<U, E>, InterpreterError> {
         // Create template expansion context with a reasonable recursion limit
         let mut context = TemplateExpansionContext::new(100);
 
         // Expand the meta statement into concrete goals
-        let expanded_goals = expand_meta_statement(meta_stmt, &mut context).map_err(|e| {
+        let expanded_goals = expand_meta_statement(meta_stmt, &mut context, span).map_err(|e| {
             InterpreterError::RuntimeError(format!("Template expansion error: {}", e))
         })?;
 
@@ -798,7 +800,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         let context = TemplateExpansionContext::new(100);
 
         // Create a dummy term with the interpolation and expand it
-        let dummy_term = Term::Interpolation(expr.clone());
+        let dummy_term = Term::Interpolation(expr.clone(), Default::default());
         let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
             InterpreterError::RuntimeError(format!("Interpolation expansion error: {}", e))
         })?;

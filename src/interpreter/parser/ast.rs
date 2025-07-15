@@ -1,9 +1,115 @@
 use crate::interpreter::metaprogramming::{MetaExpression, MetaStatement, TypeAnnotation};
 use std::fmt::{self, Display};
 
-#[derive(Debug, Clone, PartialEq)]
+/// Source location information for better error reporting
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Span {
+    /// Start position (byte offset)
+    pub start: usize,
+    /// End position (byte offset)
+    pub end: usize,
+}
+
+impl Span {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    pub fn dummy() -> Self {
+        Self { start: 0, end: 0 }
+    }
+
+    pub fn len(&self) -> usize {
+        self.end.saturating_sub(self.start)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start >= self.end
+    }
+
+    /// Combine two spans into one that covers both
+    pub fn union(&self, other: &Span) -> Span {
+        Span::new(self.start.min(other.start), self.end.max(other.end))
+    }
+}
+
+impl Default for Span {
+    fn default() -> Self {
+        Self::dummy()
+    }
+}
+
+impl Display for Span {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}..{}", self.start, self.end)
+    }
+}
+
+/// Trait for AST nodes that have source location information
+pub trait Spanned {
+    fn span(&self) -> &Span;
+}
+
+/// A convenient wrapper for AST nodes with span information
+#[derive(Debug, Clone)]
+pub struct Located<T> {
+    pub node: T,
+    pub span: Span,
+}
+
+impl<T: PartialEq> PartialEq for Located<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+    }
+}
+
+impl<T> Located<T> {
+    pub fn new(node: T, span: Span) -> Self {
+        Self { node, span }
+    }
+
+    pub fn dummy(node: T) -> Self {
+        Self {
+            node,
+            span: Span::dummy(),
+        }
+    }
+}
+
+impl<T> Default for Located<T>
+where
+    T: Default,
+{
+    fn default() -> Self {
+        Self {
+            node: T::default(),
+            span: Span::default(),
+        }
+    }
+}
+
+impl<T> Spanned for Located<T> {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Program {
     pub items: Vec<Item>,
+    pub span: Span,
+}
+
+impl PartialEq for Program {
+    fn eq(&self, other: &Self) -> bool {
+        self.items == other.items
+    }
+}
+
+impl Spanned for Program {
+    fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,9 +121,34 @@ pub enum Item {
     Relation(RelationDefinition),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl Spanned for Item {
+    fn span(&self) -> &Span {
+        match self {
+            Item::Use(use_stmt) => use_stmt.span(),
+            Item::Module(module) => module.span(),
+            Item::Struct(struct_def) => struct_def.span(),
+            Item::Impl(impl_block) => impl_block.span(),
+            Item::Relation(relation) => relation.span(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct UseStatement {
     pub path: UsePath,
+    pub span: Span,
+}
+
+impl PartialEq for UseStatement {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+    }
+}
+
+impl Spanned for UseStatement {
+    fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,18 +158,46 @@ pub enum UsePath {
     List(Vec<String>, Vec<(String, Option<String>)>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ModuleDefinition {
     pub name: String,
     pub search_strategy: Option<SearchStrategy>,
     pub items: Vec<Item>,
+    pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl PartialEq for ModuleDefinition {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.search_strategy == other.search_strategy
+            && self.items == other.items
+    }
+}
+
+impl Spanned for ModuleDefinition {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct StructDefinition {
     pub is_pub: bool,
     pub name: String,
     pub kind: StructKind,
+    pub span: Span,
+}
+
+impl PartialEq for StructDefinition {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_pub == other.is_pub && self.name == other.name && self.kind == other.kind
+    }
+}
+
+impl Spanned for StructDefinition {
+    fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,17 +206,43 @@ pub enum StructKind {
     Named(Vec<NamedField>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct NamedField {
     pub is_pub: bool,
     pub name: String,
     pub type_name: String,
+    pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl PartialEq for NamedField {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_pub == other.is_pub && self.name == other.name && self.type_name == other.type_name
+    }
+}
+
+impl Spanned for NamedField {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ImplBlock {
     pub type_name: String,
     pub relations: Vec<RelationDefinition>,
+    pub span: Span,
+}
+
+impl PartialEq for ImplBlock {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_name == other.type_name && self.relations == other.relations
+    }
+}
+
+impl Spanned for ImplBlock {
+    fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -72,7 +257,7 @@ pub struct Attribute {
     pub args: Vec<AttributeArg>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct RelationDefinition {
     pub is_pub: bool,
     pub attributes: Vec<Attribute>,
@@ -80,6 +265,24 @@ pub struct RelationDefinition {
     pub parameters: Vec<Parameter>,
     pub search_strategy: Option<SearchStrategy>,
     pub body: GoalBody,
+    pub span: Span,
+}
+
+impl PartialEq for RelationDefinition {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_pub == other.is_pub
+            && self.attributes == other.attributes
+            && self.name == other.name
+            && self.parameters == other.parameters
+            && self.search_strategy == other.search_strategy
+            && self.body == other.body
+    }
+}
+
+impl Spanned for RelationDefinition {
+    fn span(&self) -> &Span {
+        &self.span
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -192,22 +395,63 @@ impl Display for SearchParamValue {
 
 pub type GoalBody = Vec<Goal>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Goal {
-    Let(LetDeclaration),
-    Fresh(FreshVariables),
-    Disjunction(Disjunction),
-    Conjunction(Conjunction),
-    PatternMatch(PatternMatching),
-    RelationCall(RelationCall),
-    MethodCall(MethodCall),
-    Equality(Term, Term),
-    Disequality(Term, Term),
-    Parenthesized(GoalBody),
-    BooleanLiteral(bool),
-    ConstraintBlock(ConstraintBlock),
+    Let(LetDeclaration, Span),
+    Fresh(FreshVariables, Span),
+    Disjunction(Disjunction, Span),
+    Conjunction(Conjunction, Span),
+    PatternMatch(PatternMatching, Span),
+    RelationCall(RelationCall, Span),
+    MethodCall(MethodCall, Span),
+    Equality(Term, Term, Span),
+    Disequality(Term, Term, Span),
+    Parenthesized(GoalBody, Span),
+    BooleanLiteral(bool, Span),
+    ConstraintBlock(ConstraintBlock, Span),
     // NEW: Meta programming constructs
-    MetaStatement(MetaStatement),
+    MetaStatement(MetaStatement, Span),
+}
+
+impl PartialEq for Goal {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Goal::Let(a, _), Goal::Let(b, _)) => a == b,
+            (Goal::Fresh(a, _), Goal::Fresh(b, _)) => a == b,
+            (Goal::Disjunction(a, _), Goal::Disjunction(b, _)) => a == b,
+            (Goal::Conjunction(a, _), Goal::Conjunction(b, _)) => a == b,
+            (Goal::PatternMatch(a, _), Goal::PatternMatch(b, _)) => a == b,
+            (Goal::RelationCall(a, _), Goal::RelationCall(b, _)) => a == b,
+            (Goal::MethodCall(a, _), Goal::MethodCall(b, _)) => a == b,
+            (Goal::Equality(a1, a2, _), Goal::Equality(b1, b2, _)) => a1 == b1 && a2 == b2,
+            (Goal::Disequality(a1, a2, _), Goal::Disequality(b1, b2, _)) => a1 == b1 && a2 == b2,
+            (Goal::Parenthesized(a, _), Goal::Parenthesized(b, _)) => a == b,
+            (Goal::BooleanLiteral(a, _), Goal::BooleanLiteral(b, _)) => a == b,
+            (Goal::ConstraintBlock(a, _), Goal::ConstraintBlock(b, _)) => a == b,
+            (Goal::MetaStatement(a, _), Goal::MetaStatement(b, _)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Spanned for Goal {
+    fn span(&self) -> &Span {
+        match self {
+            Goal::Let(_, span) => span,
+            Goal::Fresh(_, span) => span,
+            Goal::Disjunction(_, span) => span,
+            Goal::Conjunction(_, span) => span,
+            Goal::PatternMatch(_, span) => span,
+            Goal::RelationCall(_, span) => span,
+            Goal::MethodCall(_, span) => span,
+            Goal::Equality(_, _, span) => span,
+            Goal::Disequality(_, _, span) => span,
+            Goal::Parenthesized(_, span) => span,
+            Goal::BooleanLiteral(_, span) => span,
+            Goal::ConstraintBlock(_, span) => span,
+            Goal::MetaStatement(_, span) => span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -285,17 +529,48 @@ pub struct MethodCall {
     pub args: Vec<Term>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Term {
-    Literal(Literal),
-    Variable(String),
-    Wildcard,
-    List(ListConstruction),
-    NamedStruct(NamedStructConstruction),
-    Compound(CompoundConstruction),
-    Parenthesized(Box<Term>),
+    Literal(Literal, Span),
+    Variable(String, Span),
+    Wildcard(Span),
+    List(ListConstruction, Span),
+    NamedStruct(NamedStructConstruction, Span),
+    Compound(CompoundConstruction, Span),
+    Parenthesized(Box<Term>, Span),
     // NEW: Interpolation for meta expressions
-    Interpolation(MetaExpression),
+    Interpolation(MetaExpression, Span),
+}
+
+impl PartialEq for Term {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Term::Literal(a, _), Term::Literal(b, _)) => a == b,
+            (Term::Variable(a, _), Term::Variable(b, _)) => a == b,
+            (Term::Wildcard(_), Term::Wildcard(_)) => true,
+            (Term::List(a, _), Term::List(b, _)) => a == b,
+            (Term::NamedStruct(a, _), Term::NamedStruct(b, _)) => a == b,
+            (Term::Compound(a, _), Term::Compound(b, _)) => a == b,
+            (Term::Parenthesized(a, _), Term::Parenthesized(b, _)) => a == b,
+            (Term::Interpolation(a, _), Term::Interpolation(b, _)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Spanned for Term {
+    fn span(&self) -> &Span {
+        match self {
+            Term::Literal(_, span) => span,
+            Term::Variable(_, span) => span,
+            Term::Wildcard(span) => span,
+            Term::List(_, span) => span,
+            Term::NamedStruct(_, span) => span,
+            Term::Compound(_, span) => span,
+            Term::Parenthesized(_, span) => span,
+            Term::Interpolation(_, span) => span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -370,16 +645,16 @@ pub struct ConstraintBlock {
     pub body: ConstraintBody,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ConstraintBody {
     pub raw_content: String,
-    pub parsed_expressions: Vec<RawConstraintExpression>,
+    pub span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct RawConstraintExpression {
-    pub content: String,
-    pub span: (usize, usize), // For error reporting
+impl PartialEq for ConstraintBody {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw_content == other.raw_content
+    }
 }
 
 impl Display for Program {
@@ -574,31 +849,32 @@ impl Display for SearchStrategy {
 impl Display for Goal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Goal::Let(g) => write!(f, "{}", g),
-            Goal::Fresh(g) => write!(f, "{}", g),
-            Goal::Disjunction(g) => write!(f, "{}", g),
-            Goal::Conjunction(g) => write!(f, "{}", g),
-            Goal::PatternMatch(g) => write!(f, "{}", g),
-            Goal::RelationCall(g) => write!(f, "{}", g),
-            Goal::MethodCall(g) => write!(f, "{}", g),
-            Goal::Equality(a, b) => write!(f, "{} == {}", a, b),
-            Goal::Disequality(a, b) => write!(f, "{} != {}", a, b),
-            Goal::Parenthesized(g) => {
+            Goal::Let(g, _) => write!(f, "{}", g),
+            Goal::Fresh(g, _) => write!(f, "{}", g),
+            Goal::Disjunction(g, _) => write!(f, "{}", g),
+            Goal::Conjunction(g, _) => write!(f, "{}", g),
+            Goal::PatternMatch(g, _) => write!(f, "{}", g),
+            Goal::RelationCall(g, _) => write!(f, "{}", g),
+            Goal::MethodCall(g, _) => write!(f, "{}", g),
+            Goal::Equality(a, b, _) => write!(f, "{} == {}", a, b),
+            Goal::Disequality(a, b, _) => write!(f, "{} != {}", a, b),
+            Goal::Parenthesized(g, _) => {
                 write!(f, "(")?;
                 for goal in g {
                     write!(f, "{}, ", goal)?;
                 }
                 write!(f, ")")
             }
-            Goal::BooleanLiteral(b) => write!(f, "{}", b),
-            Goal::ConstraintBlock(c) => {
-                writeln!(f, "constraint {} {{", c.domain)?;
-                for expr in &c.body.parsed_expressions {
-                    writeln!(f, "    {}", expr)?;
-                }
-                write!(f, "}}")
+            Goal::BooleanLiteral(b, _) => write!(f, "{}", b),
+            Goal::ConstraintBlock(c, _) => {
+                write!(
+                    f,
+                    "constraint {} {{ {} }}",
+                    c.domain,
+                    c.body.raw_content.trim()
+                )
             }
-            Goal::MetaStatement(meta) => write!(f, "{}", meta),
+            Goal::MetaStatement(meta, _) => write!(f, "{}", meta),
         }
     }
 }
@@ -704,14 +980,14 @@ impl Display for MethodCall {
 impl Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Term::Literal(lit) => write!(f, "{}", lit),
-            Term::Variable(v) => write!(f, "{}", v),
-            Term::Wildcard => write!(f, "_"),
-            Term::List(list) => write!(f, "{}", list),
-            Term::NamedStruct(s) => write!(f, "{}", s),
-            Term::Compound(c) => write!(f, "{}", c),
-            Term::Parenthesized(t) => write!(f, "({})", t),
-            Term::Interpolation(expr) => write!(f, "{{{}}}", expr),
+            Term::Literal(lit, _) => write!(f, "{}", lit),
+            Term::Variable(v, _) => write!(f, "{}", v),
+            Term::Wildcard(_) => write!(f, "_"),
+            Term::List(list, _) => write!(f, "{}", list),
+            Term::NamedStruct(s, _) => write!(f, "{}", s),
+            Term::Compound(c, _) => write!(f, "{}", c),
+            Term::Parenthesized(t, _) => write!(f, "({})", t),
+            Term::Interpolation(expr, _) => write!(f, "{{{}}}", expr),
         }
     }
 }
@@ -840,23 +1116,18 @@ impl Display for CompoundPattern {
 
 impl Display for ConstraintBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "constraint(domain = \"{}\") {{", self.domain)?;
-        for expr in &self.body.parsed_expressions {
-            writeln!(f, "    {}", expr)?;
-        }
-        write!(f, "}}")
+        write!(
+            f,
+            "constraint(domain = \"{}\") {{ {} }}",
+            self.domain,
+            self.body.raw_content.trim()
+        )
     }
 }
 
 impl Display for ConstraintBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.raw_content)
-    }
-}
-
-impl Display for RawConstraintExpression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.content)
     }
 }
 

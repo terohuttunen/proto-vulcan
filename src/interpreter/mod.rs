@@ -215,7 +215,10 @@ mod tests {
     #[test]
     fn test_empty_program() {
         let mut interpreter = TestInterpreter::new();
-        let program = Program { items: vec![] };
+        let program = Program {
+            items: vec![],
+            span: Default::default(),
+        };
         let result = interpreter.load_program(program);
         assert!(result.is_ok());
     }
@@ -240,15 +243,18 @@ mod tests {
             items: vec![
                 // Struct definition
                 Item::Struct(StructDefinition {
+                    span: Default::default(),
                     is_pub: true,
                     name: "Point".to_string(),
                     kind: StructKind::Named(vec![
                         NamedField {
+                            span: Default::default(),
                             is_pub: true,
                             name: "x".to_string(),
                             type_name: "i32".to_string(),
                         },
                         NamedField {
+                            span: Default::default(),
                             is_pub: true,
                             name: "y".to_string(),
                             type_name: "i32".to_string(),
@@ -257,6 +263,7 @@ mod tests {
                 }),
                 // Relation definition
                 Item::Relation(RelationDefinition {
+                    span: Default::default(),
                     is_pub: false,
                     attributes: vec![],
                     name: "distance".to_string(),
@@ -276,15 +283,18 @@ mod tests {
                     ],
                     search_strategy: Some(SearchStrategy::Bfs),
                     body: vec![Goal::Equality(
-                        Term::Variable("result".to_string()),
-                        Term::Literal(Literal::Number("0.0".to_string())),
+                        Term::Variable("result".to_string(), Default::default()),
+                        Term::Literal(Literal::Number("0.0".to_string()), Default::default()),
+                        Default::default(),
                     )],
                 }),
                 // Module definition
                 Item::Module(ModuleDefinition {
+                    span: Default::default(),
                     name: "geometry".to_string(),
                     search_strategy: None,
                     items: vec![Item::Relation(RelationDefinition {
+                        span: Default::default(),
                         is_pub: true,
                         attributes: vec![],
                         name: "area".to_string(),
@@ -307,6 +317,7 @@ mod tests {
                     })],
                 }),
             ],
+            span: Default::default(),
         };
 
         // Load the program
@@ -340,32 +351,35 @@ mod tests {
         type TestRuntimeValue = RuntimeValue<DefaultUser, DefaultEngine<DefaultUser>>;
 
         // Test boolean literal
-        let bool_term = Term::Literal(Literal::Boolean(true));
+        let bool_term = Term::Literal(Literal::Boolean(true), Default::default());
         let bool_runtime = TestRuntimeValue::from_ast_term(&bool_term).unwrap();
         assert!(bool_runtime.as_term().is_some());
         assert!(bool_runtime.as_term().unwrap().is_val());
 
         // Test number literal
-        let num_term = Term::Literal(Literal::Number("42".to_string()));
+        let num_term = Term::Literal(Literal::Number("42".to_string()), Default::default());
         let num_runtime = TestRuntimeValue::from_ast_term(&num_term).unwrap();
         assert!(num_runtime.as_term().is_some());
         assert!(num_runtime.as_term().unwrap().is_val());
 
         // Test variable
-        let var_term = Term::Variable("x".to_string());
+        let var_term = Term::Variable("x".to_string(), Default::default());
         let var_runtime = TestRuntimeValue::from_ast_term(&var_term).unwrap();
         assert!(var_runtime.as_term().is_some());
         assert!(var_runtime.as_term().unwrap().is_var());
 
         // Test list
-        let list_term = Term::List(ListConstruction {
-            elements: vec![
-                Term::Literal(Literal::Number("1".to_string())),
-                Term::Literal(Literal::Number("2".to_string())),
-                Term::Literal(Literal::Number("3".to_string())),
-            ],
-            tail: None,
-        });
+        let list_term = Term::List(
+            ListConstruction {
+                elements: vec![
+                    Term::Literal(Literal::Number("1".to_string()), Default::default()),
+                    Term::Literal(Literal::Number("2".to_string()), Default::default()),
+                    Term::Literal(Literal::Number("3".to_string()), Default::default()),
+                ],
+                tail: None,
+            },
+            Default::default(),
+        );
         let list_runtime = TestRuntimeValue::from_ast_term(&list_term).unwrap();
         assert!(list_runtime.as_term().is_some());
         assert!(list_runtime.as_term().unwrap().is_list());
@@ -616,8 +630,9 @@ mod tests {
         exec_context.bind_var("x".to_string(), x_var);
 
         let equality_goal = Goal::Equality(
-            Term::Variable("x".to_string()),
-            Term::Literal(Literal::Number("42".to_string())),
+            Term::Variable("x".to_string(), Default::default()),
+            Term::Literal(Literal::Number("42".to_string()), Default::default()),
+            Default::default(),
         );
 
         let runtime_goal = exec_context.ast_goal_to_runtime(&equality_goal);

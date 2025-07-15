@@ -55,15 +55,15 @@ impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
     /// Create a runtime value from an AST term
     pub fn from_ast_term(term: &Term) -> Result<Self, String> {
         match term {
-            Term::Literal(lit) => {
+            Term::Literal(lit, _) => {
                 let lterm = Self::literal_to_lterm(lit)?;
                 Ok(RuntimeValue::Term(lterm))
             }
-            Term::Variable(name) => {
+            Term::Variable(name, _) => {
                 let lterm = LTerm::var(Box::leak(name.clone().into_boxed_str()));
                 Ok(RuntimeValue::Term(lterm))
             }
-            Term::List(list_construction) => {
+            Term::List(list_construction, _) => {
                 let mut lterms = Vec::new();
                 for item in &list_construction.elements {
                     if let RuntimeValue::Term(lterm) = Self::from_ast_term(item)? {
@@ -149,7 +149,7 @@ mod tests {
 
     #[test]
     fn test_from_ast_literal_boolean() {
-        let term = Term::Literal(Literal::Boolean(true));
+        let term = Term::Literal(Literal::Boolean(true), Default::default());
         let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
 
         assert!(runtime_val.as_term().is_some());
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn test_from_ast_literal_number() {
-        let term = Term::Literal(Literal::Number("42".to_string()));
+        let term = Term::Literal(Literal::Number("42".to_string()), Default::default());
         let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
 
         assert!(runtime_val.as_term().is_some());
@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn test_from_ast_literal_string() {
-        let term = Term::Literal(Literal::String("hello".to_string()));
+        let term = Term::Literal(Literal::String("hello".to_string()), Default::default());
         let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
 
         assert!(runtime_val.as_term().is_some());
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_from_ast_literal_char() {
-        let term = Term::Literal(Literal::Char('a'));
+        let term = Term::Literal(Literal::Char('a'), Default::default());
         let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
 
         assert!(runtime_val.as_term().is_some());
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_from_ast_variable() {
-        let term = Term::Variable("x".to_string());
+        let term = Term::Variable("x".to_string(), Default::default());
         let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
 
         assert!(runtime_val.as_term().is_some());
@@ -202,13 +202,16 @@ mod tests {
 
     #[test]
     fn test_from_ast_list() {
-        let term = Term::List(ListConstruction {
-            elements: vec![
-                Term::Literal(Literal::Number("1".to_string())),
-                Term::Literal(Literal::Number("2".to_string())),
-            ],
-            tail: None,
-        });
+        let term = Term::List(
+            ListConstruction {
+                elements: vec![
+                    Term::Literal(Literal::Number("1".to_string()), Default::default()),
+                    Term::Literal(Literal::Number("2".to_string()), Default::default()),
+                ],
+                tail: None,
+            },
+            Default::default(),
+        );
         let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
 
         assert!(runtime_val.as_term().is_some());
@@ -220,6 +223,7 @@ mod tests {
     #[test]
     fn test_relation_value() {
         let relation = RelationDefinition {
+            span: Default::default(),
             is_pub: false,
             attributes: vec![],
             name: "test_rel".to_string(),
@@ -235,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_invalid_number() {
-        let term = Term::Literal(Literal::Number("invalid".to_string()));
+        let term = Term::Literal(Literal::Number("invalid".to_string()), Default::default());
         let result = TestRuntimeValue::from_ast_term(&term);
         assert!(result.is_err());
     }

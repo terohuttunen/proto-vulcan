@@ -625,6 +625,7 @@ mod tests {
         let mut env = TestEnv::new();
 
         let relation = RelationDefinition {
+            span: Span::dummy(),
             is_pub: false,
             attributes: vec![],
             name: "test_rel".to_string(),
@@ -654,13 +655,16 @@ mod tests {
                     is_pub: false,
                     name: "x".to_string(),
                     type_name: "i32".to_string(),
+                    span: Span::dummy(),
                 },
                 NamedField {
                     is_pub: false,
                     name: "y".to_string(),
                     type_name: "i32".to_string(),
+                    span: Span::dummy(),
                 },
             ]),
+            span: Span::dummy(),
         };
 
         env.load_struct(struct_def).unwrap();
@@ -677,6 +681,7 @@ mod tests {
             name: "test_module".to_string(),
             search_strategy: None,
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "module_rel".to_string(),
@@ -684,6 +689,7 @@ mod tests {
                 search_strategy: None,
                 body: vec![],
             })],
+            span: Span::dummy(),
         };
 
         env.load_module(module).unwrap();

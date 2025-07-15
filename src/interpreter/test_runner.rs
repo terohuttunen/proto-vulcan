@@ -400,25 +400,25 @@ impl TestRunner {
     /// Matches an LTerm against an AST Term, supporting wildcards.
     fn matches_pattern<U: User, E: Engine<U>>(lterm: &LTerm<U, E>, term: &ast::Term) -> bool {
         match term {
-            ast::Term::Wildcard => true, // Wildcard matches anything
-            ast::Term::Literal(literal) => Self::matches_literal(lterm, literal),
-            ast::Term::Variable(_) => {
+            ast::Term::Wildcard(_) => true, // Wildcard matches anything
+            ast::Term::Literal(literal, _) => Self::matches_literal(lterm, literal),
+            ast::Term::Variable(_, _) => {
                 // Variables in expected terms act as wildcards for matching
                 true
             }
-            ast::Term::List(list_construction) => {
+            ast::Term::List(list_construction, _) => {
                 Self::matches_list_structure(lterm, list_construction)
             }
-            ast::Term::NamedStruct(_) => {
+            ast::Term::NamedStruct(_, _) => {
                 // TODO: Implement struct pattern matching if needed
                 false
             }
-            ast::Term::Compound(_) => {
+            ast::Term::Compound(..) => {
                 // TODO: Implement compound pattern matching if needed
                 false
             }
-            ast::Term::Parenthesized(inner) => Self::matches_pattern(lterm, inner),
-            ast::Term::Interpolation(_) => {
+            ast::Term::Parenthesized(inner, _) => Self::matches_pattern(lterm, inner),
+            ast::Term::Interpolation(..) => {
                 // TODO: Implement interpolation pattern matching
                 false
             }
@@ -605,7 +605,7 @@ impl TestRunner {
                         .collect();
 
                     let expected_ast_list = match expected {
-                        ast::Term::List(list_construction) => &list_construction.elements,
+                        ast::Term::List(list_construction, _) => &list_construction.elements,
                         _ => {
                             return TestResult::Error(
                                 "Expected term must be a list for query-based tests".to_string(),

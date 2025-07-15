@@ -38,13 +38,14 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
     fn parse_constraints(
         &self,
         body: &ConstraintBody,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<Box<dyn DomainConstraints<U, E>>, InterpreterError> {
         let trimmed_content = body.raw_content.trim();
 
         let pairs = ClpzParser::parse(Rule::constraints, trimmed_content).map_err(|e| {
             InterpreterError::InvalidConstraintSyntax {
                 domain: "clpz".to_string(),
-                error: format!("Parse error: {}", e),
+                error: super::map_constraint_error_position(&e, body),
             }
         })?;
 
@@ -53,13 +54,16 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
         for pair in pairs {
             for inner in pair.into_inner() {
                 if inner.as_rule() == Rule::constraint {
-                    let constraint = Self::build_constraint(inner)?;
+                    let constraint = Self::build_constraint(inner, source_span)?;
                     constraints.push(constraint);
                 }
             }
         }
 
-        Ok(Box::new(ClpzConstraints { constraints }))
+        Ok(Box::new(ClpzConstraints {
+            constraints,
+            source_span: source_span.clone(),
+        }))
     }
 
     fn syntax_help(&self) -> &str {
@@ -73,12 +77,13 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
 impl ClpzDomain {
     fn build_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
         let constraint_pair = pair.into_inner().next().unwrap();
 
         match constraint_pair.as_rule() {
-            Rule::fresh_constraint => Self::build_fresh_constraint(constraint_pair),
-            Rule::arith_constraint => Self::build_arith_constraint(constraint_pair),
+            Rule::fresh_constraint => Self::build_fresh_constraint(constraint_pair, source_span),
+            Rule::arith_constraint => Self::build_arith_constraint(constraint_pair, source_span),
             _ => unreachable!(
                 "Unexpected rule in constraint_expr: {:?}",
                 constraint_pair.as_rule()
@@ -88,6 +93,7 @@ impl ClpzDomain {
 
     fn build_fresh_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
         let mut inner = pair.into_inner();
         let mut vars = vec![];
@@ -101,7 +107,8 @@ impl ClpzDomain {
                 Rule::constraints => {
                     for constraint_pair in part.into_inner() {
                         if constraint_pair.as_rule() == Rule::constraint {
-                            constraints.push(Self::build_constraint(constraint_pair)?);
+                            constraints
+                                .push(Self::build_constraint(constraint_pair, source_span)?);
                         }
                     }
                 }
@@ -118,11 +125,12 @@ impl ClpzDomain {
 
     fn build_arith_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
         let mut inner = pair.into_inner();
-        let left = Self::build_arith_expr(inner.next().unwrap());
+        let left = Self::build_arith_expr(inner.next().unwrap(), source_span);
         let op = Self::build_comp_op(inner.next().unwrap());
-        let right = Self::build_arith_expr(inner.next().unwrap());
+        let right = Self::build_arith_expr(inner.next().unwrap(), source_span);
 
         Ok(ClpzConstraint::Expression {
             left,
@@ -132,20 +140,32 @@ impl ClpzDomain {
         })
     }
 
-    fn build_arith_expr(pair: pest::iterators::Pair<Rule>) -> ArithExpr {
+    fn build_arith_expr(
+        pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
+    ) -> ArithExpr {
         match pair.as_rule() {
             Rule::integer => ArithExpr::Integer(pair.as_str().parse().unwrap()),
             Rule::variable => ArithExpr::Variable(pair.as_str().to_string()),
             Rule::interpolation_expression => {
                 let content = pair.into_inner().next().unwrap().as_str();
-                let meta_expr = super::super::parser::meta_parser::parse_meta_expression(content)
-                    .unwrap_or_else(|_| {
-                        // Fallback to a variable if parsing fails
-                        crate::interpreter::metaprogramming::MetaExpression::Variable(
-                            content.to_string(),
-                        )
-                    });
-                ArithExpr::Interpolation(meta_expr)
+                let meta_expr = super::super::parser::meta_parser::parse_meta_expression(
+                    content,
+                    source_span,
+                )
+                .unwrap_or_else(|_| {
+                    crate::interpreter::metaprogramming::MetaExpression::Variable(
+                        content.to_string(),
+                        super::super::parser::ast::Span::dummy(),
+                    )
+                });
+
+                match &meta_expr {
+                    crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
+                        ArithExpr::Variable(var_name.clone())
+                    }
+                    _ => ArithExpr::Interpolation(meta_expr),
+                }
             }
             Rule::factor => {
                 // A factor is either an integer, variable, interpolation expression, or parenthesized expression
@@ -155,23 +175,32 @@ impl ClpzDomain {
                     Rule::variable => ArithExpr::Variable(inner.as_str().to_string()),
                     Rule::interpolation_expression => {
                         let content = inner.into_inner().next().unwrap().as_str();
-                        let meta_expr =
-                            super::super::parser::meta_parser::parse_meta_expression(content)
-                                .unwrap_or_else(|_| {
-                                    crate::interpreter::metaprogramming::MetaExpression::Variable(
-                                        content.to_string(),
-                                    )
-                                });
-                        ArithExpr::Interpolation(meta_expr)
+                        let meta_expr = super::super::parser::meta_parser::parse_meta_expression(
+                            content,
+                            source_span,
+                        )
+                        .unwrap_or_else(|_| {
+                            crate::interpreter::metaprogramming::MetaExpression::Variable(
+                                content.to_string(),
+                                super::super::parser::ast::Span::dummy(),
+                            )
+                        });
+                        match &meta_expr {
+                            crate::interpreter::metaprogramming::MetaExpression::Variable(
+                                var_name,
+                                _,
+                            ) => ArithExpr::Variable(var_name.clone()),
+                            _ => ArithExpr::Interpolation(meta_expr),
+                        }
                     }
-                    Rule::arith_expr => Self::build_arith_expr(inner),
+                    Rule::arith_expr => Self::build_arith_expr(inner, source_span),
                     _ => unreachable!("Unexpected factor inner rule: {:?}", inner.as_rule()),
                 }
             }
             Rule::term => {
                 // A term is one or more factors separated by * or /
                 let mut inner = pair.into_inner();
-                let mut result = Self::build_arith_expr(inner.next().unwrap());
+                let mut result = Self::build_arith_expr(inner.next().unwrap(), source_span);
 
                 while let Some(op_pair) = inner.next() {
                     let op = match op_pair.as_str() {
@@ -180,7 +209,7 @@ impl ClpzDomain {
                         _ => continue, // Skip non-operator rules
                     };
                     if let Some(right_pair) = inner.next() {
-                        let right = Self::build_arith_expr(right_pair);
+                        let right = Self::build_arith_expr(right_pair, source_span);
                         result = ArithExpr::BinaryOp {
                             left: Box::new(result),
                             op,
@@ -193,7 +222,7 @@ impl ClpzDomain {
             Rule::arith_expr => {
                 // An arith_expr is one or more terms separated by + or -
                 let mut inner = pair.into_inner();
-                let mut result = Self::build_arith_expr(inner.next().unwrap());
+                let mut result = Self::build_arith_expr(inner.next().unwrap(), source_span);
 
                 while let Some(op_pair) = inner.next() {
                     let op = match op_pair.as_str() {
@@ -202,7 +231,7 @@ impl ClpzDomain {
                         _ => continue, // Skip non-operator rules
                     };
                     if let Some(right_pair) = inner.next() {
-                        let right = Self::build_arith_expr(right_pair);
+                        let right = Self::build_arith_expr(right_pair, source_span);
                         result = ArithExpr::BinaryOp {
                             left: Box::new(result),
                             op,
@@ -232,6 +261,7 @@ impl ClpzDomain {
 /// Parsed CLPZ constraints
 struct ClpzConstraints<U: User, E: Engine<U>> {
     constraints: Vec<ClpzConstraint<U, E>>,
+    source_span: super::super::parser::ast::Span,
 }
 
 impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpzConstraints<U, E> {
@@ -242,7 +272,7 @@ impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpzConstraints<U, E> {
         let goals: Result<Vec<_>, _> = self
             .constraints
             .iter()
-            .map(|c| c.convert_to_goal(execution_context))
+            .map(|c| c.convert_to_goal(execution_context, &self.source_span))
             .collect();
         let goals = goals?;
 
@@ -317,6 +347,7 @@ impl<U: User, E: Engine<U>> ClpzConstraint<U, E> {
     fn convert_to_goal(
         &self,
         execution_context: &mut ExecutionContext<U, E>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<Goal<U, E>, InterpreterError> {
         match self {
             ClpzConstraint::Expression {
@@ -337,7 +368,7 @@ impl<U: User, E: Engine<U>> ClpzConstraint<U, E> {
 
                 let mut goals = vec![];
                 for constraint in constraints {
-                    goals.push(constraint.convert_to_goal(execution_context)?);
+                    goals.push(constraint.convert_to_goal(execution_context, source_span)?);
                 }
 
                 execution_context.pop_scope();
@@ -399,7 +430,7 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
         ArithExpr::Interpolation(meta_expr) => {
             // For simple variable interpolations, directly access the execution context
             match meta_expr {
-                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name) => {
+                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
                     // Directly look up the variable in the execution context
                     execution_context
                         .get_existing_variable(var_name)
@@ -432,7 +463,7 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
                     let context = TemplateExpansionContext::with_bindings(bindings, 100);
 
                     // Create dummy term and expand it
-                    let dummy_term = Term::Interpolation(meta_expr.clone());
+                    let dummy_term = Term::Interpolation(meta_expr.clone(), Default::default());
                     let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
                         InterpreterError::RuntimeError(format!(
                             "Meta expression expansion error in CLPZ arithmetic: {}",

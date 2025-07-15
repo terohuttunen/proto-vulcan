@@ -41,6 +41,7 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
     fn parse_constraints(
         &self,
         body: &ConstraintBody,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<Box<dyn DomainConstraints<U, E>>, InterpreterError> {
         // Trim the content to remove leading/trailing whitespace that might interfere
         let trimmed_content = body.raw_content.trim();
@@ -48,7 +49,7 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
         let pairs = ClpfdParser::parse(Rule::constraints, trimmed_content).map_err(|e| {
             InterpreterError::InvalidConstraintSyntax {
                 domain: "clpfd".to_string(),
-                error: format!("Parse error: {}", e),
+                error: super::map_constraint_error_position(&e, body),
             }
         })?;
 
@@ -58,13 +59,16 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
         for pair in pairs {
             for inner in pair.into_inner() {
                 if inner.as_rule() == Rule::constraint {
-                    let constraint = Self::build_constraint(inner)?;
+                    let constraint = Self::build_constraint(inner, source_span)?;
                     constraints.push(constraint);
                 }
             }
         }
 
-        Ok(Box::new(ClpfdConstraints { constraints }))
+        Ok(Box::new(ClpfdConstraints {
+            constraints,
+            source_span: source_span.clone(),
+        }))
     }
 
     fn syntax_help(&self) -> &str {
@@ -91,7 +95,8 @@ impl ClpfdDomain {
 
         // There should be exactly one pair, corresponding to the `constraint` rule
         if let Some(pair) = pairs.peek() {
-            Self::build_constraint(pair)
+            let dummy_span = super::super::parser::ast::Span::dummy();
+            Self::build_constraint(pair, &dummy_span)
         } else {
             Err(InterpreterError::InvalidConstraintSyntax {
                 domain: "clpfd".to_string(),
@@ -104,21 +109,25 @@ impl ClpfdDomain {
 
     fn build_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
         let inner_pair = pair.into_inner().next().unwrap();
         match inner_pair.as_rule() {
-            Rule::fresh_constraint => Self::build_fresh_constraint(inner_pair),
-            Rule::domain_constraint => Self::build_domain_constraint(inner_pair),
-            Rule::list_domain_constraint => Self::build_list_domain_constraint(inner_pair),
+            Rule::fresh_constraint => Self::build_fresh_constraint(inner_pair, source_span),
+            Rule::domain_constraint => Self::build_domain_constraint(inner_pair, source_span),
+            Rule::list_domain_constraint => {
+                Self::build_list_domain_constraint(inner_pair, source_span)
+            }
             Rule::distinct_constraint => Self::build_distinct_constraint(inner_pair),
             Rule::alldiff_constraint => Self::build_alldiff_constraint(inner_pair),
-            Rule::arith_constraint => Self::build_arith_constraint(inner_pair),
+            Rule::arith_constraint => Self::build_arith_constraint(inner_pair, source_span),
             _ => unreachable!("Unexpected rule in constraint"),
         }
     }
 
     fn build_fresh_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
         let mut inner = pair.into_inner();
         let mut vars = vec![];
@@ -133,7 +142,8 @@ impl ClpfdDomain {
                 Rule::constraints => {
                     for constraint_pair in part.into_inner() {
                         if constraint_pair.as_rule() == Rule::constraint {
-                            constraints.push(Self::build_constraint(constraint_pair)?);
+                            constraints
+                                .push(Self::build_constraint(constraint_pair, source_span)?);
                         }
                     }
                 }
@@ -150,6 +160,7 @@ impl ClpfdDomain {
 
     fn build_domain_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
         let mut inner = pair.into_inner();
         let var_pair = inner.next().unwrap();
@@ -164,7 +175,7 @@ impl ClpfdDomain {
         };
         let _in_kw = inner.next().unwrap(); // Skip the "in" keyword
         let range_spec_pair = inner.next().unwrap();
-        let domain_spec = Self::build_domain_spec(range_spec_pair)?;
+        let domain_spec = Self::build_domain_spec(range_spec_pair, source_span)?;
 
         Ok(ClpfdConstraint::Domain {
             variable,
@@ -175,6 +186,7 @@ impl ClpfdDomain {
 
     fn build_list_domain_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
         let mut inner = pair.into_inner();
         let var_list_pair = inner.next().unwrap(); // var_list
@@ -184,7 +196,7 @@ impl ClpfdDomain {
             .collect();
         let _in_kw = inner.next().unwrap(); // Skip the "in" keyword
         let range_spec_pair = inner.next().unwrap();
-        let domain_spec = Self::build_domain_spec(range_spec_pair)?;
+        let domain_spec = Self::build_domain_spec(range_spec_pair, source_span)?;
 
         Ok(ClpfdConstraint::ListDomain {
             variables,
@@ -195,6 +207,7 @@ impl ClpfdDomain {
 
     fn build_domain_spec(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<DomainSpec, InterpreterError> {
         let inner_pair = pair.into_inner().next().unwrap();
         match inner_pair.as_rule() {
@@ -203,8 +216,8 @@ impl ClpfdDomain {
                 let start_pair = inner.next().unwrap();
                 let end_pair = inner.next().unwrap();
 
-                let start_bound = Self::build_domain_bound(start_pair)?;
-                let end_bound = Self::build_domain_bound(end_pair)?;
+                let start_bound = Self::build_domain_bound(start_pair, source_span)?;
+                let end_bound = Self::build_domain_bound(end_pair, source_span)?;
 
                 // Check if both bounds are simple integers
                 if let (DomainBound::Integer(start), DomainBound::Integer(end)) =
@@ -220,7 +233,7 @@ impl ClpfdDomain {
                 let mut all_integers = true;
 
                 for p in inner_pair.into_inner() {
-                    let bound = Self::build_domain_bound(p)?;
+                    let bound = Self::build_domain_bound(p, source_span)?;
                     if !matches!(bound, DomainBound::Integer(_)) {
                         all_integers = false;
                     }
@@ -249,7 +262,7 @@ impl ClpfdDomain {
                 let mut all_integers = true;
 
                 for element_pair in inner_pair.into_inner() {
-                    let bound = Self::build_domain_bound(element_pair)?;
+                    let bound = Self::build_domain_bound(element_pair, source_span)?;
                     if !matches!(bound, DomainBound::Integer(_)) {
                         all_integers = false;
                     }
@@ -273,7 +286,10 @@ impl ClpfdDomain {
                 }
             }
             Rule::range_single => {
-                let bound = Self::build_domain_bound(inner_pair.into_inner().next().unwrap())?;
+                let bound = Self::build_domain_bound(
+                    inner_pair.into_inner().next().unwrap(),
+                    source_span,
+                )?;
 
                 if let DomainBound::Integer(value) = bound {
                     Ok(DomainSpec::Set(vec![value]))
@@ -287,6 +303,7 @@ impl ClpfdDomain {
 
     fn build_domain_bound(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<DomainBound, InterpreterError> {
         match pair.as_rule() {
             Rule::integer => {
@@ -300,12 +317,11 @@ impl ClpfdDomain {
             }
             Rule::interpolation_expression => {
                 let content = pair.into_inner().next().unwrap().as_str();
-                let meta_expr = meta_parser::parse_meta_expression(content).map_err(|_| {
-                    InterpreterError::InvalidConstraintSyntax {
+                let meta_expr = meta_parser::parse_meta_expression(content, source_span)
+                    .map_err(|_| InterpreterError::InvalidConstraintSyntax {
                         domain: "clpfd".to_string(),
                         error: format!("Invalid meta expression: {}", content),
-                    }
-                })?;
+                    })?;
                 Ok(DomainBound::Interpolation(meta_expr))
             }
             _ => unreachable!("Unexpected rule in domain bound: {:?}", pair.as_rule()),
@@ -354,11 +370,12 @@ impl ClpfdDomain {
 
     fn build_arith_constraint<U: User, E: Engine<U>>(
         pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
         let mut inner = pair.into_inner();
-        let left = Self::build_arith_expr(inner.next().unwrap());
+        let left = Self::build_arith_expr(inner.next().unwrap(), source_span);
         let op = Self::build_comp_op(inner.next().unwrap());
-        let right = Self::build_arith_expr(inner.next().unwrap());
+        let right = Self::build_arith_expr(inner.next().unwrap(), source_span);
 
         Ok(ClpfdConstraint::Expression {
             left,
@@ -369,7 +386,10 @@ impl ClpfdDomain {
     }
 
     // This function uses the Pratt parser technique to handle operator precedence.
-    fn build_arith_expr(pair: pest::iterators::Pair<Rule>) -> ArithExpr {
+    fn build_arith_expr(
+        pair: pest::iterators::Pair<Rule>,
+        source_span: &super::super::parser::ast::Span,
+    ) -> ArithExpr {
         let pratt = pest::pratt_parser::PrattParser::new()
             .op(pest::pratt_parser::Op::infix(
                 Rule::add_op,
@@ -386,16 +406,17 @@ impl ClpfdDomain {
                 Rule::variable => ArithExpr::Variable(primary.as_str().to_string()),
                 Rule::interpolation_expression => {
                     let content = primary.into_inner().next().unwrap().as_str();
-                    let meta_expr =
-                        meta_parser::parse_meta_expression(content).unwrap_or_else(|_| {
+                    let meta_expr = meta_parser::parse_meta_expression(content, source_span)
+                        .unwrap_or_else(|_| {
                             // Fallback to a variable if parsing fails
                             crate::interpreter::metaprogramming::MetaExpression::Variable(
                                 content.to_string(),
+                                super::super::parser::ast::Span::dummy(),
                             )
                         });
                     ArithExpr::Interpolation(meta_expr)
                 }
-                Rule::arith_expr => Self::build_arith_expr(primary), // for parentheses
+                Rule::arith_expr => Self::build_arith_expr(primary, source_span), // for parentheses
                 Rule::factor => {
                     // Handle factor rule by extracting its inner content
                     let inner = primary.into_inner().next().unwrap();
@@ -404,22 +425,26 @@ impl ClpfdDomain {
                         Rule::variable => ArithExpr::Variable(inner.as_str().to_string()),
                         Rule::interpolation_expression => {
                             let content = inner.into_inner().next().unwrap().as_str();
-                            let meta_expr = meta_parser::parse_meta_expression(content)
-                                .unwrap_or_else(|_| {
-                                    crate::interpreter::metaprogramming::MetaExpression::Variable(
-                                        content.to_string(),
-                                    )
-                                });
+                            let meta_expr = meta_parser::parse_meta_expression(
+                                content,
+                                source_span,
+                            )
+                            .unwrap_or_else(|_| {
+                                crate::interpreter::metaprogramming::MetaExpression::Variable(
+                                    content.to_string(),
+                                    super::super::parser::ast::Span::dummy(),
+                                )
+                            });
                             ArithExpr::Interpolation(meta_expr)
                         }
-                        Rule::arith_expr => Self::build_arith_expr(inner),
+                        Rule::arith_expr => Self::build_arith_expr(inner, source_span),
                         _ => unreachable!("Unexpected factor inner rule: {:?}", inner.as_rule()),
                     }
                 }
                 Rule::term => {
                     // Handle term = factor ~ (mul_op ~ factor)*
                     let mut inner = primary.into_inner();
-                    let mut left = Self::build_arith_expr(inner.next().unwrap());
+                    let mut left = Self::build_arith_expr(inner.next().unwrap(), source_span);
 
                     // Process any multiplication operations
                     while let Some(op_pair) = inner.next() {
@@ -429,7 +454,8 @@ impl ClpfdDomain {
                                 "/" => ArithOp::Divide,
                                 _ => unreachable!(),
                             };
-                            let right = Self::build_arith_expr(inner.next().unwrap());
+                            let right =
+                                Self::build_arith_expr(inner.next().unwrap(), source_span);
                             left = ArithExpr::BinaryOp {
                                 left: Box::new(left),
                                 op,
@@ -480,6 +506,7 @@ impl ClpfdDomain {
 /// Parsed CLPFD constraints
 struct ClpfdConstraints<U: User, E: Engine<U>> {
     constraints: Vec<ClpfdConstraint<U, E>>,
+    source_span: super::super::parser::ast::Span,
 }
 
 impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpfdConstraints<U, E> {
@@ -490,7 +517,7 @@ impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpfdConstraints<U, E> {
         let goals: Result<Vec<_>, _> = self
             .constraints
             .iter()
-            .map(|c| c.convert_to_goal(execution_context))
+            .map(|c| c.convert_to_goal(execution_context, &self.source_span))
             .collect();
         let goals = goals?;
 
@@ -597,6 +624,7 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
     fn convert_to_goal(
         &self,
         execution_context: &mut ExecutionContext<U, E>,
+        source_span: &super::super::parser::ast::Span,
     ) -> Result<Goal<U, E>, InterpreterError> {
         match self {
             ClpfdConstraint::Domain {
@@ -607,12 +635,13 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                 let var_term = if variable.starts_with('{') && variable.ends_with('}') {
                     // This is an interpolated variable stored as "{content}"
                     let content = &variable[1..variable.len() - 1]; // Remove braces
-                    let meta_expr = meta_parser::parse_meta_expression(content).map_err(|_| {
-                        InterpreterError::RuntimeError(format!(
-                            "Invalid meta expression in domain variable: {}",
-                            content
-                        ))
-                    })?;
+                    let meta_expr = meta_parser::parse_meta_expression(content, source_span)
+                        .map_err(|_| {
+                            InterpreterError::RuntimeError(format!(
+                                "Invalid meta expression in domain variable: {}",
+                                content
+                            ))
+                        })?;
 
                     // Evaluate the meta expression to get the variable term
                     use crate::interpreter::metaprogramming::{
@@ -621,7 +650,7 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                     use crate::interpreter::parser::ast::Term;
 
                     let context = TemplateExpansionContext::new(100);
-                    let dummy_term = Term::Interpolation(meta_expr);
+                    let dummy_term = Term::Interpolation(meta_expr, source_span.clone());
                     let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
                         InterpreterError::RuntimeError(format!(
                             "Meta expression expansion error in domain variable: {}",
@@ -646,8 +675,8 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                         Ok(infd(var_term, &domain_values).cast_into())
                     }
                     DomainSpec::InterpolatedRange(start, end) => {
-                        let start_val = eval_domain_bound(start, execution_context)?;
-                        let end_val = eval_domain_bound(end, execution_context)?;
+                        let start_val = eval_domain_bound(start, execution_context, source_span)?;
+                        let end_val = eval_domain_bound(end, execution_context, source_span)?;
                         use crate::relation::clpfd::infd::infdrange;
                         let range = start_val..=end_val;
                         Ok(infdrange(var_term, &range).cast_into())
@@ -655,7 +684,7 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                     DomainSpec::InterpolatedSet(values) => {
                         let domain_values: Result<Vec<isize>, InterpreterError> = values
                             .iter()
-                            .map(|bound| eval_domain_bound(bound, execution_context))
+                            .map(|bound| eval_domain_bound(bound, execution_context, source_span))
                             .collect();
                         use crate::relation::clpfd::infd::infd;
                         Ok(infd(var_term, &domain_values?).cast_into())
@@ -694,8 +723,8 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                         Ok(infd(var_list, &domain_values).cast_into())
                     }
                     DomainSpec::InterpolatedRange(start, end) => {
-                        let start_val = eval_domain_bound(start, execution_context)?;
-                        let end_val = eval_domain_bound(end, execution_context)?;
+                        let start_val = eval_domain_bound(start, execution_context, source_span)?;
+                        let end_val = eval_domain_bound(end, execution_context, source_span)?;
                         use crate::relation::clpfd::infd::infdrange;
                         let range = start_val..=end_val;
                         Ok(infdrange(var_list, &range).cast_into())
@@ -703,7 +732,7 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                     DomainSpec::InterpolatedSet(values) => {
                         let domain_values: Result<Vec<isize>, InterpreterError> = values
                             .iter()
-                            .map(|bound| eval_domain_bound(bound, execution_context))
+                            .map(|bound| eval_domain_bound(bound, execution_context, source_span))
                             .collect();
                         use crate::relation::clpfd::infd::infd;
                         Ok(infd(var_list, &domain_values?).cast_into())
@@ -782,7 +811,7 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
 
                 let mut goals = vec![];
                 for constraint in constraints {
-                    goals.push(constraint.convert_to_goal(execution_context)?);
+                    goals.push(constraint.convert_to_goal(execution_context, source_span)?);
                 }
 
                 // Pop the scope after building the goals
@@ -855,7 +884,7 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
         ArithExpr::Interpolation(meta_expr) => {
             // For simple variable interpolations, directly access the execution context
             match meta_expr {
-                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name) => {
+                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
                     // Directly look up the variable in the execution context
                     execution_context
                         .get_existing_variable(var_name)
@@ -888,7 +917,7 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
                     let context = TemplateExpansionContext::with_bindings(bindings, 100);
 
                     // Create dummy term and expand it
-                    let dummy_term = Term::Interpolation(meta_expr.clone());
+                    let dummy_term = Term::Interpolation(meta_expr.clone(), Default::default());
                     let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
                         InterpreterError::RuntimeError(format!(
                             "Meta expression expansion error in arithmetic: {}",
@@ -937,13 +966,14 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
 fn eval_domain_bound<U: User, E: Engine<U>>(
     bound: &DomainBound,
     execution_context: &mut ExecutionContext<U, E>,
+    source_span: &super::super::parser::ast::Span,
 ) -> Result<isize, InterpreterError> {
     match bound {
         DomainBound::Integer(val) => Ok(*val as isize),
         DomainBound::Interpolation(meta_expr) => {
             // For simple variable interpolations, directly access the execution context
             match meta_expr {
-                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name) => {
+                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
                     // Directly look up the variable in the execution context
                     let var_term =
                         execution_context
@@ -985,7 +1015,7 @@ fn eval_domain_bound<U: User, E: Engine<U>>(
                     let context = TemplateExpansionContext::with_bindings(bindings, 100);
 
                     // Create dummy term and expand it
-                    let dummy_term = Term::Interpolation(meta_expr.clone());
+                    let dummy_term = Term::Interpolation(meta_expr.clone(), Default::default());
                     let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
                         InterpreterError::RuntimeError(format!(
                             "Meta expression expansion error: {}",

@@ -160,52 +160,52 @@ fn extract_variables_from_goal_recursive(goal: &Goal, vars: &mut Vec<String>) {
     use super::parser::ast::*;
 
     match goal {
-        Goal::Equality(left, right) => {
+        Goal::Equality(left, right, _) => {
             extract_variables_from_term(left, vars);
             extract_variables_from_term(right, vars);
         }
-        Goal::Disequality(left, right) => {
+        Goal::Disequality(left, right, _) => {
             extract_variables_from_term(left, vars);
             extract_variables_from_term(right, vars);
         }
-        Goal::Conjunction(conj) => {
+        Goal::Conjunction(conj, _) => {
             for goal in &conj.body {
                 extract_variables_from_goal_recursive(goal, vars);
             }
         }
-        Goal::Disjunction(disj) => {
+        Goal::Disjunction(disj, _) => {
             for goal in &disj.body {
                 extract_variables_from_goal_recursive(goal, vars);
             }
         }
-        Goal::Fresh(fresh) => {
+        Goal::Fresh(fresh, _) => {
             // Don't extract fresh variables as they are locally scoped
             for goal in &fresh.body {
                 extract_variables_from_goal_recursive(goal, vars);
             }
         }
-        Goal::RelationCall(call) => {
+        Goal::RelationCall(call, _) => {
             for arg in &call.args {
                 extract_variables_from_term(arg, vars);
             }
         }
-        Goal::MethodCall(call) => {
+        Goal::MethodCall(call, _) => {
             extract_variables_from_term(&call.receiver, vars);
             for arg in &call.args {
                 extract_variables_from_term(arg, vars);
             }
         }
-        Goal::Let(let_decl) => {
+        Goal::Let(let_decl, _) => {
             if let Some(value) = &let_decl.value {
                 extract_variables_from_term(value, vars);
             }
         }
-        Goal::Parenthesized(body) => {
+        Goal::Parenthesized(body, _) => {
             for goal in body {
                 extract_variables_from_goal_recursive(goal, vars);
             }
         }
-        Goal::PatternMatch(pattern_match) => {
+        Goal::PatternMatch(pattern_match, _) => {
             extract_variables_from_term(&pattern_match.term, vars);
             for arm in &pattern_match.arms {
                 for goal in &arm.body {
@@ -213,13 +213,13 @@ fn extract_variables_from_goal_recursive(goal: &Goal, vars: &mut Vec<String>) {
                 }
             }
         }
-        Goal::BooleanLiteral(_) => {
+        Goal::BooleanLiteral(..) => {
             // Boolean literals don't contain variables
         }
-        Goal::ConstraintBlock(_) => {
+        Goal::ConstraintBlock(..) => {
             // TODO: Extract variables from constraint blocks
         }
-        Goal::MetaStatement(_) => {
+        Goal::MetaStatement(..) => {
             // TODO: Implement meta statement variable extraction
             // For now, do nothing as meta statements don't introduce variables
         }
@@ -230,13 +230,13 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
     use super::parser::ast::*;
 
     match term {
-        Term::Variable(var_name) => {
+        Term::Variable(var_name, _) => {
             vars.push(var_name.clone());
         }
-        Term::Wildcard => {
+        Term::Wildcard(_) => {
             // Wildcards don't contain variables to extract
         }
-        Term::List(list_construction) => {
+        Term::List(list_construction, _) => {
             for element in &list_construction.elements {
                 extract_variables_from_term(element, vars);
             }
@@ -244,23 +244,23 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
                 extract_variables_from_term(tail, vars);
             }
         }
-        Term::NamedStruct(named_struct) => {
+        Term::NamedStruct(named_struct, _) => {
             for field in &named_struct.fields {
                 extract_variables_from_term(&field.value, vars);
             }
         }
-        Term::Compound(compound) => {
+        Term::Compound(compound, _) => {
             for arg in &compound.args {
                 extract_variables_from_term(arg, vars);
             }
         }
-        Term::Literal(_) => {
+        Term::Literal(..) => {
             // Literals don't contain variables
         }
-        Term::Parenthesized(inner) => {
+        Term::Parenthesized(inner, _) => {
             extract_variables_from_term(inner, vars);
         }
-        Term::Interpolation(_) => {
+        Term::Interpolation(..) => {
             // TODO: Extract variables from meta expressions in interpolations
             // For now, do nothing
         }
@@ -310,9 +310,9 @@ mod tests {
     fn test_parse_equality_query() {
         let query = parse_query("x == 42").unwrap();
         match query {
-            Goal::Equality(left, right) => {
-                assert!(matches!(left, super::super::parser::ast::Term::Variable(_)));
-                assert!(matches!(right, super::super::parser::ast::Term::Literal(_)));
+            Goal::Equality(left, right, _) => {
+                assert!(matches!(left, super::super::parser::ast::Term::Variable(_, _)));
+                assert!(matches!(right, super::super::parser::ast::Term::Literal(..)));
             }
             _ => panic!("Expected equality goal"),
         }
@@ -322,7 +322,7 @@ mod tests {
     fn test_parse_relation_call_query() {
         let query = parse_query("parent(alice, bob)").unwrap();
         match query {
-            Goal::RelationCall(call) => {
+            Goal::RelationCall(call, _) => {
                 assert_eq!(call.name, "parent");
                 assert_eq!(call.args.len(), 2);
             }

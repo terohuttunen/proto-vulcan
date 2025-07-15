@@ -8,6 +8,12 @@ pub mod meta_parser;
 use crate::interpreter::metaprogramming::TypeAnnotation;
 use ast::*;
 
+/// Helper function to extract span information from a Pest pair
+fn pair_to_span(pair: &Pair<Rule>) -> Span {
+    let span = pair.as_span();
+    Span::new(span.start(), span.end())
+}
+
 #[derive(Parser)]
 #[grammar = "interpreter/parser/grammar.pest"]
 pub struct VulcanParser;
@@ -31,6 +37,7 @@ pub fn parse_str(input: &str) -> ParseResult<Program> {
 }
 
 fn build_program(pair: Pair<Rule>) -> ParseResult<Program> {
+    let span = pair_to_span(&pair);
     let mut items = vec![];
     for item_pair in pair.into_inner() {
         if let Rule::EOI = item_pair.as_rule() {
@@ -38,7 +45,7 @@ fn build_program(pair: Pair<Rule>) -> ParseResult<Program> {
         }
         items.push(build_item(item_pair)?);
     }
-    Ok(Program { items })
+    Ok(Program { items, span })
 }
 
 fn build_item(pair: Pair<Rule>) -> ParseResult<Item> {
@@ -53,9 +60,10 @@ fn build_item(pair: Pair<Rule>) -> ParseResult<Item> {
 }
 
 fn build_use_statement(pair: Pair<Rule>) -> ParseResult<UseStatement> {
+    let span = pair_to_span(&pair);
     let path_pair = pair.into_inner().next().unwrap();
     let path = build_use_path(path_pair)?;
-    Ok(UseStatement { path })
+    Ok(UseStatement { path, span })
 }
 
 fn build_use_path(pair: Pair<Rule>) -> ParseResult<UsePath> {
@@ -88,6 +96,7 @@ fn build_use_path(pair: Pair<Rule>) -> ParseResult<UsePath> {
 }
 
 fn build_mod_definition(pair: Pair<Rule>) -> ParseResult<ModuleDefinition> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let mut search_strategy = None;
@@ -108,10 +117,12 @@ fn build_mod_definition(pair: Pair<Rule>) -> ParseResult<ModuleDefinition> {
         name,
         search_strategy,
         items,
+        span,
     })
 }
 
 fn build_struct_definition(pair: Pair<Rule>) -> ParseResult<StructDefinition> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut is_pub = false;
 
@@ -144,10 +155,16 @@ fn build_struct_definition(pair: Pair<Rule>) -> ParseResult<StructDefinition> {
         _ => return Err(ParseError::UnexpectedRule(def_pair.as_rule())),
     };
 
-    Ok(StructDefinition { is_pub, name, kind })
+    Ok(StructDefinition {
+        is_pub,
+        name,
+        kind,
+        span,
+    })
 }
 
 fn build_named_field(pair: Pair<Rule>) -> ParseResult<NamedField> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut is_pub = false;
 
@@ -166,10 +183,12 @@ fn build_named_field(pair: Pair<Rule>) -> ParseResult<NamedField> {
         is_pub,
         name,
         type_name,
+        span,
     })
 }
 
 fn build_impl_block(pair: Pair<Rule>) -> ParseResult<ImplBlock> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let type_name = inner.next().unwrap().as_str().to_string();
     let mut relations = vec![];
@@ -181,6 +200,7 @@ fn build_impl_block(pair: Pair<Rule>) -> ParseResult<ImplBlock> {
     Ok(ImplBlock {
         type_name,
         relations,
+        span,
     })
 }
 
@@ -215,6 +235,7 @@ fn build_attribute(pair: Pair<Rule>) -> ParseResult<Attribute> {
 }
 
 fn build_relation_definition(pair: Pair<Rule>) -> ParseResult<RelationDefinition> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut attributes = vec![];
     let mut is_pub = false;
@@ -273,6 +294,7 @@ fn build_relation_definition(pair: Pair<Rule>) -> ParseResult<RelationDefinition
     };
 
     Ok(RelationDefinition {
+        span,
         is_pub,
         attributes,
         name,
@@ -332,35 +354,57 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
     }
 
     match pair.as_rule() {
-        Rule::meta_statement => Ok(Goal::MetaStatement(build_meta_statement(pair)?)),
-        Rule::let_declaration => Ok(Goal::Let(build_let_declaration(pair)?)),
-        Rule::fresh_variables => Ok(Goal::Fresh(build_fresh_variables(pair)?)),
+        Rule::meta_statement => Ok(Goal::MetaStatement(
+            build_meta_statement(pair.clone())?,
+            pair_to_span(&pair),
+        )),
+        Rule::let_declaration => Ok(Goal::Let(
+            build_let_declaration(pair.clone())?,
+            pair_to_span(&pair),
+        )),
+        Rule::fresh_variables => Ok(Goal::Fresh(
+            build_fresh_variables(pair.clone())?,
+            pair_to_span(&pair),
+        )),
         Rule::any_block => build_any_block(pair),
         Rule::all_block => build_all_block(pair),
         Rule::constraint_block => build_constraint_block(pair),
-        Rule::pattern_matching => Ok(Goal::PatternMatch(build_pattern_matching(pair)?)),
-        Rule::call_expr => Ok(Goal::RelationCall(build_relation_call(pair)?)),
-        Rule::method_call => Ok(Goal::MethodCall(build_method_call(pair)?)),
+        Rule::pattern_matching => Ok(Goal::PatternMatch(
+            build_pattern_matching(pair.clone())?,
+            pair_to_span(&pair),
+        )),
+        Rule::call_expr => Ok(Goal::RelationCall(
+            build_relation_call(pair.clone())?,
+            pair_to_span(&pair),
+        )),
+        Rule::method_call => Ok(Goal::MethodCall(
+            build_method_call(pair.clone())?,
+            pair_to_span(&pair),
+        )),
         Rule::equality_goal => {
+            let span = pair_to_span(&pair);
             let mut inner = pair.into_inner();
             let lhs = build_term(inner.next().unwrap())?;
             let rhs = build_term(inner.next().unwrap())?;
-            Ok(Goal::Equality(lhs, rhs))
+            Ok(Goal::Equality(lhs, rhs, span))
         }
         Rule::disequality_goal => {
+            let span = pair_to_span(&pair);
             let mut inner = pair.into_inner();
             let lhs = build_term(inner.next().unwrap())?;
             let rhs = build_term(inner.next().unwrap())?;
-            Ok(Goal::Disequality(lhs, rhs))
+            Ok(Goal::Disequality(lhs, rhs, span))
         }
         Rule::parenthesized_goal => {
+            let span = pair_to_span(&pair);
             let body = build_goal_body(pair.into_inner().next().unwrap())?;
-            Ok(Goal::Parenthesized(body))
+            Ok(Goal::Parenthesized(body, span))
         }
         Rule::literal => {
+            let span = pair_to_span(&pair);
             let literal = build_literal(pair)?;
             match literal {
-                Literal::Boolean(b) => Ok(Goal::BooleanLiteral(b)),
+                Literal::Boolean(b) => Ok(Goal::BooleanLiteral(b, span)),
                 _ => Err(ParseError::UnexpectedRule(Rule::literal)),
             }
         }
@@ -369,6 +413,7 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
 }
 
 fn build_any_block(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut params = None;
     let mut body = vec![];
@@ -385,10 +430,11 @@ fn build_any_block(pair: Pair<Rule>) -> ParseResult<Goal> {
         }
     }
 
-    Ok(Goal::Disjunction(Disjunction { body, params }))
+    Ok(Goal::Disjunction(Disjunction { body, params }, span))
 }
 
 fn build_all_block(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut params = None;
     let mut body = vec![];
@@ -405,13 +451,15 @@ fn build_all_block(pair: Pair<Rule>) -> ParseResult<Goal> {
         }
     }
 
-    Ok(Goal::Conjunction(Conjunction { body, params }))
+    Ok(Goal::Conjunction(Conjunction { body, params }, span))
 }
 
 fn build_constraint_block(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut domain = "clpfd".to_string(); // Default domain
     let mut raw_content = "".to_string();
+    let mut body_span = Span::dummy(); // Default span if body not found
 
     // The first pairs can be constraint_params
     if let Some(p) = inner.peek() {
@@ -424,17 +472,20 @@ fn build_constraint_block(pair: Pair<Rule>) -> ParseResult<Goal> {
     if let Some(body_pair) = inner.next() {
         if body_pair.as_rule() == Rule::constraint_body {
             raw_content = body_pair.as_str().to_string();
+            body_span = pair_to_span(&body_pair);
         }
     }
 
-    Ok(Goal::ConstraintBlock(ConstraintBlock {
-        domain,
-        body: ConstraintBody {
-            raw_content,
-            // The domain parser is now responsible for splitting the content.
-            parsed_expressions: vec![],
+    Ok(Goal::ConstraintBlock(
+        ConstraintBlock {
+            domain,
+            body: ConstraintBody {
+                raw_content,
+                span: body_span,
+            },
         },
-    }))
+        span,
+    ))
 }
 
 fn parse_constraint_params(pair: Pair<Rule>) -> ParseResult<String> {
@@ -603,6 +654,7 @@ fn build_fresh_variables(pair: Pair<Rule>) -> ParseResult<FreshVariables> {
 }
 
 fn build_disjunction(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut params = None;
     let mut body = vec![];
@@ -619,10 +671,11 @@ fn build_disjunction(pair: Pair<Rule>) -> ParseResult<Goal> {
         }
     }
 
-    Ok(Goal::Disjunction(Disjunction { body, params }))
+    Ok(Goal::Disjunction(Disjunction { body, params }, span))
 }
 
 fn build_conjunction(pair: Pair<Rule>) -> ParseResult<Goal> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut params = None;
     let mut body = vec![];
@@ -639,7 +692,7 @@ fn build_conjunction(pair: Pair<Rule>) -> ParseResult<Goal> {
         }
     }
 
-    Ok(Goal::Conjunction(Conjunction { body, params }))
+    Ok(Goal::Conjunction(Conjunction { body, params }, span))
 }
 
 fn build_pattern_matching(pair: Pair<Rule>) -> ParseResult<PatternMatching> {
@@ -699,34 +752,43 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
         return build_term(inner);
     }
 
+    let span = pair_to_span(&pair);
     match pair.as_rule() {
         Rule::interpolation_expression => {
             let content = pair.into_inner().next().unwrap().as_str();
-            let expr = meta_parser::parse_meta_expression(content)
+            let expr = meta_parser::parse_meta_expression(content, &span)
                 .map_err(|_| ParseError::UnexpectedRule(Rule::interpolation_expression))?;
-            Ok(Term::Interpolation(expr))
+            Ok(Term::Interpolation(expr, span))
         }
         Rule::literal => {
             let lit_pair = pair
                 .into_inner()
                 .next()
                 .ok_or_else(|| ParseError::MissingRule(Rule::literal))?;
-            Ok(Term::Literal(build_literal(lit_pair)?))
+            Ok(Term::Literal(build_literal(lit_pair)?, span))
         }
-        Rule::variable => Ok(Term::Variable(pair.as_str().to_string())),
-        Rule::wildcard => Ok(Term::Wildcard),
-        Rule::list_construction => Ok(Term::List(build_list_construction(pair)?)),
-        Rule::named_struct_construction => {
-            Ok(Term::NamedStruct(build_named_struct_construction(pair)?))
-        }
-        Rule::call_expr => Ok(Term::Compound(build_compound_construction(pair)?)),
-        Rule::path_term => Ok(Term::Compound(CompoundConstruction {
-            name: pair.as_str().to_string(),
-            args: vec![],
-        })),
-        Rule::parenthesized_term => Ok(Term::Parenthesized(Box::new(build_term(
-            pair.into_inner().next().unwrap(),
-        )?))),
+        Rule::variable => Ok(Term::Variable(pair.as_str().to_string(), span)),
+        Rule::wildcard => Ok(Term::Wildcard(span)),
+        Rule::list_construction => Ok(Term::List(build_list_construction(pair.clone())?, span)),
+        Rule::named_struct_construction => Ok(Term::NamedStruct(
+            build_named_struct_construction(pair.clone())?,
+            span,
+        )),
+        Rule::call_expr => Ok(Term::Compound(
+            build_compound_construction(pair.clone())?,
+            span,
+        )),
+        Rule::path_term => Ok(Term::Compound(
+            CompoundConstruction {
+                name: pair.as_str().to_string(),
+                args: vec![],
+            },
+            span,
+        )),
+        Rule::parenthesized_term => Ok(Term::Parenthesized(
+            Box::new(build_term(pair.into_inner().next().unwrap())?),
+            span,
+        )),
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
 }
@@ -923,11 +985,12 @@ fn build_meta_let_statement(
 ) -> ParseResult<crate::interpreter::metaprogramming::LetStatement> {
     use crate::interpreter::metaprogramming::LetStatement;
 
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let variable = inner.next().unwrap().as_str().to_string();
     let variable_type = parse_type_annotation(inner.next().unwrap().as_str())?;
     let content = inner.next().unwrap().as_str();
-    let expression = meta_parser::parse_meta_expression(content)
+    let expression = meta_parser::parse_meta_expression(content, &span)
         .map_err(|_| ParseError::UnexpectedRule(Rule::meta_let_statement))?;
 
     Ok(LetStatement {
@@ -944,9 +1007,10 @@ fn build_meta_if_statement(
     GoalBody,
     Option<GoalBody>,
 )> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let content = inner.next().unwrap().as_str();
-    let condition = meta_parser::parse_meta_expression(content)
+    let condition = meta_parser::parse_meta_expression(content, &span)
         .map_err(|_| ParseError::UnexpectedRule(Rule::meta_if_statement))?;
     let then_body = build_goal_body(inner.next().unwrap())?;
     let else_body = inner.next().map(|p| build_goal_body(p)).transpose()?;
@@ -975,13 +1039,14 @@ fn build_meta_for_statement(
 fn build_meta_for_range(
     pair: Pair<Rule>,
 ) -> ParseResult<crate::interpreter::metaprogramming::MetaForRange> {
+    let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let start_content = inner.next().unwrap().as_str();
     let end_content = inner.next().unwrap().as_str();
 
-    let start = meta_parser::parse_meta_expression(start_content)
+    let start = meta_parser::parse_meta_expression(start_content, &span)
         .map_err(|_| ParseError::UnexpectedRule(Rule::meta_for_range))?;
-    let end = meta_parser::parse_meta_expression(end_content)
+    let end = meta_parser::parse_meta_expression(end_content, &span)
         .map_err(|_| ParseError::UnexpectedRule(Rule::meta_for_range))?;
 
     Ok(crate::interpreter::metaprogramming::MetaForRange { start, end })
@@ -995,7 +1060,10 @@ mod tests {
     fn test_parse_empty_program() {
         let input = "";
         let ast = parse_str(input).unwrap();
-        let expected = Program { items: vec![] };
+        let expected = Program {
+            items: vec![],
+            span: Span::dummy(),
+        };
         assert_eq!(ast, expected);
     }
 
@@ -1005,6 +1073,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected_ast = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "my_rel".to_string(),
@@ -1012,6 +1081,7 @@ mod tests {
                 search_strategy: None,
                 body: vec![],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected_ast);
     }
@@ -1022,6 +1092,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: true,
                 attributes: vec![],
                 name: "my_rel".to_string(),
@@ -1037,10 +1108,12 @@ mod tests {
                 ],
                 search_strategy: Some(SearchStrategy::Dfs),
                 body: vec![Goal::Equality(
-                    Term::Variable("a".to_string()),
-                    Term::Variable("b".to_string()),
+                    Term::Variable("a".to_string(), Span::dummy()),
+                    Term::Variable("b".to_string(), Span::dummy()),
+                    Span::dummy(),
                 )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1052,7 +1125,9 @@ mod tests {
         let expected = Program {
             items: vec![Item::Use(UseStatement {
                 path: UsePath::Simple(vec!["a".to_string(), "b".to_string(), "c".to_string()]),
+                span: Default::default(),
             })],
+            span: Default::default(),
         };
         assert_eq!(ast, expected);
     }
@@ -1064,7 +1139,9 @@ mod tests {
         let expected = Program {
             items: vec![Item::Use(UseStatement {
                 path: UsePath::Glob(vec!["a".to_string(), "b".to_string()]),
+                span: Default::default(),
             })],
+            span: Default::default(),
         };
         assert_eq!(ast, expected);
     }
@@ -1082,7 +1159,9 @@ mod tests {
                         ("c".to_string(), Some("d".to_string())),
                     ],
                 ),
+                span: Default::default(),
             })],
+            span: Default::default(),
         };
         assert_eq!(ast, expected);
     }
@@ -1096,7 +1175,9 @@ mod tests {
                 is_pub: false,
                 name: "MyTuple".to_string(),
                 kind: StructKind::Tuple(vec!["A".to_string(), "B".to_string()]),
+                span: Span::dummy(),
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1114,14 +1195,18 @@ mod tests {
                         is_pub: true,
                         name: "field".to_string(),
                         type_name: "T".to_string(),
+                        span: Span::dummy(),
                     },
                     NamedField {
                         is_pub: false,
                         name: "other".to_string(),
                         type_name: "U".to_string(),
+                        span: Span::dummy(),
                     },
                 ]),
+                span: Span::dummy(),
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1139,7 +1224,9 @@ mod tests {
         let expected = Program {
             items: vec![Item::Impl(ImplBlock {
                 type_name: "Point".to_string(),
+                span: Span::dummy(),
                 relations: vec![RelationDefinition {
+                    span: Span::dummy(),
                     is_pub: false,
                     attributes: vec![],
                     name: "new".to_string(),
@@ -1159,23 +1246,28 @@ mod tests {
                     ],
                     search_strategy: None,
                     body: vec![Goal::Equality(
-                        Term::Variable("p".to_string()),
-                        Term::NamedStruct(NamedStructConstruction {
-                            name: "Point".to_string(),
-                            fields: vec![
-                                FieldInitializer {
-                                    name: "x".to_string(),
-                                    value: Term::Variable("x".to_string()),
-                                },
-                                FieldInitializer {
-                                    name: "y".to_string(),
-                                    value: Term::Variable("y".to_string()),
-                                },
-                            ],
-                        }),
+                        Term::Variable("p".to_string(), Span::dummy()),
+                        Term::NamedStruct(
+                            NamedStructConstruction {
+                                name: "Point".to_string(),
+                                fields: vec![
+                                    FieldInitializer {
+                                        name: "x".to_string(),
+                                        value: Term::Variable("x".to_string(), Span::dummy()),
+                                    },
+                                    FieldInitializer {
+                                        name: "y".to_string(),
+                                        value: Term::Variable("y".to_string(), Span::dummy()),
+                                    },
+                                ],
+                            },
+                            Span::dummy(),
+                        ),
+                        Span::dummy(),
                     )],
                 }],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1193,6 +1285,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1200,31 +1293,38 @@ mod tests {
                 search_strategy: None,
                 body: vec![
                     Goal::Equality(
-                        Term::Variable("a".to_string()),
-                        Term::Literal(Literal::Boolean(true)),
+                        Term::Variable("a".to_string(), Span::dummy()),
+                        Term::Literal(Literal::Boolean(true), Span::dummy()),
+                        Span::dummy(),
                     ),
                     Goal::Equality(
-                        Term::Variable("b".to_string()),
-                        Term::Literal(Literal::Boolean(false)),
+                        Term::Variable("b".to_string(), Span::dummy()),
+                        Term::Literal(Literal::Boolean(false), Span::dummy()),
+                        Span::dummy(),
                     ),
                     Goal::Equality(
-                        Term::Variable("c".to_string()),
-                        Term::Literal(Literal::Number("42".to_string())),
+                        Term::Variable("c".to_string(), Span::dummy()),
+                        Term::Literal(Literal::Number("42".to_string()), Span::dummy()),
+                        Span::dummy(),
                     ),
                     Goal::Equality(
-                        Term::Variable("d".to_string()),
-                        Term::Literal(Literal::Number("-17".to_string())),
+                        Term::Variable("d".to_string(), Span::dummy()),
+                        Term::Literal(Literal::Number("-17".to_string()), Span::dummy()),
+                        Span::dummy(),
                     ),
                     Goal::Equality(
-                        Term::Variable("e".to_string()),
-                        Term::Literal(Literal::String("hello".to_string())),
+                        Term::Variable("e".to_string(), Span::dummy()),
+                        Term::Literal(Literal::String("hello".to_string()), Span::dummy()),
+                        Span::dummy(),
                     ),
                     Goal::Equality(
-                        Term::Variable("f".to_string()),
-                        Term::Literal(Literal::Char('x')),
+                        Term::Variable("f".to_string(), Span::dummy()),
+                        Term::Literal(Literal::Char('x'), Span::dummy()),
+                        Span::dummy(),
                     ),
                 ],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1235,23 +1335,29 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
                 body: vec![Goal::Equality(
-                    Term::Variable("a".to_string()),
-                    Term::List(ListConstruction {
-                        elements: vec![
-                            Term::Literal(Literal::Number("1".to_string())),
-                            Term::Literal(Literal::Number("2".to_string())),
-                            Term::Literal(Literal::Number("3".to_string())),
-                        ],
-                        tail: None,
-                    }),
+                    Term::Variable("a".to_string(), Span::dummy()),
+                    Term::List(
+                        ListConstruction {
+                            elements: vec![
+                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
+                                Term::Literal(Literal::Number("3".to_string()), Span::dummy()),
+                            ],
+                            tail: None,
+                        },
+                        Span::dummy(),
+                    ),
+                    Span::dummy(),
                 )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1262,19 +1368,28 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
                 body: vec![Goal::Equality(
-                    Term::Variable("a".to_string()),
-                    Term::Compound(CompoundConstruction {
-                        name: "Some".to_string(),
-                        args: vec![Term::Literal(Literal::Number("42".to_string()))],
-                    }),
+                    Term::Variable("a".to_string(), Span::dummy()),
+                    Term::Compound(
+                        CompoundConstruction {
+                            name: "Some".to_string(),
+                            args: vec![Term::Literal(
+                                Literal::Number("42".to_string()),
+                                Span::dummy(),
+                            )],
+                        },
+                        Span::dummy(),
+                    ),
+                    Span::dummy(),
                 )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1290,25 +1405,32 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Disjunction(Disjunction {
-                    body: vec![
-                        Goal::Equality(
-                            Term::Variable("a".to_string()),
-                            Term::Literal(Literal::Number("1".to_string())),
-                        ),
-                        Goal::Equality(
-                            Term::Variable("a".to_string()),
-                            Term::Literal(Literal::Number("2".to_string())),
-                        ),
-                    ],
-                    params: None,
-                })],
+                body: vec![Goal::Disjunction(
+                    Disjunction {
+                        body: vec![
+                            Goal::Equality(
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                Span::dummy(),
+                            ),
+                            Goal::Equality(
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
+                                Span::dummy(),
+                            ),
+                        ],
+                        params: None,
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1319,25 +1441,32 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Conjunction(Conjunction {
-                    body: vec![
-                        Goal::Equality(
-                            Term::Variable("a".to_string()),
-                            Term::Literal(Literal::Number("1".to_string())),
-                        ),
-                        Goal::Equality(
-                            Term::Variable("b".to_string()),
-                            Term::Literal(Literal::Number("2".to_string())),
-                        ),
-                    ],
-                    params: None,
-                })],
+                body: vec![Goal::Conjunction(
+                    Conjunction {
+                        body: vec![
+                            Goal::Equality(
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                Span::dummy(),
+                            ),
+                            Goal::Equality(
+                                Term::Variable("b".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
+                                Span::dummy(),
+                            ),
+                        ],
+                        params: None,
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1348,19 +1477,25 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Fresh(FreshVariables {
-                    vars: vec!["x".to_string(), "y".to_string()],
-                    body: vec![Goal::Equality(
-                        Term::Variable("x".to_string()),
-                        Term::Variable("y".to_string()),
-                    )],
-                })],
+                body: vec![Goal::Fresh(
+                    FreshVariables {
+                        vars: vec!["x".to_string(), "y".to_string()],
+                        body: vec![Goal::Equality(
+                            Term::Variable("x".to_string(), Span::dummy()),
+                            Term::Variable("y".to_string(), Span::dummy()),
+                            Span::dummy(),
+                        )],
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1377,6 +1512,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1385,39 +1521,50 @@ mod tests {
                     type_annotation: None,
                 }],
                 search_strategy: None,
-                body: vec![Goal::PatternMatch(PatternMatching {
-                    term: Term::Variable("l".to_string()),
-                    arms: vec![
-                        PatternArm {
-                            pattern: Pattern::List(ListPattern {
-                                elements: vec![],
-                                tail: None,
-                            }),
-                            body: vec![Goal::RelationCall(RelationCall {
-                                name: "succeed".to_string(),
-                                args: vec![],
-                            })],
-                        },
-                        PatternArm {
-                            pattern: Pattern::List(ListPattern {
-                                elements: vec![Pattern::Variable("a".to_string())],
-                                tail: None,
-                            }),
-                            body: vec![Goal::Equality(
-                                Term::Variable("a".to_string()),
-                                Term::Literal(Literal::Number("1".to_string())),
-                            )],
-                        },
-                        PatternArm {
-                            pattern: Pattern::Wildcard,
-                            body: vec![Goal::RelationCall(RelationCall {
-                                name: "fail".to_string(),
-                                args: vec![],
-                            })],
-                        },
-                    ],
-                })],
+                body: vec![Goal::PatternMatch(
+                    PatternMatching {
+                        term: Term::Variable("l".to_string(), Span::dummy()),
+                        arms: vec![
+                            PatternArm {
+                                pattern: Pattern::List(ListPattern {
+                                    elements: vec![],
+                                    tail: None,
+                                }),
+                                body: vec![Goal::RelationCall(
+                                    RelationCall {
+                                        name: "succeed".to_string(),
+                                        args: vec![],
+                                    },
+                                    Span::dummy(),
+                                )],
+                            },
+                            PatternArm {
+                                pattern: Pattern::List(ListPattern {
+                                    elements: vec![Pattern::Variable("a".to_string())],
+                                    tail: None,
+                                }),
+                                body: vec![Goal::Equality(
+                                    Term::Variable("a".to_string(), Span::dummy()),
+                                    Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                    Span::dummy(),
+                                )],
+                            },
+                            PatternArm {
+                                pattern: Pattern::Wildcard,
+                                body: vec![Goal::RelationCall(
+                                    RelationCall {
+                                        name: "fail".to_string(),
+                                        args: vec![],
+                                    },
+                                    Span::dummy(),
+                                )],
+                            },
+                        ],
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1434,6 +1581,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1442,39 +1590,50 @@ mod tests {
                     type_annotation: None,
                 }],
                 search_strategy: None,
-                body: vec![Goal::PatternMatch(PatternMatching {
-                    term: Term::Variable("l".to_string()),
-                    arms: vec![
-                        PatternArm {
-                            pattern: Pattern::List(ListPattern {
-                                elements: vec![],
-                                tail: None,
-                            }),
-                            body: vec![Goal::RelationCall(RelationCall {
-                                name: "succeed".to_string(),
-                                args: vec![],
-                            })],
-                        },
-                        PatternArm {
-                            pattern: Pattern::List(ListPattern {
-                                elements: vec![Pattern::Variable("a".to_string())],
-                                tail: None,
-                            }),
-                            body: vec![Goal::Equality(
-                                Term::Variable("a".to_string()),
-                                Term::Literal(Literal::Number("1".to_string())),
-                            )],
-                        },
-                        PatternArm {
-                            pattern: Pattern::Wildcard,
-                            body: vec![Goal::RelationCall(RelationCall {
-                                name: "fail".to_string(),
-                                args: vec![],
-                            })],
-                        },
-                    ],
-                })],
+                body: vec![Goal::PatternMatch(
+                    PatternMatching {
+                        term: Term::Variable("l".to_string(), Span::dummy()),
+                        arms: vec![
+                            PatternArm {
+                                pattern: Pattern::List(ListPattern {
+                                    elements: vec![],
+                                    tail: None,
+                                }),
+                                body: vec![Goal::RelationCall(
+                                    RelationCall {
+                                        name: "succeed".to_string(),
+                                        args: vec![],
+                                    },
+                                    Span::dummy(),
+                                )],
+                            },
+                            PatternArm {
+                                pattern: Pattern::List(ListPattern {
+                                    elements: vec![Pattern::Variable("a".to_string())],
+                                    tail: None,
+                                }),
+                                body: vec![Goal::Equality(
+                                    Term::Variable("a".to_string(), Span::dummy()),
+                                    Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                    Span::dummy(),
+                                )],
+                            },
+                            PatternArm {
+                                pattern: Pattern::Wildcard,
+                                body: vec![Goal::RelationCall(
+                                    RelationCall {
+                                        name: "fail".to_string(),
+                                        args: vec![],
+                                    },
+                                    Span::dummy(),
+                                )],
+                            },
+                        ],
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1489,6 +1648,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1497,23 +1657,28 @@ mod tests {
                     type_annotation: None,
                 }],
                 search_strategy: None,
-                body: vec![Goal::PatternMatch(PatternMatching {
-                    term: Term::Variable("l".to_string()),
-                    arms: vec![PatternArm {
-                        pattern: Pattern::List(ListPattern {
-                            elements: vec![
-                                Pattern::Variable("a".to_string()),
-                                Pattern::Variable("b".to_string()),
-                            ],
-                            tail: Some(Box::new(Pattern::Variable("t".to_string()))),
-                        }),
-                        body: vec![Goal::Equality(
-                            Term::Variable("a".to_string()),
-                            Term::Variable("b".to_string()),
-                        )],
-                    }],
-                })],
+                body: vec![Goal::PatternMatch(
+                    PatternMatching {
+                        term: Term::Variable("l".to_string(), Span::dummy()),
+                        arms: vec![PatternArm {
+                            pattern: Pattern::List(ListPattern {
+                                elements: vec![
+                                    Pattern::Variable("a".to_string()),
+                                    Pattern::Variable("b".to_string()),
+                                ],
+                                tail: Some(Box::new(Pattern::Variable("t".to_string()))),
+                            }),
+                            body: vec![Goal::Equality(
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Variable("b".to_string(), Span::dummy()),
+                                Span::dummy(),
+                            )],
+                        }],
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1528,26 +1693,38 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
                 body: vec![
-                    Goal::Let(LetDeclaration {
-                        var_name: "x".to_string(),
-                        value: Some(Term::Literal(Literal::Number("42".to_string()))),
-                    }),
-                    Goal::Let(LetDeclaration {
-                        var_name: "y".to_string(),
-                        value: None,
-                    }),
+                    Goal::Let(
+                        LetDeclaration {
+                            var_name: "x".to_string(),
+                            value: Some(Term::Literal(
+                                Literal::Number("42".to_string()),
+                                Span::dummy(),
+                            )),
+                        },
+                        Span::dummy(),
+                    ),
+                    Goal::Let(
+                        LetDeclaration {
+                            var_name: "y".to_string(),
+                            value: None,
+                        },
+                        Span::dummy(),
+                    ),
                     Goal::Equality(
-                        Term::Variable("x".to_string()),
-                        Term::Variable("y".to_string()),
+                        Term::Variable("x".to_string(), Span::dummy()),
+                        Term::Variable("y".to_string(), Span::dummy()),
+                        Span::dummy(),
                     ),
                 ],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1558,20 +1735,25 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::MethodCall(MethodCall {
-                    receiver: Box::new(Term::Variable("x".to_string())),
-                    method: "method".to_string(),
-                    args: vec![
-                        Term::Variable("a".to_string()),
-                        Term::Variable("b".to_string()),
-                    ],
-                })],
+                body: vec![Goal::MethodCall(
+                    MethodCall {
+                        receiver: Box::new(Term::Variable("x".to_string(), Span::dummy())),
+                        method: "method".to_string(),
+                        args: vec![
+                            Term::Variable("a".to_string(), Span::dummy()),
+                            Term::Variable("b".to_string(), Span::dummy()),
+                        ],
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1582,20 +1764,25 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::RelationCall(RelationCall {
-                    name: "my_relation".to_string(),
-                    args: vec![
-                        Term::Variable("a".to_string()),
-                        Term::Variable("b".to_string()),
-                        Term::Variable("c".to_string()),
-                    ],
-                })],
+                body: vec![Goal::RelationCall(
+                    RelationCall {
+                        name: "my_relation".to_string(),
+                        args: vec![
+                            Term::Variable("a".to_string(), Span::dummy()),
+                            Term::Variable("b".to_string(), Span::dummy()),
+                            Term::Variable("c".to_string(), Span::dummy()),
+                        ],
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1606,16 +1793,21 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::RelationCall(RelationCall {
-                    name: "succeed".to_string(),
-                    args: vec![],
-                })],
+                body: vec![Goal::RelationCall(
+                    RelationCall {
+                        name: "succeed".to_string(),
+                        args: vec![],
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1626,16 +1818,19 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
                 body: vec![Goal::Disequality(
-                    Term::Variable("a".to_string()),
-                    Term::Variable("b".to_string()),
+                    Term::Variable("a".to_string(), Span::dummy()),
+                    Term::Variable("b".to_string(), Span::dummy()),
+                    Span::dummy(),
                 )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1663,6 +1858,7 @@ mod tests {
                             "collections".to_string(),
                             "HashMap".to_string(),
                         ]),
+                        span: Span::dummy(),
                     }),
                     Item::Struct(StructDefinition {
                         is_pub: false,
@@ -1672,27 +1868,36 @@ mod tests {
                                 is_pub: false,
                                 name: "x".to_string(),
                                 type_name: "i32".to_string(),
+                                span: Span::dummy(),
                             },
                             NamedField {
                                 is_pub: false,
                                 name: "y".to_string(),
                                 type_name: "i32".to_string(),
+                                span: Span::dummy(),
                             },
                         ]),
+                        span: Span::dummy(),
                     }),
                     Item::Relation(RelationDefinition {
+                        span: Span::dummy(),
                         is_pub: false,
                         attributes: vec![],
                         name: "test".to_string(),
                         parameters: vec![],
                         search_strategy: None,
-                        body: vec![Goal::RelationCall(RelationCall {
-                            name: "succeed".to_string(),
-                            args: vec![],
-                        })],
+                        body: vec![Goal::RelationCall(
+                            RelationCall {
+                                name: "succeed".to_string(),
+                                args: vec![],
+                            },
+                            Span::dummy(),
+                        )],
                     }),
                 ],
+                span: Span::dummy(),
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1703,22 +1908,29 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Parenthesized(vec![
-                    Goal::Equality(
-                        Term::Variable("a".to_string()),
-                        Term::Variable("b".to_string()),
-                    ),
-                    Goal::Equality(
-                        Term::Variable("c".to_string()),
-                        Term::Variable("d".to_string()),
-                    ),
-                ])],
+                body: vec![Goal::Parenthesized(
+                    vec![
+                        Goal::Equality(
+                            Term::Variable("a".to_string(), Span::dummy()),
+                            Term::Variable("b".to_string(), Span::dummy()),
+                            Span::dummy(),
+                        ),
+                        Goal::Equality(
+                            Term::Variable("c".to_string(), Span::dummy()),
+                            Term::Variable("d".to_string(), Span::dummy()),
+                            Span::dummy(),
+                        ),
+                    ],
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1729,16 +1941,22 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
                 body: vec![Goal::Equality(
-                    Term::Variable("a".to_string()),
-                    Term::Parenthesized(Box::new(Term::Variable("b".to_string()))),
+                    Term::Variable("a".to_string(), Span::dummy()),
+                    Term::Parenthesized(
+                        Box::new(Term::Variable("b".to_string(), Span::dummy())),
+                        Span::dummy(),
+                    ),
+                    Span::dummy(),
                 )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1753,6 +1971,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1761,29 +1980,34 @@ mod tests {
                     type_annotation: None,
                 }],
                 search_strategy: None,
-                body: vec![Goal::PatternMatch(PatternMatching {
-                    term: Term::Variable("p".to_string()),
-                    arms: vec![PatternArm {
-                        pattern: Pattern::NamedStruct(NamedStructPattern {
-                            name: "Point".to_string(),
-                            fields: vec![
-                                FieldPattern {
-                                    name: "x".to_string(),
-                                    pattern: Pattern::Variable("a".to_string()),
-                                },
-                                FieldPattern {
-                                    name: "y".to_string(),
-                                    pattern: Pattern::Variable("b".to_string()),
-                                },
-                            ],
-                        }),
-                        body: vec![Goal::Equality(
-                            Term::Variable("a".to_string()),
-                            Term::Variable("b".to_string()),
-                        )],
-                    }],
-                })],
+                body: vec![Goal::PatternMatch(
+                    PatternMatching {
+                        term: Term::Variable("p".to_string(), Span::dummy()),
+                        arms: vec![PatternArm {
+                            pattern: Pattern::NamedStruct(NamedStructPattern {
+                                name: "Point".to_string(),
+                                fields: vec![
+                                    FieldPattern {
+                                        name: "x".to_string(),
+                                        pattern: Pattern::Variable("a".to_string()),
+                                    },
+                                    FieldPattern {
+                                        name: "y".to_string(),
+                                        pattern: Pattern::Variable("b".to_string()),
+                                    },
+                                ],
+                            }),
+                            body: vec![Goal::Equality(
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Variable("b".to_string(), Span::dummy()),
+                                Span::dummy(),
+                            )],
+                        }],
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -1800,7 +2024,7 @@ mod tests {
         };
         let goal = relation.body.get(0).unwrap();
         let pattern_matching = match goal {
-            Goal::PatternMatch(pm) => pm,
+            Goal::PatternMatch(pm, _) => pm,
             _ => panic!("Expected pattern matching goal"),
         };
 
@@ -1827,7 +2051,7 @@ mod tests {
         };
         let goal = relation.body.get(0).unwrap();
         let pattern_matching = match goal {
-            Goal::PatternMatch(pm) => pm,
+            Goal::PatternMatch(pm, _) => pm,
             _ => panic!("Expected pattern matching goal"),
         };
 
@@ -1851,7 +2075,7 @@ mod tests {
         };
         let goal = relation.body.get(0).unwrap();
         let pattern_matching = match goal {
-            Goal::PatternMatch(pm) => pm,
+            Goal::PatternMatch(pm, _) => pm,
             _ => panic!("Expected pattern matching goal"),
         };
 
@@ -1874,14 +2098,20 @@ mod tests {
         };
         let goal = relation.body.get(0).unwrap();
         let (_lhs, rhs) = match goal {
-            Goal::Equality(_lhs, rhs) => (_lhs, rhs),
+            Goal::Equality(_lhs, rhs, _) => (_lhs, rhs),
             _ => panic!("Expected equality goal"),
         };
 
-        let expected_term = Term::Compound(CompoundConstruction {
-            name: "std::option::Option::Some".to_string(),
-            args: vec![Term::Literal(Literal::Number("1".to_string()))],
-        });
+        let expected_term = Term::Compound(
+            CompoundConstruction {
+                name: "std::option::Option::Some".to_string(),
+                args: vec![Term::Literal(
+                    Literal::Number("1".to_string()),
+                    Span::dummy(),
+                )],
+            },
+            Span::dummy(),
+        );
 
         assert_eq!(*rhs, expected_term);
     }
@@ -1897,14 +2127,17 @@ mod tests {
         };
         let goal = relation.body.get(0).unwrap();
         let (_lhs, rhs) = match goal {
-            Goal::Equality(_lhs, rhs) => (_lhs, rhs),
+            Goal::Equality(_lhs, rhs, _) => (_lhs, rhs),
             _ => panic!("Expected equality goal"),
         };
 
-        let expected_term = Term::Compound(CompoundConstruction {
-            name: "std::option::Option::None".to_string(),
-            args: vec![],
-        });
+        let expected_term = Term::Compound(
+            CompoundConstruction {
+                name: "std::option::Option::None".to_string(),
+                args: vec![],
+            },
+            Span::dummy(),
+        );
 
         assert_eq!(*rhs, expected_term);
     }
@@ -1930,39 +2163,56 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Conjunction(Conjunction {
-                    body: vec![
-                        Goal::Equality(
-                            Term::Variable("a".to_string()),
-                            Term::Literal(Literal::Number("1".to_string())),
-                        ),
-                        Goal::Disjunction(Disjunction {
-                            body: vec![
-                                Goal::Equality(
-                                    Term::Variable("b".to_string()),
-                                    Term::Literal(Literal::Number("2".to_string())),
-                                ),
-                                Goal::Equality(
-                                    Term::Variable("c".to_string()),
-                                    Term::Literal(Literal::Number("3".to_string())),
-                                ),
-                            ],
-                            params: Some(SearchParams {
-                                strategy: Some(SearchStrategy::Dfs),
-                                depth: Some(3),
-                                limit: None,
-                                custom_params: vec![],
-                            }),
-                        }),
-                    ],
-                    params: None,
-                })],
+                body: vec![Goal::Conjunction(
+                    Conjunction {
+                        body: vec![
+                            Goal::Equality(
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                Span::dummy(),
+                            ),
+                            Goal::Disjunction(
+                                Disjunction {
+                                    body: vec![
+                                        Goal::Equality(
+                                            Term::Variable("b".to_string(), Span::dummy()),
+                                            Term::Literal(
+                                                Literal::Number("2".to_string()),
+                                                Span::dummy(),
+                                            ),
+                                            Span::dummy(),
+                                        ),
+                                        Goal::Equality(
+                                            Term::Variable("c".to_string(), Span::dummy()),
+                                            Term::Literal(
+                                                Literal::Number("3".to_string()),
+                                                Span::dummy(),
+                                            ),
+                                            Span::dummy(),
+                                        ),
+                                    ],
+                                    params: Some(SearchParams {
+                                        strategy: Some(SearchStrategy::Dfs),
+                                        depth: Some(3),
+                                        limit: None,
+                                        custom_params: vec![],
+                                    }),
+                                },
+                                Span::dummy(),
+                            ),
+                        ],
+                        params: None,
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -2005,15 +2255,17 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::Conjunction(conj) => {
+                    Goal::Conjunction(conj, _) => {
                         let expected = Conjunction::new(vec![
                             Goal::Equality(
-                                Term::Variable("a".to_string()),
-                                Term::Literal(Literal::Number("1".to_string())),
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                Span::dummy(),
                             ),
                             Goal::Equality(
-                                Term::Variable("b".to_string()),
-                                Term::Literal(Literal::Number("2".to_string())),
+                                Term::Variable("b".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
+                                Span::dummy(),
                             ),
                         ]);
                         assert_eq!(conj, &expected);
@@ -2038,15 +2290,17 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::Disjunction(disj) => {
+                    Goal::Disjunction(disj, _) => {
                         let expected = Disjunction::new(vec![
                             Goal::Equality(
-                                Term::Variable("a".to_string()),
-                                Term::Literal(Literal::Number("1".to_string())),
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                Span::dummy(),
                             ),
                             Goal::Equality(
-                                Term::Variable("b".to_string()),
-                                Term::Literal(Literal::Number("2".to_string())),
+                                Term::Variable("b".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
+                                Span::dummy(),
                             ),
                         ]);
                         assert_eq!(disj, &expected);
@@ -2069,18 +2323,20 @@ mod tests {
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
             Item::Relation(rel) => match &rel.body[0] {
-                Goal::Conjunction(conj) => {
+                Goal::Conjunction(conj, _) => {
                     let mut params = SearchParams::new();
                     params.strategy = Some(SearchStrategy::Dfs);
                     let expected = Conjunction::with_params(
                         vec![
                             Goal::Equality(
-                                Term::Variable("a".to_string()),
-                                Term::Literal(Literal::Number("1".to_string())),
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                Span::dummy(),
                             ),
                             Goal::Equality(
-                                Term::Variable("b".to_string()),
-                                Term::Literal(Literal::Number("2".to_string())),
+                                Term::Variable("b".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
+                                Span::dummy(),
                             ),
                         ],
                         params,
@@ -2104,18 +2360,20 @@ mod tests {
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
             Item::Relation(rel) => match &rel.body[0] {
-                Goal::Disjunction(disj) => {
+                Goal::Disjunction(disj, _) => {
                     let mut params = SearchParams::new();
                     params.limit = Some(10);
                     let expected = Disjunction::with_params(
                         vec![
                             Goal::Equality(
-                                Term::Variable("a".to_string()),
-                                Term::Literal(Literal::Number("1".to_string())),
+                                Term::Variable("a".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
+                                Span::dummy(),
                             ),
                             Goal::Equality(
-                                Term::Variable("b".to_string()),
-                                Term::Literal(Literal::Number("2".to_string())),
+                                Term::Variable("b".to_string(), Span::dummy()),
+                                Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
+                                Span::dummy(),
                             ),
                         ],
                         params,
@@ -2139,7 +2397,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
             Item::Relation(rel) => match &rel.body[0] {
-                Goal::Conjunction(conj) => {
+                Goal::Conjunction(conj, _) => {
                     assert!(conj.params.is_some());
                     let params = conj.params.as_ref().unwrap();
                     assert_eq!(params.strategy, Some(SearchStrategy::Dfs));
@@ -2166,10 +2424,10 @@ mod tests {
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
             Item::Relation(rel) => match &rel.body[0] {
-                Goal::Conjunction(conj) => {
+                Goal::Conjunction(conj, _) => {
                     assert_eq!(conj.body.len(), 2);
                     match &conj.body[1] {
-                        Goal::Disjunction(disj) => {
+                        Goal::Disjunction(disj, _) => {
                             assert!(disj.params.is_some());
                             let params = disj.params.as_ref().unwrap();
                             assert_eq!(params.strategy, Some(SearchStrategy::Dfs));
@@ -2192,30 +2450,36 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Disjunction(Disjunction {
-                    body: vec![Goal::Equality(
-                        Term::Variable("a".to_string()),
-                        Term::Variable("b".to_string()),
-                    )],
-                    params: Some(SearchParams {
-                        strategy: None,
-                        limit: None,
-                        depth: None,
-                        custom_params: vec![
-                            (
-                                "mode".to_string(),
-                                SearchParamValue::String("exhaustive".to_string()),
-                            ),
-                            ("parallel".to_string(), SearchParamValue::Boolean(true)),
-                        ],
-                    }),
-                })],
+                body: vec![Goal::Disjunction(
+                    Disjunction {
+                        body: vec![Goal::Equality(
+                            Term::Variable("a".to_string(), Span::dummy()),
+                            Term::Variable("b".to_string(), Span::dummy()),
+                            Span::dummy(),
+                        )],
+                        params: Some(SearchParams {
+                            strategy: None,
+                            limit: None,
+                            depth: None,
+                            custom_params: vec![
+                                (
+                                    "mode".to_string(),
+                                    SearchParamValue::String("exhaustive".to_string()),
+                                ),
+                                ("parallel".to_string(), SearchParamValue::Boolean(true)),
+                            ],
+                        }),
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -2251,14 +2515,14 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 2);
                 match &rel.body[0] {
-                    Goal::Conjunction(conj) => {
+                    Goal::Conjunction(conj, _) => {
                         let expected = Conjunction::new(vec![]);
                         assert_eq!(conj, &expected);
                     }
                     _ => panic!("Expected conjunction"),
                 }
                 match &rel.body[1] {
-                    Goal::Disjunction(disj) => {
+                    Goal::Disjunction(disj, _) => {
                         let expected = Disjunction::new(vec![]);
                         assert_eq!(disj, &expected);
                     }
@@ -2275,16 +2539,19 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: Some(SearchStrategy::Bfs),
                 body: vec![Goal::Equality(
-                    Term::Variable("a".to_string()),
-                    Term::Variable("b".to_string()),
+                    Term::Variable("a".to_string(), Span::dummy()),
+                    Term::Variable("b".to_string(), Span::dummy()),
+                    Span::dummy(),
                 )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -2295,24 +2562,30 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Conjunction(Conjunction {
-                    body: vec![Goal::Equality(
-                        Term::Variable("a".to_string()),
-                        Term::Variable("b".to_string()),
-                    )],
-                    params: Some(SearchParams {
-                        strategy: Some(SearchStrategy::Dfs),
-                        limit: Some(100),
-                        depth: None,
-                        custom_params: vec![],
-                    }),
-                })],
+                body: vec![Goal::Conjunction(
+                    Conjunction {
+                        body: vec![Goal::Equality(
+                            Term::Variable("a".to_string(), Span::dummy()),
+                            Term::Variable("b".to_string(), Span::dummy()),
+                            Span::dummy(),
+                        )],
+                        params: Some(SearchParams {
+                            strategy: Some(SearchStrategy::Dfs),
+                            limit: Some(100),
+                            depth: None,
+                            custom_params: vec![],
+                        }),
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -2323,24 +2596,30 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Relation(RelationDefinition {
+                span: Span::dummy(),
                 is_pub: false,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
                 search_strategy: None,
-                body: vec![Goal::Disjunction(Disjunction {
-                    body: vec![Goal::Equality(
-                        Term::Variable("a".to_string()),
-                        Term::Variable("b".to_string()),
-                    )],
-                    params: Some(SearchParams {
-                        strategy: Some(SearchStrategy::Bfs),
-                        limit: None,
-                        depth: Some(5),
-                        custom_params: vec![],
-                    }),
-                })],
+                body: vec![Goal::Disjunction(
+                    Disjunction {
+                        body: vec![Goal::Equality(
+                            Term::Variable("a".to_string(), Span::dummy()),
+                            Term::Variable("b".to_string(), Span::dummy()),
+                            Span::dummy(),
+                        )],
+                        params: Some(SearchParams {
+                            strategy: Some(SearchStrategy::Bfs),
+                            limit: None,
+                            depth: Some(5),
+                            custom_params: vec![],
+                        }),
+                    },
+                    Span::dummy(),
+                )],
             })],
+            span: Span::dummy(),
         };
         assert_eq!(ast, expected);
     }
@@ -2357,7 +2636,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd");
                         assert_eq!(block.body.raw_content, "x in 1..5 ");
                     }
@@ -2376,7 +2655,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd");
                         assert_eq!(block.body.raw_content, "x in {{foo}, 1, 2} ");
                     }
@@ -2395,7 +2674,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd");
                         assert_eq!(block.body.raw_content, r#"x in {"}", 1, 2}, y != {"{"} "#);
                     }
@@ -2414,7 +2693,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd");
                         assert_eq!(
                             block.body.raw_content,
@@ -2436,7 +2715,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd");
                         assert_eq!(
                             block.body.raw_content,
@@ -2458,7 +2737,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd");
                         assert_eq!(
                             block.body.raw_content,
@@ -2480,7 +2759,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd");
                         assert_eq!(
                             block.body.raw_content,
@@ -2508,7 +2787,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd");
                         // The raw content should preserve the original formatting
                         assert!(block.body.raw_content.contains("x in {{foo}, 1, 2}"));
@@ -2530,7 +2809,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpfd"); // Default domain
                         assert_eq!(block.body.raw_content, "x in {{foo}, 1} ");
                     }
@@ -2549,7 +2828,7 @@ mod tests {
             Item::Relation(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
-                    Goal::ConstraintBlock(block) => {
+                    Goal::ConstraintBlock(block, _) => {
                         assert_eq!(block.domain, "clpz");
                         assert_eq!(block.body.raw_content, "x + y == {{sum}} ");
                     }

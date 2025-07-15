@@ -28,11 +28,30 @@ impl fmt::Display for TypeAnnotation {
 }
 
 /// Meta expressions for computation and interpolation
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum MetaExpression {
-    Variable(String),
-    Literal(MetaValue),
-    BinaryOp(MetaBinaryOp, Box<MetaExpression>, Box<MetaExpression>),
+    Variable(String, super::parser::ast::Span),
+    Literal(MetaValue, super::parser::ast::Span),
+    BinaryOp(
+        MetaBinaryOp,
+        Box<MetaExpression>,
+        Box<MetaExpression>,
+        super::parser::ast::Span,
+    ),
+}
+
+impl PartialEq for MetaExpression {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (MetaExpression::Variable(a, _), MetaExpression::Variable(b, _)) => a == b,
+            (MetaExpression::Literal(a, _), MetaExpression::Literal(b, _)) => a == b,
+            (
+                MetaExpression::BinaryOp(op_a, left_a, right_a, _),
+                MetaExpression::BinaryOp(op_b, left_b, right_b, _),
+            ) => op_a == op_b && left_a == left_b && right_a == right_b,
+            _ => false,
+        }
+    }
 }
 
 /// Binary operators for meta expressions
@@ -133,12 +152,12 @@ pub fn evaluate_meta_expression(
     bindings: &MetaBindings,
 ) -> Result<MetaValue, MetaError> {
     match expr {
-        MetaExpression::Variable(name) => bindings
+        MetaExpression::Variable(name, _) => bindings
             .get(name)
             .cloned()
             .ok_or_else(|| MetaError::UnboundVariable(name.clone())),
-        MetaExpression::Literal(value) => Ok(value.clone()),
-        MetaExpression::BinaryOp(op, left, right) => {
+        MetaExpression::Literal(value, _) => Ok(value.clone()),
+        MetaExpression::BinaryOp(op, left, right, _) => {
             let left_val = evaluate_meta_expression(left, bindings)?;
             let right_val = evaluate_meta_expression(right, bindings)?;
             apply_binary_operation(op, &left_val, &right_val)
@@ -335,23 +354,30 @@ pub type TemplateExpansionResult = Result<Vec<super::parser::ast::Goal>, MetaErr
 pub fn expand_meta_statement(
     statement: &MetaStatement,
     context: &mut TemplateExpansionContext,
+    original_span: &super::parser::ast::Span,
 ) -> TemplateExpansionResult {
     context.check_depth()?;
     context.push_depth();
 
     let result = match statement {
-        MetaStatement::Let(let_stmt) => expand_let_statement(let_stmt, context),
+        MetaStatement::Let(let_stmt) => expand_let_statement(let_stmt, context, original_span),
         MetaStatement::If {
             condition,
             then_body,
             else_body,
-        } => expand_if_statement(condition, then_body, else_body.as_ref(), context),
+        } => expand_if_statement(
+            condition,
+            then_body,
+            else_body.as_ref(),
+            context,
+            original_span,
+        ),
         MetaStatement::For {
             variable,
             variable_type,
             range,
             body,
-        } => expand_for_statement(variable, variable_type, range, body, context),
+        } => expand_for_statement(variable, variable_type, range, body, context, original_span),
     };
 
     context.pop_depth();
@@ -362,6 +388,7 @@ pub fn expand_meta_statement(
 fn expand_let_statement(
     let_stmt: &LetStatement,
     context: &mut TemplateExpansionContext,
+    original_span: &super::parser::ast::Span,
 ) -> TemplateExpansionResult {
     let value = evaluate_meta_expression(&let_stmt.expression, &context.bindings)?;
 
@@ -380,9 +407,11 @@ fn expand_let_statement(
     use super::parser::ast::{Goal, LetDeclaration, Literal, Term};
 
     let runtime_value = match value {
-        MetaValue::Integer(i) => Term::Literal(Literal::Number(i.to_string())),
-        MetaValue::String(s) => Term::Literal(Literal::String(s)),
-        MetaValue::Boolean(b) => Term::Literal(Literal::Boolean(b)),
+        MetaValue::Integer(i) => {
+            Term::Literal(Literal::Number(i.to_string()), original_span.clone())
+        }
+        MetaValue::String(s) => Term::Literal(Literal::String(s), original_span.clone()),
+        MetaValue::Boolean(b) => Term::Literal(Literal::Boolean(b), original_span.clone()),
     };
 
     let let_decl = LetDeclaration {
@@ -390,7 +419,7 @@ fn expand_let_statement(
         value: Some(runtime_value),
     };
 
-    Ok(vec![Goal::Let(let_decl)])
+    Ok(vec![Goal::Let(let_decl, original_span.clone())])
 }
 
 /// Expand an if statement by evaluating the condition and choosing the appropriate branch
@@ -399,6 +428,7 @@ fn expand_if_statement(
     then_body: &super::parser::ast::GoalBody,
     else_body: Option<&super::parser::ast::GoalBody>,
     context: &mut TemplateExpansionContext,
+    _original_span: &super::parser::ast::Span,
 ) -> TemplateExpansionResult {
     let condition_value = evaluate_meta_expression(condition, &context.bindings)?;
 
@@ -428,6 +458,7 @@ fn expand_for_statement(
     for_range: &MetaForRange,
     body: &super::parser::ast::GoalBody,
     context: &mut TemplateExpansionContext,
+    original_span: &super::parser::ast::Span,
 ) -> TemplateExpansionResult {
     // Evaluate the start and end expressions
     let start_val = evaluate_meta_expression(&for_range.start, &context.bindings)?;
@@ -464,14 +495,14 @@ fn expand_for_statement(
         let iteration_goals = expand_goal_body(body, &mut iteration_context)?;
 
         // Create let statement to bind the loop variable
-        let runtime_value = Term::Literal(Literal::Number(i.to_string()));
+        let runtime_value = Term::Literal(Literal::Number(i.to_string()), original_span.clone());
         let let_decl = LetDeclaration {
             var_name: variable.to_string(),
             value: Some(runtime_value),
         };
 
         // Create the body for this iteration: let statement + expanded goals
-        let mut iteration_body = vec![Goal::Let(let_decl)];
+        let mut iteration_body = vec![Goal::Let(let_decl, original_span.clone())];
         iteration_body.extend(iteration_goals);
 
         // Each iteration becomes a conjunction
@@ -480,7 +511,7 @@ fn expand_for_statement(
             params: None, // No special parameters for meta-generated conjunctions
         };
 
-        disjunction_branches.push(Goal::Conjunction(iteration_conj));
+        disjunction_branches.push(Goal::Conjunction(iteration_conj, original_span.clone()));
     }
 
     // Create a disjunction of all iterations
@@ -493,7 +524,7 @@ fn expand_for_statement(
             body: disjunction_branches,
             params: None, // No special parameters for meta-generated disjunctions
         };
-        Ok(vec![Goal::Disjunction(disjunction)])
+        Ok(vec![Goal::Disjunction(disjunction, original_span.clone())])
     }
 }
 
@@ -520,61 +551,79 @@ fn expand_goal(
     use super::parser::ast::Goal;
 
     match goal {
-        Goal::MetaStatement(meta_stmt) => expand_meta_statement(meta_stmt, context),
+        Goal::MetaStatement(meta_stmt, span) => expand_meta_statement(meta_stmt, context, span),
         // For other goal types, we need to check for interpolation in terms
-        Goal::Equality(lhs, rhs) => {
+        Goal::Equality(lhs, rhs, span) => {
             let expanded_lhs = expand_term(lhs, context)?;
             let expanded_rhs = expand_term(rhs, context)?;
-            Ok(vec![Goal::Equality(expanded_lhs, expanded_rhs)])
+            Ok(vec![Goal::Equality(
+                expanded_lhs,
+                expanded_rhs,
+                span.clone(),
+            )])
         }
-        Goal::Disequality(lhs, rhs) => {
+        Goal::Disequality(lhs, rhs, span) => {
             let expanded_lhs = expand_term(lhs, context)?;
             let expanded_rhs = expand_term(rhs, context)?;
-            Ok(vec![Goal::Disequality(expanded_lhs, expanded_rhs)])
+            Ok(vec![Goal::Disequality(
+                expanded_lhs,
+                expanded_rhs,
+                span.clone(),
+            )])
         }
-        Goal::RelationCall(call) => {
+        Goal::RelationCall(call, span) => {
             let mut expanded_call = call.clone();
             for arg in &mut expanded_call.args {
                 *arg = expand_term(arg, context)?;
             }
-            Ok(vec![Goal::RelationCall(expanded_call)])
+            Ok(vec![Goal::RelationCall(expanded_call, span.clone())])
         }
-        Goal::Conjunction(conj) => {
+        Goal::Conjunction(conj, span) => {
             let expanded_body = expand_goal_body(&conj.body, context)?;
-            Ok(vec![Goal::Conjunction(super::parser::ast::Conjunction {
-                body: expanded_body,
-                params: conj.params.clone(),
-            })])
+            Ok(vec![Goal::Conjunction(
+                super::parser::ast::Conjunction {
+                    body: expanded_body,
+                    params: conj.params.clone(),
+                },
+                span.clone(),
+            )])
         }
-        Goal::Disjunction(disj) => {
+        Goal::Disjunction(disj, span) => {
             let expanded_body = expand_goal_body(&disj.body, context)?;
-            Ok(vec![Goal::Disjunction(super::parser::ast::Disjunction {
-                body: expanded_body,
-                params: disj.params.clone(),
-            })])
+            Ok(vec![Goal::Disjunction(
+                super::parser::ast::Disjunction {
+                    body: expanded_body,
+                    params: disj.params.clone(),
+                },
+                span.clone(),
+            )])
         }
-        Goal::Fresh(fresh) => {
+        Goal::Fresh(fresh, span) => {
             let expanded_body = expand_goal_body(&fresh.body, context)?;
-            Ok(vec![Goal::Fresh(super::parser::ast::FreshVariables {
-                vars: fresh.vars.clone(),
-                body: expanded_body,
-            })])
+            Ok(vec![Goal::Fresh(
+                super::parser::ast::FreshVariables {
+                    vars: fresh.vars.clone(),
+                    body: expanded_body,
+                },
+                span.clone(),
+            )])
         }
-        Goal::Parenthesized(body) => {
+        Goal::Parenthesized(body, span) => {
             let expanded_body = expand_goal_body(body, context)?;
-            Ok(vec![Goal::Parenthesized(expanded_body)])
+            Ok(vec![Goal::Parenthesized(expanded_body, span.clone())])
         }
-        Goal::PatternMatch(pm) => {
+        Goal::PatternMatch(pm, span) => {
             let mut expanded_pm = pm.clone();
             for arm in &mut expanded_pm.arms {
                 arm.body = expand_goal_body(&arm.body, context)?;
             }
-            Ok(vec![Goal::PatternMatch(expanded_pm)])
+            Ok(vec![Goal::PatternMatch(expanded_pm, span.clone())])
         }
         // Goals that don't require expansion
-        Goal::Let(_) | Goal::BooleanLiteral(_) | Goal::MethodCall(_) | Goal::ConstraintBlock(_) => {
-            Ok(vec![goal.clone()])
-        }
+        Goal::Let(..)
+        | Goal::BooleanLiteral(..)
+        | Goal::MethodCall(..)
+        | Goal::ConstraintBlock(..) => Ok(vec![goal.clone()]),
     }
 }
 
@@ -586,18 +635,20 @@ pub fn expand_term(
     use super::parser::ast::{Literal, Term};
 
     match term {
-        Term::Interpolation(expr) => {
+        Term::Interpolation(expr, span) => {
             // Evaluate the interpolation expression
             let value = evaluate_meta_expression(expr, &context.bindings)?;
 
-            // Convert the meta value to a term
+            // Convert the meta value to a term, preserving the original span
             match value {
-                MetaValue::Integer(i) => Ok(Term::Literal(Literal::Number(i.to_string()))),
-                MetaValue::String(s) => Ok(Term::Literal(Literal::String(s))),
-                MetaValue::Boolean(b) => Ok(Term::Literal(Literal::Boolean(b))),
+                MetaValue::Integer(i) => {
+                    Ok(Term::Literal(Literal::Number(i.to_string()), span.clone()))
+                }
+                MetaValue::String(s) => Ok(Term::Literal(Literal::String(s), span.clone())),
+                MetaValue::Boolean(b) => Ok(Term::Literal(Literal::Boolean(b), span.clone())),
             }
         }
-        Term::List(list) => {
+        Term::List(list, span) => {
             let mut expanded_list = list.clone();
             for element in &mut expanded_list.elements {
                 *element = expand_term(element, context)?;
@@ -605,27 +656,28 @@ pub fn expand_term(
             if let Some(tail) = &mut expanded_list.tail {
                 *tail = Box::new(expand_term(tail, context)?);
             }
-            Ok(Term::List(expanded_list))
+            Ok(Term::List(expanded_list, span.clone()))
         }
-        Term::Parenthesized(inner) => {
-            Ok(Term::Parenthesized(Box::new(expand_term(inner, context)?)))
-        }
-        Term::NamedStruct(struct_term) => {
+        Term::Parenthesized(inner, span) => Ok(Term::Parenthesized(
+            Box::new(expand_term(inner, context)?),
+            span.clone(),
+        )),
+        Term::NamedStruct(struct_term, span) => {
             let mut expanded_struct = struct_term.clone();
             for field in &mut expanded_struct.fields {
                 field.value = expand_term(&field.value, context)?;
             }
-            Ok(Term::NamedStruct(expanded_struct))
+            Ok(Term::NamedStruct(expanded_struct, span.clone()))
         }
-        Term::Compound(compound) => {
+        Term::Compound(compound, span) => {
             let mut expanded_compound = compound.clone();
             for arg in &mut expanded_compound.args {
                 *arg = expand_term(arg, context)?;
             }
-            Ok(Term::Compound(expanded_compound))
+            Ok(Term::Compound(expanded_compound, span.clone()))
         }
         // Terms that don't require expansion
-        Term::Variable(_) | Term::Wildcard | Term::Literal(_) => Ok(term.clone()),
+        Term::Variable(_, _) | Term::Wildcard(_) | Term::Literal(_, _) => Ok(term.clone()),
     }
 }
 
@@ -677,9 +729,9 @@ impl fmt::Display for MetaStatement {
 impl fmt::Display for MetaExpression {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MetaExpression::Variable(name) => write!(f, "{}", name),
-            MetaExpression::Literal(value) => write!(f, "{}", value),
-            MetaExpression::BinaryOp(op, left, right) => {
+            MetaExpression::Variable(name, _) => write!(f, "{}", name),
+            MetaExpression::Literal(value, _) => write!(f, "{}", value),
+            MetaExpression::BinaryOp(op, left, right, _) => {
                 write!(f, "{} {} {}", left, op, right)
             }
         }
@@ -711,6 +763,38 @@ impl fmt::Display for MetaValue {
             MetaValue::Integer(i) => write!(f, "{}", i),
             MetaValue::String(s) => write!(f, "\"{}\"", s),
             MetaValue::Boolean(b) => write!(f, "{}", b),
+        }
+    }
+}
+
+/// Helper function to map meta expression parsing errors from meta content coordinates
+/// to source file coordinates using the source span context.
+pub fn map_meta_error_position(
+    pest_error: &crate::interpreter::parser::meta_parser::MetaParseError,
+    source_span: &super::parser::ast::Span,
+) -> String {
+    match pest_error {
+        crate::interpreter::parser::meta_parser::MetaParseError::Pest(inner_error) => {
+            match inner_error.location {
+                pest::error::InputLocation::Pos(meta_pos) => {
+                    // Map position from meta content to source file coordinates
+                    let source_pos = source_span.start + meta_pos;
+                    format!(
+                        "Meta expression parse error at position {} (source position {}): {}",
+                        meta_pos, source_pos, inner_error.variant
+                    )
+                }
+                pest::error::InputLocation::Span((start, end)) => {
+                    // Map span from meta content to source file coordinates
+                    let source_start = source_span.start + start;
+                    let source_end = source_span.start + end;
+                    format!("Meta expression parse error at positions {}-{} (source positions {}-{}): {}",
+                        start, end, source_start, source_end, inner_error.variant)
+                }
+            }
+        }
+        other => {
+            format!("Meta expression error: {}", other)
         }
     }
 }
