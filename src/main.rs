@@ -2,7 +2,9 @@ use clap::{Parser, Subcommand};
 use proto_vulcan::engine::DefaultEngine;
 use proto_vulcan::interpreter::parser::parse_str;
 use proto_vulcan::interpreter::test_runner::{TestRunOptions, TestRunner};
-use proto_vulcan::interpreter::{Interpreter, InterpreterError};
+use proto_vulcan::interpreter::{
+    create_main_query, find_main_relation, Interpreter, InterpreterError,
+};
 use proto_vulcan::user::DefaultUser;
 use std::env;
 use std::path::PathBuf;
@@ -12,8 +14,9 @@ type DefaultInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 #[command(after_help = "EXAMPLES:
-    proto-vulcan file.pv                    # Run a proto-vulcan file
+    proto-vulcan file.pv                    # Run a proto-vulcan file (executes @main relation)
     proto-vulcan run --file file.pv         # Same as above (explicit)
+    proto-vulcan file.pv --query \"goal()\"    # Run with specific query instead of @main
     proto-vulcan check file.pv              # Check syntax without running
     proto-vulcan test                       # Run all tests
     proto-vulcan test my_test               # Run specific test
@@ -26,8 +29,13 @@ struct Cli {
     #[arg(value_name = "FILE", help = "Proto-vulcan file to run")]
     file: Option<PathBuf>,
 
-    /// The query to execute when using positional file argument
-    #[arg(short, long, default_value = "main()", help = "Query to execute")]
+    /// The query to execute when using positional file argument (overrides @main relation)
+    #[arg(
+        short,
+        long,
+        default_value = "main()",
+        help = "Query to execute (overrides @main relation if present)"
+    )]
     query: Option<String>,
 }
 
@@ -39,7 +47,7 @@ enum Commands {
         #[arg(short, long, value_name = "FILE")]
         file: PathBuf,
 
-        /// The query to execute (defaults to "main()")
+        /// The query to execute (defaults to @main relation or "main()" if no @main found)
         #[arg(short, long, default_value = "main()")]
         query: String,
     },
@@ -143,7 +151,7 @@ fn main() {
             eprintln!("Use 'proto-vulcan --help' for usage information.");
             eprintln!();
             eprintln!("Quick examples:");
-            eprintln!("  proto-vulcan file.pv          # Run a file");
+            eprintln!("  proto-vulcan file.pv          # Run a file (executes @main relation)");
             eprintln!("  proto-vulcan check file.pv    # Check syntax");
             eprintln!("  proto-vulcan test             # Run tests");
             eprintln!("  proto-vulcan test --file file.pv  # Run tests from file");
@@ -179,21 +187,50 @@ fn run_file(path: PathBuf, query: String) -> Result<(), Box<dyn std::error::Erro
 
     let program =
         parse_str(&file_contents).map_err(|e| InterpreterError::ParseError(e.to_string()))?;
+
+    // Check for @main relation first
+    let actual_query = match find_main_relation(&program)? {
+        Some(main_rel) => {
+            let main_query = create_main_query(main_rel);
+            println!(
+                "Found @main relation '{}', executing: {}",
+                main_rel.name, main_query
+            );
+            main_query
+        }
+        None => {
+            // No @main relation found, use provided query
+            if query == "main()" {
+                return Err(format!(
+                    "No @main relation found in '{}' and no explicit query provided. \
+                    Either add a @main attribute to a relation or specify a query with --query",
+                    path.display()
+                )
+                .into());
+            }
+            println!(
+                "No @main relation found, executing provided query: {}",
+                query
+            );
+            query
+        }
+    };
+
     interpreter.load_program(program)?;
 
-    match interpreter.query(&query) {
+    match interpreter.query(&actual_query) {
         Ok(results) => {
             if !results.is_empty() {
-                println!("Query results:");
-                for result in results {
-                    println!("{:?}", result);
+                println!("Results:");
+                for (i, result) in results.iter().enumerate() {
+                    println!("  Solution {}: {:?}", i + 1, result);
                 }
             } else {
-                println!("Query '{}' succeeded with no results.", query);
+                println!("Query succeeded with no results.");
             }
         }
         Err(e) => {
-            eprintln!("Error running query '{}': {}", query, e);
+            eprintln!("Error running query '{}': {}", actual_query, e);
             return Err(e.into());
         }
     }

@@ -22,8 +22,9 @@ rel easy_zebrao(houses) {
     member(["norwegian", "blue"], houses)
 }
 
-// Test case to run the puzzle with wildcard pattern in expected
+// Main entry point and test case for the easy zebra puzzle
+@main
 @test(expected = [[["norwegian", "blue"], ["italian", "red"], ["spanish", _]]])
-rel easy_zebra_test(houses) {
+rel solve_easy_zebra(houses) {
     easy_zebrao(houses)
 } 

@@ -21,6 +21,74 @@ pub mod query;
 mod runtime_value;
 pub mod test_runner;
 
+/// Validation functions for @main relations
+pub fn find_main_relation(
+    program: &ast::Program,
+) -> Result<Option<&ast::RelationDefinition>, String> {
+    let main_relations: Vec<&ast::RelationDefinition> = program
+        .items
+        .iter()
+        .filter_map(|item| {
+            if let ast::Item::Relation(rel_def) = item {
+                if rel_def.attributes.iter().any(|attr| attr.name == "main") {
+                    Some(rel_def)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    match main_relations.len() {
+        0 => Ok(None),
+        1 => {
+            let main_rel = main_relations[0];
+            validate_main_relation(main_rel)?;
+            Ok(Some(main_rel))
+        }
+        n => Err(format!(
+            "Found {} relations with @main attribute, but only one is allowed per file. Relations: {}",
+            n,
+            main_relations.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(", ")
+        )),
+    }
+}
+
+/// Validates that a relation marked with @main meets the requirements
+pub fn validate_main_relation(rel_def: &ast::RelationDefinition) -> Result<(), String> {
+    // Check that @main relations cannot have non-relational parameters (templates)
+    for param in &rel_def.parameters {
+        if let Some(type_annotation) = &param.type_annotation {
+            return Err(format!(
+                "Relation '{}' marked with @main cannot have non-relational parameters. \
+                Parameter '{}' has type annotation '{}', but @main relations can only have \
+                relational parameters (without type annotations)",
+                rel_def.name,
+                param.name,
+                match type_annotation {
+                    metaprogramming::TypeAnnotation::Int => "int",
+                    metaprogramming::TypeAnnotation::String => "string",
+                    metaprogramming::TypeAnnotation::Bool => "bool",
+                }
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Creates a query string for the main relation with appropriate variable bindings
+pub fn create_main_query(main_rel: &ast::RelationDefinition) -> String {
+    if main_rel.parameters.is_empty() {
+        format!("{}()", main_rel.name)
+    } else {
+        let param_vars: Vec<String> = main_rel.parameters.iter().map(|p| p.name.clone()).collect();
+        format!("{}({})", main_rel.name, param_vars.join(", "))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum InterpreterError {
     ParseError(String),

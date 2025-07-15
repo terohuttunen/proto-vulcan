@@ -92,14 +92,9 @@ rel medium_zebrao(houses) {
     nexto([_, _, _, "fox", _], [_, "chesterfields", _, _, _], houses)
 }
 
-// Test case to run the medium zebra puzzle - verifies a solution exists
-@test
-rel medium_zebra_test(houses) {
-    medium_zebrao(houses)
-}
-
-// Test with expected solution to verify correctness
+// Main entry point and test case for the medium zebra puzzle
+@main
 @test(expected = [[["norwegian", "kools", _, "fox", "yellow"], ["ukrainian", "chesterfields", "tea", "horse", "blue"], ["englishman", "oldgolds", "milk", "snails", "red"], ["japanese", "parliaments", "coffee", _, "green"], ["spaniard", "lucky-strikes", "oj", "dog", "ivory"]]])
-rel medium_zebra_solution_test(houses) {
+rel solve_medium_zebra(houses) {
     medium_zebrao(houses)
 } 
