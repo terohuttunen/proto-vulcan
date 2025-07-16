@@ -1,0 +1,50 @@
+{
+    "name": "proto-vulcan",
+    "displayName": "Proto-Vulcan Language Support",
+    "description": "Syntax highlighting for Proto-Vulcan logic programming language",
+    "version": "0.1.0",
+    "publisher": "proto-vulcan",
+    "engines": {
+        "vscode": "^1.74.0"
+    },
+    "categories": [
+        "Programming Languages"
+    ],
+    "keywords": [
+        "proto-vulcan",
+        "logic programming",
+        "constraint programming",
+        "relational programming"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "proto-vulcan",
+                "aliases": [
+                    "Proto-Vulcan",
+                    "proto-vulcan",
+                    "pv"
+                ],
+                "extensions": [
+                    ".pv"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "proto-vulcan",
+                "scopeName": "source.proto-vulcan",
+                "path": "./syntaxes/proto-vulcan.tmLanguage.json"
+            }
+        ]
+    },
+    "devDependencies": {
+        "vscode": "^1.1.36"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/your-username/proto-vulcan-vscode"
+    },
+    "license": "MIT"
+}
