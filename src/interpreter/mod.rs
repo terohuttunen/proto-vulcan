@@ -20,6 +20,7 @@ pub mod parser;
 pub mod query;
 mod runtime_value;
 pub mod test_runner;
+pub mod trace;
 
 /// Validation functions for @main relations
 pub fn find_main_relation(
@@ -290,6 +291,19 @@ where
     {
         let query_goal = query::parse_query(query_str)?;
         query::execute_query(self.environment.clone(), query_goal)
+    }
+
+    /// Execute a query string with tracing enabled
+    pub fn query_with_trace(
+        &mut self,
+        query_str: &str,
+        trace_config: &mut trace::TraceConfig,
+    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
+    where
+        U::UserContext: Default,
+    {
+        let query_goal = query::parse_query(query_str)?;
+        query::execute_query_with_trace(self.environment.clone(), query_goal, trace_config)
     }
 }
 

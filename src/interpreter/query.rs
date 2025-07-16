@@ -147,6 +147,129 @@ where
     Ok(results)
 }
 
+/// Execute a query against the environment with tracing enabled
+pub fn execute_query_with_trace<U: User, E: Engine<U>>(
+    environment: Rc<RefCell<Environment<U, E>>>,
+    query: Goal,
+    trace_config: &mut super::trace::TraceConfig,
+) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
+where
+    U::UserContext: Default,
+{
+    use super::parser::ast::Goal;
+
+    // Start tracing
+    if trace_config.enabled {
+        let goal_name = match &query {
+            Goal::RelationCall(call, _) => call.name.clone(),
+            Goal::Equality(_, _, _) => "equality".to_string(),
+            Goal::Disequality(_, _, _) => "disequality".to_string(),
+            _ => "query".to_string(),
+        };
+        trace_config.enter_relation(&goal_name);
+    }
+
+    // Pre-populate the execution context with variables from the query
+    let mut execution_context = ExecutionContext::new(environment);
+    let query_vars = extract_variables_from_goal(&query);
+    for var_name in &query_vars {
+        let fresh_var = execution_context.create_fresh_var();
+        execution_context.bind_var(var_name.clone(), fresh_var);
+    }
+
+    // Convert the AST query to a runtime goal
+    let runtime_goal = execution_context.ast_goal_to_runtime(&query)?;
+
+    // Get the actual variable bindings used during goal conversion
+    let variable_bindings = execution_context.get_variable_bindings();
+
+    // Add reification goals for each user-visible variable
+    use crate::goal::{AnyGoal, GoalCast};
+    use crate::operator::conj::InferredConj;
+    use crate::state::reify;
+
+    let mut goals = vec![runtime_goal.clone()];
+
+    for var_term in variable_bindings.values() {
+        goals.push(reify(var_term.clone()).cast_into());
+    }
+
+    let mut reified_goal = AnyGoal::<U, E>::succeed();
+    for goal in goals.into_iter().rev() {
+        reified_goal = InferredConj::new(goal, reified_goal).cast_into();
+    }
+
+    // Create solver and initial state
+    let user_state = U::default();
+    let user_globals = U::UserContext::default();
+    let solver = crate::solver::Solver::new(user_globals, false);
+    let initial_state = crate::state::State::new(user_state);
+
+    // Execute the goal and collect results with tracing
+    let stream = solver.start(&reified_goal, initial_state);
+    let mut results = Vec::new();
+
+    // Create a mutable stream to iterate through
+    let mut stream = stream;
+    let mut solver = solver;
+
+    // Collect up to 100 results (to prevent infinite loops)
+    let max_results = 100;
+    let mut result_count = 0;
+
+    while result_count < max_results {
+        match solver.next(&mut stream) {
+            Some(state_box) => {
+                let state = &*state_box;
+                let mut query_result = QueryResult::new();
+
+                // Finalize the state by processing the constraint store
+                let smap = state.smap_ref();
+                let purified_cstore = state.cstore_ref().clone().purify(smap);
+                let reified_cstore = Rc::new(purified_cstore.walk_star(smap));
+
+                // Convert bindings for tracing
+                let mut trace_bindings = Vec::new();
+                for (var_name, var_term) in &variable_bindings {
+                    // Walk the variable term to get its value in the reified state
+                    let resolved_term = smap.walk_star(var_term);
+                    let result_with_constraints =
+                        LResult(resolved_term.clone(), Rc::clone(&reified_cstore));
+                    query_result.bind(var_name.clone(), result_with_constraints);
+
+                    // Prepare for tracing
+                    trace_bindings.push((var_name.clone(), format!("{}", resolved_term)));
+                }
+
+                // Trace the solution
+                if trace_config.enabled {
+                    trace_config.trace_solution(&trace_bindings);
+                }
+
+                results.push(query_result);
+                result_count += 1;
+            }
+            None => break,
+        }
+    }
+
+    // End tracing
+    if trace_config.enabled {
+        trace_config.exit_relation(
+            &match &query {
+                Goal::RelationCall(call, _) => call.name.clone(),
+                Goal::Equality(_, _, _) => "equality".to_string(),
+                Goal::Disequality(_, _, _) => "disequality".to_string(),
+                _ => "query".to_string(),
+            },
+            true,
+        );
+        trace_config.print_summary();
+    }
+
+    Ok(results)
+}
+
 /// Extract variable names from a goal AST
 fn extract_variables_from_goal(goal: &Goal) -> Vec<String> {
     let mut vars = Vec::new();
@@ -311,8 +434,14 @@ mod tests {
         let query = parse_query("x == 42").unwrap();
         match query {
             Goal::Equality(left, right, _) => {
-                assert!(matches!(left, super::super::parser::ast::Term::Variable(_, _)));
-                assert!(matches!(right, super::super::parser::ast::Term::Literal(..)));
+                assert!(matches!(
+                    left,
+                    super::super::parser::ast::Term::Variable(_, _)
+                ));
+                assert!(matches!(
+                    right,
+                    super::super::parser::ast::Term::Literal(..)
+                ));
             }
             _ => panic!("Expected equality goal"),
         }

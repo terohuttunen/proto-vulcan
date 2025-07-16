@@ -5,7 +5,7 @@ use proto_vulcan::interpreter::parser::parse_str;
 use proto_vulcan::interpreter::query::QueryResult;
 use proto_vulcan::interpreter::test_runner::{TestRunOptions, TestRunner};
 use proto_vulcan::interpreter::{
-    create_main_query, find_main_relation, Interpreter, InterpreterError,
+    create_main_query, find_main_relation, trace::TraceConfig, Interpreter, InterpreterError,
 };
 use proto_vulcan::user::DefaultUser;
 use std::env;
@@ -45,6 +45,11 @@ EXAMPLES:
     proto-vulcan --color never --format table examples/zebra.pv
     proto-vulcan --color auto examples/zebra.pv   # default behavior
     
+    # Enable tracing to see search execution
+    proto-vulcan --trace --query "member(X, [1, 2, 3])" std/list.pv
+    proto-vulcan --trace --trace-level 1 --query "append(X, Y, [1, 2])" std/list.pv  # basic
+    proto-vulcan --trace --trace-level 3 --query "member(X, [1, 2, 3])" std/list.pv  # detailed
+    
     # Run tests
     proto-vulcan test
     proto-vulcan test --file examples/zebra.pv"#)]
@@ -70,6 +75,14 @@ struct Cli {
     /// When to use colors in output
     #[arg(long, value_enum, default_value = "auto")]
     color: ColorChoice,
+
+    /// Enable search tracing to show execution flow
+    #[arg(long)]
+    trace: bool,
+
+    /// Trace detail level (1=basic, 2=medium, 3=detailed)
+    #[arg(long, value_name = "LEVEL", default_value = "2")]
+    trace_level: u8,
 }
 
 #[derive(Subcommand)]
@@ -143,9 +156,14 @@ fn main() {
     setup_colors(cli.color);
 
     let result = match &cli.command {
-        Some(Commands::Run { file, query }) => {
-            run_file(file.clone(), query.clone(), cli.format, cli.limit)
-        }
+        Some(Commands::Run { file, query }) => run_file(
+            file.clone(),
+            query.clone(),
+            cli.format,
+            cli.limit,
+            cli.trace,
+            cli.trace_level,
+        ),
         Some(Commands::Check { file, show_ast }) => parse_file(file.clone(), *show_ast),
         Some(Commands::Test {
             test_name,
@@ -170,7 +188,14 @@ fn main() {
         None => {
             if let Some(file) = &cli.file {
                 let query_str = cli.query.clone().unwrap_or_else(|| "main()".to_string());
-                run_file(file.clone(), query_str, cli.format, cli.limit)
+                run_file(
+                    file.clone(),
+                    query_str,
+                    cli.format,
+                    cli.limit,
+                    cli.trace,
+                    cli.trace_level,
+                )
             } else {
                 eprintln!("Error: Please provide a file to run or specify a subcommand.");
                 std::process::exit(1);
@@ -225,6 +250,8 @@ fn run_file(
     query: String,
     format: OutputFormat,
     limit: usize,
+    trace_enabled: bool,
+    trace_level: u8,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut interpreter = DefaultInterpreter::with_stdlib();
     let file_contents = std::fs::read_to_string(&path)
@@ -255,7 +282,26 @@ fn run_file(
 
     interpreter.load_program(program)?;
 
-    match interpreter.query(&actual_query) {
+    let query_result = if trace_enabled {
+        // Print query before starting trace
+        println!(
+            "{} {}",
+            "Query:".bright_blue().bold(),
+            actual_query.bright_white()
+        );
+
+        // Create trace configuration and print search header immediately
+        let mut trace_config = TraceConfig::new(true, trace_level);
+        trace_config.print_search_header();
+
+        // Run traced query
+        interpreter.query_with_trace(&actual_query, &mut trace_config)
+    } else {
+        // Run normal query
+        interpreter.query(&actual_query)
+    };
+
+    match query_result {
         Ok(mut results) => {
             // Apply limit if specified (0 means unlimited)
             let was_limited = limit > 0 && results.len() > limit;
@@ -267,12 +313,24 @@ fn run_file(
             }
 
             if !results.is_empty() {
-                print_query_results(&results, format, was_limited, &actual_query);
+                if trace_enabled {
+                    // Don't print query again since we already printed it before trace
+                    print_results_without_query(&results, format, was_limited);
+                } else {
+                    print_query_results(&results, format, was_limited, &actual_query);
+                }
             } else {
                 if format == OutputFormat::Json {
-                    print_json_results(&[], false, &actual_query);
-                } else {
-                    println!("Query: {}", actual_query);
+                    let query_for_json = if trace_enabled { "" } else { &actual_query };
+                    print_json_results(&[], false, query_for_json);
+                } else if !trace_enabled {
+                    println!(
+                        "{} {}",
+                        "Query:".bright_blue().bold(),
+                        actual_query.bright_white()
+                    );
+                }
+                if format != OutputFormat::Json {
                     println!("Query succeeded with no results.");
                 }
             }
@@ -316,6 +374,50 @@ fn run_tests_with_options(
 fn run_tests() -> Result<(), Box<dyn std::error::Error>> {
     let options = TestRunOptions::default();
     run_tests_with_options(options, None)
+}
+
+/// Print results without query header (for trace mode)
+fn print_results_without_query(
+    results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>],
+    format: OutputFormat,
+    was_limited: bool,
+) {
+    match format {
+        OutputFormat::Auto => {
+            // Choose formatting style based on result complexity
+            let result_count = results.len();
+            if result_count <= 5 {
+                print_numbered_results(results);
+            } else {
+                print_compact_results(results);
+            }
+        }
+        OutputFormat::Numbered => {
+            print_numbered_results(results);
+        }
+        OutputFormat::Table => {
+            if results.is_empty() {
+                println!("{}", "Query succeeded with no results.".bright_green());
+                return;
+            }
+            let first_result = &results[0];
+            let mut all_var_names: Vec<String> = first_result.bindings.keys().cloned().collect();
+            all_var_names.sort();
+            print_table_format(results, &all_var_names);
+        }
+        OutputFormat::Json => print_json_results(results, was_limited, ""),
+        OutputFormat::Debug => {
+            println!("{}", "Results:".bright_blue().bold());
+            for (i, result) in results.iter().enumerate() {
+                println!(
+                    "  {} {}: {:?}",
+                    "Solution".bright_green(),
+                    format!("{}", i + 1).bright_yellow().bold(),
+                    result
+                );
+            }
+        }
+    }
 }
 
 /// Pretty print query results with mathematical formatting and where-clauses
