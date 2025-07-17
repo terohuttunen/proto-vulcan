@@ -1,5 +1,5 @@
 // Comprehensive runtime tests for metaprogramming features
-// Tests the template expansion engine and CPS integration
+// Tests the template expansion engine
 
 // Test basic meta let statement execution
 @test(expected = [5])
