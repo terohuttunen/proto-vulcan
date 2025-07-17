@@ -1,8 +1,8 @@
 use super::substitution::SMap;
 use crate::compound::CompoundObject;
+use crate::engine::Engine;
 use crate::lterm::{LTerm, LTermInner};
 use crate::state::{SResult, State};
-use crate::engine::Engine;
 use crate::user::User;
 
 /// Recursive unification of tree terms
@@ -62,6 +62,12 @@ where
         }
         (LTermInner::Compound(ucf), LTermInner::Compound(vcf)) => {
             unify_rec_compound(state, extension, ucf.as_ref(), vcf.as_ref())
+        }
+        (LTermInner::RelationRef(u_index), LTermInner::RelationRef(v_index))
+            if u_index == v_index =>
+        {
+            // Two relation references unify if they refer to the same relation in the registry
+            Ok(state)
         }
         _ => Err(()),
     }

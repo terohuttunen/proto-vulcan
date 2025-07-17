@@ -60,6 +60,9 @@ where
 
     // Compound object
     Compound(Rc<dyn CompoundObject<U, E>>),
+
+    // Relation reference for higher-order predicates (registry index)
+    RelationRef(usize),
 }
 
 #[derive(Derivative)]
@@ -100,6 +103,13 @@ where
     pub fn user(u: U::UserTerm) -> LTerm<U, E> {
         LTerm {
             inner: Rc::new(LTermInner::User(u)),
+        }
+    }
+
+    /// Constructs a relation reference for higher-order predicates
+    pub fn relation_ref(registry_index: usize) -> LTerm<U, E> {
+        LTerm {
+            inner: Rc::new(LTermInner::RelationRef(registry_index)),
         }
     }
 
@@ -272,6 +282,20 @@ where
         match self.as_ref() {
             LTermInner::User(_) => true,
             _ => false,
+        }
+    }
+
+    pub fn is_relation_ref(&self) -> bool {
+        match self.as_ref() {
+            LTermInner::RelationRef(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn get_relation_ref(&self) -> Option<usize> {
+        match self.as_ref() {
+            LTermInner::RelationRef(index) => Some(*index),
+            _ => None,
         }
     }
 
@@ -520,6 +544,7 @@ where
             LTermInner::Empty => write!(f, "Empty"),
             LTermInner::Cons(head, tail) => write!(f, "({:?}, {:?})", head, tail),
             LTermInner::Compound(cf) => write!(f, "{:?}", cf),
+            LTermInner::RelationRef(index) => write!(f, "RelationRef({})", index),
         }
     }
 }
@@ -569,6 +594,7 @@ where
                 }
             }
             LTermInner::Compound(compound_term) => write!(f, "{:?}", compound_term),
+            LTermInner::RelationRef(index) => write!(f, "rel_ref_{}", index),
         }
     }
 }
@@ -590,6 +616,7 @@ where
                 tail.hash(state);
             }
             LTermInner::Compound(cf) => cf.compound_hash(state),
+            LTermInner::RelationRef(index) => index.hash(state),
         }
     }
 }
