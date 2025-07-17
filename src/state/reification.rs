@@ -52,7 +52,11 @@ fn enforce_constraints_fd<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
         force_ans(x),
         fngoal | engine,
         state | {
-            state.verify_all_bound();
+            // Check if all domain variables are properly bound
+            if let Err(msg) = state.verify_all_bound() {
+                // If domain verification fails, return an error stream
+                return crate::stream::Stream::error(msg);
+            }
             let bound_x = state.dstore_ref().keys().cloned().collect::<LTerm<U, E>>();
             proto_vulcan!( onceo { force_ans(bound_x) } ).solve(engine, state)
         }

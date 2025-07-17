@@ -218,6 +218,13 @@ where
                     "Query execution timed out".to_string(),
                 ));
             }
+            crate::solver::SolverResult::Error(msg) => {
+                // Error occurred during execution
+                if let Some(ref mut trace) = trace_state {
+                    trace.exit_relation("query", false);
+                }
+                return Err(InterpreterError::RuntimeError(msg));
+            }
         }
     }
 

@@ -22,6 +22,8 @@ where
     NoMoreSolutions,
     /// Execution timed out
     Timeout,
+    /// An error occurred during execution
+    Error(String),
 }
 
 /// Check timeout every N iterations to reduce overhead
@@ -151,6 +153,9 @@ where
                     }
                     return SolverResult::Solution(state);
                 }
+                Stream::Error(msg) => {
+                    return SolverResult::Error(msg);
+                }
             }
         }
     }
@@ -182,6 +187,9 @@ where
                 Stream::Unit(a) | Stream::Cons(a, _) => {
                     *stream = Stream::Unit(a);
                     return stream.head();
+                }
+                Stream::Error(_) => {
+                    return None; // Error terminates the stream
                 }
             }
         }

@@ -341,9 +341,11 @@ where
             || constraint.is::<crate::relation::clpfd::distinctfd::DistinctFd2Constraint<U, E>>()
     }
 
-    /// Verifies that all variables constrained by domain constraints have domains
-    /// associated with them.
-    pub fn verify_all_bound(&self) {
+    /// Verifies that all variables constrained by domain constraints are properly bound.
+    /// A variable is considered bound if it's either:
+    /// 1. Bound in the substitution map (walk returns a non-variable), OR
+    /// 2. Has a domain in the domain store (constrained by finite domains)
+    pub fn verify_all_bound(&self) -> Result<(), String> {
         for constraint in self
             .cstore_ref()
             .iter()
@@ -351,14 +353,21 @@ where
         {
             for u in &constraint.operands() {
                 let uwalk = self.smap_ref().walk(u);
-                if uwalk.is_var() && !self.dstore_ref().contains_key(uwalk) {
-                    panic!(
-                        "Error: Variable {:?} not bound to any domain. {:?}",
-                        u, self
-                    );
+                if uwalk.is_var() {
+                    // If uwalk.is_var() is true, then the variable is NOT bound in smap
+                    // The only way it can be considered "bound" is if it has a domain in dstore
+                    let has_domain = self.dstore_ref().contains_key(uwalk);
+
+                    if !has_domain {
+                        return Err(format!(
+                            "Variable {:?} not bound (neither in substitution map nor domain store) in constraint {:?}",
+                        u, constraint
+                    ));
+                    }
                 }
             }
         }
+        Ok(())
     }
 
     pub fn unify(self, u: &LTerm<U, E>, v: &LTerm<U, E>) -> SResult<U, E> {

@@ -82,6 +82,7 @@ where
             }
             crate::solver::SolverResult::NoMoreSolutions => None,
             crate::solver::SolverResult::Timeout => None, // Iterator should terminate on timeout
+            crate::solver::SolverResult::Error(_) => None, // Iterator should terminate on error
         }
     }
 }

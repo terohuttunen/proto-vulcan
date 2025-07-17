@@ -86,6 +86,10 @@ where
                 self.next_pos = StreamCursor::LazyStream(depth + 1, lazy_stream);
                 StreamWalkStep::State(a)
             }
+            Stream::Error(_) => {
+                self.next_pos = StreamCursor::End;
+                return None; // Error terminates the walk
+            }
         };
 
         return Some((depth, step));
@@ -227,6 +231,7 @@ pub enum Stream<U: User, E: Engine<U>> {
     Unit(Box<State<U, E>>),
     Lazy(LazyStream<U, E>),
     Cons(Box<State<U, E>>, LazyStream<U, E>),
+    Error(String),
 }
 
 impl<U: User, E: Engine<U>> Stream<U, E> {
@@ -245,6 +250,10 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         Stream::Empty
     }
 
+    pub fn error(msg: String) -> Stream<U, E> {
+        Stream::Error(msg)
+    }
+
     pub fn cons(a: Box<State<U, E>>, lazy: LazyStream<U, E>) -> Stream<U, E> {
         Stream::Cons(a, lazy)
     }
@@ -259,6 +268,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
             Stream::Lazy(lazy_hat) => Stream::lazy_mplus(lazy, lazy_hat),
             Stream::Unit(a) => Stream::cons(a, lazy),
             Stream::Cons(head, lazy_hat) => Stream::cons(head, LazyStream::mplus(lazy, lazy_hat)),
+            Stream::Error(msg) => Stream::Error(msg),
         }
     }
 
@@ -276,6 +286,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
                     LazyStream::pause(state, goal.clone()),
                     LazyStream::bind(lazy, goal),
                 ),
+                Stream::Error(msg) => Stream::Error(msg),
             }
         }
     }
@@ -296,6 +307,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
             Stream::Cons(head, lazy_hat) => {
                 Stream::cons(head, LazyStream::mplus_dfs(lazy_hat, lazy))
             }
+            Stream::Error(msg) => Stream::Error(msg),
         }
     }
 
@@ -313,6 +325,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
                     LazyStream::pause_dfs(state, goal.clone()),
                     LazyStream::bind_dfs(lazy, goal),
                 ),
+                Stream::Error(msg) => Stream::Error(msg),
             }
         }
     }
