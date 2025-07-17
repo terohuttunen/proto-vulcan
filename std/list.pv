@@ -468,4 +468,188 @@ rel distinct_test_9() {
 rel distinct_test_10(result) {
     distinct([[1, 2], [3, 4], [1, 2]]),
     result == true
+}
+
+// =============================================================================
+
+// Length relation - determines the length of a list
+// This wraps the native __native_length predicate for efficiency
+// while providing a clean library interface
+pub rel length(list, n) {
+    __native_length(list, n)
+}
+
+// Test length with empty list
+@test(expected = [0])
+rel length_test_1(n) {
+    length([], n)
+}
+
+// Test length with single element
+@test(expected = [1])
+rel length_test_2(n) {
+    length([1], n)
+}
+
+// Test length with three elements
+@test(expected = [3])
+rel length_test_3(n) {
+    length([1, 2, 3], n)
+}
+
+// Test length check (forward mode)
+@test
+rel length_test_4() {
+    length([1, 2, 3], 3)
 } 
+
+// =============================================================================
+// STRUCTURAL PREDICATES
+// =============================================================================
+
+// Check if x is a pair (has structure [a | d])
+pub rel is_pair(x) {
+    |a, d| { x == [a | d] }
+}
+
+// Flatten nested structure
+pub rel flatten(tree, flat) {
+    any {
+        // Base case: tree is not a pair (i.e., atom)
+        all {
+            flat == [tree],
+            not_pair(tree)
+        },
+        
+        // Recursive case: tree is a pair
+        |a, d, fa, fd| {
+            tree == [a | d],
+            flatten(a, fa),
+            flatten(d, fd),
+            append(fa, fd, flat)
+        }
+    }
+}
+
+// Helper for flatten - check if value is not a pair
+pub rel not_pair(tree) {
+    any {
+        all { is_pair(tree), false },  // if is_pair(tree) succeeds, then fail
+        true  // else succeed (reached only if is_pair(tree) fails)
+    }
+}
+
+// Simple flatten for list of lists - concatenates all sublists
+pub rel flatten_lists(nested_list, flat_list) {
+    match nested_list {
+        [] => flat_list == [],
+        [head | tail] => |flat_tail| {
+            flatten_lists(tail, flat_tail),
+            append(head, flat_tail, flat_list)
+        }
+    }
+}
+
+// =============================================================================
+// LIST ACCESS AND VERIFICATION
+// =============================================================================
+
+// Get the nth element (0-indexed) from a list
+pub rel nth(n, list, element) {
+    any {
+        // Base case: index is 0, get head
+        |head, tail| {
+            n == 0,
+            list == [head | tail],
+            element == head
+        },
+        
+        // Recursive case: index > 0
+        |n1, head, tail| {
+            list == [head | tail],
+            constraint(domain="clpz") {
+                n > 0,
+                n1 == n - 1
+            },
+            nth(n1, tail, element)
+        }
+    }
+}
+
+// =============================================================================
+// MATRIX OPERATIONS (LISTS OF LISTS)
+// =============================================================================
+
+// Transpose a matrix (list of lists) with structural guards to prevent infinite recursion
+// rows: list of lists to transpose  
+// cols: transposed matrix  
+pub rel transpose(rows, cols) {
+    any {
+        // Base case: empty matrix
+        all {
+            rows == [],
+            cols == []
+        },
+        
+        // Case: matrix with all empty rows
+        |first_row, rest_rows| {
+            all {
+                rows == [first_row | rest_rows],
+                first_row == [],
+                all_empty(rest_rows),
+                cols == []
+            }
+        },
+        
+        // Case: matrix with at least one non-empty row
+        // STRUCTURAL GUARD: This only applies when first row is non-empty
+        |first_row, rest_rows, heads, tails, rest_cols| {
+            all {
+                rows == [first_row | rest_rows],
+                // GUARD: first_row must be non-empty to proceed
+                first_row != [],
+                unzip_matrix(rows, heads, tails),
+                // STRUCTURAL DECREASE: tails is structurally smaller than rows
+                transpose(tails, rest_cols),
+                cols == [heads | rest_cols]
+            }
+        }
+    }
+}
+
+// Check if all rows are empty
+pub rel all_empty(rows) {
+    any {
+        rows == [],
+        |row, rest| {
+            all {
+                rows == [row | rest],
+                row == [],
+                all_empty(rest)
+            }
+        }
+    }
+}
+
+// Unzip matrix into heads (first column) and tails (remaining matrix)
+pub rel unzip_matrix(matrix, heads, tails) {
+    any {
+        // Base case: empty matrix
+        all {
+            matrix == [],
+            heads == [],
+            tails == []
+        },
+        
+        // Extract head and tail from first row, recurse on remaining rows
+        |row, rows, h, t, hs, ts| {
+            all {
+                matrix == [row | rows],
+                row == [h | t],
+                heads == [h | hs],
+                tails == [t | ts],
+                unzip_matrix(rows, hs, ts)
+            }
+        }
+    }
+}
