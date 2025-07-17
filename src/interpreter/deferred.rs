@@ -6,10 +6,9 @@ use super::environment::Environment;
 use super::execution::ExecutionContext;
 use super::parser::ast::{RelationDefinition, SearchStrategy};
 use crate::engine::Engine;
-use crate::goal::{AnyGoal, Goal, GoalCast};
+use crate::goal::{AnyGoal, Goal};
 use crate::lterm::LTerm;
 use crate::operator::conj::Conj;
-use crate::relation::eq;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
@@ -95,21 +94,18 @@ impl<U: User, E: Engine<U>> Solve<U, E> for DeferredRelationCall<U, E> {
         // Push a new scope for the relation's parameters.
         exec_context.push_scope();
 
-        // Create fresh variables for each parameter and bind them in the new scope.
-        let mut param_terms = Vec::new();
-        for param in &self.rel_def.parameters {
-            let fresh_var = exec_context.create_fresh_var();
-            exec_context.bind_var(param.name.clone(), fresh_var.clone());
-            param_terms.push(fresh_var);
-        }
+        // Arity validation is performed at call site, so arguments should always match parameters
+        assert_eq!(
+            self.call_args.len(),
+            self.rel_def.parameters.len(),
+            "Argument count should match parameter count (validation should occur at call site)"
+        );
 
-        // Create unification goals to unify the call-site arguments with the fresh parameter variables.
-        let mut unify_goals: Vec<Goal<U, E>> = self
-            .call_args
-            .iter()
-            .zip(param_terms.iter())
-            .map(|(arg, param)| eq(arg.clone(), param.clone()).cast_into())
-            .collect();
+        // Directly bind call arguments to parameter names (no fresh variables needed)
+        // This preserves variable identity and eliminates coordination issues
+        for (param, arg) in self.rel_def.parameters.iter().zip(self.call_args.iter()) {
+            exec_context.bind_var(param.name.clone(), arg.clone());
+        }
 
         // Convert the relation's body (AST) into a runtime goal. This is the core of the lazy evaluation.
         // Check if the relation body contains meta statements or interpolation
@@ -137,14 +133,15 @@ impl<U: User, E: Engine<U>> Solve<U, E> for DeferredRelationCall<U, E> {
         exec_context.pop_scope();
 
         // Check if body conversion was successful.
-        let mut body_goals = match body_goals_result {
+        let all_goals = match body_goals_result {
             Ok(goals) => goals,
-            Err(_) => return Stream::empty(), // If conversion fails, the goal fails.
+            Err(err) => {
+                return Stream::error(format!(
+                    "Failed to convert relation '{}' body to runtime goals: {}",
+                    self.rel_def.name, err
+                ));
+            }
         };
-
-        // Combine unification goals with the body goals.
-        let mut all_goals = unify_goals;
-        all_goals.append(&mut body_goals);
 
         // Create a single conjunction goal and solve it.
         let mut final_goal = Goal::succeed();
