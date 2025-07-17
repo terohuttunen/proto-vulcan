@@ -94,6 +94,14 @@ rel test_negative_multiplication(z) {
     }
 }
 
+// Test basic CLPZ addition
+@test(expected = [3])
+rel test_clpz_add(result) {
+    constraint(domain="clpz") {
+        1 + 2 == result
+    }
+}
+
 // Test complex chaining (based on timesz macro tests)
 @test(expected = [4])
 rel test_chained_constraints(q) {
