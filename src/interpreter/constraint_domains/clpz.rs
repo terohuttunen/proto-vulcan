@@ -107,8 +107,7 @@ impl ClpzDomain {
                 Rule::constraints => {
                     for constraint_pair in part.into_inner() {
                         if constraint_pair.as_rule() == Rule::constraint {
-                            constraints
-                                .push(Self::build_constraint(constraint_pair, source_span)?);
+                            constraints.push(Self::build_constraint(constraint_pair, source_span)?);
                         }
                     }
                 }
@@ -149,16 +148,14 @@ impl ClpzDomain {
             Rule::variable => ArithExpr::Variable(pair.as_str().to_string()),
             Rule::interpolation_expression => {
                 let content = pair.into_inner().next().unwrap().as_str();
-                let meta_expr = super::super::parser::meta_parser::parse_meta_expression(
-                    content,
-                    source_span,
-                )
-                .unwrap_or_else(|_| {
-                    crate::interpreter::metaprogramming::MetaExpression::Variable(
-                        content.to_string(),
-                        super::super::parser::ast::Span::dummy(),
-                    )
-                });
+                let meta_expr =
+                    super::super::parser::meta_parser::parse_meta_expression(content, source_span)
+                        .unwrap_or_else(|_| {
+                            crate::interpreter::metaprogramming::MetaExpression::Variable(
+                                content.to_string(),
+                                super::super::parser::ast::Span::dummy(),
+                            )
+                        });
 
                 match &meta_expr {
                     crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
@@ -246,14 +243,15 @@ impl ClpzDomain {
     }
 
     fn build_comp_op(pair: pest::iterators::Pair<Rule>) -> CompOp {
-        match pair.as_str() {
+        let op_str = pair.as_str();
+        match op_str {
             "==" => CompOp::Equal,
             "!=" => CompOp::NotEqual,
             "<" => CompOp::LessThan,
             "<=" => CompOp::LessEqual,
             ">" => CompOp::GreaterThan,
             ">=" => CompOp::GreaterEqual,
-            _ => unreachable!("Unexpected comparison operator: {}", pair.as_str()),
+            _ => unreachable!("Unexpected comparison operator: {}", op_str),
         }
     }
 }
@@ -523,24 +521,22 @@ fn build_comparison_goal<U: User, E: Engine<U>>(
             Ok(diseq(left, right).cast_into())
         }
         CompOp::LessThan => {
-            // CLPZ doesn't have comparison relations, so we'll convert to an arithmetic check
-            // We could implement these using goals that check the values when ground
-            Err(InterpreterError::InvalidConstraintSyntax {
-                domain: "clpz".to_string(),
-                error: "Comparison operators not yet implemented for clpz".to_string(),
-            })
+            use crate::relation::clpz::ltz::ltz;
+            Ok(ltz(left, right).cast_into())
         }
-        CompOp::LessEqual => Err(InterpreterError::InvalidConstraintSyntax {
-            domain: "clpz".to_string(),
-            error: "Comparison operators not yet implemented for clpz".to_string(),
-        }),
-        CompOp::GreaterThan => Err(InterpreterError::InvalidConstraintSyntax {
-            domain: "clpz".to_string(),
-            error: "Comparison operators not yet implemented for clpz".to_string(),
-        }),
-        CompOp::GreaterEqual => Err(InterpreterError::InvalidConstraintSyntax {
-            domain: "clpz".to_string(),
-            error: "Comparison operators not yet implemented for clpz".to_string(),
-        }),
+        CompOp::LessEqual => {
+            use crate::relation::clpz::ltez::ltez;
+            Ok(ltez(left, right).cast_into())
+        }
+        CompOp::GreaterThan => {
+            // a > b becomes b < a
+            use crate::relation::clpz::ltz::ltz;
+            Ok(ltz(right, left).cast_into())
+        }
+        CompOp::GreaterEqual => {
+            // a >= b becomes b <= a
+            use crate::relation::clpz::ltez::ltez;
+            Ok(ltez(right, left).cast_into())
+        }
     }
 }

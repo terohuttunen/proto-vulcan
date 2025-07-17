@@ -10,9 +10,9 @@ interpolation_expression = { "{" ~ interpolation_content ~ "}" }
 interpolation_content = @{ ( !("}" | EOI) ~ ANY )* }
 
 // -- Operators --
-add_op  = { "+" | "-" }
-mul_op  = { "*" | "/" }
-comp_op = { "==" | "!=" | "<" | "<=" | ">" | ">=" }
+add_op  = @{ "+" | "-" }
+mul_op  = @{ "*" | "/" }
+comp_op = @{ "==" | "!=" | "<=" | ">=" | "<" | ">" }
 
 // -- Arithmetic Expressions --
 factor      = { integer | variable | interpolation_expression | "(" ~ arith_expr ~ ")" }

@@ -190,4 +190,168 @@ rel test_mixed_signs(result) {
             b == -5
         }
     }
-} 
+}
+
+// =============================================================================
+// CLPZ INEQUALITY OPERATOR TESTS
+// =============================================================================
+
+// Test basic less-than with ground values (true case)
+@test(expected = [5])
+rel test_lt_ground_true(x) {
+    constraint(domain="clpz") {
+        x == 5,
+        x < 10
+    }
+}
+
+// Test basic less-than with ground values (false case - should fail)
+@test(expected = [])
+rel test_lt_ground_false(x) {
+    constraint(domain="clpz") {
+        x == 10,
+        x < 5
+    }
+}
+
+// Test basic less-than-or-equal with ground values (true case)
+@test(expected = [5])
+rel test_lte_ground_true(x) {
+    constraint(domain="clpz") {
+        x == 5,
+        x <= 10
+    }
+}
+
+// Test less-than-or-equal with equal values (boundary case)
+@test(expected = [5])
+rel test_lte_equal(x) {
+    constraint(domain="clpz") {
+        x == 5,
+        x <= 5
+    }
+}
+
+// Test basic greater-than with ground values (true case)
+@test(expected = [10])
+rel test_gt_ground_true(x) {
+    constraint(domain="clpz") {
+        x == 10,
+        x > 5
+    }
+}
+
+// Test basic greater-than with ground values (false case - should fail)
+@test(expected = [])
+rel test_gt_ground_false(x) {
+    constraint(domain="clpz") {
+        x == 5,
+        x > 10
+    }
+}
+
+// Test basic greater-than-or-equal with ground values (true case)
+@test(expected = [10])
+rel test_gte_ground_true(x) {
+    constraint(domain="clpz") {
+        x == 10,
+        x >= 5
+    }
+}
+
+// Test greater-than-or-equal with equal values (boundary case)
+@test(expected = [5])
+rel test_gte_equal(x) {
+    constraint(domain="clpz") {
+        x == 5,
+        x >= 5
+    }
+}
+
+// Test constraint generation with variables (less-than)
+@test(expected = [3])
+rel test_lt_constraint_generation(x) {
+    |y| {
+        constraint(domain="clpz") {
+            x < y,
+            y == 4,
+            x == 3
+        }
+    }
+}
+
+// Test constraint generation with variables (greater-than)
+@test(expected = [7])
+rel test_gt_constraint_generation(x) {
+    |y| {
+        constraint(domain="clpz") {
+            x > y,
+            y == 6,
+            x == 7
+        }
+    }
+}
+
+// Test multiple inequality constraints together
+@test(expected = [5])
+rel test_multiple_inequalities(x) {
+    constraint(domain="clpz") {
+        x > 3,
+        x < 7,
+        x >= 5,
+        x <= 6,
+        x == 5
+    }
+}
+
+// Test inequality with arithmetic (should work via parser transformation)
+@test(expected = [8])
+rel test_inequality_with_arithmetic(result) {
+    |x, y| {
+        constraint(domain="clpz") {
+            x + y == result,
+            x == 3,
+            y == 5,
+            result > 7,
+            result < 10
+        }
+    }
+}
+
+// Test normal > operator usage
+@test(expected = [3])
+rel test_gt_normal_usage(x) {
+    constraint(domain="clpz") {
+        x > 2,
+        x == 3
+    }
+}
+
+// Test normal >= operator usage  
+@test(expected = [5])
+rel test_gte_normal_usage(x) {
+    constraint(domain="clpz") {
+        x >= 5,
+        x == 5
+    }
+}
+
+// Test negative numbers with inequalities
+@test(expected = [-2])
+rel test_negative_inequalities(x) {
+    constraint(domain="clpz") {
+        x > -5,
+        x < 0,
+        x == -2
+    }
+}
+
+// Test zero boundary conditions
+@test(expected = [1])
+rel test_zero_boundary(x) {
+    constraint(domain="clpz") {
+        x > 0,
+        x <= 1,
+        x == 1
+    }
+}
