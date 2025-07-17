@@ -1,0 +1,166 @@
+// List Operations Test Suite
+// Tests for structural and utility predicates in std::list
+
+use std::list::*;
+use tests::common::*;
+
+// =============================================================================
+// MATRIX OPERATION TESTS
+// =============================================================================
+
+// Test transpose with simple 2x2 matrix
+@test(expected = [[[1, 3], [2, 4]]])
+rel test_transpose_2x2(result) {
+    transpose([[1, 2], [3, 4]], result)
+}
+
+// Test transpose with 2x3 matrix  
+@test(expected = [[[1, 4], [2, 5], [3, 6]]])
+rel test_transpose_2x3(result) {
+    transpose([[1, 2, 3], [4, 5, 6]], result)
+}
+
+// Test transpose with empty matrix
+@test(expected = [1])
+rel test_transpose_empty(result) {
+    transpose([], []),
+    result == 1
+}
+
+// Test flatten_lists with nested lists
+@test(expected = [[1, 2, 3, 4]])
+rel test_flatten_simple(result) {
+    flatten_lists([[1, 2], [3, 4]], result)
+}
+
+// Test flatten_lists with empty lists
+@test(expected = [1])
+rel test_flatten_empty(result) {
+    flatten_lists([], []),
+    result == 1
+}
+
+// =============================================================================
+// LIST ACCESS TESTS
+// =============================================================================
+
+// Test nth with simple access
+@test(expected = [2])
+rel test_nth_simple(result) {
+    nth(1, [1, 2, 3], result)
+}
+
+// Test nth with first element
+@test(expected = [1])
+rel test_nth_first(result) {
+    nth(0, [1, 2, 3], result)
+}
+
+// Test nth with last element
+@test(expected = [3])
+rel test_nth_last(result) {
+    nth(2, [1, 2, 3], result)
+}
+
+// =============================================================================
+// BASIC LIST UTILITY TESTS
+// =============================================================================
+
+// Test length utility
+@test(expected = [1])
+rel test_length_basic(result) {
+    length([1, 2, 3], 3),
+    result == 1
+}
+
+// Test length with empty list
+@test(expected = [1])
+rel test_length_empty(result) {
+    length([], 0),
+    result == 1
+}
+
+// =============================================================================
+// MATRIX PROCESSING INTEGRATION TEST
+// =============================================================================
+
+// Test matrix processing pipeline: transpose -> flatten -> check properties
+@test(expected = [1])
+rel test_matrix_pipeline(result) {
+    |matrix, transposed, flattened| {
+        matrix == [[1, 2], [3, 4]],
+        transpose(matrix, transposed),
+        flatten_lists(transposed, flattened),
+        // Basic structural check - all elements are positive
+        |elem1, elem2, elem3, elem4| {
+            nth(0, flattened, elem1),
+            nth(1, flattened, elem2), 
+            nth(2, flattened, elem3),
+            nth(3, flattened, elem4),
+            positive(elem1),
+            positive(elem2),
+            positive(elem3), 
+            positive(elem4),
+            result == 1
+        }
+    }
+}
+
+// =============================================================================
+// STRUCTURAL CONSTRAINT TESTS
+// =============================================================================
+
+// Test 4x4 structure validation using basic list operations
+@test(expected = [1])
+rel test_4x4_structure(result) {
+    |board| {
+        board == [
+            [1, 2, 3, 4],
+            [3, 4, 1, 2], 
+            [2, 1, 4, 3],
+            [4, 3, 2, 1]
+        ],
+        
+        // Test board structure
+        length(board, 4),
+        
+        // Test each row has length 4
+        |row1, row2, row3, row4| {
+            nth(0, board, row1),
+            nth(1, board, row2),
+            nth(2, board, row3),
+            nth(3, board, row4),
+            length(row1, 4),
+            length(row2, 4),
+            length(row3, 4),
+            length(row4, 4),
+            result == 1
+        }
+    }
+}
+
+// Helper for testing length constraints
+rel length_4(list) {
+    length(list, 4)
+}
+
+/*
+LIST OPERATIONS TEST COVERAGE:
+
+✅ Matrix operations: transpose, flatten_lists
+✅ List access: nth (0-indexed access)
+✅ Basic utilities: length
+✅ Integration: matrix processing pipelines
+✅ Structural validation: board/grid structure checking
+✅ Edge cases: empty lists and matrices
+
+These tests verify that:
+1. Matrix operations work correctly for various sizes
+2. List access is accurate and reliable
+3. Structural predicates can validate complex data
+4. Integration between different list operations is seamless
+5. Edge cases are handled appropriately
+
+The test suite ensures that std::list provides a comprehensive
+foundation for structural data manipulation in proto-vulcan!
+*/ 
