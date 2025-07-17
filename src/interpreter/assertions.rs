@@ -75,13 +75,13 @@ where
             }
 
             // A variable is bound if:
-            // 1. Walk returns something different (bound in smap), OR
+            // 1. Walk returns a non-variable (bound in smap), OR
             // 2. It has a domain in the domain store (constrained by finite domain)
-            let is_bound = !LTerm::ptr_eq(walked, &self.term) || has_domain;
+            let is_bound = !walked.is_var() || has_domain;
 
             if is_bound {
                 if debug_enabled {
-                    if !LTerm::ptr_eq(walked, &self.term) {
+                    if !walked.is_var() {
                         println!("   PASS: Variable is bound to {:?}", walked);
                     } else {
                         println!("   PASS: Variable is constrained by finite domain");
@@ -157,9 +157,9 @@ where
             }
 
             // A variable is unbound if:
-            // 1. Walk returns the same variable (not bound in smap), AND
+            // 1. Walk returns a variable (not bound in smap), AND
             // 2. It has no domain in the domain store (not constrained by finite domain)
-            let is_unbound = LTerm::ptr_eq(walked, &self.term) && !has_domain;
+            let is_unbound = walked.is_var() && !has_domain;
 
             if is_unbound {
                 if debug_enabled {
@@ -168,7 +168,7 @@ where
                 Stream::unit(Box::new(state))
             } else {
                 if debug_enabled {
-                    if !LTerm::ptr_eq(walked, &self.term) {
+                    if !walked.is_var() {
                         println!("   FAIL: Variable is bound to {:?}", walked);
                     } else {
                         println!("   FAIL: Variable is constrained by finite domain");
