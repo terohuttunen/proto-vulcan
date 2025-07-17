@@ -9,16 +9,37 @@ use std::fmt;
 #[cfg(feature = "debugger")]
 use crate::debugger::Debugger;
 
+/// Result of a solver iteration
+#[derive(Debug)]
+pub enum SolverResult<U, E>
+where
+    U: User,
+    E: Engine<U>,
+{
+    /// Found a solution state
+    Solution(Box<State<U, E>>),
+    /// No more solutions available (natural completion)
+    NoMoreSolutions,
+    /// Execution timed out
+    Timeout,
+}
+
+/// Check timeout every N iterations to reduce overhead
+const TIMEOUT_CHECK_FREQUENCY: usize = 100;
+
 pub struct Solver<U, E>
 where
     U: User,
     E: Engine<U>,
 {
-    engine: E,
     context: U::UserContext,
+    engine: E,
+    stream_iter_index: usize,
     #[cfg(feature = "debugger")]
     debugger: Debugger<U, E>,
     debug_enabled: bool,
+    /// Timeout information for any operation (test, query, etc.)
+    timeout_info: Option<(std::time::Instant, u64)>,
 }
 
 impl<U, E> Solver<U, E>
@@ -31,12 +52,24 @@ where
         #[cfg(feature = "debugger")]
         let debugger = Debugger::new();
         Solver {
-            engine,
             context,
+            engine,
+            stream_iter_index: 0,
             #[cfg(feature = "debugger")]
             debugger,
             debug_enabled,
+            timeout_info: None,
         }
+    }
+
+    /// Set timeout information for any operation (test, query, etc.)
+    pub fn set_timeout(&mut self, start_time: std::time::Instant, timeout_ms: u64) {
+        self.timeout_info = Some((start_time, timeout_ms));
+    }
+
+    /// Clear timeout information
+    pub fn clear_timeout(&mut self) {
+        self.timeout_info = None;
     }
 
     pub fn start(&self, goal: &Goal<U, E>, state: State<U, E>) -> Stream<U, E> {
@@ -49,12 +82,7 @@ where
                 }
                 Stream::unit(Box::new(state))
             }
-            Goal::Dynamic(dynamic) => {
-                if self.debug_enabled {
-                    // TODO: self.debugger.start(goal, &state)
-                }
-                dynamic.solve(self, state)
-            }
+            Goal::Dynamic(dynamic) => dynamic.solve(self, state),
         }
     }
 
@@ -77,8 +105,24 @@ where
         }
     }
 
-    pub fn next(&mut self, stream: &mut Stream<U, E>) -> Option<Box<State<U, E>>> {
+    pub fn next(&mut self, stream: &mut Stream<U, E>) -> SolverResult<U, E> {
         loop {
+            // Increment iteration counter
+            self.stream_iter_index += 1;
+
+            // Check timeout periodically to reduce overhead (every 100 iterations)
+            // Always check on first iteration for responsiveness
+            if self.stream_iter_index == 1 || self.stream_iter_index % TIMEOUT_CHECK_FREQUENCY == 0
+            {
+                // Check if any timeout has been exceeded
+                if let Some((start_time, timeout_ms)) = self.timeout_info {
+                    let elapsed = start_time.elapsed().as_millis();
+                    if elapsed >= timeout_ms as u128 {
+                        return SolverResult::Timeout;
+                    }
+                }
+            }
+
             #[cfg(feature = "debugger")]
             if self.debug_enabled {
                 self.debugger.next_step(stream);
@@ -89,14 +133,14 @@ where
                     if self.debug_enabled {
                         self.debugger.program_exit();
                     }
-                    return None;
+                    return SolverResult::NoMoreSolutions;
                 }
                 Stream::Unit(state) => {
                     #[cfg(feature = "debugger")]
                     if self.debug_enabled {
                         self.debugger.new_solution(stream, &state);
                     }
-                    return Some(state);
+                    return SolverResult::Solution(state);
                 }
                 Stream::Lazy(LazyStream(lazy)) => *stream = self.engine.step(self, *lazy),
                 Stream::Cons(state, lazy_stream) => {
@@ -105,7 +149,7 @@ where
                     if self.debug_enabled {
                         self.debugger.new_solution(stream, &state);
                     }
-                    return Some(state);
+                    return SolverResult::Solution(state);
                 }
             }
         }

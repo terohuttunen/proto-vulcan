@@ -5,7 +5,10 @@ use proto_vulcan::interpreter::parser::parse_str;
 use proto_vulcan::interpreter::query::QueryResult;
 use proto_vulcan::interpreter::test_runner::{TestRunOptions, TestRunner};
 use proto_vulcan::interpreter::{
-    create_main_query, find_main_relation, trace::TraceConfig, Interpreter, InterpreterError,
+    create_main_query, find_main_relation,
+    query::QueryConfig,
+    trace::{TraceConfig, TraceLevel},
+    Interpreter, InterpreterError,
 };
 use proto_vulcan::user::DefaultUser;
 use std::env;
@@ -83,6 +86,10 @@ struct Cli {
     /// Trace detail level (1=basic, 2=medium, 3=detailed)
     #[arg(long, value_name = "LEVEL", default_value = "2")]
     trace_level: u8,
+
+    /// Timeout for query execution in seconds (0 = no timeout)
+    #[arg(long, value_name = "SECONDS", default_value = "0")]
+    timeout: u64,
 }
 
 #[derive(Subcommand)]
@@ -132,6 +139,10 @@ enum Commands {
         /// Enable parallel test execution (not yet implemented)
         #[arg(long)]
         parallel: bool,
+
+        /// Timeout for individual tests in seconds (default: 10)
+        #[arg(long, value_name = "SECONDS", default_value = "10")]
+        timeout: u64,
     },
 }
 
@@ -163,6 +174,7 @@ fn main() {
             cli.limit,
             cli.trace,
             cli.trace_level,
+            cli.timeout,
         ),
         Some(Commands::Check { file, show_ast }) => parse_file(file.clone(), *show_ast),
         Some(Commands::Test {
@@ -172,6 +184,7 @@ fn main() {
             failures_only,
             timing,
             parallel,
+            timeout,
         }) => {
             // Use filter if provided, otherwise use test_name
             let effective_filter = filter.clone().or(test_name.clone());
@@ -181,6 +194,7 @@ fn main() {
                 show_failures_only: *failures_only,
                 show_timing: *timing,
                 parallel: *parallel,
+                timeout_ms: Some(*timeout * 1000), // Convert seconds to milliseconds
             };
 
             run_tests_with_options(options, file.clone())
@@ -195,6 +209,7 @@ fn main() {
                     cli.limit,
                     cli.trace,
                     cli.trace_level,
+                    cli.timeout,
                 )
             } else {
                 eprintln!("Error: Please provide a file to run or specify a subcommand.");
@@ -252,6 +267,7 @@ fn run_file(
     limit: usize,
     trace_enabled: bool,
     trace_level: u8,
+    timeout_secs: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut interpreter = DefaultInterpreter::with_stdlib();
     let file_contents = std::fs::read_to_string(&path)
@@ -282,6 +298,12 @@ fn run_file(
 
     interpreter.load_program(program)?;
 
+    let timeout_ms = if timeout_secs > 0 {
+        Some(timeout_secs * 1000) // Convert seconds to milliseconds
+    } else {
+        None
+    };
+
     let query_result = if trace_enabled {
         // Print query before starting trace
         println!(
@@ -290,15 +312,21 @@ fn run_file(
             actual_query.bright_white()
         );
 
-        // Create trace configuration and print search header immediately
-        let mut trace_config = TraceConfig::new(true, trace_level);
-        trace_config.print_search_header();
+        // Create trace configuration and use QueryConfig
+        let trace_config = TraceConfig {
+            enabled: true,
+            level: TraceLevel::from_u8(trace_level),
+        };
+        let config = QueryConfig {
+            timeout: timeout_ms,
+            trace: Some(trace_config),
+        };
 
-        // Run traced query
-        interpreter.query_with_trace(&actual_query, &mut trace_config)
+        // Run query with unified configuration
+        interpreter.execute_query(&actual_query, config)
     } else {
-        // Run normal query
-        interpreter.query(&actual_query)
+        // Run normal query with timeout
+        interpreter.query_with_timeout(&actual_query, timeout_ms)
     };
 
     match query_result {

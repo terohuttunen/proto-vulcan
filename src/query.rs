@@ -64,7 +64,7 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.solver.next(&mut self.stream) {
-            Some(state) => {
+            crate::solver::SolverResult::Solution(state) => {
                 // At this point the state has already gone through initial reification
                 // process
                 let smap = state.smap_ref();
@@ -80,7 +80,8 @@ where
 
                 Some(R::from_vec(results))
             }
-            None => None,
+            crate::solver::SolverResult::NoMoreSolutions => None,
+            crate::solver::SolverResult::Timeout => None, // Iterator should terminate on timeout
         }
     }
 }

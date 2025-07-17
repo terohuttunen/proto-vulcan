@@ -1,21 +1,26 @@
 use colored::*;
 use std::time::Instant;
 
-/// Progressive tracing configuration with three detail levels
+/// Progressive tracing configuration (immutable settings)
 #[derive(Clone, Debug)]
 pub struct TraceConfig {
     pub enabled: bool,
     pub level: TraceLevel,
-    pub start_time: Instant,
+}
 
-    // Internal state for tracking execution
+/// Runtime state for trace execution (mutable state)
+#[derive(Debug)]
+pub struct TraceState {
+    // Store config copy in state
+    pub enabled: bool,
+    pub level: TraceLevel,
+    // Rest of the existing fields
+    pub start_time: Instant,
     current_depth: usize,
     choice_point_counter: usize,
     branch_stack: Vec<BranchInfo>,
     relation_call_stack: Vec<String>,
     solutions_found: usize,
-
-    // Recursion tracking
     recursion_patterns: Vec<RecursionPattern>,
     in_recursion: bool,
     current_recursion_depth: usize,
@@ -29,6 +34,17 @@ pub enum TraceLevel {
     Medium = 2,
     /// Level 3: Detailed tracing with unification steps
     Detailed = 3,
+}
+
+impl TraceLevel {
+    /// Convert a numeric level to TraceLevel enum
+    pub fn from_u8(level: u8) -> Self {
+        match level {
+            1 => TraceLevel::Basic,
+            3 => TraceLevel::Detailed,
+            _ => TraceLevel::Medium, // Default to 2
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -54,30 +70,24 @@ impl Default for TraceConfig {
         Self {
             enabled: false,
             level: TraceLevel::Medium,
-            start_time: Instant::now(),
-            current_depth: 0,
-            choice_point_counter: 0,
-            branch_stack: Vec::new(),
-            relation_call_stack: Vec::new(),
-            solutions_found: 0,
-            recursion_patterns: Vec::new(),
-            in_recursion: false,
-            current_recursion_depth: 0,
         }
     }
 }
 
 impl TraceConfig {
     pub fn new(enabled: bool, level: u8) -> Self {
-        let trace_level = match level {
-            1 => TraceLevel::Basic,
-            3 => TraceLevel::Detailed,
-            _ => TraceLevel::Medium, // Default to 2
-        };
-
         Self {
             enabled,
-            level: trace_level,
+            level: TraceLevel::from_u8(level),
+        }
+    }
+}
+
+impl TraceState {
+    pub fn new(config: TraceConfig) -> Self {
+        Self {
+            enabled: config.enabled,
+            level: config.level,
             start_time: Instant::now(),
             current_depth: 0,
             choice_point_counter: 0,

@@ -1,0 +1,20 @@
+// Test file demonstrating timeout functionality
+
+// Test that should timeout and pass (infinite recursion with short timeout)
+@test(should_timeout, timeout="100ms")
+rel test_infinite_recursion() {
+    test_infinite_recursion()  // This will recurse infinitely and timeout
+}
+
+// Test with a custom timeout (this should pass normally)  
+@test(timeout="5s")
+rel test_with_custom_timeout() {
+    assert_eq(1, 1)
+}
+
+
+// Test with millisecond timeout (should also timeout)
+@test(should_timeout, timeout="500ms")
+rel test_millisecond_timeout() {
+    test_millisecond_timeout()  // Infinite recursion with very short timeout
+} 

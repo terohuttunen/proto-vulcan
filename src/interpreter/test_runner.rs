@@ -2,8 +2,7 @@
 //!
 //! # Test Attributes: Architectural Distinction
 //!
-//! Proto-Vulcan supports two different test patterns for handling failure scenarios,
-//! each designed for different types of execution outcomes:
+//! Proto-Vulcan supports multiple test patterns for handling different execution outcomes:
 //!
 //! ## `@test(should_fail)` - Runtime Exceptions and Errors
 //!
@@ -47,10 +46,40 @@
 //! }
 //! ```
 //!
-//! ## The Key Architectural Difference
+//! ## `@test(should_timeout)` - Expected Timeout Scenarios
+//!
+//! Use this attribute when you expect the **query execution to exceed the timeout limit**.
+//! This is appropriate for:
+//! - Testing infinite loops or long-running computations
+//! - Verifying that certain queries don't hang indefinitely
+//! - Testing timeout handling in constraint solvers
+//!
+//! Example:
+//! ```prolog
+//! @test(should_timeout, timeout="1s")
+//! rel test_infinite_loop() {
+//!     test_infinite_loop()  // Infinite recursion - should timeout
+//! }
+//! ```
+//!
+//! ## `@test(timeout="10s")` - Custom Timeout Duration
+//!
+//! Use this attribute to override the global timeout for a specific test.
+//! Supports time units: "1s", "500ms", "30s", etc.
+//!
+//! Example:
+//! ```prolog
+//! @test(timeout="30s")
+//! rel test_long_computation() {
+//!     // This test needs more time than the default timeout
+//! }
+//! ```
+//!
+//! ## The Key Architectural Differences
 //!
 //! - **`should_fail`**: Query execution throws an exception (`interpreter.query()` returns `Err`)
 //! - **`expected = []`**: Query execution succeeds but finds no valid solutions (`interpreter.query()` returns `Ok(empty_vector)`)
+//! - **`should_timeout`**: Query execution exceeds timeout limit (`TestResult::Timeout` becomes `TestResult::Pass`)
 //!
 //! ## Important Note on Constraint Domains
 //!
@@ -72,6 +101,7 @@ use crate::user::{DefaultUser, User};
 use colored::*;
 use regex;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Instant;
@@ -92,6 +122,16 @@ pub struct TestItem {
     /// See module documentation for the architectural distinction between
     /// `@test(should_fail)` and `@test(expected = [])`.
     pub should_fail: bool,
+    /// Whether the test is expected to timeout during execution.
+    ///
+    /// When `true`, the test is expected to exceed its timeout limit and return a timeout result.
+    /// This is useful for testing infinite loops or long-running computations.
+    pub should_timeout: bool,
+    /// Test-specific timeout in milliseconds, overriding the global timeout.
+    ///
+    /// When `Some(ms)`, this test will use the specified timeout instead of the global default.
+    /// When `None`, the test uses the global timeout setting.
+    pub timeout_ms: Option<u64>,
     /// An expected list of results for a query-based test.
     ///
     /// When `Some([])`, the test expects successful execution with no solutions found.
@@ -107,6 +147,7 @@ pub enum TestResult {
     Pass,
     Fail,
     Error(String),
+    Timeout,
 }
 
 /// Options for filtering and running tests.
@@ -120,6 +161,8 @@ pub struct TestRunOptions {
     pub show_timing: bool,
     /// Run tests in parallel (if supported in the future)
     pub parallel: bool,
+    /// Maximum time to allow for a single test before timing out (in milliseconds)
+    pub timeout_ms: Option<u64>,
 }
 
 impl Default for TestRunOptions {
@@ -129,6 +172,7 @@ impl Default for TestRunOptions {
             show_failures_only: false,
             show_timing: false,
             parallel: false,
+            timeout_ms: Some(30000), // Default 30 second timeout (30000ms)
         }
     }
 }
@@ -175,6 +219,33 @@ impl TestRunner {
     pub fn new(root_dir: &Path) -> Result<Self, InterpreterError> {
         let discovered_tests = Self::discover(root_dir)?;
         Ok(Self { discovered_tests })
+    }
+
+    /// Parse a timeout duration string like "1s", "10s", "500ms" into milliseconds.
+    /// Returns the number of milliseconds as u64, or None if parsing fails.
+    fn parse_timeout_duration(duration_str: &str) -> Option<u64> {
+        let duration_str = duration_str.trim();
+
+        if duration_str.ends_with("ms") {
+            // Parse milliseconds
+            let ms_str = &duration_str[..duration_str.len() - 2];
+            ms_str.parse::<u64>().ok()
+        } else if duration_str.ends_with("s") {
+            // Parse seconds and convert to milliseconds
+            let s_str = &duration_str[..duration_str.len() - 1];
+            if let Ok(s) = s_str.parse::<u64>() {
+                Some(s * 1000)
+            } else {
+                None
+            }
+        } else {
+            // Try parsing as plain number (assume seconds) and convert to milliseconds
+            if let Ok(s) = duration_str.parse::<u64>() {
+                Some(s * 1000)
+            } else {
+                None
+            }
+        }
     }
 
     /// Creates a new `TestRunner` from a single file.
@@ -242,11 +313,7 @@ impl TestRunner {
             return stats;
         }
 
-        println!(
-            "\nRunning {} tests (filtered from {} total)",
-            filtered_tests.len(),
-            stats.total_tests
-        );
+        println!("\nrunning {} tests", filtered_tests.len());
 
         let start_time = Instant::now();
         let mut test_results = Vec::new();
@@ -257,9 +324,10 @@ impl TestRunner {
 
             if !options.show_failures_only {
                 print!("{}", test_name);
+                io::stdout().flush().unwrap(); // Ensure test name appears immediately
             }
 
-            let result = self.execute_test(item);
+            let result = self.execute_test(item, options.timeout_ms);
             let duration = test_start.elapsed();
 
             let execution_result = TestExecutionResult {
@@ -283,6 +351,7 @@ impl TestRunner {
                     stats.failed += 1;
                     if options.show_failures_only {
                         print!("{}", test_name);
+                        io::stdout().flush().unwrap();
                     }
                     if options.show_timing {
                         println!("{} ({:.3}s)", "FAILED".red(), duration.as_secs_f64());
@@ -294,6 +363,7 @@ impl TestRunner {
                     stats.errors += 1;
                     if options.show_failures_only {
                         print!("{}", test_name);
+                        io::stdout().flush().unwrap();
                     }
                     if options.show_timing {
                         println!("{} ({:.3}s)", "ERROR".red(), duration.as_secs_f64());
@@ -301,6 +371,18 @@ impl TestRunner {
                         println!("{}", "ERROR".red());
                     }
                     println!("  Error: {}", e);
+                }
+                TestResult::Timeout => {
+                    stats.failed += 1;
+                    if options.show_failures_only {
+                        print!("{}", test_name);
+                        io::stdout().flush().unwrap();
+                    }
+                    if options.show_timing {
+                        println!("{} ({:.3}s)", "TIMEOUT".red(), duration.as_secs_f64());
+                    } else {
+                        println!("{}", "TIMEOUT".red());
+                    }
                 }
             }
         }
@@ -338,7 +420,7 @@ impl TestRunner {
 
         let _total_run = stats.passed + stats.failed + stats.errors;
         println!(
-            "Test result: {}. {} passed; {} failed; {} errors.",
+            "test result: {}. {} passed; {} failed; {} errors.",
             if stats.failed == 0 && stats.errors == 0 {
                 "ok".green()
             } else {
@@ -522,7 +604,59 @@ impl TestRunner {
         }
     }
 
-    fn execute_test(&self, item: &TestItem) -> TestResult {
+    /// Execute a test, with optional timeout support
+    fn execute_test(&self, item: &TestItem, global_timeout_ms: Option<u64>) -> TestResult {
+        // Use test-specific timeout if specified, otherwise use global timeout
+        let effective_timeout = item.timeout_ms.or(global_timeout_ms);
+
+        if let Some(timeout) = effective_timeout {
+            self.execute_test_with_timeout(item, timeout)
+        } else {
+            self.execute_test_internal(item)
+        }
+    }
+
+    /// Execute a test with timeout support using solver-based timeout
+    fn execute_test_with_timeout(&self, item: &TestItem, timeout_ms: u64) -> TestResult {
+        // Use the solver-based timeout directly instead of threads
+        let result = self.execute_test_internal_with_timeout(item, Some(timeout_ms));
+
+        // Handle should_timeout logic: if test is expected to timeout and it did, that's a pass
+        match (&result, item.should_timeout) {
+            (TestResult::Timeout, true) => TestResult::Pass,
+            (TestResult::Timeout, false) => TestResult::Timeout, // Keep as timeout (failure)
+            (TestResult::Pass, true) => TestResult::Error(
+                "Test was expected to timeout but completed successfully".to_string(),
+            ),
+            (TestResult::Fail, true) => {
+                TestResult::Error("Test was expected to timeout but failed normally".to_string())
+            }
+            (other_result, _) => other_result.clone(),
+        }
+    }
+
+    fn execute_test_internal(&self, item: &TestItem) -> TestResult {
+        let result = self.execute_test_internal_with_timeout(item, None);
+
+        // Handle should_timeout logic: if test expected to timeout but didn't, that's a failure
+        match (&result, item.should_timeout) {
+            (TestResult::Pass, true) => TestResult::Error(
+                "Test was expected to timeout but completed successfully".to_string(),
+            ),
+            (TestResult::Fail, true) => {
+                TestResult::Error("Test was expected to timeout but failed normally".to_string())
+            }
+            (other_result, _) => other_result.clone(),
+        }
+    }
+
+    fn execute_test_internal_with_timeout(
+        &self,
+        item: &TestItem,
+        timeout_ms: Option<u64>,
+    ) -> TestResult {
+        let test_start_time = std::time::Instant::now();
+
         let mut interpreter = DefaultInterpreter::with_stdlib();
 
         // Manually register assertion builtins
@@ -579,7 +713,9 @@ impl TestRunner {
         // - Err(e): Query failed during execution (goal resolution error)
         //   * If should_fail = true, this is expected behavior (TestResult::Pass)
         //   * If should_fail = false, this is an unexpected error (TestResult::Error)
-        match interpreter.query(&query_string) {
+        let test_timeout_info = timeout_ms.map(|ms| (test_start_time, ms));
+
+        match interpreter.query_with_test_timeout(&query_string, timeout_ms, test_timeout_info) {
             Ok(results) => {
                 if enhanced_debug {
                     println!("============================================================");
@@ -683,8 +819,13 @@ impl TestRunner {
                 }
             }
             Err(e) => {
-                // Query failed during execution (goal resolution error)
-                if item.should_fail {
+                // Check if this is a timeout error
+                let error_message = e.to_string();
+                if error_message.contains("Query execution timed out")
+                    || error_message.contains("timed out")
+                {
+                    TestResult::Timeout
+                } else if item.should_fail {
                     // This is expected for @test(should_fail) - goal was supposed to fail
                     TestResult::Pass
                 } else {
@@ -805,6 +946,8 @@ impl TestRunner {
                 if let Item::Relation(rel_def) = item {
                     if let Some(test_attr) = rel_def.attributes.iter().find(|a| a.name == "test") {
                         let mut should_fail = false;
+                        let mut should_timeout = false;
+                        let mut timeout_ms = None;
                         let mut expected = None;
 
                         for arg in &test_attr.args {
@@ -812,8 +955,21 @@ impl TestRunner {
                                 ast::AttributeArg::Flag(name) if name == "should_fail" => {
                                     should_fail = true;
                                 }
+                                ast::AttributeArg::Flag(name) if name == "should_timeout" => {
+                                    should_timeout = true;
+                                }
                                 ast::AttributeArg::Named(name, value) if name == "expected" => {
                                     expected = Some(value.clone());
+                                }
+                                ast::AttributeArg::Named(name, value) if name == "timeout" => {
+                                    // Parse timeout value - expect a string literal like "1s", "10s"
+                                    if let ast::Term::Literal(
+                                        ast::Literal::String(timeout_str),
+                                        _,
+                                    ) = value
+                                    {
+                                        timeout_ms = Self::parse_timeout_duration(timeout_str);
+                                    }
                                 }
                                 _ => {} // Ignore other args
                             }
@@ -825,6 +981,8 @@ impl TestRunner {
                             file_path: path.to_path_buf(),
                             test_name: rel_def.name.clone(),
                             should_fail,
+                            should_timeout,
+                            timeout_ms,
                             expected,
                             query_variable,
                         });
@@ -866,6 +1024,8 @@ impl TestRunner {
             if let Item::Relation(rel_def) = item {
                 if let Some(test_attr) = rel_def.attributes.iter().find(|a| a.name == "test") {
                     let mut should_fail = false;
+                    let mut should_timeout = false;
+                    let mut timeout_ms = None;
                     let mut expected = None;
 
                     for arg in &test_attr.args {
@@ -873,10 +1033,23 @@ impl TestRunner {
                             ast::AttributeArg::Flag(name) if name == "should_fail" => {
                                 should_fail = true;
                             }
+                            ast::AttributeArg::Flag(name) if name == "should_timeout" => {
+                                should_timeout = true;
+                            }
                             ast::AttributeArg::Named(name, value) if name == "expected" => {
                                 expected = Some(value.clone());
                             }
-                            _ => {} // Ignore other args
+                            ast::AttributeArg::Named(name, value) if name == "timeout" => {
+                                // Parse timeout value - expect a string literal like "1s", "10s"
+                                if let ast::Term::Literal(ast::Literal::String(timeout_str), _) =
+                                    value
+                                {
+                                    timeout_ms = Self::parse_timeout_duration(timeout_str);
+                                }
+                            }
+                            _ => {
+                                // Ignore unknown args
+                            }
                         }
                     }
 
@@ -886,6 +1059,8 @@ impl TestRunner {
                         file_path: file_path.to_path_buf(),
                         test_name: rel_def.name.clone(),
                         should_fail,
+                        should_timeout,
+                        timeout_ms,
                         expected,
                         query_variable,
                     });
