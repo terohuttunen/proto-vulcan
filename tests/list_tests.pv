@@ -80,6 +80,12 @@ rel test_length_empty(result) {
     result == 1
 }
 
+// Test member_once with duplicates - should return unique elements only once
+@test(expected = [1, 2, 3])
+rel test_member_once_duplicates(result) {
+    member_once(result, [1, 1, 2, 2, 3, 3])
+}
+
 // =============================================================================
 // MATRIX PROCESSING INTEGRATION TEST
 // =============================================================================

@@ -62,6 +62,79 @@ rel member_test_8(q) {
     member(q, [1, 1, 2, 3])
 }
 
+// Member once relation - like member, but succeeds only once per unique element
+// This finds each distinct element only once, even if there are duplicates
+pub rel member_once(x, l) {
+    match l {
+        [head | _] => head == x,
+        [head | rest] => {
+            head != x,
+            member_once(x, rest)
+        }
+    }
+}
+
+// Check membership in empty list → no results
+@test(expected = [])
+rel member_once_test_1(q) {
+    member_once(q, [])
+}
+
+// Find unique elements of [1, 2, 3] → [1, 2, 3] (same as member since no duplicates)
+@test(expected = [1, 2, 3])
+rel member_once_test_2(q) {
+    member_once(q, [1, 2, 3])
+}
+
+// Check if specific element is member (forward mode)
+@test
+rel member_once_test_3() {
+    member_once(2, [1, 2, 3])
+}
+
+// Check if element is NOT member (no solutions)
+@test(expected = [])
+rel member_once_test_4(result) {
+    member_once(result, [1, 2, 3]),
+    result == 4
+}
+
+// Test member_once with duplicates - should only return each unique element once
+@test(expected = [1, 2, 3])
+rel member_once_test_5(q) {
+    member_once(q, [1, 1, 2, 3])
+}
+
+// Test member_once with more complex duplicates
+@test(expected = [1, 0])
+rel member_once_test_6(q) {
+    member_once(q, [1, 0, 0, 0, 1])
+}
+
+// Test member_once with single element
+@test(expected = [5])
+rel member_once_test_7(q) {
+    member_once(q, [5])
+}
+
+// Test member_once with all same elements
+@test(expected = [1])
+rel member_once_test_8(q) {
+    member_once(q, [1, 1, 1, 1, 1])
+}
+
+// Test member_once with nested lists
+@test(expected = [1, [2, 3], 4])
+rel member_once_test_9(q) {
+    member_once(q, [1, [2, 3], 4])
+}
+
+// Test member_once with nested list duplicates - should only return each unique element once
+@test(expected = [[2, 3], 1])
+rel member_once_test_10(q) {
+    member_once(q, [[2, 3], 1, [2, 3], 1])
+}
+
 // Append relation - ls is l appended with s
 pub rel append(l, s, ls) {
     match [l, s, ls] {
