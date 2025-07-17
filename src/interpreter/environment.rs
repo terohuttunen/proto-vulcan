@@ -1,7 +1,7 @@
 use super::parser::ast::{
     Item, Program, RelationDefinition, StructDefinition, UsePath, UseStatement,
 };
-use super::runtime_value::RuntimeValue;
+use super::runtime_value::{RelationHandle, RuntimeValue};
 use super::InterpreterError;
 use crate::engine::Engine;
 use crate::goal::Goal;
@@ -48,10 +48,12 @@ pub struct Environment<U: User, E: Engine<U>> {
     base_path: PathBuf,
     /// Module search paths
     search_paths: Vec<PathBuf>,
-    /// Loaded modules with their metadata
+    /// Loaded module information
     loaded_modules: HashMap<String, ModuleInfo<U, E>>,
-    /// Currently loading modules (for circular import detection)
+    /// Modules currently being loaded (to detect circular dependencies)
     loading_modules: HashSet<String>,
+    /// Relation registry for higher-order predicates (indexed by order of registration)
+    relation_registry: Vec<RuntimeValue<U, E>>,
 }
 
 impl<U: User, E: Engine<U>> Environment<U, E> {
@@ -66,6 +68,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             search_paths: vec![],
             loaded_modules: HashMap::new(),
             loading_modules: HashSet::new(),
+            relation_registry: Vec::new(),
         }
     }
 
@@ -349,6 +352,79 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         }
 
         Ok(())
+    }
+
+    /// Bind a relation as a first-class value for higher-order predicates
+    pub fn bind_relation(&mut self, name: String, relation: RelationDefinition) {
+        let handle = RelationHandle::new(name.clone(), relation);
+        let value = RuntimeValue::RelationHandle(handle);
+
+        if self.scope_stack.last() == Some(&"global".to_string()) {
+            self.globals.insert(name, value);
+        } else {
+            let current_scope = self.scope_stack.last().unwrap().clone();
+            self.modules
+                .entry(current_scope)
+                .or_insert_with(HashMap::new)
+                .insert(name, value);
+        }
+    }
+
+    /// Bind a general runtime value (for parameters and local bindings)
+    pub fn bind(&mut self, name: String, value: RuntimeValue<U, E>) {
+        if self.scope_stack.last() == Some(&"global".to_string()) {
+            self.globals.insert(name, value);
+        } else {
+            let current_scope = self.scope_stack.last().unwrap().clone();
+            self.modules
+                .entry(current_scope)
+                .or_insert_with(HashMap::new)
+                .insert(name, value);
+        }
+    }
+
+    /// Resolve a relation parameter to its handle during goal execution
+    pub fn resolve_relation(&self, name: &str) -> Option<&RelationHandle> {
+        if let Some(RuntimeValue::RelationHandle(handle)) = self.lookup(name) {
+            Some(handle)
+        } else {
+            None
+        }
+    }
+
+    /// Check if a symbol is a relation (either regular or handle)
+    pub fn is_relation(&self, name: &str) -> bool {
+        if let Some(value) = self.lookup(name) {
+            matches!(
+                value,
+                RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+            )
+        } else {
+            false
+        }
+    }
+
+    /// Get relation arity for a named relation
+    pub fn get_relation_arity(&self, name: &str) -> Option<usize> {
+        match self.lookup(name) {
+            Some(RuntimeValue::Relation(rel_def)) => Some(rel_def.parameters.len()),
+            Some(RuntimeValue::RelationHandle(handle)) => Some(handle.arity),
+            Some(RuntimeValue::NativeRelation { arity, .. }) => Some(*arity),
+            _ => None,
+        }
+    }
+
+    /// Register a relation in the registry and return its index
+    /// This captures the resolved relation with its scope context
+    pub fn register_relation(&mut self, relation: RuntimeValue<U, E>) -> usize {
+        let index = self.relation_registry.len();
+        self.relation_registry.push(relation);
+        index
+    }
+
+    /// Get a relation from the registry by index
+    pub fn get_relation_by_index(&self, index: usize) -> Option<&RuntimeValue<U, E>> {
+        self.relation_registry.get(index)
     }
 
     /// Load a struct definition
@@ -648,7 +724,10 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
         // Add global relations
         for (name, value) in &self.globals {
-            if matches!(value, RuntimeValue::Relation(_)) {
+            if matches!(
+                value,
+                RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+            ) {
                 relations.insert(name.clone(), value);
             }
         }
@@ -656,7 +735,10 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         // Add module relations
         for module_symbols in self.modules.values() {
             for (name, value) in module_symbols {
-                if matches!(value, RuntimeValue::Relation(_)) {
+                if matches!(
+                    value,
+                    RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+                ) {
                     relations.insert(name.clone(), value);
                 }
             }
@@ -676,7 +758,10 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
         // Add global variables (non-relations)
         for (name, value) in &self.globals {
-            if !matches!(value, RuntimeValue::Relation(_)) {
+            if !matches!(
+                value,
+                RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+            ) {
                 variables.insert(name.clone(), value);
             }
         }

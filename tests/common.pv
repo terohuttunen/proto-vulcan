@@ -1,0 +1,75 @@
+// Common Test Predicates
+// Arithmetic and constraint-based relations needed for testing higher-order predicates
+
+// =============================================================================
+// ARITHMETIC PREDICATES (CONSTRAINT-BASED) - FOR TESTING ONLY
+// =============================================================================
+
+// Check if a number is positive (greater than 0)
+pub rel positive(n) {
+    constraint(domain="clpz") {
+        n > 0
+    }
+}
+
+// Successor relation: n is the successor of n1 (n = n1 + 1)
+pub rel successor(n1, n) {
+    constraint(domain="clpz") {
+        n == n1 + 1
+    }
+}
+
+// Predecessor relation: n1 is the predecessor of n (n1 = n - 1)
+pub rel predecessor(n, n1) {
+    constraint(domain="clpz") {
+        n == n1 + 1
+    }
+}
+
+// Domain constraint for digits 1-9 (commonly used in constraint problems)
+pub rel in_range_1_to_9(x) {
+    constraint(domain="clpfd") { x in 1..9 }
+}
+
+// Add one to a number
+pub rel add_one(x, result) {
+    constraint(domain="clpz") { 
+        result == x + 1 
+    }
+}
+
+// Add two numbers together
+pub rel add_numbers(x, y, sum) {
+    constraint(domain="clpz") { 
+        sum == x + y 
+    }
+}
+
+// Double a number (for map_transform tests)
+pub rel double(x, doubled) {
+    constraint(domain="clpz") {
+        doubled == x * 2
+    }
+}
+
+// =============================================================================
+// ADDITIONAL TEST HELPER PREDICATES
+// =============================================================================
+
+// Check if a number is even
+pub rel even(n) {
+    |half| {
+        constraint(domain="clpz") {
+            n == half * 2
+        }
+    }
+}
+
+// Check if a number is odd
+pub rel odd(n) {
+    |half| {
+        constraint(domain="clpz") {
+            n == half * 2 + 1
+        }
+    }
+} 

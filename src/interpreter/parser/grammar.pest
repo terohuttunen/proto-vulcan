@@ -77,7 +77,8 @@ relation_definition = {
 }
 
 parameter = { ident ~ (":" ~ meta_type_annotation)? }
-meta_type_annotation = { "int" | "string" | "bool" | type_name }
+meta_type_annotation = { relation_type | "int" | "string" | "bool" | type_name }
+relation_type = { "rel" ~ "(" ~ number_literal ~ ")" }
 type_name = { ident }
 pub_keyword = { "pub" }
 attribute = { "@" ~ ident ~ ("(" ~ attribute_args? ~ ")")? }

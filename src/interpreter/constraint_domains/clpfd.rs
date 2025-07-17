@@ -142,8 +142,7 @@ impl ClpfdDomain {
                 Rule::constraints => {
                     for constraint_pair in part.into_inner() {
                         if constraint_pair.as_rule() == Rule::constraint {
-                            constraints
-                                .push(Self::build_constraint(constraint_pair, source_span)?);
+                            constraints.push(Self::build_constraint(constraint_pair, source_span)?);
                         }
                     }
                 }
@@ -286,10 +285,8 @@ impl ClpfdDomain {
                 }
             }
             Rule::range_single => {
-                let bound = Self::build_domain_bound(
-                    inner_pair.into_inner().next().unwrap(),
-                    source_span,
-                )?;
+                let bound =
+                    Self::build_domain_bound(inner_pair.into_inner().next().unwrap(), source_span)?;
 
                 if let DomainBound::Integer(value) = bound {
                     Ok(DomainSpec::Set(vec![value]))
@@ -317,10 +314,12 @@ impl ClpfdDomain {
             }
             Rule::interpolation_expression => {
                 let content = pair.into_inner().next().unwrap().as_str();
-                let meta_expr = meta_parser::parse_meta_expression(content, source_span)
-                    .map_err(|_| InterpreterError::InvalidConstraintSyntax {
-                        domain: "clpfd".to_string(),
-                        error: format!("Invalid meta expression: {}", content),
+                let meta_expr =
+                    meta_parser::parse_meta_expression(content, source_span).map_err(|_| {
+                        InterpreterError::InvalidConstraintSyntax {
+                            domain: "clpfd".to_string(),
+                            error: format!("Invalid meta expression: {}", content),
+                        }
                     })?;
                 Ok(DomainBound::Interpolation(meta_expr))
             }
@@ -454,8 +453,7 @@ impl ClpfdDomain {
                                 "/" => ArithOp::Divide,
                                 _ => unreachable!(),
                             };
-                            let right =
-                                Self::build_arith_expr(inner.next().unwrap(), source_span);
+                            let right = Self::build_arith_expr(inner.next().unwrap(), source_span);
                             left = ArithExpr::BinaryOp {
                                 left: Box::new(left),
                                 op,

@@ -1,0 +1,221 @@
+// Higher-Order Predicates Standard Library for Proto-Vulcan
+// Provides essential functional programming constructs for logic programming
+
+use std::list::*;
+
+// =============================================================================
+// CORE HIGHER-ORDER PREDICATES
+// =============================================================================
+
+// Apply unary predicate to all list elements
+// predicate: rel(1) - any unary relation
+// list: any list type
+pub rel maplist(predicate: rel(1), list) {
+    match list {
+        [] => true,
+        [head | tail] => {
+            predicate(head),
+            maplist(predicate, tail)
+        }
+    }
+}
+
+// Transform list using binary relation  
+// transformer: rel(2) - any binary relation (input, output)
+// input_list: any list type
+// output_list: any list type (can be different from input)
+pub rel map_transform(transformer: rel(2), input_list, output_list) {
+    match [input_list, output_list] {
+        [[], []] => true,
+        [[in_head | in_tail], [out_head | out_tail]] => {
+            transformer(in_head, out_head),
+            map_transform(transformer, in_tail, out_tail)
+        }
+    }
+}
+
+// Combine two lists using ternary relation
+// combiner: rel(3) - relation(element1, element2, output)
+// list1: any list type
+// list2: any list type (can be different from list1)
+// output_list: any list type
+pub rel map_combine(combiner: rel(3), list1, list2, output_list) {
+    match [list1, list2, output_list] {
+        [[], [], []] => true,
+        [[h1 | t1], [h2 | t2], [h_out | t_out]] => {
+            combiner(h1, h2, h_out),
+            map_combine(combiner, t1, t2, t_out)
+        }
+    }
+}
+
+// Filter list elements using predicate
+// predicate: rel(1) - any unary relation (succeeds/fails for each element)
+// input_list: any list type
+// filtered_list: same type as input (contains only elements where predicate succeeds)
+pub rel filter(predicate: rel(1), input_list, filtered_list) {
+    any {
+        // Base case: empty list
+        all {
+            input_list == [],
+            filtered_list == []
+        },
+        
+        // Include element case: predicate holds, keep element
+        |h, t, rest| {
+            all {
+                input_list == [h | t],
+                predicate(h),
+                filtered_list == [h | rest],
+                filter(predicate, t, rest)
+            }
+        },
+        
+        // Skip element case: predicate fails, skip element
+        |h, t| {
+            all {
+                input_list == [h | t],
+                filter(predicate, t, filtered_list)
+            }
+        }
+    }
+}
+
+// Check if all elements in list satisfy predicate
+// predicate: rel(1) - any unary relation
+// list: list to check
+pub rel all_true(predicate: rel(1), list) {
+    match list {
+        [] => true,
+        [head | tail] => {
+            predicate(head),
+            all_true(predicate, tail)
+        }
+    }
+}
+
+// Check if any element in list satisfies predicate
+// predicate: rel(1) - any unary relation  
+// list: list to check
+pub rel any_true(predicate: rel(1), list) {
+    match list {
+        [] => false,
+        [head | tail] => any {
+            predicate(head),
+            any_true(predicate, tail)
+        }
+    }
+}
+
+// Left fold - process list from left to right
+// operation: rel(3) - combines accumulator, element, new_accumulator
+// list: input list
+// initial: initial accumulator value
+// result: final accumulator value
+pub rel foldl(operation: rel(3), list, initial, result) {
+    match list {
+        [] => result == initial,
+        [head | tail] => |acc| {
+            operation(initial, head, acc),
+            foldl(operation, tail, acc, result)
+        }
+    }
+}
+
+// Right fold - process list from right to left  
+// operation: rel(3) - combines element, accumulator, new_accumulator
+// list: input list
+// initial: initial accumulator value
+// result: final accumulator value
+pub rel foldr(operation: rel(3), list, initial, result) {
+    match list {
+        [] => result == initial,
+        [head | tail] => |tail_result| {
+            foldr(operation, tail, initial, tail_result),
+            operation(head, tail_result, result)
+        }
+    }
+}
+
+// =============================================================================
+// MATRIX AND NESTED STRUCTURE OPERATIONS
+// =============================================================================
+
+// Transform all elements in nested structure using binary relation
+// transformer: rel(2) - relation for transforming (input, output)
+// input_nested: nested list input structure
+// output_nested: nested list output structure
+pub rel apply_to_all(transformer: rel(2), input_nested, output_nested) {
+    match [input_nested, output_nested] {
+        // Base case: both empty lists
+        [[], []] => true,
+        
+        // Recursive case: transform head lists and tail
+        [[in_head | in_tail], [out_head | out_tail]] => {
+            map_transform(transformer, in_head, out_head),
+            apply_to_all(transformer, in_tail, out_tail)
+        }
+    }
+}
+
+// Apply unary predicate to all elements in nested lists
+// predicate: rel(1) - any unary relation
+// nested_lists: list of lists to apply predicate to all elements
+pub rel apply_to_all_nested(predicate: rel(1), nested_lists) {
+    match nested_lists {
+        // Base case: empty list of lists
+        [] => true,
+        
+        // Recursive case: apply to all elements in head list, then tail
+        [head_list | tail_lists] => {
+            maplist(predicate, head_list),
+            apply_to_all_nested(predicate, tail_lists)
+        }
+    }
+}
+
+// =============================================================================
+// CONTROL FLOW OPERATORS
+// =============================================================================
+
+// Once operator - ensures a goal succeeds at most once
+// goal: rel(0) - any nullary relation (goal that takes no parameters)  
+pub rel once(goal: rel(0)) {
+    // TODO: This needs proper committed choice implementation
+    // For now, just call the goal (this will still produce multiple results)
+    goal()
+}
+
+// Negation as failure - succeeds when goal fails
+pub rel not(goal: rel(0)) {
+    any {
+        all { goal(), false },  // if goal succeeds, then fail
+        true  // else succeed (only reached if goal fails)
+    }
+}
+
+// =============================================================================
+// CONVENIENCE ALIASES
+// =============================================================================
+
+// Alias for map_combine - more familiar name for functional programmers
+pub rel zip_with(combiner: rel(3), list1, list2, result) {
+    map_combine(combiner, list1, list2, result)
+}
+
+// Create a predicate for checking if all elements satisfy a condition
+pub rel all_satisfy(condition: rel(1), list) {
+    all_true(condition, list)
+}
+
+// Create a predicate for checking if any element satisfies a condition
+pub rel any_satisfy(condition: rel(1), list) {
+    any_true(condition, list)
+}
+
+// Apply a constraint relation to each list in a list of lists
+pub rel apply_constraint_to_all(constraint_rel: rel(1), lists) {
+    maplist(constraint_rel, lists)
+}
+
+ 

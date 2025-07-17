@@ -309,12 +309,37 @@ fn build_parameter(pair: Pair<Rule>) -> ParseResult<Parameter> {
     let name = inner.next().unwrap().as_str().to_string();
     let type_annotation = inner
         .next()
-        .map(|p| parse_type_annotation(p.as_str()))
+        .map(|p| parse_meta_type_annotation(p))
         .transpose()?;
     Ok(Parameter {
         name,
         type_annotation,
     })
+}
+
+fn parse_meta_type_annotation(pair: Pair<Rule>) -> ParseResult<TypeAnnotation> {
+    // Save the string representation before consuming the pair
+    let pair_str = pair.as_str();
+
+    // Check if there are any inner pairs (for complex types like relation_type)
+    let mut inner_pairs = pair.into_inner();
+    if let Some(inner) = inner_pairs.next() {
+        // We have an inner rule (like relation_type)
+        match inner.as_rule() {
+            Rule::relation_type => {
+                let arity_pair = inner.into_inner().next().unwrap();
+                let arity_str = arity_pair.as_str();
+                let arity = arity_str
+                    .parse::<usize>()
+                    .map_err(|_| ParseError::UnexpectedRule(Rule::number_literal))?;
+                Ok(TypeAnnotation::Relation(arity))
+            }
+            _ => parse_type_annotation(inner.as_str()),
+        }
+    } else {
+        // No inner pairs - this is a terminal type (int, string, bool)
+        parse_type_annotation(pair_str)
+    }
 }
 
 fn parse_type_annotation(type_str: &str) -> ParseResult<TypeAnnotation> {

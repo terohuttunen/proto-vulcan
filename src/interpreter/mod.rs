@@ -2,6 +2,7 @@ use self::environment::Environment;
 use self::parser::ast;
 use self::query::QueryResult;
 use crate::engine::Engine;
+use crate::lterm::{LTerm, LTermInner};
 use crate::user::User;
 use std::cell::RefCell;
 use std::fmt::{self, Display};
@@ -59,20 +60,21 @@ pub fn find_main_relation(
 
 /// Validates that a relation marked with @main meets the requirements
 pub fn validate_main_relation(rel_def: &ast::RelationDefinition) -> Result<(), String> {
-    // Check that @main relations cannot have non-relational parameters (templates)
+    // Check that @main relations cannot have typed parameters (templates)
     for param in &rel_def.parameters {
         if let Some(type_annotation) = &param.type_annotation {
+            let type_str = match type_annotation {
+                metaprogramming::TypeAnnotation::Int => "int".to_string(),
+                metaprogramming::TypeAnnotation::String => "string".to_string(),
+                metaprogramming::TypeAnnotation::Bool => "bool".to_string(),
+                metaprogramming::TypeAnnotation::Relation(arity) => format!("rel({})", arity),
+            };
+
             return Err(format!(
-                "Relation '{}' marked with @main cannot have non-relational parameters. \
+                "Relation '{}' marked with @main cannot have typed parameters. \
                 Parameter '{}' has type annotation '{}', but @main relations can only have \
-                relational parameters (without type annotations)",
-                rel_def.name,
-                param.name,
-                match type_annotation {
-                    metaprogramming::TypeAnnotation::Int => "int",
-                    metaprogramming::TypeAnnotation::String => "string",
-                    metaprogramming::TypeAnnotation::Bool => "bool",
-                }
+                untyped parameters for maximum compatibility",
+                rel_def.name, param.name, type_str
             ));
         }
     }
@@ -116,6 +118,16 @@ pub enum InterpreterError {
         error: String,
     },
     ExpectedNumber,
+    ArityMismatch {
+        relation_name: String,
+        expected: usize,
+        actual: usize,
+    },
+    UnboundRelationParameter(String),
+    InvalidRelationParameter {
+        parameter_name: String,
+        reason: String,
+    },
 }
 
 impl Display for InterpreterError {
@@ -167,6 +179,30 @@ impl Display for InterpreterError {
             }
             InterpreterError::ExpectedNumber => {
                 write!(f, "Expected a number value")
+            }
+            InterpreterError::ArityMismatch {
+                relation_name,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "Arity mismatch for relation '{}': expected {}, got {}",
+                    relation_name, expected, actual
+                )
+            }
+            InterpreterError::UnboundRelationParameter(param_name) => {
+                write!(f, "Unbound relation parameter: {}", param_name)
+            }
+            InterpreterError::InvalidRelationParameter {
+                parameter_name,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "Invalid relation parameter '{}': {}",
+                    parameter_name, reason
+                )
             }
         }
     }
@@ -358,8 +394,43 @@ where
     where
         U::UserContext: Default,
     {
+        self.query_with_timeout(query_str, None)
+    }
+
+    /// Execute a query string with optional timeout
+    pub fn query_with_timeout(
+        &mut self,
+        query_str: &str,
+        timeout_ms: Option<u64>,
+    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
+    where
+        U::UserContext: Default,
+    {
+        self.query_with_test_timeout(query_str, timeout_ms, None)
+    }
+
+    /// Execute a query string with optional timeout and test timeout
+    pub fn query_with_test_timeout(
+        &mut self,
+        query_str: &str,
+        timeout_ms: Option<u64>,
+        test_timeout_info: Option<(std::time::Instant, u64)>,
+    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
+    where
+        U::UserContext: Default,
+    {
         let query_goal = query::parse_query(query_str)?;
-        query::execute_query(self.environment.clone(), query_goal)
+
+        // Create query config with appropriate timeout
+        let timeout = test_timeout_info
+            .map(|(_, timeout_ms)| timeout_ms)
+            .or(timeout_ms);
+        let config = query::QueryConfig {
+            timeout,
+            ..Default::default()
+        };
+
+        query::execute_query(self.environment.clone(), query_goal, config)
     }
 
     /// Execute a query string with tracing enabled
@@ -371,8 +442,40 @@ where
     where
         U::UserContext: Default,
     {
+        self.query_with_trace_and_timeout(query_str, trace_config, None)
+    }
+
+    /// Execute a query string with tracing and optional timeout
+    pub fn query_with_trace_and_timeout(
+        &mut self,
+        query_str: &str,
+        trace_config: &mut trace::TraceConfig,
+        timeout_ms: Option<u64>,
+    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
+    where
+        U::UserContext: Default,
+    {
         let query_goal = query::parse_query(query_str)?;
-        query::execute_query_with_trace(self.environment.clone(), query_goal, trace_config)
+        // TODO: Integrate tracing with the new unified QueryConfig system
+        let config = query::QueryConfig {
+            timeout: timeout_ms,
+            ..Default::default()
+        };
+
+        query::execute_query(self.environment.clone(), query_goal, config)
+    }
+
+    /// Execute a query string with unified configuration
+    pub fn execute_query(
+        &mut self,
+        query_str: &str,
+        config: query::QueryConfig,
+    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
+    where
+        U::UserContext: Default,
+    {
+        let query_goal = query::parse_query(query_str)?;
+        query::execute_query(self.environment.clone(), query_goal, config)
     }
 }
 

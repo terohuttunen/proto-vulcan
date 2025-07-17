@@ -5,12 +5,33 @@ use crate::lterm::LTerm;
 use crate::user::User;
 use std::rc::Rc;
 
+/// Handle to a relation for higher-order predicates
+/// Contains both the relation definition and metadata for arity checking
+#[derive(Debug, Clone, PartialEq)]
+pub struct RelationHandle {
+    pub name: String,
+    pub arity: usize,
+    pub definition: RelationDefinition,
+}
+
+impl RelationHandle {
+    pub fn new(name: String, definition: RelationDefinition) -> Self {
+        let arity = definition.parameters.len();
+        Self {
+            name,
+            arity,
+            definition,
+        }
+    }
+}
+
 // RuntimeValue is not derivable because of the `func` field in NativeRelation.
 // We must implement it manually to just clone the Rc.
 impl<U: User, E: Engine<U>> Clone for RuntimeValue<U, E> {
     fn clone(&self) -> Self {
         match self {
             RuntimeValue::Relation(rd) => RuntimeValue::Relation(rd.clone()),
+            RuntimeValue::RelationHandle(rh) => RuntimeValue::RelationHandle(rh.clone()),
             RuntimeValue::NativeRelation { func, arity } => RuntimeValue::NativeRelation {
                 func: func.clone(),
                 arity: *arity,
@@ -27,6 +48,7 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RuntimeValue<U, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RuntimeValue::Relation(rd) => f.debug_tuple("Relation").field(rd).finish(),
+            RuntimeValue::RelationHandle(rh) => f.debug_tuple("RelationHandle").field(rh).finish(),
             RuntimeValue::NativeRelation { arity, .. } => f
                 .debug_struct("NativeRelation")
                 .field("func", &"<function>")
@@ -42,6 +64,8 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RuntimeValue<U, E> {
 pub enum RuntimeValue<U: User, E: Engine<U>> {
     /// A relation definition
     Relation(RelationDefinition),
+    /// A relation handle for higher-order predicates
+    RelationHandle(RelationHandle),
     NativeRelation {
         func: Rc<dyn Fn(Vec<LTerm<U, E>>) -> Goal<U, E>>,
         arity: usize,
@@ -118,7 +142,10 @@ impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
 
     /// Check if this is a relation
     pub fn is_relation(&self) -> bool {
-        matches!(self, RuntimeValue::Relation(_))
+        matches!(
+            self,
+            RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+        )
     }
 
     /// Get the relation definition if this is a relation

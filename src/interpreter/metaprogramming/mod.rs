@@ -7,6 +7,8 @@ pub enum MetaValue {
     Integer(i64),
     String(String),
     Boolean(bool),
+    // Note: Relation values are not supported in meta programming
+    // Relations are runtime entities, not compile-time meta values
 }
 
 /// Type annotations for meta parameters
@@ -15,6 +17,7 @@ pub enum TypeAnnotation {
     Int,
     String,
     Bool,
+    Relation(usize), // New: relation type with arity (e.g., rel(2) for binary relation)
 }
 
 impl fmt::Display for TypeAnnotation {
@@ -23,6 +26,7 @@ impl fmt::Display for TypeAnnotation {
             TypeAnnotation::Int => write!(f, "int"),
             TypeAnnotation::String => write!(f, "string"),
             TypeAnnotation::Bool => write!(f, "bool"),
+            TypeAnnotation::Relation(arity) => write!(f, "rel({})", arity),
         }
     }
 }
@@ -248,6 +252,8 @@ pub fn check_meta_type(value: &MetaValue, expected: &TypeAnnotation) -> bool {
         (MetaValue::Integer(_), TypeAnnotation::Int) => true,
         (MetaValue::String(_), TypeAnnotation::String) => true,
         (MetaValue::Boolean(_), TypeAnnotation::Bool) => true,
+        // Relations cannot be meta values - they are runtime entities
+        (_, TypeAnnotation::Relation(_)) => false,
         _ => false,
     }
 }
