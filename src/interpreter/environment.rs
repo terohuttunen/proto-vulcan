@@ -557,6 +557,14 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             return self.lookup_qualified(name);
         }
 
+        // For native predicates (prefixed with __native_), always check globals first
+        // This ensures native predicates are accessible from all module scopes
+        if name.starts_with("__native_") {
+            if let Some(value) = self.globals.get(name) {
+                return Some(value);
+            }
+        }
+
         // First check current module scope
         if let Some(current_scope) = self.scope_stack.last() {
             if current_scope != "global" {
@@ -568,8 +576,22 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             }
         }
 
-        // Then check globals
-        self.globals.get(name)
+        // Then check globals (this will catch native predicates again as a fallback)
+        if let Some(value) = self.globals.get(name) {
+            return Some(value);
+        }
+
+        // Final fallback: for native predicates, search all scopes
+        if name.starts_with("__native_") {
+            // Search through all module scopes as a last resort
+            for module_symbols in self.modules.values() {
+                if let Some(value) = module_symbols.get(name) {
+                    return Some(value);
+                }
+            }
+        }
+
+        None
     }
 
     /// Look up a qualified symbol name like "std::list::member"

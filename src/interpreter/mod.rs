@@ -194,6 +194,10 @@ where
     /// Creates a new interpreter and loads the standard library.
     pub fn with_stdlib() -> Self {
         let mut interpreter = Self::new();
+
+        // Register core native relations
+        interpreter.register_core_builtins();
+
         if let Err(e) = interpreter.load_stdlib() {
             eprintln!("Fatal: Failed to load standard library: {:?}", e);
         }
@@ -203,6 +207,71 @@ where
     /// Get a reference to the environment
     pub fn environment(&self) -> std::cell::Ref<Environment<U, E>> {
         self.environment.borrow()
+    }
+
+    /// Register core builtin native relations
+    fn register_core_builtins(&mut self) {
+        use crate::goal::{AnyGoal, Goal, GoalCast};
+        use crate::lterm::LValue;
+        use crate::relation::{eq, fail};
+
+        // Native length predicate - efficiently calculates list length
+        // Prefixed with __native_ to avoid conflicts with library predicates
+        let length_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+            if args.len() != 2 {
+                return fail().cast_into();
+            }
+
+            use crate::goal::Goal;
+            use crate::solver::{Solve, Solver};
+            use crate::state::State;
+            use crate::stream::Stream;
+            use derivative::Derivative;
+
+            #[derive(Derivative)]
+            #[derivative(Debug(bound = "U: User"))]
+            struct NativeLengthGoal<U: User, E: Engine<U>> {
+                list: LTerm<U, E>,
+                length: LTerm<U, E>,
+            }
+
+            impl<U: User, E: Engine<U>> Solve<U, E> for NativeLengthGoal<U, E> {
+                fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+                    // Walk the substitution map to get resolved values (same as assertions)
+                    let list_walked = state.smap_ref().walk(&self.list).clone();
+                    let length_walked = state.smap_ref().walk(&self.length).clone();
+
+                    // Check if list is now a concrete list
+                    if list_walked.is_list() {
+                        let count = list_walked.iter().count();
+                        let count_term =
+                            LTerm::from(LTermInner::Val(LValue::Number(count as isize)));
+
+                        // Use the constraint system's unification (same as assertions)
+                        match state.unify(&length_walked, &count_term) {
+                            Ok(new_state) => Stream::unit(Box::new(new_state)),
+                            Err(_) => Stream::empty(),
+                        }
+                    } else {
+                        // If list is still a variable, we can't compute length yet
+                        // A more sophisticated implementation would add length constraints
+                        Stream::empty()
+                    }
+                }
+            }
+
+            // Return the goal using the same pattern as assertions
+            Goal::dynamic(Rc::new(NativeLengthGoal {
+                list: args[0].clone(),
+                length: args[1].clone(),
+            }))
+        });
+
+        self.environment.borrow_mut().add_native_relation(
+            "__native_length".to_string(),
+            length_rel,
+            2,
+        );
     }
 
     /// Load a program into the interpreter
