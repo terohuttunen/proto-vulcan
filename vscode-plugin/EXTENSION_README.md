@@ -73,7 +73,7 @@ install-cursor.bat
 ## 🎨 Features Implemented
 
 ### Syntax Highlighting
-- ✅ **Keywords**: `rel`, `use`, `mod`, `struct`, `impl`, `pub`, `constraint`, `let`, `if`, `else`, `for`, `in`, `match`, `any`, `all`
+- ✅ **Keywords**: `rel`, `macro`, `use`, `mod`, `struct`, `impl`, `pub`, `constraint`, `let`, `if`, `else`, `else if`, `for`, `in`, `match`, `any`, `all`
 - ✅ **Attributes**: `@test`, `@dfs`, `@bfs` with parameters
 - ✅ **Operators**: `==`, `!=`, `<`, `>`, `<=`, `>=`, `=`, `=>`, `|`, `..`, `::`
 - ✅ **Comments**: Line (`//`) and block (`/* */`) comments

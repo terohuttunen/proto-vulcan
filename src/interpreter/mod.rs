@@ -1,5 +1,5 @@
 use self::environment::Environment;
-use self::parser::ast;
+use self::parser::ast::{self, PredicateDefinition, PredicateKind};
 use self::query::QueryResult;
 use crate::engine::Engine;
 use crate::lterm::{LTerm, LTermInner};
@@ -26,12 +26,12 @@ pub mod trace;
 /// Validation functions for @main relations
 pub fn find_main_relation(
     program: &ast::Program,
-) -> Result<Option<&ast::RelationDefinition>, String> {
-    let main_relations: Vec<&ast::RelationDefinition> = program
+) -> Result<Option<&ast::PredicateDefinition>, String> {
+    let main_relations: Vec<&ast::PredicateDefinition> = program
         .items
         .iter()
         .filter_map(|item| {
-            if let ast::Item::Relation(rel_def) = item {
+            if let ast::Item::Predicate(rel_def) = item {
                 if rel_def.attributes.iter().any(|attr| attr.name == "main") {
                     Some(rel_def)
                 } else {
@@ -59,7 +59,7 @@ pub fn find_main_relation(
 }
 
 /// Validates that a relation marked with @main meets the requirements
-pub fn validate_main_relation(rel_def: &ast::RelationDefinition) -> Result<(), String> {
+pub fn validate_main_relation(rel_def: &ast::PredicateDefinition) -> Result<(), String> {
     // Check that @main relations cannot have typed parameters (templates)
     for param in &rel_def.parameters {
         if let Some(type_annotation) = &param.type_annotation {
@@ -83,7 +83,7 @@ pub fn validate_main_relation(rel_def: &ast::RelationDefinition) -> Result<(), S
 }
 
 /// Creates a query string for the main relation with appropriate variable bindings
-pub fn create_main_query(main_rel: &ast::RelationDefinition) -> String {
+pub fn create_main_query(main_rel: &ast::PredicateDefinition) -> String {
     if main_rel.parameters.is_empty() {
         format!("{}()", main_rel.name)
     } else {
@@ -135,7 +135,7 @@ impl Display for InterpreterError {
         match self {
             InterpreterError::ParseError(e) => write!(f, "Parse error: {}", e),
             InterpreterError::RuntimeError(e) => write!(f, "Runtime error: {}", e),
-            InterpreterError::UnknownRelation(name) => write!(f, "Unknown relation: {}", name),
+            InterpreterError::UnknownRelation(name) => write!(f, "Unknown predicate: {}", name),
             InterpreterError::UnknownVariable(name) => write!(f, "Unknown variable: {}", name),
             InterpreterError::DuplicateDefinition(name) => {
                 write!(f, "Duplicate definition: {}", name)
@@ -554,9 +554,10 @@ mod tests {
                     ]),
                 }),
                 // Relation definition
-                Item::Relation(RelationDefinition {
+                Item::Predicate(PredicateDefinition {
                     span: Default::default(),
                     is_pub: false,
+                    predicate_kind: PredicateKind::Relation,
                     attributes: vec![],
                     name: "distance".to_string(),
                     parameters: vec![
@@ -585,9 +586,10 @@ mod tests {
                     span: Default::default(),
                     name: "geometry".to_string(),
                     search_strategy: None,
-                    items: vec![Item::Relation(RelationDefinition {
+                    items: vec![Item::Predicate(PredicateDefinition {
                         span: Default::default(),
                         is_pub: true,
+                        predicate_kind: PredicateKind::Relation,
                         attributes: vec![],
                         name: "area".to_string(),
                         parameters: vec![

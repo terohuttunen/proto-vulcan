@@ -54,7 +54,7 @@ fn build_item(pair: Pair<Rule>) -> ParseResult<Item> {
         Rule::mod_definition => Ok(Item::Module(build_mod_definition(pair)?)),
         Rule::struct_definition => Ok(Item::Struct(build_struct_definition(pair)?)),
         Rule::impl_block => Ok(Item::Impl(build_impl_block(pair)?)),
-        Rule::relation_definition => Ok(Item::Relation(build_relation_definition(pair)?)),
+        Rule::predicate_definition => Ok(Item::Predicate(build_predicate_definition(pair)?)),
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
 }
@@ -109,7 +109,7 @@ fn build_mod_definition(pair: Pair<Rule>) -> ParseResult<ModuleDefinition> {
             | Rule::mod_definition
             | Rule::struct_definition
             | Rule::impl_block
-            | Rule::relation_definition => items.push(build_item(part)?),
+            | Rule::predicate_definition => items.push(build_item(part)?),
             _ => (),
         }
     }
@@ -191,15 +191,15 @@ fn build_impl_block(pair: Pair<Rule>) -> ParseResult<ImplBlock> {
     let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let type_name = inner.next().unwrap().as_str().to_string();
-    let mut relations = vec![];
+    let mut predicates = vec![];
     for rel_pair in inner {
-        if rel_pair.as_rule() == Rule::relation_definition {
-            relations.push(build_relation_definition(rel_pair)?);
+        if rel_pair.as_rule() == Rule::predicate_definition {
+            predicates.push(build_predicate_definition(rel_pair)?);
         }
     }
     Ok(ImplBlock {
         type_name,
-        relations,
+        predicates,
         span,
     })
 }
@@ -234,7 +234,7 @@ fn build_attribute(pair: Pair<Rule>) -> ParseResult<Attribute> {
     Ok(Attribute { name, args })
 }
 
-fn build_relation_definition(pair: Pair<Rule>) -> ParseResult<RelationDefinition> {
+fn build_predicate_definition(pair: Pair<Rule>) -> ParseResult<PredicateDefinition> {
     let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut attributes = vec![];
@@ -255,7 +255,14 @@ fn build_relation_definition(pair: Pair<Rule>) -> ParseResult<RelationDefinition
         }
     }
 
-    // Now we must have `rel`, `ident`, `(params)`, optionally `search_strategy`, and `{body}`
+    // Now we must have `relation_keyword`, `ident`, `(params)`, optionally `search_strategy`, and `{body}`
+    let relation_kind_pair = inner.next().unwrap();
+    let predicate_kind = match relation_kind_pair.as_str() {
+        "rel" => ast::PredicateKind::Relation,
+        "macro" => ast::PredicateKind::Macro,
+        _ => return Err(ParseError::UnexpectedRule(relation_kind_pair.as_rule())),
+    };
+
     let name = inner.next().unwrap().as_str().to_string();
 
     let mut parameters = vec![];
@@ -293,9 +300,40 @@ fn build_relation_definition(pair: Pair<Rule>) -> ParseResult<RelationDefinition
         vec![]
     };
 
-    Ok(RelationDefinition {
+    // Validate that the correct keyword is used based on parameter types
+    // Only non-relational parameters (int, string, bool) require 'macro' keyword
+    // Relational parameters (rel(arity)) should use 'rel' keyword
+    let has_non_relational_params = parameters.iter().any(|p| {
+        if let Some(type_annotation) = &p.type_annotation {
+            matches!(
+                type_annotation,
+                crate::interpreter::metaprogramming::TypeAnnotation::Int
+                    | crate::interpreter::metaprogramming::TypeAnnotation::String
+                    | crate::interpreter::metaprogramming::TypeAnnotation::Bool
+            )
+        } else {
+            false
+        }
+    });
+
+    match (predicate_kind, has_non_relational_params) {
+        (ast::PredicateKind::Relation, true) => {
+            return Err(ParseError::Pest(pest::error::Error::new_from_span(
+                pest::error::ErrorVariant::CustomError {
+                    message:
+                        "Predicates with non-relational parameters (int, string, bool) must use 'macro' keyword instead of 'rel'"
+                            .to_string(),
+                },
+                relation_kind_pair.as_span(),
+            )));
+        }
+        _ => {} // Valid combinations: rel with only relational params, macro with any params
+    }
+
+    Ok(PredicateDefinition {
         span,
         is_pub,
+        predicate_kind,
         attributes,
         name,
         parameters,
@@ -398,7 +436,7 @@ pub fn build_goal(pair: Pair<Rule>) -> ParseResult<Goal> {
             build_pattern_matching(pair.clone())?,
             pair_to_span(&pair),
         )),
-        Rule::call_expr => Ok(Goal::RelationCall(
+        Rule::relation_call => Ok(Goal::RelationCall(
             build_relation_call(pair.clone())?,
             pair_to_span(&pair),
         )),
@@ -750,10 +788,48 @@ fn build_relation_call(pair: Pair<Rule>) -> ParseResult<RelationCall> {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let mut args = vec![];
-    for term_pair in inner {
-        args.push(build_term(term_pair)?);
+    for arg_pair in inner {
+        args.push(build_call_argument(arg_pair)?);
     }
     Ok(RelationCall { name, args })
+}
+
+fn build_call_argument(pair: Pair<Rule>) -> ParseResult<CallArgument> {
+    let span = pair_to_span(&pair);
+
+    if pair.as_rule() == Rule::call_argument {
+        // With the new grammar, call_argument has inner content that's either term or arithmetic_expr
+        let inner = pair.into_inner().next().unwrap();
+        match inner.as_rule() {
+            Rule::arithmetic_expr => {
+                let content = inner.as_str();
+                match meta_parser::parse_meta_expression(content, &span) {
+                    Ok(expr) => Ok(CallArgument::MetaExpression(expr)),
+                    Err(_) => Err(ParseError::UnexpectedRule(Rule::arithmetic_expr)),
+                }
+            }
+            _ => {
+                // Assume it's a term rule
+                build_term(inner).map(CallArgument::Term)
+            }
+        }
+    } else {
+        // Fallback for backward compatibility - try to parse as term first, then meta expression
+        match build_term(pair.clone()) {
+            Ok(term) => Ok(CallArgument::Term(term)),
+            Err(_) => {
+                // If term parsing fails, try to parse as a meta expression
+                let content = pair.as_str();
+                match meta_parser::parse_meta_expression(content, &span) {
+                    Ok(expr) => Ok(CallArgument::MetaExpression(expr)),
+                    Err(_) => {
+                        // If both fail, return an error
+                        Err(ParseError::UnexpectedRule(pair.as_rule()))
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn build_method_call(pair: Pair<Rule>) -> ParseResult<MethodCall> {
@@ -789,6 +865,7 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
                 .map_err(|_| ParseError::UnexpectedRule(Rule::interpolation_expression))?;
             Ok(Term::Interpolation(expr, span))
         }
+
         Rule::literal => {
             let lit_pair = pair
                 .into_inner()
@@ -803,7 +880,7 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
             build_named_struct_construction(pair.clone())?,
             span,
         )),
-        Rule::call_expr => Ok(Term::Compound(
+        Rule::compound_construction => Ok(Term::Compound(
             build_compound_construction(pair.clone())?,
             span,
         )),
@@ -989,10 +1066,11 @@ fn build_meta_statement(
     match inner.as_rule() {
         Rule::meta_let_statement => Ok(MetaStatement::Let(build_meta_let_statement(inner)?)),
         Rule::meta_if_statement => {
-            let (condition, then_body, else_body) = build_meta_if_statement(inner)?;
+            let (condition, then_body, else_ifs, else_body) = build_meta_if_statement(inner)?;
             Ok(MetaStatement::If {
                 condition,
                 then_body,
+                else_ifs,
                 else_body,
             })
         }
@@ -1034,17 +1112,47 @@ fn build_meta_if_statement(
 ) -> ParseResult<(
     crate::interpreter::metaprogramming::MetaExpression,
     GoalBody,
+    Vec<(
+        crate::interpreter::metaprogramming::MetaExpression,
+        GoalBody,
+    )>,
     Option<GoalBody>,
 )> {
     let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
+
+    // Parse initial if condition and body
     let content = inner.next().unwrap().as_str();
     let condition = meta_parser::parse_meta_expression(content, &span)
         .map_err(|_| ParseError::UnexpectedRule(Rule::meta_if_statement))?;
     let then_body = build_goal_body(inner.next().unwrap())?;
-    let else_body = inner.next().map(|p| build_goal_body(p)).transpose()?;
 
-    Ok((condition, then_body, else_body))
+    // Parse remaining elements (else if clauses and final else)
+    let mut else_ifs = Vec::new();
+    let mut else_body = None;
+
+    while let Some(element) = inner.next() {
+        match element.as_rule() {
+            Rule::meta_expr_content => {
+                // This should be an else if condition
+                let else_if_condition = meta_parser::parse_meta_expression(element.as_str(), &span)
+                    .map_err(|_| ParseError::UnexpectedRule(Rule::meta_if_statement))?;
+                let else_if_body = build_goal_body(inner.next().unwrap())?;
+                else_ifs.push((else_if_condition, else_if_body));
+            }
+            Rule::goal_body => {
+                // This should be the final else body
+                else_body = Some(build_goal_body(element)?);
+                break;
+            }
+            _ => {
+                // Skip keywords like "else", "if"
+                continue;
+            }
+        }
+    }
+
+    Ok((condition, then_body, else_ifs, else_body))
 }
 
 fn build_meta_for_statement(
@@ -1101,9 +1209,10 @@ mod tests {
         let input = "rel my_rel() {}";
         let ast = parse_str(input).unwrap();
         let expected_ast = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "my_rel".to_string(),
                 parameters: vec![],
@@ -1117,12 +1226,13 @@ mod tests {
 
     #[test]
     fn test_parse_pub_relation() {
-        let input = "pub rel my_rel(a: int, b: string) @dfs { a == b }";
+        let input = "pub macro my_rel(a: int, b: string) @dfs { a == b }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: true,
+                predicate_kind: ast::PredicateKind::Macro,
                 attributes: vec![],
                 name: "my_rel".to_string(),
                 parameters: vec![
@@ -1254,9 +1364,10 @@ mod tests {
             items: vec![Item::Impl(ImplBlock {
                 type_name: "Point".to_string(),
                 span: Span::dummy(),
-                relations: vec![RelationDefinition {
+                predicates: vec![PredicateDefinition {
                     span: Span::dummy(),
                     is_pub: false,
+                    predicate_kind: ast::PredicateKind::Relation,
                     attributes: vec![],
                     name: "new".to_string(),
                     parameters: vec![
@@ -1313,9 +1424,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1363,9 +1475,10 @@ mod tests {
         let input = "rel test() { a == [1, 2, 3] }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1396,9 +1509,10 @@ mod tests {
         let input = "rel test() { a == Some(42) }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1433,9 +1547,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1469,9 +1584,10 @@ mod tests {
         let input = "rel test() { all { a == 1, b == 2 } }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1505,9 +1621,10 @@ mod tests {
         let input = "rel test() { |x, y| { x == y } }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1540,9 +1657,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![Parameter {
@@ -1609,9 +1727,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![Parameter {
@@ -1676,9 +1795,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![Parameter {
@@ -1721,9 +1841,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1763,9 +1884,10 @@ mod tests {
         let input = "rel test() { x.method(a, b) }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1792,9 +1914,10 @@ mod tests {
         let input = "rel test() { my_relation(a, b, c) }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1803,9 +1926,9 @@ mod tests {
                     RelationCall {
                         name: "my_relation".to_string(),
                         args: vec![
-                            Term::Variable("a".to_string(), Span::dummy()),
-                            Term::Variable("b".to_string(), Span::dummy()),
-                            Term::Variable("c".to_string(), Span::dummy()),
+                            CallArgument::Term(Term::Variable("a".to_string(), Span::dummy())),
+                            CallArgument::Term(Term::Variable("b".to_string(), Span::dummy())),
+                            CallArgument::Term(Term::Variable("c".to_string(), Span::dummy())),
                         ],
                     },
                     Span::dummy(),
@@ -1821,9 +1944,10 @@ mod tests {
         let input = "rel test() { succeed() }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1842,13 +1966,33 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_call_with_arithmetic_expression() {
+        let input = "rel test() { factorial(n - 1, result) }";
+        let result = parse_str(input);
+
+        // For now, just check that it doesn't panic and see what we get
+        match result {
+            Ok(ast) => {
+                println!("Parsed successfully: {:#?}", ast);
+                // For now, just assert it parses without error
+                assert!(true);
+            }
+            Err(e) => {
+                println!("Parse error: {:#?}", e);
+                panic!("Failed to parse: {:?}", e);
+            }
+        }
+    }
+
+    #[test]
     fn test_parse_disequality() {
         let input = "rel test() { a != b }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1908,9 +2052,10 @@ mod tests {
                         ]),
                         span: Span::dummy(),
                     }),
-                    Item::Relation(RelationDefinition {
+                    Item::Predicate(PredicateDefinition {
                         span: Span::dummy(),
                         is_pub: false,
+                        predicate_kind: ast::PredicateKind::Relation,
                         attributes: vec![],
                         name: "test".to_string(),
                         parameters: vec![],
@@ -1936,9 +2081,10 @@ mod tests {
         let input = "rel test() { (a == b, c == d) }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1969,9 +2115,10 @@ mod tests {
         let input = "rel test() { a == (b) }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -1999,9 +2146,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![Parameter {
@@ -2048,7 +2196,7 @@ mod tests {
 
         let item = ast.items.get(0).unwrap();
         let relation = match item {
-            Item::Relation(r) => r,
+            Item::Predicate(r) => r,
             _ => panic!("Expected relation"),
         };
         let goal = relation.body.get(0).unwrap();
@@ -2075,7 +2223,7 @@ mod tests {
 
         let item = ast.items.get(0).unwrap();
         let relation = match item {
-            Item::Relation(r) => r,
+            Item::Predicate(r) => r,
             _ => panic!("Expected relation"),
         };
         let goal = relation.body.get(0).unwrap();
@@ -2099,7 +2247,7 @@ mod tests {
 
         let item = ast.items.get(0).unwrap();
         let relation = match item {
-            Item::Relation(r) => r,
+            Item::Predicate(r) => r,
             _ => panic!("Expected relation"),
         };
         let goal = relation.body.get(0).unwrap();
@@ -2122,7 +2270,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let item = ast.items.get(0).unwrap();
         let relation = match item {
-            Item::Relation(r) => r,
+            Item::Predicate(r) => r,
             _ => panic!("Expected relation"),
         };
         let goal = relation.body.get(0).unwrap();
@@ -2151,7 +2299,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let item = ast.items.get(0).unwrap();
         let relation = match item {
-            Item::Relation(r) => r,
+            Item::Predicate(r) => r,
             _ => panic!("Expected relation"),
         };
         let goal = relation.body.get(0).unwrap();
@@ -2191,9 +2339,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -2251,7 +2400,7 @@ mod tests {
         let input = "rel my_rel() @bfs {}";
         let ast = parse_str(input).unwrap();
         let rel_def = match &ast.items[0] {
-            Item::Relation(r) => r,
+            Item::Predicate(r) => r,
             _ => panic!("Expected relation definition"),
         };
         assert_eq!(rel_def.search_strategy, Some(SearchStrategy::Bfs));
@@ -2263,7 +2412,7 @@ mod tests {
         let input = "@test rel my_rel() {}";
         let ast = parse_str(input).unwrap();
         let rel_def = match &ast.items[0] {
-            Item::Relation(r) => r,
+            Item::Predicate(r) => r,
             _ => panic!("Expected relation definition"),
         };
         assert_eq!(rel_def.attributes.len(), 1);
@@ -2281,7 +2430,7 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::Conjunction(conj, _) => {
@@ -2316,7 +2465,7 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::Disjunction(disj, _) => {
@@ -2351,7 +2500,7 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => match &rel.body[0] {
+            Item::Predicate(rel) => match &rel.body[0] {
                 Goal::Conjunction(conj, _) => {
                     let mut params = SearchParams::new();
                     params.strategy = Some(SearchStrategy::Dfs);
@@ -2388,7 +2537,7 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => match &rel.body[0] {
+            Item::Predicate(rel) => match &rel.body[0] {
                 Goal::Disjunction(disj, _) => {
                     let mut params = SearchParams::new();
                     params.limit = Some(10);
@@ -2425,7 +2574,7 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => match &rel.body[0] {
+            Item::Predicate(rel) => match &rel.body[0] {
                 Goal::Conjunction(conj, _) => {
                     assert!(conj.params.is_some());
                     let params = conj.params.as_ref().unwrap();
@@ -2452,7 +2601,7 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => match &rel.body[0] {
+            Item::Predicate(rel) => match &rel.body[0] {
                 Goal::Conjunction(conj, _) => {
                     assert_eq!(conj.body.len(), 2);
                     match &conj.body[1] {
@@ -2478,9 +2627,10 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -2541,7 +2691,7 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 2);
                 match &rel.body[0] {
                     Goal::Conjunction(conj, _) => {
@@ -2567,9 +2717,10 @@ mod tests {
         let input = "rel test() @bfs { a == b }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -2590,9 +2741,10 @@ mod tests {
         let input = "rel test() { all(strategy = dfs, limit = 100) { a == b } }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -2624,9 +2776,10 @@ mod tests {
         let input = "rel test() { any(strategy = bfs, depth = 5) { a == b } }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
                 parameters: vec![],
@@ -2662,7 +2815,7 @@ mod tests {
         let input = r#"rel test() { constraint(domain="clpfd") { x in 1..5 } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2681,7 +2834,7 @@ mod tests {
         let input = r#"rel test() { constraint(domain="clpfd") { x in {{foo}, 1, 2} } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2700,7 +2853,7 @@ mod tests {
         let input = r#"rel test() { constraint(domain="clpfd") { x in {"}", 1, 2}, y != {"{"} } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2719,7 +2872,7 @@ mod tests {
         let input = r#"rel test() { constraint(domain="clpfd") { x in {{min_val}, {max_val}}, y in {{start}, {end}..10} } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2741,7 +2894,7 @@ mod tests {
         let input = r#"rel test() { constraint(domain="clpfd") { x in {{foo}, "}", 2}, y in {"{", {bar}, "}"} } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2763,7 +2916,7 @@ mod tests {
         let input = r#"rel test() { constraint(domain="clpfd") { x in {{{nested}, {values}}, 1}, y in {{{{deep}}, nested}} } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2785,7 +2938,7 @@ mod tests {
         let input = r#"rel test() { constraint(domain="clpfd") { x in {"}", "}", "{"}, y != {"{{inner}}"} } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2813,7 +2966,7 @@ mod tests {
         }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2835,7 +2988,7 @@ mod tests {
         let input = r#"rel test() { constraint { x in {{foo}, 1} } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {
@@ -2854,7 +3007,7 @@ mod tests {
         let input = r#"rel test() { constraint(domain="clpz") { x + y == {{sum}} } }"#;
         let ast = parse_str(input).unwrap();
         match &ast.items[0] {
-            Item::Relation(rel) => {
+            Item::Predicate(rel) => {
                 assert_eq!(rel.body.len(), 1);
                 match &rel.body[0] {
                     Goal::ConstraintBlock(block, _) => {

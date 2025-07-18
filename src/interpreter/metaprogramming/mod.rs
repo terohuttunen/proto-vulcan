@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use super::parser::ast::Spanned;
+
 /// Core meta values used in template expansion
 #[derive(Debug, Clone, PartialEq)]
 pub enum MetaValue {
@@ -103,6 +105,7 @@ pub enum MetaStatement {
     If {
         condition: MetaExpression,
         then_body: super::parser::ast::GoalBody,
+        else_ifs: Vec<(MetaExpression, super::parser::ast::GoalBody)>,
         else_body: Option<super::parser::ast::GoalBody>,
     },
     For {
@@ -370,10 +373,12 @@ pub fn expand_meta_statement(
         MetaStatement::If {
             condition,
             then_body,
+            else_ifs,
             else_body,
         } => expand_if_statement(
             condition,
             then_body,
+            else_ifs,
             else_body.as_ref(),
             context,
             original_span,
@@ -432,6 +437,7 @@ fn expand_let_statement(
 fn expand_if_statement(
     condition: &MetaExpression,
     then_body: &super::parser::ast::GoalBody,
+    else_ifs: &[(MetaExpression, super::parser::ast::GoalBody)],
     else_body: Option<&super::parser::ast::GoalBody>,
     context: &mut TemplateExpansionContext,
     _original_span: &super::parser::ast::Span,
@@ -444,7 +450,27 @@ fn expand_if_statement(
             expand_goal_body(then_body, context)
         }
         MetaValue::Boolean(false) => {
-            // Expand else branch if it exists
+            // Check each else if condition in order
+            for (else_if_condition, else_if_body) in else_ifs {
+                let else_if_value = evaluate_meta_expression(else_if_condition, &context.bindings)?;
+                match else_if_value {
+                    MetaValue::Boolean(true) => {
+                        // This else if condition is true, expand its body
+                        return expand_goal_body(else_if_body, context);
+                    }
+                    MetaValue::Boolean(false) => {
+                        // This else if condition is false, continue to next
+                        continue;
+                    }
+                    _ => {
+                        return Err(MetaError::TypeMismatch(
+                            "Else if condition must evaluate to a boolean".to_string(),
+                        ));
+                    }
+                }
+            }
+
+            // All else if conditions were false, expand final else branch if it exists
             if let Some(else_goals) = else_body {
                 expand_goal_body(else_goals, context)
             } else {
@@ -580,7 +606,7 @@ fn expand_goal(
         Goal::RelationCall(call, span) => {
             let mut expanded_call = call.clone();
             for arg in &mut expanded_call.args {
-                *arg = expand_term(arg, context)?;
+                *arg = expand_call_argument(arg, context)?;
             }
             Ok(vec![Goal::RelationCall(expanded_call, span.clone())])
         }
@@ -633,7 +659,104 @@ fn expand_goal(
     }
 }
 
-/// Expand a term, handling interpolation expressions
+/// Try to parse a compound term as an arithmetic expression in macro context
+pub fn try_parse_arithmetic_from_compound(
+    compound: &super::parser::ast::CompoundConstruction,
+    context: &TemplateExpansionContext,
+) -> Option<Result<super::parser::ast::Term, MetaError>> {
+    // Check if this looks like an arithmetic expression
+    // Pattern: variable_name - literal or variable - variable
+    if compound.args.len() == 2 {
+        let operator = &compound.name;
+
+        // Only handle basic arithmetic operators
+        let meta_op = match operator.as_str() {
+            "-" => MetaBinaryOp::Subtract,
+            "+" => MetaBinaryOp::Add,
+            "*" => MetaBinaryOp::Multiply,
+            "/" => MetaBinaryOp::Divide,
+            _ => return None, // Not an arithmetic operator
+        };
+
+        // Try to convert the arguments to meta expressions
+        let left_meta = term_to_meta_expression(&compound.args[0], context)?;
+        let right_meta = term_to_meta_expression(&compound.args[1], context)?;
+
+        // Create the binary operation expression
+        let span = compound.args[0].span().clone(); // Use span from first argument
+        let arithmetic_expr = MetaExpression::BinaryOp(
+            meta_op,
+            Box::new(left_meta),
+            Box::new(right_meta),
+            span.clone(),
+        );
+
+        // Evaluate the arithmetic expression
+        match evaluate_meta_expression(&arithmetic_expr, &context.bindings) {
+            Ok(value) => {
+                // Convert result back to a term
+                let result_term = match value {
+                    MetaValue::Integer(i) => super::parser::ast::Term::Literal(
+                        super::parser::ast::Literal::Number(i.to_string()),
+                        span,
+                    ),
+                    MetaValue::String(s) => super::parser::ast::Term::Literal(
+                        super::parser::ast::Literal::String(s),
+                        span,
+                    ),
+                    MetaValue::Boolean(b) => super::parser::ast::Term::Literal(
+                        super::parser::ast::Literal::Boolean(b),
+                        span,
+                    ),
+                };
+                Some(Ok(result_term))
+            }
+            Err(e) => Some(Err(e)),
+        }
+    } else {
+        None // Not a binary operation
+    }
+}
+
+/// Convert a term to a meta expression if possible
+fn term_to_meta_expression(
+    term: &super::parser::ast::Term,
+    context: &TemplateExpansionContext,
+) -> Option<MetaExpression> {
+    use super::parser::ast::{Literal, Term};
+
+    match term {
+        Term::Variable(name, span) => {
+            // Check if this variable is bound in the meta context
+            if context.bindings.contains_key(name) {
+                Some(MetaExpression::Variable(name.clone(), span.clone()))
+            } else {
+                None
+            }
+        }
+        Term::Literal(literal, span) => match literal {
+            Literal::Number(n) => {
+                if let Ok(i) = n.parse::<i64>() {
+                    Some(MetaExpression::Literal(MetaValue::Integer(i), span.clone()))
+                } else {
+                    None
+                }
+            }
+            Literal::String(s) => Some(MetaExpression::Literal(
+                MetaValue::String(s.clone()),
+                span.clone(),
+            )),
+            Literal::Boolean(b) => Some(MetaExpression::Literal(
+                MetaValue::Boolean(*b),
+                span.clone(),
+            )),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Expand a term, handling interpolation expressions and arithmetic in macro context
 pub fn expand_term(
     term: &super::parser::ast::Term,
     context: &TemplateExpansionContext,
@@ -653,6 +776,19 @@ pub fn expand_term(
                 MetaValue::String(s) => Ok(Term::Literal(Literal::String(s), span.clone())),
                 MetaValue::Boolean(b) => Ok(Term::Literal(Literal::Boolean(b), span.clone())),
             }
+        }
+        Term::Compound(compound, span) => {
+            // First check if this compound term represents arithmetic
+            if let Some(arithmetic_result) = try_parse_arithmetic_from_compound(compound, context) {
+                return arithmetic_result;
+            }
+
+            // Otherwise, expand normally
+            let mut expanded_compound = compound.clone();
+            for arg in &mut expanded_compound.args {
+                *arg = expand_term(arg, context)?;
+            }
+            Ok(Term::Compound(expanded_compound, span.clone()))
         }
         Term::List(list, span) => {
             let mut expanded_list = list.clone();
@@ -675,15 +811,44 @@ pub fn expand_term(
             }
             Ok(Term::NamedStruct(expanded_struct, span.clone()))
         }
-        Term::Compound(compound, span) => {
-            let mut expanded_compound = compound.clone();
-            for arg in &mut expanded_compound.args {
-                *arg = expand_term(arg, context)?;
-            }
-            Ok(Term::Compound(expanded_compound, span.clone()))
-        }
         // Terms that don't require expansion
         Term::Variable(_, _) | Term::Wildcard(_) | Term::Literal(_, _) => Ok(term.clone()),
+    }
+}
+
+/// Expand a call argument, handling both terms and meta expressions
+pub fn expand_call_argument(
+    arg: &super::parser::ast::CallArgument,
+    context: &TemplateExpansionContext,
+) -> Result<super::parser::ast::CallArgument, MetaError> {
+    use super::parser::ast::CallArgument;
+
+    match arg {
+        CallArgument::Term(term) => {
+            let expanded_term = expand_term(term, context)?;
+            Ok(CallArgument::Term(expanded_term))
+        }
+        CallArgument::MetaExpression(expr) => {
+            // Evaluate the meta expression and convert to a term
+            let value = evaluate_meta_expression(expr, &context.bindings)?;
+
+            let term = match value {
+                MetaValue::Integer(i) => super::parser::ast::Term::Literal(
+                    super::parser::ast::Literal::Number(i.to_string()),
+                    super::parser::ast::Span::dummy(),
+                ),
+                MetaValue::String(s) => super::parser::ast::Term::Literal(
+                    super::parser::ast::Literal::String(s),
+                    super::parser::ast::Span::dummy(),
+                ),
+                MetaValue::Boolean(b) => super::parser::ast::Term::Literal(
+                    super::parser::ast::Literal::Boolean(b),
+                    super::parser::ast::Span::dummy(),
+                ),
+            };
+
+            Ok(CallArgument::Term(term))
+        }
     }
 }
 
@@ -700,6 +865,7 @@ impl fmt::Display for MetaStatement {
             MetaStatement::If {
                 condition,
                 then_body,
+                else_ifs,
                 else_body,
             } => {
                 write!(f, "if {} {{ ", condition)?;
@@ -707,6 +873,16 @@ impl fmt::Display for MetaStatement {
                     write!(f, "{}, ", goal)?;
                 }
                 write!(f, " }}")?;
+
+                // Display else if clauses
+                for (else_if_condition, else_if_body) in else_ifs {
+                    write!(f, " else if {} {{ ", else_if_condition)?;
+                    for goal in else_if_body {
+                        write!(f, "{}, ", goal)?;
+                    }
+                    write!(f, " }}")?;
+                }
+
                 if let Some(else_goals) = else_body {
                     write!(f, " else {{ ")?;
                     for goal in else_goals {

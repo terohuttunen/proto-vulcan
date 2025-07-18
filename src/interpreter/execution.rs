@@ -8,13 +8,14 @@
 use super::deferred::DeferredRelationCall;
 use super::environment::Environment;
 use super::metaprogramming::{
-    expand_goal_body, expand_meta_statement, expand_term, MetaError, TemplateExpansionContext,
+    expand_goal_body, expand_meta_statement, expand_term, MetaError, MetaValue,
+    TemplateExpansionContext,
 };
 use super::parser::ast::{
     Conjunction as AstConjunction, Goal as AstGoal, Literal, Pattern, PatternMatching,
     RelationCall, SearchStrategy, Term,
 };
-use super::runtime_value::RelationHandle;
+use super::runtime_value::PredicateHandle;
 use super::runtime_value::RuntimeValue;
 use super::InterpreterError;
 use crate::engine::Engine;
@@ -75,6 +76,58 @@ where
     }
 }
 
+/// Represents a variable value that can be either relational (for logic computation)
+/// or non-relational (for meta programming)
+#[derive(Debug)]
+pub enum VariableValue<U: User, E: Engine<U>> {
+    /// Relational variable for logic computation, unification, etc.
+    Relational(LTerm<U, E>),
+    /// Non-relational variable for meta programming (integers, strings, booleans)
+    Meta(MetaValue),
+}
+
+impl<U: User, E: Engine<U>> Clone for VariableValue<U, E> {
+    fn clone(&self) -> Self {
+        match self {
+            VariableValue::Relational(lterm) => VariableValue::Relational(lterm.clone()),
+            VariableValue::Meta(meta) => VariableValue::Meta(meta.clone()),
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> VariableValue<U, E> {
+    /// Try to get this as an LTerm for relational operations
+    pub fn as_lterm(&self) -> Option<&LTerm<U, E>> {
+        match self {
+            VariableValue::Relational(lterm) => Some(lterm),
+            VariableValue::Meta(_) => None,
+        }
+    }
+
+    /// Try to get this as a MetaValue for template expansion
+    pub fn as_meta(&self) -> Option<&MetaValue> {
+        match self {
+            VariableValue::Relational(_) => None,
+            VariableValue::Meta(meta) => Some(meta),
+        }
+    }
+
+    /// Convert to LTerm if possible (for backward compatibility)
+    pub fn to_lterm(&self) -> Option<LTerm<U, E>> {
+        match self {
+            VariableValue::Relational(lterm) => Some(lterm.clone()),
+            VariableValue::Meta(meta) => {
+                // Convert meta values to LTerms only when absolutely necessary
+                match meta {
+                    MetaValue::Integer(i) => Some(LTerm::from(*i as isize)),
+                    MetaValue::String(s) => Some(LTerm::from(s.clone())),
+                    MetaValue::Boolean(b) => Some(LTerm::from(*b)),
+                }
+            }
+        }
+    }
+}
+
 /// The `ExecutionContext` is the primary state manager for the interpreter's
 /// runtime. It holds a reference to the broader `Environment` (which contains
 /// all relation and module definitions) and, most importantly, manages the
@@ -90,8 +143,8 @@ pub struct ExecutionContext<'a, U: User, E: Engine<U>> {
     pub environment: Rc<RefCell<Environment<U, E>>>,
 
     /// A stack of scopes for local variables. Each scope is a `HashMap` from a
-    /// variable name (String) to its corresponding logical term (`LTerm`).
-    pub locals: Vec<HashMap<String, LTerm<U, E>>>,
+    /// variable name (String) to its corresponding variable value (either relational or meta).
+    pub locals: Vec<HashMap<String, VariableValue<U, E>>>,
 
     /// A list of goals that need to be executed as part of the current goal's conjunction.
     /// This is used for complex operations that create intermediate goals, like arithmetic.
@@ -139,8 +192,13 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Searches for a variable in the current scope stack.
-    /// It looks from the innermost scope outwards.
+    /// It looks from the innermost scope outwards, returning only relational variables as LTerms.
     fn lookup_var(&self, name: &str) -> Option<LTerm<U, E>> {
+        self.lookup_variable_value(name)?.to_lterm()
+    }
+
+    /// Searches for a variable value (relational or meta) in the current scope stack.
+    fn lookup_variable_value(&self, name: &str) -> Option<VariableValue<U, E>> {
         for scope in self.locals.iter().rev() {
             if let Some(var) = scope.get(name) {
                 return Some(var.clone());
@@ -149,11 +207,16 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         None
     }
 
+    /// Searches for a meta variable in the current scope stack.
+    fn lookup_meta_var(&self, name: &str) -> Option<MetaValue> {
+        self.lookup_variable_value(name)?.as_meta().cloned()
+    }
+
     /// Searches for a variable only in the current (innermost) scope.
     /// Used for pattern matching to ensure variables within a pattern are unified.
     fn lookup_var_current_scope(&self, name: &str) -> Option<LTerm<U, E>> {
         if let Some(scope) = self.locals.last() {
-            scope.get(name).cloned()
+            scope.get(name).and_then(|var| var.to_lterm())
         } else {
             None
         }
@@ -161,13 +224,36 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
     /// Binds a variable name to an `LTerm` in the current (innermost) scope.
     pub fn bind_var(&mut self, name: String, var: LTerm<U, E>) {
+        self.bind_variable_value(name, VariableValue::Relational(var));
+    }
+
+    /// Binds a variable name to a `MetaValue` in the current (innermost) scope.
+    pub fn bind_meta_var(&mut self, name: String, meta: MetaValue) {
+        self.bind_variable_value(name, VariableValue::Meta(meta));
+    }
+
+    /// Binds a variable name to a `VariableValue` in the current (innermost) scope.
+    pub fn bind_variable_value(&mut self, name: String, value: VariableValue<U, E>) {
         if let Some(scope) = self.locals.last_mut() {
-            scope.insert(name, var);
+            scope.insert(name, value);
         }
     }
 
-    /// Returns the top-level variable bindings.
+    /// Returns the top-level variable bindings (converted to LTerms for backward compatibility).
     pub fn get_variable_bindings(&self) -> HashMap<String, LTerm<U, E>> {
+        self.locals
+            .first()
+            .map(|scope| {
+                scope
+                    .iter()
+                    .filter_map(|(name, value)| value.to_lterm().map(|lterm| (name.clone(), lterm)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Returns the top-level variable values (both relational and meta).
+    pub fn get_all_variable_bindings(&self) -> HashMap<String, VariableValue<U, E>> {
         self.locals.first().cloned().unwrap_or_default()
     }
 
@@ -251,7 +337,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 // Validate that it's actually a callable relation
                 match rel_val {
                     RuntimeValue::Relation(_)
-                    | RuntimeValue::RelationHandle(_)
+                    | RuntimeValue::PredicateHandle(_)
                     | RuntimeValue::NativeRelation { .. } => Ok(()),
                     _ => Err(InterpreterError::RuntimeError(format!(
                         "'{}' is not a relation or relation handle.",
@@ -520,7 +606,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 if let Some(rel_val) = rel_val_opt {
                     match rel_val {
                         RuntimeValue::Relation(_)
-                        | RuntimeValue::RelationHandle(_)
+                        | RuntimeValue::PredicateHandle(_)
                         | RuntimeValue::NativeRelation { .. } => {
                             // Register the relation in the registry and return a reference to the index
                             let registry_index =
@@ -558,6 +644,24 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         }
     }
 
+    pub fn ast_call_argument_to_runtime(
+        &mut self,
+        arg: &super::parser::ast::CallArgument,
+    ) -> Result<LTerm<U, E>, InterpreterError> {
+        use super::parser::ast::CallArgument;
+
+        match arg {
+            CallArgument::Term(term) => self.ast_term_to_runtime(term),
+            CallArgument::MetaExpression(_) => {
+                // Meta expressions should not be converted to LTerms
+                // They should be handled during macro template expansion
+                Err(InterpreterError::RuntimeError(
+                    "Meta expressions can only be used in macro calls and should be handled during template expansion".to_string()
+                ))
+            }
+        }
+    }
+
     fn ast_relation_call_to_runtime(
         &mut self,
         call: &RelationCall,
@@ -582,7 +686,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     // Convert call-site arguments to LTerms.
                     let mut arg_terms = Vec::new();
                     for arg in &call.args {
-                        arg_terms.push(self.ast_term_to_runtime(arg)?);
+                        arg_terms.push(self.ast_call_argument_to_runtime(arg)?);
                     }
 
                     return self.handle_relation_value(
@@ -602,10 +706,21 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             .cloned()
             .ok_or_else(|| InterpreterError::UnknownRelation(call.name.clone()))?;
 
-        // Convert call-site arguments to LTerms.
+        // Check if this is a macro predicate - if so, handle call arguments directly
+        if let RuntimeValue::Relation(ref rel_def) = rel_val {
+            if matches!(
+                rel_def.predicate_kind,
+                super::parser::ast::PredicateKind::Macro
+            ) {
+                // For macro calls, handle CallArguments directly to preserve meta expressions
+                return self.process_macro_call_with_arguments(rel_def, &call.args);
+            }
+        }
+
+        // Regular relation - convert arguments to LTerms
         let mut arg_terms = Vec::new();
         for arg in &call.args {
-            arg_terms.push(self.ast_term_to_runtime(arg)?);
+            arg_terms.push(self.ast_call_argument_to_runtime(arg)?);
         }
 
         self.handle_relation_value(rel_val, call.name.clone(), arg_terms)
@@ -627,20 +742,48 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     });
                 }
 
-                // Validate that all symbols in the relation body can be found
-                // This catches UnknownRelation errors early, before deferred execution
-                self.validate_relation_body_symbols(&rel_def.body)?;
+                // Check if this is a macro predicate - if so, use eager expansion
+                if matches!(
+                    rel_def.predicate_kind,
+                    super::parser::ast::PredicateKind::Macro
+                ) {
+                    // Eager expansion for macro predicates
+                    // Validate that all symbols in the relation body can be found
+                    self.validate_relation_body_symbols(&rel_def.body)?;
 
-                let deferred_call = DeferredRelationCall::new(
-                    self.environment.clone(),
-                    rel_def.into(),
-                    arg_terms,
-                    self.current_search_strategy(),
-                );
+                    // Create a scope for the macro expansion
+                    self.push_scope();
 
-                Ok(Goal::Dynamic(Rc::new(deferred_call)))
+                    // Bind parameters for template expansion
+                    for (param, arg) in rel_def.parameters.iter().zip(arg_terms.iter()) {
+                        self.bind_var(param.name.clone(), arg.clone());
+                    }
+
+                    // Eagerly expand the macro body
+                    let expanded_goal =
+                        self.process_macro_body_with_parameter_binding(&rel_def, &arg_terms)?;
+
+                    // Pop the scope
+                    self.pop_scope();
+
+                    Ok(expanded_goal)
+                } else {
+                    // Regular relation - use deferred execution
+                    // Validate that all symbols in the relation body can be found
+                    // This catches UnknownRelation errors early, before deferred execution
+                    self.validate_relation_body_symbols(&rel_def.body)?;
+
+                    let deferred_call = DeferredRelationCall::new(
+                        self.environment.clone(),
+                        rel_def.into(),
+                        arg_terms,
+                        self.current_search_strategy(),
+                    );
+
+                    Ok(Goal::Dynamic(Rc::new(deferred_call)))
+                }
             }
-            RuntimeValue::RelationHandle(handle) => {
+            RuntimeValue::PredicateHandle(handle) => {
                 // Higher-order predicate call: relation parameter being invoked
                 if handle.arity != arg_terms.len() {
                     return Err(InterpreterError::ArityMismatch {
@@ -770,7 +913,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             AstGoal::RelationCall(call, _) => call
                 .args
                 .iter()
-                .any(|arg| self.term_contains_interpolation(arg)),
+                .any(|arg| self.call_argument_contains_interpolation(arg)),
             AstGoal::Conjunction(conj, _) => conj
                 .body
                 .iter()
@@ -822,6 +965,16 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         }
     }
 
+    /// Check if a call argument contains interpolation expressions
+    fn call_argument_contains_interpolation(&self, arg: &super::parser::ast::CallArgument) -> bool {
+        use super::parser::ast::CallArgument;
+
+        match arg {
+            CallArgument::Term(term) => self.term_contains_interpolation(term),
+            CallArgument::MetaExpression(_) => true, // Meta expressions are always considered to contain interpolation
+        }
+    }
+
     /// Process a goal body with template expansion awareness
     /// This ensures meta variables from let statements are available to subsequent statements
     pub fn process_goal_body_with_template_expansion(
@@ -853,6 +1006,302 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             let first = iter.next().unwrap();
             Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
         }
+    }
+
+    /// Process a macro predicate body with parameter binding for template expansion
+    pub fn process_macro_body_with_parameter_binding(
+        &mut self,
+        rel_def: &super::parser::ast::PredicateDefinition,
+        call_args: &[LTerm<U, E>],
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        use super::metaprogramming::{
+            expand_goal_body, MetaValue, TemplateExpansionContext, TypeAnnotation,
+        };
+
+        // Create template expansion context
+        let mut template_context = TemplateExpansionContext::new(100);
+
+        // Bind non-relational parameters as meta variables
+        for (param, arg_term) in rel_def.parameters.iter().zip(call_args.iter()) {
+            if let Some(type_annotation) = &param.type_annotation {
+                match type_annotation {
+                    TypeAnnotation::Int => {
+                        // Extract integer value from the argument term
+                        if let Some(number) = arg_term.get_number() {
+                            template_context
+                                .bind(param.name.clone(), MetaValue::Integer(number as i64));
+                        } else {
+                            return Err(InterpreterError::RuntimeError(format!(
+                                "Macro parameter '{}' expects integer value, got: {:?}",
+                                param.name, arg_term
+                            )));
+                        }
+                    }
+                    TypeAnnotation::String => {
+                        // Extract string value from the argument term
+                        if let crate::lterm::LTermInner::Val(crate::lvalue::LValue::String(
+                            string_val,
+                        )) = arg_term.as_ref()
+                        {
+                            template_context
+                                .bind(param.name.clone(), MetaValue::String(string_val.clone()));
+                        } else {
+                            return Err(InterpreterError::RuntimeError(format!(
+                                "Macro parameter '{}' expects string value, got: {:?}",
+                                param.name, arg_term
+                            )));
+                        }
+                    }
+                    TypeAnnotation::Bool => {
+                        // Extract boolean value from the argument term
+                        if let Some(bool_val) = arg_term.get_bool() {
+                            template_context.bind(param.name.clone(), MetaValue::Boolean(bool_val));
+                        } else {
+                            return Err(InterpreterError::RuntimeError(format!(
+                                "Macro parameter '{}' expects boolean value, got: {:?}",
+                                param.name, arg_term
+                            )));
+                        }
+                    }
+                    TypeAnnotation::Relation(_) => {
+                        // Relational parameters are not bound as meta variables - they're handled normally
+                        // They should have been bound during the regular parameter binding process
+                    }
+                }
+            }
+            // Untyped parameters are also handled normally, not as meta variables
+        }
+
+        // Expand the macro body using the template context with bound parameters
+        let goals_vec = rel_def.body.to_vec();
+        let expanded_goals = expand_goal_body(&goals_vec, &mut template_context).map_err(|e| {
+            InterpreterError::RuntimeError(format!("Template expansion error: {}", e))
+        })?;
+
+        // Convert all expanded goals to runtime goals
+        let mut runtime_goals = Vec::new();
+        for goal in &expanded_goals {
+            runtime_goals.push(self.ast_goal_to_runtime(goal)?);
+        }
+
+        // Combine all runtime goals into a single conjunction
+        if runtime_goals.is_empty() {
+            Ok(Goal::succeed())
+        } else {
+            let mut iter = runtime_goals.into_iter();
+            let first = iter.next().unwrap();
+            Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+        }
+    }
+
+    /// Process a macro call with its arguments, handling meta expressions directly
+    fn process_macro_call_with_arguments(
+        &mut self,
+        rel_def: &super::parser::ast::PredicateDefinition,
+        args: &[super::parser::ast::CallArgument],
+    ) -> Result<Goal<U, E>, InterpreterError> {
+        use super::metaprogramming::{
+            evaluate_meta_expression, expand_goal_body, MetaValue, TemplateExpansionContext,
+            TypeAnnotation,
+        };
+
+        // Validate that all symbols in the relation body can be found
+        self.validate_relation_body_symbols(&rel_def.body)?;
+
+        // Create a scope for the macro expansion
+        self.push_scope();
+
+        // Create a template expansion context for the macro call
+        let mut template_context = TemplateExpansionContext::new(100);
+
+        // Process all parameters - bind appropriately based on type and argument
+        for (param, arg) in rel_def.parameters.iter().zip(args.iter()) {
+            match (&param.type_annotation, arg) {
+                // Typed non-relational parameters
+                (Some(TypeAnnotation::Int | TypeAnnotation::String | TypeAnnotation::Bool), _) => {
+                    // For non-relational typed parameters, bind as meta variables for template expansion
+                    let meta_value = match arg {
+                        super::parser::ast::CallArgument::Term(term) => {
+                            // Extract meta value from literal terms
+                            match term {
+                                super::parser::ast::Term::Literal(literal, _) => {
+                                    match literal {
+                                        super::parser::ast::Literal::Number(num_str) => {
+                                            match num_str.parse::<i64>() {
+                                                Ok(num) => MetaValue::Integer(num),
+                                                Err(_) => return Err(InterpreterError::RuntimeError(format!(
+                                                    "Invalid integer literal for parameter '{}': {}",
+                                                    param.name, num_str
+                                                ))),
+                                            }
+                                        }
+                                        super::parser::ast::Literal::String(s) => MetaValue::String(s.clone()),
+                                        super::parser::ast::Literal::Boolean(b) => MetaValue::Boolean(*b),
+                                        _ => return Err(InterpreterError::RuntimeError(format!(
+                                            "Literal type not supported for non-relational parameter '{}'",
+                                            param.name
+                                        ))),
+                                    }
+                                }
+                                super::parser::ast::Term::Variable(var_name, _) => {
+                                    // Look up variable value and convert to meta value if possible
+                                    if let Some(var_value) = self.lookup_variable_value(var_name) {
+                                        match var_value.as_meta() {
+                                            Some(meta) => meta.clone(),
+                                            None => {
+                                                // Try to extract from LTerm if it's a relational variable
+                                                if let Some(lterm) = var_value.as_lterm() {
+                                                    match param.type_annotation.as_ref().unwrap() {
+                                                        TypeAnnotation::Int => {
+                                                            if let Some(n) = lterm.get_number() {
+                                                                MetaValue::Integer(n as i64)
+                                                            } else {
+                                                                return Err(InterpreterError::RuntimeError(format!(
+                                                                    "Variable '{}' is not an integer for parameter '{}'",
+                                                                    var_name, param.name
+                                                                )));
+                                                            }
+                                                        }
+                                                        TypeAnnotation::String => {
+                                                            if let Some(s) = lterm.get_name() {
+                                                                MetaValue::String(s.to_string())
+                                                            } else {
+                                                                return Err(InterpreterError::RuntimeError(format!(
+                                                                    "Variable '{}' is not a string for parameter '{}'",
+                                                                    var_name, param.name
+                                                                )));
+                                                            }
+                                                        }
+                                                        TypeAnnotation::Bool => {
+                                                            if let Some(b) = lterm.get_bool() {
+                                                                MetaValue::Boolean(b)
+                                                            } else {
+                                                                return Err(InterpreterError::RuntimeError(format!(
+                                                                    "Variable '{}' is not a boolean for parameter '{}'",
+                                                                    var_name, param.name
+                                                                )));
+                                                            }
+                                                        }
+                                                        _ => unreachable!(),
+                                                    }
+                                                } else {
+                                                    return Err(InterpreterError::RuntimeError(format!(
+                                                        "Variable '{}' cannot be used for non-relational parameter '{}'",
+                                                        var_name, param.name
+                                                    )));
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        return Err(InterpreterError::RuntimeError(format!(
+                                            "Unbound variable '{}' for parameter '{}'",
+                                            var_name, param.name
+                                        )));
+                                    }
+                                }
+                                _ => return Err(InterpreterError::RuntimeError(format!(
+                                    "Only literals and variables are allowed for non-relational parameter '{}'",
+                                    param.name
+                                ))),
+                            }
+                        }
+                        super::parser::ast::CallArgument::MetaExpression(expr) => {
+                            // Evaluate meta expression
+                            evaluate_meta_expression(expr, &template_context.bindings).map_err(
+                                |e| {
+                                    InterpreterError::RuntimeError(format!(
+                                        "Meta expression evaluation failed for parameter '{}': {}",
+                                        param.name, e
+                                    ))
+                                },
+                            )?
+                        }
+                    };
+
+                    // Bind as meta variable for template expansion
+                    self.bind_meta_var(param.name.clone(), meta_value);
+                }
+
+                // Relational typed parameters
+                (Some(TypeAnnotation::Relation(_)), arg) => {
+                    match arg {
+                        super::parser::ast::CallArgument::Term(term) => {
+                            // Relational parameter - bind as relational variable
+                            let runtime_arg = self.ast_term_to_runtime(term)?;
+                            self.bind_var(param.name.clone(), runtime_arg);
+                        }
+                        super::parser::ast::CallArgument::MetaExpression(_) => {
+                            return Err(InterpreterError::RuntimeError(format!(
+                                "Meta expressions cannot be used for relational parameters ({})",
+                                param.name
+                            )));
+                        }
+                    }
+                }
+
+                // Untyped parameters
+                (None, arg) => {
+                    match arg {
+                        super::parser::ast::CallArgument::Term(term) => {
+                            // Untyped parameter - bind as relational variable
+                            let runtime_arg = self.ast_term_to_runtime(term)?;
+                            self.bind_var(param.name.clone(), runtime_arg);
+                        }
+                        super::parser::ast::CallArgument::MetaExpression(_) => {
+                            return Err(InterpreterError::RuntimeError(format!(
+                                "Meta expressions require typed parameters for macro calls. Parameter '{}' needs a type annotation (int, string, bool)",
+                                param.name
+                            )));
+                        }
+                    }
+                }
+            }
+
+            // Now handle template expansion context binding for typed parameters
+            if let Some(type_annotation) = &param.type_annotation {
+                match type_annotation {
+                    TypeAnnotation::Int | TypeAnnotation::String | TypeAnnotation::Bool => {
+                        // Only bind meta variables (non-relational) for template expansion
+                        // Do NOT convert LTerms to meta values - maintain strict separation
+                        if let Some(meta_value) = self.lookup_meta_var(&param.name) {
+                            template_context.bind(param.name.clone(), meta_value);
+                        }
+                        // If the parameter was bound as a relational variable (LTerm),
+                        // it cannot be used for meta template expansion
+                    }
+                    TypeAnnotation::Relation(_) => {
+                        // Relational parameters are not bound as meta variables - they're handled normally
+                        // They will be processed during the expanded goal execution
+                    }
+                }
+            }
+        }
+
+        // Expand the macro body using the template context with bound parameters
+        let goals_vec = rel_def.body.to_vec();
+        let expanded_goals = expand_goal_body(&goals_vec, &mut template_context).map_err(|e| {
+            InterpreterError::RuntimeError(format!("Template expansion error: {}", e))
+        })?;
+
+        // Convert all expanded goals to runtime goals
+        let mut runtime_goals = Vec::new();
+        for goal in &expanded_goals {
+            runtime_goals.push(self.ast_goal_to_runtime(goal)?);
+        }
+
+        // Combine all runtime goals into a single conjunction
+        let result = if runtime_goals.is_empty() {
+            Goal::succeed()
+        } else {
+            let mut iter = runtime_goals.into_iter();
+            let first = iter.next().unwrap();
+            iter.fold(first, |acc, next| Conj::new(acc, next))
+        };
+
+        // Pop the scope
+        self.pop_scope();
+
+        Ok(result)
     }
 
     /// Expand and execute a meta statement using template expansion

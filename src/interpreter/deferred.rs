@@ -4,7 +4,7 @@
 
 use super::environment::Environment;
 use super::execution::ExecutionContext;
-use super::parser::ast::{RelationDefinition, SearchStrategy};
+use super::parser::ast::{PredicateDefinition, SearchStrategy};
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal};
 use crate::lterm::LTerm;
@@ -26,7 +26,7 @@ use std::rc::Rc;
 #[derive(Clone)]
 pub struct DeferredRelationCall<U: User, E: Engine<U>> {
     pub environment: Rc<RefCell<Environment<U, E>>>,
-    pub rel_def: Rc<RelationDefinition>,
+    pub rel_def: Rc<PredicateDefinition>,
     pub call_args: Vec<LTerm<U, E>>,
     /// The search strategy context from the calling site
     pub parent_search_strategy: SearchStrategy,
@@ -45,7 +45,7 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for DeferredRelationCall<U, E> {
 impl<U: User, E: Engine<U>> DeferredRelationCall<U, E> {
     pub fn new(
         environment: Rc<RefCell<Environment<U, E>>>,
-        rel_def: Rc<RelationDefinition>,
+        rel_def: Rc<PredicateDefinition>,
         call_args: Vec<LTerm<U, E>>,
         parent_search_strategy: SearchStrategy,
     ) -> Self {
@@ -108,25 +108,31 @@ impl<U: User, E: Engine<U>> Solve<U, E> for DeferredRelationCall<U, E> {
         }
 
         // Convert the relation's body (AST) into a runtime goal. This is the core of the lazy evaluation.
-        // Check if the relation body contains meta statements or interpolation
-        let has_meta_features = self
-            .rel_def
-            .body
-            .iter()
-            .any(|g| exec_context.goal_contains_meta_features(g));
 
-        let body_goals_result = if has_meta_features {
-            // Use template-aware processing for relation bodies with meta statements
-            exec_context
-                .process_goal_body_with_template_expansion(&self.rel_def.body)
-                .map(|goal| vec![goal])
-        } else {
-            // Use regular processing for relation bodies without meta statements
-            self.rel_def
+        // Note: Macro predicates should never reach this point as they are eagerly expanded
+        // in ast_relation_call_to_runtime(). This code only handles regular relations.
+
+        let body_goals_result = {
+            // Check if the body contains meta statements or interpolation
+            let has_meta_features = self
+                .rel_def
                 .body
                 .iter()
-                .map(|g| exec_context.ast_goal_to_runtime(g))
-                .collect::<Result<Vec<_>, _>>()
+                .any(|g| exec_context.goal_contains_meta_features(g));
+
+            if has_meta_features {
+                // Use template-aware processing for relation bodies with meta statements
+                exec_context
+                    .process_goal_body_with_template_expansion(&self.rel_def.body)
+                    .map(|goal| vec![goal])
+            } else {
+                // Use regular processing for relation bodies without meta statements
+                self.rel_def
+                    .body
+                    .iter()
+                    .map(|g| exec_context.ast_goal_to_runtime(g))
+                    .collect::<Result<Vec<_>, _>>()
+            }
         };
 
         // Pop the scope now that the body has been converted.

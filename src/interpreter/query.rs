@@ -275,7 +275,7 @@ fn extract_variables_from_goal_recursive(goal: &Goal, vars: &mut Vec<String>) {
         }
         Goal::RelationCall(call, _) => {
             for arg in &call.args {
-                extract_variables_from_term(arg, vars);
+                extract_variables_from_call_argument(arg, vars);
             }
         }
         Goal::MethodCall(call, _) => {
@@ -352,6 +352,40 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
         Term::Interpolation(..) => {
             // TODO: Extract variables from meta expressions in interpolations
             // For now, do nothing
+        }
+    }
+}
+
+fn extract_variables_from_call_argument(
+    arg: &super::parser::ast::CallArgument,
+    vars: &mut Vec<String>,
+) {
+    use super::parser::ast::CallArgument;
+
+    match arg {
+        CallArgument::Term(term) => extract_variables_from_term(term, vars),
+        CallArgument::MetaExpression(expr) => extract_variables_from_meta_expression(expr, vars),
+    }
+}
+
+fn extract_variables_from_meta_expression(
+    expr: &super::metaprogramming::MetaExpression,
+    vars: &mut Vec<String>,
+) {
+    use super::metaprogramming::MetaExpression;
+
+    match expr {
+        MetaExpression::Variable(name, _) => {
+            if !vars.contains(name) {
+                vars.push(name.clone());
+            }
+        }
+        MetaExpression::BinaryOp(_, left, right, _) => {
+            extract_variables_from_meta_expression(left, vars);
+            extract_variables_from_meta_expression(right, vars);
+        }
+        MetaExpression::Literal(_, _) => {
+            // Literals don't contain variables
         }
     }
 }

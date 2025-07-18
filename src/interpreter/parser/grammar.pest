@@ -22,12 +22,12 @@ pattern_arrow = @{ "=>" }
 // =============================================================================
 
 program = {
-    SOI ~ (use_statement | mod_definition | struct_definition | impl_block | relation_definition)* ~ EOI
+    SOI ~ (use_statement | mod_definition | struct_definition | impl_block | predicate_definition)* ~ EOI
 }
 
 mod_definition = {
     "mod" ~ ident ~ search_strategy? ~ "{" ~
-        (use_statement | mod_definition | struct_definition | impl_block | relation_definition)*
+        (use_statement | mod_definition | struct_definition | impl_block | predicate_definition)*
     ~ "}"
 }
 
@@ -47,7 +47,7 @@ named_field = { pub_keyword? ~ ident ~ ":" ~ type_name }
 
 impl_block = {
     "impl" ~ type_name ~ "{" ~
-        (relation_definition)*
+        (predicate_definition)*
     ~ "}"
 }
 
@@ -70,11 +70,13 @@ import_item = { ident ~ ("as" ~ ident)? }
 // Definitions
 // =============================================================================
 
-relation_definition = {
-    attribute* ~ pub_keyword? ~ "rel" ~ ident ~ "(" ~ (parameter ~ ("," ~ parameter)*)? ~ ","? ~ ")" ~ search_strategy? ~ "{" ~
+predicate_definition = {
+    attribute* ~ pub_keyword? ~ predicate_keyword ~ ident ~ "(" ~ (parameter ~ ("," ~ parameter)*)? ~ ","? ~ ")" ~ search_strategy? ~ "{" ~
         goal_body
     ~ "}"
 }
+
+predicate_keyword = { "macro" | "rel" }
 
 parameter = { ident ~ (":" ~ meta_type_annotation)? }
 meta_type_annotation = { relation_type | "int" | "string" | "bool" | type_name }
@@ -100,7 +102,9 @@ meta_statement = {
 meta_let_statement = { "let" ~ ident ~ ":" ~ meta_type_annotation ~ "=" ~ meta_expr_content ~ ";" }
 
 meta_if_statement = {
-    "if" ~ meta_expr_content ~ "{" ~ goal_body ~ "}" ~ ("else" ~ "{" ~ goal_body ~ "}")?
+    "if" ~ meta_expr_content ~ "{" ~ goal_body ~ "}" ~ 
+    ("else" ~ "if" ~ meta_expr_content ~ "{" ~ goal_body ~ "}")* ~ 
+    ("else" ~ "{" ~ goal_body ~ "}")?
 }
 
 meta_for_statement = {
@@ -137,7 +141,7 @@ goal = {
     equality_goal |
     disequality_goal |
     method_call |
-    call_expr |
+    relation_call |
     parenthesized_goal |
     literal
 }
@@ -211,11 +215,15 @@ parenthesized_goal = { "(" ~ goal_body ~ ")" }
 equality_goal = { term ~ equality_op ~ term }
 disequality_goal = { term ~ inequality_op ~ term }
 method_call = { term ~ "." ~ ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
-call_expr = { path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
+relation_call = { path ~ "(" ~ (call_argument ~ ("," ~ call_argument)*)? ~ ","? ~ ")" }
 
 // =============================================================================
 // Terms and Patterns
 // =============================================================================
+
+// Call arguments can be either terms or arithmetic meta expressions
+call_argument = { arithmetic_expr | term }
+arithmetic_expr = @{ ident ~ ( " "* ~ ("+" | "-" | "*" | "/") ~ " "* ~ (ident | number_literal) )+ }
 
 term = {
     interpolation_expression | // NEW: {variable} interpolation syntax
@@ -223,11 +231,14 @@ term = {
     wildcard |
     list_construction |
     named_struct_construction |
-    call_expr |
+    compound_construction |
     parenthesized_term |
     path_term |
     variable
 }
+
+// Compound term construction (e.g., Some(42), Node(left, right))
+compound_construction = { path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
 
 parenthesized_term = { "(" ~ term ~ ")" }
 

@@ -23,7 +23,7 @@ fi
 mkdir -p "$EXTENSIONS_DIR"
 
 # Define the target directory
-TARGET_DIR="$EXTENSIONS_DIR/proto-vulcan"
+TARGET_DIR="$EXTENSIONS_DIR/proto-vulcan.proto-vulcan-0.1.0"
 
 # Remove existing installation if it exists
 if [ -d "$TARGET_DIR" ]; then

@@ -4,40 +4,19 @@
     "scopeName": "source.proto-vulcan",
     "patterns": [
         {
-            "include": "#comments"
-        },
-        {
-            "include": "#attributes"
-        },
-        {
-            "include": "#use-statements"
-        },
-        {
             "include": "#keywords"
         },
         {
-            "include": "#relation-definition"
-        },
-        {
-            "include": "#struct-definition"
-        },
-        {
-            "include": "#impl-block"
-        },
-        {
-            "include": "#mod-definition"
-        },
-        {
-            "include": "#constraint-block"
-        },
-        {
-            "include": "#interpolation"
+            "include": "#comments"
         },
         {
             "include": "#strings"
         },
         {
             "include": "#numbers"
+        },
+        {
+            "include": "#types"
         },
         {
             "include": "#operators"
@@ -50,143 +29,6 @@
         }
     ],
     "repository": {
-        "comments": {
-            "patterns": [
-                {
-                    "name": "comment.line.double-slash.proto-vulcan",
-                    "begin": "//",
-                    "end": "$\\n?",
-                    "patterns": [
-                        {
-                            "name": "constant.other.placeholder.proto-vulcan",
-                            "match": "(?:\\G|\\s)(?:FIXME|TODO|BUG|HACK|NOTE)(?=\\s|$)"
-                        }
-                    ]
-                },
-                {
-                    "name": "comment.block.proto-vulcan",
-                    "begin": "/\\*",
-                    "end": "\\*/"
-                }
-            ]
-        },
-        "attributes": {
-            "patterns": [
-                {
-                    "name": "meta.attribute.proto-vulcan",
-                    "begin": "@",
-                    "end": "(?=\\s|$|\\()",
-                    "beginCaptures": {
-                        "0": {
-                            "name": "punctuation.definition.attribute.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "name": "entity.name.function.attribute.proto-vulcan",
-                            "match": "\\b(test|dfs|bfs)\\b"
-                        },
-                        {
-                            "name": "entity.name.function.attribute.proto-vulcan",
-                            "match": "\\w+"
-                        }
-                    ]
-                },
-                {
-                    "name": "meta.attribute.arguments.proto-vulcan",
-                    "begin": "(@\\w+)\\s*(\\()",
-                    "end": "\\)",
-                    "beginCaptures": {
-                        "1": {
-                            "name": "entity.name.function.attribute.proto-vulcan"
-                        },
-                        "2": {
-                            "name": "punctuation.definition.parameters.begin.proto-vulcan"
-                        }
-                    },
-                    "endCaptures": {
-                        "0": {
-                            "name": "punctuation.definition.parameters.end.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "include": "#attribute-parameters"
-                        }
-                    ]
-                }
-            ]
-        },
-        "attribute-parameters": {
-            "patterns": [
-                {
-                    "name": "keyword.other.attribute-param.proto-vulcan",
-                    "match": "\\b(should_fail|expected)\\b"
-                },
-                {
-                    "include": "#strings"
-                },
-                {
-                    "include": "#numbers"
-                },
-                {
-                    "include": "#operators"
-                },
-                {
-                    "name": "punctuation.separator.proto-vulcan",
-                    "match": ","
-                }
-            ]
-        },
-        "use-statements": {
-            "patterns": [
-                {
-                    "name": "meta.use.proto-vulcan",
-                    "begin": "\\b(use)\\b",
-                    "end": ";",
-                    "beginCaptures": {
-                        "1": {
-                            "name": "keyword.control.import.proto-vulcan"
-                        }
-                    },
-                    "endCaptures": {
-                        "0": {
-                            "name": "punctuation.terminator.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "name": "keyword.control.proto-vulcan",
-                            "match": "\\b(as)\\b"
-                        },
-                        {
-                            "name": "punctuation.accessor.proto-vulcan",
-                            "match": "::"
-                        },
-                        {
-                            "name": "keyword.operator.glob.proto-vulcan",
-                            "match": "\\*"
-                        },
-                        {
-                            "name": "entity.name.namespace.proto-vulcan",
-                            "match": "\\b(std)\\b"
-                        },
-                        {
-                            "name": "entity.name.type.module.proto-vulcan",
-                            "match": "\\b\\w+\\b"
-                        },
-                        {
-                            "name": "punctuation.definition.group.proto-vulcan",
-                            "match": "[{}]"
-                        },
-                        {
-                            "name": "punctuation.separator.proto-vulcan",
-                            "match": ","
-                        }
-                    ]
-                }
-            ]
-        },
         "keywords": {
             "patterns": [
                 {
@@ -195,7 +37,7 @@
                 },
                 {
                     "name": "keyword.other.proto-vulcan",
-                    "match": "\\b(rel|use|mod|struct|impl|pub|constraint)\\b"
+                    "match": "\\b(rel|macro|use|mod|struct|impl|pub|constraint)\\b"
                 },
                 {
                     "name": "constant.language.boolean.proto-vulcan",
@@ -211,294 +53,16 @@
                 }
             ]
         },
-        "relation-definition": {
+        "comments": {
             "patterns": [
                 {
-                    "name": "meta.function.proto-vulcan",
-                    "begin": "\\b(rel)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*(\\()",
-                    "end": "(?<=\\))",
-                    "beginCaptures": {
-                        "1": {
-                            "name": "keyword.other.proto-vulcan"
-                        },
-                        "2": {
-                            "name": "entity.name.function.proto-vulcan"
-                        },
-                        "3": {
-                            "name": "punctuation.definition.parameters.begin.proto-vulcan"
-                        }
-                    },
-                    "endCaptures": {
-                        "0": {
-                            "name": "punctuation.definition.parameters.end.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "include": "#function-parameters"
-                        }
-                    ]
-                }
-            ]
-        },
-        "struct-definition": {
-            "patterns": [
-                {
-                    "name": "meta.struct.proto-vulcan",
-                    "begin": "\\b(struct)\\s+([A-Z][a-zA-Z0-9_]*)",
-                    "end": "(?<=;|\\})",
-                    "beginCaptures": {
-                        "1": {
-                            "name": "keyword.other.proto-vulcan"
-                        },
-                        "2": {
-                            "name": "entity.name.type.struct.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "include": "#type-annotations"
-                        },
-                        {
-                            "include": "#punctuation"
-                        }
-                    ]
-                }
-            ]
-        },
-        "impl-block": {
-            "patterns": [
-                {
-                    "name": "meta.impl.proto-vulcan",
-                    "begin": "\\b(impl)\\s+([A-Z][a-zA-Z0-9_]*)",
-                    "end": "(?<=\\})",
-                    "beginCaptures": {
-                        "1": {
-                            "name": "keyword.other.proto-vulcan"
-                        },
-                        "2": {
-                            "name": "entity.name.type.impl.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "include": "#relation-definition"
-                        },
-                        {
-                            "include": "$self"
-                        }
-                    ]
-                }
-            ]
-        },
-        "mod-definition": {
-            "patterns": [
-                {
-                    "name": "meta.module.proto-vulcan",
-                    "begin": "\\b(mod)\\s+([a-z][a-zA-Z0-9_]*)",
-                    "end": "(?<=\\})",
-                    "beginCaptures": {
-                        "1": {
-                            "name": "keyword.other.proto-vulcan"
-                        },
-                        "2": {
-                            "name": "entity.name.type.module.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "include": "$self"
-                        }
-                    ]
-                }
-            ]
-        },
-        "constraint-block": {
-            "patterns": [
-                {
-                    "name": "meta.constraint.proto-vulcan",
-                    "begin": "\\b(constraint)\\s*(\\()",
-                    "end": "\\}",
-                    "beginCaptures": {
-                        "1": {
-                            "name": "keyword.other.proto-vulcan"
-                        },
-                        "2": {
-                            "name": "punctuation.definition.parameters.begin.proto-vulcan"
-                        }
-                    },
-                    "endCaptures": {
-                        "0": {
-                            "name": "punctuation.definition.block.end.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "name": "meta.constraint.parameters.proto-vulcan",
-                            "begin": "\\G",
-                            "end": "\\)\\s*\\{",
-                            "endCaptures": {
-                                "0": {
-                                    "name": "punctuation.definition.block.begin.proto-vulcan"
-                                }
-                            },
-                            "patterns": [
-                                {
-                                    "name": "variable.parameter.proto-vulcan",
-                                    "match": "\\b(domain|strategy|limit)\\b"
-                                },
-                                {
-                                    "name": "keyword.operator.assignment.proto-vulcan",
-                                    "match": "="
-                                },
-                                {
-                                    "include": "#strings"
-                                },
-                                {
-                                    "include": "#numbers"
-                                },
-                                {
-                                    "name": "punctuation.separator.proto-vulcan",
-                                    "match": ","
-                                }
-                            ]
-                        },
-                        {
-                            "name": "meta.constraint.body.proto-vulcan",
-                            "begin": "(?<=\\{)",
-                            "end": "(?=\\})",
-                            "patterns": [
-                                {
-                                    "include": "#constraint-expressions"
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
-        },
-        "constraint-expressions": {
-            "patterns": [
-                {
-                    "name": "keyword.operator.constraint.proto-vulcan",
-                    "match": "\\b(in|distinct)\\b"
+                    "name": "comment.line.double-slash.proto-vulcan",
+                    "match": "//.*$"
                 },
                 {
-                    "name": "keyword.operator.comparison.proto-vulcan",
-                    "match": "(<|>|<=|>=|==|!=)"
-                },
-                {
-                    "name": "keyword.operator.arithmetic.proto-vulcan",
-                    "match": "(\\+|\\-|\\*|/|%)"
-                },
-                {
-                    "include": "#interpolation"
-                },
-                {
-                    "include": "#numbers"
-                },
-                {
-                    "include": "#identifiers"
-                },
-                {
-                    "name": "punctuation.definition.range.proto-vulcan",
-                    "match": "\\.\\."
-                },
-                {
-                    "name": "punctuation.definition.list.proto-vulcan",
-                    "match": "[\\[\\]]"
-                },
-                {
-                    "name": "punctuation.separator.proto-vulcan",
-                    "match": ","
-                }
-            ]
-        },
-        "interpolation": {
-            "patterns": [
-                {
-                    "name": "meta.interpolation.proto-vulcan",
-                    "begin": "\\{",
-                    "end": "\\}",
-                    "beginCaptures": {
-                        "0": {
-                            "name": "punctuation.definition.interpolation.begin.proto-vulcan"
-                        }
-                    },
-                    "endCaptures": {
-                        "0": {
-                            "name": "punctuation.definition.interpolation.end.proto-vulcan"
-                        }
-                    },
-                    "patterns": [
-                        {
-                            "name": "source.embedded.proto-vulcan",
-                            "begin": "\\G",
-                            "end": "(?=\\})",
-                            "patterns": [
-                                {
-                                    "include": "#interpolation-expressions"
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
-        },
-        "interpolation-expressions": {
-            "patterns": [
-                {
-                    "name": "keyword.operator.arithmetic.proto-vulcan",
-                    "match": "(\\+|\\-|\\*|/|%)"
-                },
-                {
-                    "name": "keyword.operator.comparison.proto-vulcan",
-                    "match": "(==|!=|<|>|<=|>=)"
-                },
-                {
-                    "include": "#numbers"
-                },
-                {
-                    "include": "#identifiers"
-                },
-                {
-                    "name": "punctuation.definition.group.proto-vulcan",
-                    "match": "[\\(\\)]"
-                }
-            ]
-        },
-        "function-parameters": {
-            "patterns": [
-                {
-                    "name": "variable.parameter.proto-vulcan",
-                    "match": "\\b[a-z][a-zA-Z0-9_]*\\b"
-                },
-                {
-                    "name": "punctuation.separator.type.proto-vulcan",
-                    "match": ":"
-                },
-                {
-                    "include": "#type-annotations"
-                },
-                {
-                    "name": "punctuation.separator.proto-vulcan",
-                    "match": ","
-                }
-            ]
-        },
-        "type-annotations": {
-            "patterns": [
-                {
-                    "name": "storage.type.primitive.proto-vulcan",
-                    "match": "\\b(int|string|bool)\\b"
-                },
-                {
-                    "name": "storage.type.relation.proto-vulcan",
-                    "match": "\\b(rel)\\b"
-                },
-                {
-                    "name": "entity.name.type.proto-vulcan",
-                    "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+                    "name": "comment.block.proto-vulcan",
+                    "begin": "/\\*",
+                    "end": "\\*/"
                 }
             ]
         },
@@ -531,8 +95,8 @@
         "numbers": {
             "patterns": [
                 {
-                    "name": "constant.numeric.integer.proto-vulcan",
-                    "match": "\\b-?\\d+\\b"
+                    "name": "constant.numeric.proto-vulcan",
+                    "match": "\\b\\d+\\b"
                 }
             ]
         },
@@ -540,47 +104,43 @@
             "patterns": [
                 {
                     "name": "keyword.operator.comparison.proto-vulcan",
-                    "match": "(==|!=|<|>|<=|>=)"
+                    "match": "(==|!=|<=|>=|<|>)"
+                },
+                {
+                    "name": "keyword.operator.arithmetic.proto-vulcan",
+                    "match": "(\\+|\\-|\\*|/|%)"
                 },
                 {
                     "name": "keyword.operator.assignment.proto-vulcan",
                     "match": "="
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "storage.type.primitive.proto-vulcan",
+                    "match": "\\b(int|string|bool|rel)\\b"
                 },
                 {
-                    "name": "keyword.operator.arrow.proto-vulcan",
-                    "match": "=>"
-                },
-                {
-                    "name": "keyword.operator.pipe.proto-vulcan",
-                    "match": "\\|"
-                },
-                {
-                    "name": "keyword.operator.range.proto-vulcan",
-                    "match": "\\.\\."
-                },
-                {
-                    "name": "punctuation.accessor.proto-vulcan",
-                    "match": "::"
-                },
-                {
-                    "name": "punctuation.accessor.dot.proto-vulcan",
-                    "match": "\\."
+                    "name": "entity.name.type.proto-vulcan",
+                    "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
                 }
             ]
         },
         "identifiers": {
             "patterns": [
                 {
-                    "name": "variable.other.proto-vulcan",
-                    "match": "\\b[a-z][a-zA-Z0-9_]*\\b"
+                    "name": "entity.name.function.proto-vulcan",
+                    "match": "\\b[a-z][a-zA-Z0-9_]*(?=\\s*\\()"
                 },
                 {
-                    "name": "entity.name.type.proto-vulcan",
-                    "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+                    "name": "variable.other.proto-vulcan",
+                    "match": "\\b(?!(?:if|else|for|in|match|any|all|let|rel|macro|use|mod|struct|impl|pub|constraint|true|false|and|or|not|assert_eq|assert_bound|assert_unbound|member|append|int|string|bool)\\b)[a-z][a-zA-Z0-9_]*\\b"
                 },
                 {
                     "name": "variable.language.wildcard.proto-vulcan",
-                    "match": "_"
+                    "match": "\\b_\\b"
                 }
             ]
         },
@@ -591,20 +151,24 @@
                     "match": "[{}]"
                 },
                 {
-                    "name": "punctuation.definition.list.proto-vulcan",
+                    "name": "punctuation.definition.parameters.proto-vulcan",
+                    "match": "[()]"
+                },
+                {
+                    "name": "punctuation.definition.array.proto-vulcan",
                     "match": "[\\[\\]]"
                 },
                 {
-                    "name": "punctuation.definition.group.proto-vulcan",
-                    "match": "[\\(\\)]"
+                    "name": "punctuation.separator.comma.proto-vulcan",
+                    "match": ","
                 },
                 {
-                    "name": "punctuation.terminator.proto-vulcan",
+                    "name": "punctuation.terminator.statement.proto-vulcan",
                     "match": ";"
                 },
                 {
-                    "name": "punctuation.separator.proto-vulcan",
-                    "match": ","
+                    "name": "punctuation.separator.pipe.proto-vulcan",
+                    "match": "\\|"
                 }
             ]
         }

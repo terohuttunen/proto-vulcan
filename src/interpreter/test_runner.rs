@@ -943,7 +943,7 @@ impl TestRunner {
             };
 
             for item in &program.items {
-                if let Item::Relation(rel_def) = item {
+                if let Item::Predicate(rel_def) = item {
                     if let Some(test_attr) = rel_def.attributes.iter().find(|a| a.name == "test") {
                         let mut should_fail = false;
                         let mut should_timeout = false;
@@ -1021,7 +1021,7 @@ impl TestRunner {
         };
 
         for item in &program.items {
-            if let Item::Relation(rel_def) = item {
+            if let Item::Predicate(rel_def) = item {
                 if let Some(test_attr) = rel_def.attributes.iter().find(|a| a.name == "test") {
                     let mut should_fail = false;
                     let mut should_timeout = false;

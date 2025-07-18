@@ -11,7 +11,7 @@ REM Create extensions directory if it doesn't exist
 if not exist "%EXTENSIONS_DIR%" mkdir "%EXTENSIONS_DIR%"
 
 REM Define the target directory
-set TARGET_DIR=%EXTENSIONS_DIR%\proto-vulcan
+set TARGET_DIR=%EXTENSIONS_DIR%\proto-vulcan.proto-vulcan-0.1.0
 
 REM Remove existing installation if it exists
 if exist "%TARGET_DIR%" (

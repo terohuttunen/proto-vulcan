@@ -118,7 +118,7 @@ pub enum Item {
     Module(ModuleDefinition),
     Struct(StructDefinition),
     Impl(ImplBlock),
-    Relation(RelationDefinition),
+    Predicate(PredicateDefinition),
 }
 
 impl Spanned for Item {
@@ -128,7 +128,7 @@ impl Spanned for Item {
             Item::Module(module) => module.span(),
             Item::Struct(struct_def) => struct_def.span(),
             Item::Impl(impl_block) => impl_block.span(),
-            Item::Relation(relation) => relation.span(),
+            Item::Predicate(predicate) => predicate.span(),
         }
     }
 }
@@ -229,13 +229,13 @@ impl Spanned for NamedField {
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
     pub type_name: String,
-    pub relations: Vec<RelationDefinition>,
+    pub predicates: Vec<PredicateDefinition>,
     pub span: Span,
 }
 
 impl PartialEq for ImplBlock {
     fn eq(&self, other: &Self) -> bool {
-        self.type_name == other.type_name && self.relations == other.relations
+        self.type_name == other.type_name && self.predicates == other.predicates
     }
 }
 
@@ -257,9 +257,25 @@ pub struct Attribute {
     pub args: Vec<AttributeArg>,
 }
 
+#[derive(Debug, Clone, PartialEq, Copy)]
+pub enum PredicateKind {
+    Relation, // Regular relation defined with 'rel'
+    Macro,    // Template relation defined with 'macro'
+}
+
+impl Display for PredicateKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PredicateKind::Relation => write!(f, "rel"),
+            PredicateKind::Macro => write!(f, "macro"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct RelationDefinition {
+pub struct PredicateDefinition {
     pub is_pub: bool,
+    pub predicate_kind: PredicateKind,
     pub attributes: Vec<Attribute>,
     pub name: String,
     pub parameters: Vec<Parameter>,
@@ -268,9 +284,10 @@ pub struct RelationDefinition {
     pub span: Span,
 }
 
-impl PartialEq for RelationDefinition {
+impl PartialEq for PredicateDefinition {
     fn eq(&self, other: &Self) -> bool {
         self.is_pub == other.is_pub
+            && self.predicate_kind == other.predicate_kind
             && self.attributes == other.attributes
             && self.name == other.name
             && self.parameters == other.parameters
@@ -279,7 +296,7 @@ impl PartialEq for RelationDefinition {
     }
 }
 
-impl Spanned for RelationDefinition {
+impl Spanned for PredicateDefinition {
     fn span(&self) -> &Span {
         &self.span
     }
@@ -519,7 +536,13 @@ pub struct PatternArm {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RelationCall {
     pub name: String,
-    pub args: Vec<Term>,
+    pub args: Vec<CallArgument>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CallArgument {
+    Term(Term),
+    MetaExpression(MetaExpression),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -673,7 +696,7 @@ impl Display for Item {
             Item::Module(m) => write!(f, "{}", m),
             Item::Struct(s) => write!(f, "{}", s),
             Item::Impl(i) => write!(f, "{}", i),
-            Item::Relation(r) => write!(f, "{}", r),
+            Item::Predicate(r) => write!(f, "{}", r),
         }
     }
 }
@@ -769,14 +792,14 @@ impl Display for NamedField {
 impl Display for ImplBlock {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "impl {} {{", self.type_name)?;
-        for rel in &self.relations {
-            writeln!(f, "{}", rel)?;
+        for predicate in &self.predicates {
+            writeln!(f, "{}", predicate)?;
         }
         writeln!(f, "}}")
     }
 }
 
-impl Display for RelationDefinition {
+impl Display for PredicateDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for attr in &self.attributes {
             writeln!(f, "{}", attr)?;
@@ -1128,6 +1151,15 @@ impl Display for ConstraintBlock {
 impl Display for ConstraintBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.raw_content)
+    }
+}
+
+impl Display for CallArgument {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CallArgument::Term(term) => write!(f, "{}", term),
+            CallArgument::MetaExpression(expr) => write!(f, "{}", expr),
+        }
     }
 }
 

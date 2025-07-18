@@ -1,7 +1,7 @@
 use super::parser::ast::{
-    Item, Program, RelationDefinition, StructDefinition, UsePath, UseStatement,
+    Item, PredicateDefinition, PredicateKind, Program, StructDefinition, UsePath, UseStatement,
 };
-use super::runtime_value::{RelationHandle, RuntimeValue};
+use super::runtime_value::{PredicateHandle, RuntimeValue};
 use super::InterpreterError;
 use crate::engine::Engine;
 use crate::goal::Goal;
@@ -251,7 +251,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         // Load module items
         for item in program.items {
             match item {
-                Item::Relation(rel) => {
+                Item::Predicate(rel) => {
                     let name = rel.name.clone();
                     let is_public = rel.is_pub;
                     let value = RuntimeValue::Relation(rel);
@@ -328,7 +328,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     /// Load a single program item
     fn load_item(&mut self, item: Item) -> Result<(), InterpreterError> {
         match item {
-            Item::Relation(rel) => self.load_relation(rel),
+            Item::Predicate(rel) => self.load_predicate(rel),
             Item::Struct(struct_def) => self.load_struct(struct_def),
             Item::Module(module) => self.load_module(module),
             Item::Use(use_stmt) => self.load_use_statement(use_stmt),
@@ -337,9 +337,9 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Load a relation definition
-    fn load_relation(&mut self, relation: RelationDefinition) -> Result<(), InterpreterError> {
-        let name = relation.name.clone();
-        let value = RuntimeValue::Relation(relation);
+    fn load_predicate(&mut self, predicate: PredicateDefinition) -> Result<(), InterpreterError> {
+        let name = predicate.name.clone();
+        let value = RuntimeValue::Relation(predicate);
 
         if self.scope_stack.last() == Some(&"global".to_string()) {
             self.globals.insert(name, value);
@@ -355,9 +355,9 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Bind a relation as a first-class value for higher-order predicates
-    pub fn bind_relation(&mut self, name: String, relation: RelationDefinition) {
-        let handle = RelationHandle::new(name.clone(), relation);
-        let value = RuntimeValue::RelationHandle(handle);
+    pub fn bind_relation(&mut self, name: String, predicate: PredicateDefinition) {
+        let handle = PredicateHandle::new(name.clone(), predicate);
+        let value = RuntimeValue::PredicateHandle(handle);
 
         if self.scope_stack.last() == Some(&"global".to_string()) {
             self.globals.insert(name, value);
@@ -384,8 +384,8 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Resolve a relation parameter to its handle during goal execution
-    pub fn resolve_relation(&self, name: &str) -> Option<&RelationHandle> {
-        if let Some(RuntimeValue::RelationHandle(handle)) = self.lookup(name) {
+    pub fn resolve_relation(&self, name: &str) -> Option<&PredicateHandle> {
+        if let Some(RuntimeValue::PredicateHandle(handle)) = self.lookup(name) {
             Some(handle)
         } else {
             None
@@ -397,7 +397,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         if let Some(value) = self.lookup(name) {
             matches!(
                 value,
-                RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+                RuntimeValue::Relation(_) | RuntimeValue::PredicateHandle(_)
             )
         } else {
             false
@@ -408,7 +408,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     pub fn get_relation_arity(&self, name: &str) -> Option<usize> {
         match self.lookup(name) {
             Some(RuntimeValue::Relation(rel_def)) => Some(rel_def.parameters.len()),
-            Some(RuntimeValue::RelationHandle(handle)) => Some(handle.arity),
+            Some(RuntimeValue::PredicateHandle(handle)) => Some(handle.arity),
             Some(RuntimeValue::NativeRelation { arity, .. }) => Some(*arity),
             _ => None,
         }
@@ -726,7 +726,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         for (name, value) in &self.globals {
             if matches!(
                 value,
-                RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+                RuntimeValue::Relation(_) | RuntimeValue::PredicateHandle(_)
             ) {
                 relations.insert(name.clone(), value);
             }
@@ -737,7 +737,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             for (name, value) in module_symbols {
                 if matches!(
                     value,
-                    RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+                    RuntimeValue::Relation(_) | RuntimeValue::PredicateHandle(_)
                 ) {
                     relations.insert(name.clone(), value);
                 }
@@ -760,7 +760,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         for (name, value) in &self.globals {
             if !matches!(
                 value,
-                RuntimeValue::Relation(_) | RuntimeValue::RelationHandle(_)
+                RuntimeValue::Relation(_) | RuntimeValue::PredicateHandle(_)
             ) {
                 variables.insert(name.clone(), value);
             }
@@ -790,9 +790,10 @@ mod tests {
     fn test_load_relation() {
         let mut env = TestEnv::new();
 
-        let relation = RelationDefinition {
+        let relation = PredicateDefinition {
             span: Span::dummy(),
             is_pub: false,
+            predicate_kind: PredicateKind::Relation,
             attributes: vec![],
             name: "test_rel".to_string(),
             parameters: vec![],
@@ -800,7 +801,7 @@ mod tests {
             body: vec![],
         };
 
-        env.load_relation(relation).unwrap();
+        env.load_predicate(relation).unwrap();
 
         assert!(env.lookup("test_rel").is_some());
         match env.lookup("test_rel").unwrap() {
@@ -846,9 +847,10 @@ mod tests {
         let module = ModuleDefinition {
             name: "test_module".to_string(),
             search_strategy: None,
-            items: vec![Item::Relation(RelationDefinition {
+            items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 is_pub: false,
+                predicate_kind: PredicateKind::Relation,
                 attributes: vec![],
                 name: "module_rel".to_string(),
                 parameters: vec![],
