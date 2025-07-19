@@ -452,7 +452,7 @@ mod tests {
         let query = parse_query("parent(alice, bob)").unwrap();
         match query {
             Goal::RelationCall(call, _) => {
-                assert_eq!(call.name, "parent");
+                assert_eq!(call.name.name(), "parent");
                 assert_eq!(call.args.len(), 2);
             }
             _ => panic!("Expected relation call goal"),

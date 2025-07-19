@@ -1,4 +1,6 @@
-use super::parser::ast::{Literal, PredicateDefinition, PredicateKind, StructDefinition, Term};
+use super::parser::ast::{
+    Literal, PredicateDefinition, PredicateKind, StructDefinition, Term, Visibility,
+};
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
@@ -253,7 +255,7 @@ mod tests {
     fn test_relation_value() {
         let relation = PredicateDefinition {
             span: Default::default(),
-            is_pub: false,
+            visibility: Visibility::Private,
             predicate_kind: PredicateKind::Relation,
             attributes: vec![],
             name: "test_rel".to_string(),

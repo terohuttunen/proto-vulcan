@@ -51,7 +51,17 @@ fn build_program(pair: Pair<Rule>) -> ParseResult<Program> {
 fn build_item(pair: Pair<Rule>) -> ParseResult<Item> {
     match pair.as_rule() {
         Rule::use_statement => Ok(Item::Use(build_use_statement(pair)?)),
-        Rule::mod_definition => Ok(Item::Module(build_mod_definition(pair)?)),
+        Rule::mod_declaration => {
+            // Handle both simple declarations and body definitions
+            let inner = pair.clone().into_inner().next().unwrap();
+            match inner.as_rule() {
+                Rule::mod_declaration_simple => {
+                    Ok(Item::ModuleDeclaration(build_mod_declaration(pair)?))
+                }
+                Rule::mod_declaration_body => Ok(Item::Module(build_mod_definition(inner)?)),
+                _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
+            }
+        }
         Rule::struct_definition => Ok(Item::Struct(build_struct_definition(pair)?)),
         Rule::impl_block => Ok(Item::Impl(build_impl_block(pair)?)),
         Rule::predicate_definition => Ok(Item::Predicate(build_predicate_definition(pair)?)),
@@ -61,59 +71,404 @@ fn build_item(pair: Pair<Rule>) -> ParseResult<Item> {
 
 fn build_use_statement(pair: Pair<Rule>) -> ParseResult<UseStatement> {
     let span = pair_to_span(&pair);
-    let path_pair = pair.into_inner().next().unwrap();
+    let mut inner = pair.into_inner();
+    let _use_keyword = inner.next().unwrap(); // Skip the use_keyword
+    let path_pair = inner.next().unwrap(); // Get the use_path
     let path = build_use_path(path_pair)?;
     Ok(UseStatement { path, span })
 }
 
-fn build_use_path(pair: Pair<Rule>) -> ParseResult<UsePath> {
-    let inner = pair.into_inner();
-    let mut segments = vec![];
-    let mut last_part = None;
+fn build_mod_declaration(pair: Pair<Rule>) -> ParseResult<ModuleDeclaration> {
+    let span = pair_to_span(&pair);
+    let inner = pair.into_inner().next().unwrap(); // Get the specific variant
 
-    for part in inner {
-        match part.as_rule() {
-            Rule::path_segment => segments.push(part.as_str().to_string()),
-            Rule::glob => {
-                last_part = Some(Ok(UsePath::Glob(segments.clone())));
-                break;
-            }
-            Rule::list_import => {
-                let mut imports = vec![];
-                for import_item in part.into_inner() {
-                    let mut item_inner = import_item.into_inner();
-                    let name = item_inner.next().unwrap().as_str().to_string();
-                    let alias = item_inner.next().map(|p| p.as_str().to_string());
-                    imports.push((name, alias));
-                }
-                last_part = Some(Ok(UsePath::List(segments.clone(), imports)));
-                break;
-            }
-            _ => (),
-        }
+    match inner.as_rule() {
+        Rule::mod_declaration_simple => build_mod_declaration_simple(inner),
+        Rule::mod_declaration_body => build_mod_declaration_body(inner),
+        _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
     }
-    last_part.unwrap_or_else(|| Ok(UsePath::Simple(segments)))
+}
+
+fn build_mod_declaration_simple(pair: Pair<Rule>) -> ParseResult<ModuleDeclaration> {
+    let span = pair_to_span(&pair);
+    let mut inner = pair.into_inner();
+
+    // Look at all pairs to determine structure
+    let pairs: Vec<_> = inner.clone().collect();
+
+    let (visibility, name) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
+        // Has visibility: visibility, mod_keyword, ident, ";"
+        let vis = build_visibility(pairs[0].clone())?;
+        let name = pairs[2].as_str().to_string(); // ident comes after visibility and mod_keyword
+        (vis, name)
+    } else {
+        // No visibility: mod_keyword, ident, ";"
+        let name = pairs[1].as_str().to_string(); // ident comes after mod_keyword
+        (ast::Visibility::Private, name)
+    };
+
+    Ok(ModuleDeclaration {
+        visibility,
+        name,
+        span,
+    })
+}
+
+fn build_mod_declaration_body(pair: Pair<Rule>) -> ParseResult<ModuleDeclaration> {
+    let span = pair_to_span(&pair);
+    let mut inner = pair.into_inner();
+
+    // Look at all pairs to determine structure
+    let pairs: Vec<_> = inner.clone().collect();
+
+    let (visibility, name) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
+        // Has visibility: visibility, mod_keyword, ident, search_strategy?, "{", body content, "}"
+        let vis = build_visibility(pairs[0].clone())?;
+        let name = pairs[2].as_str().to_string(); // ident comes after visibility and mod_keyword
+        (vis, name)
+    } else {
+        // No visibility: mod_keyword, ident, search_strategy?, "{", body content, "}"
+        let name = pairs[1].as_str().to_string(); // ident comes after mod_keyword
+        (ast::Visibility::Private, name)
+    };
+
+    Ok(ModuleDeclaration {
+        visibility,
+        name,
+        span,
+    })
+}
+
+fn build_use_path(pair: Pair<Rule>) -> ParseResult<UsePath> {
+    let inner = pair
+        .into_inner()
+        .next()
+        .ok_or_else(|| ParseError::MissingRule(Rule::use_path))?;
+
+    match inner.as_rule() {
+        Rule::use_path_simple => {
+            // Simple import: use use_path_base;
+            let base_pair = inner.into_inner().next().unwrap(); // use_path_base
+            let qualified_path = build_use_path_base(base_pair)?;
+
+            // For simple use paths, split the path from the item name
+            let (path, item) = match qualified_path {
+                QualifiedPath::Relative(mut segments) if !segments.is_empty() => {
+                    let item = segments.pop().unwrap();
+                    let path = QualifiedPath::Relative(segments);
+                    (path, item)
+                }
+                QualifiedPath::Global(mut segments) if !segments.is_empty() => {
+                    let item = segments.pop().unwrap();
+                    let path = QualifiedPath::Global(segments);
+                    (path, item)
+                }
+                QualifiedPath::Absolute(mut segments) if !segments.is_empty() => {
+                    let item = segments.pop().unwrap();
+                    let path = QualifiedPath::Absolute(segments);
+                    (path, item)
+                }
+
+                QualifiedPath::Self_(mut segments) if !segments.is_empty() => {
+                    let item = segments.pop().unwrap();
+                    let path = QualifiedPath::Self_(segments);
+                    (path, item)
+                }
+                QualifiedPath::Super(levels, mut segments) if !segments.is_empty() => {
+                    let item = segments.pop().unwrap();
+                    let path = QualifiedPath::Super(levels, segments);
+                    (path, item)
+                }
+                QualifiedPath::External(crate_name, mut segments) if !segments.is_empty() => {
+                    let item = segments.pop().unwrap();
+                    let path = QualifiedPath::External(crate_name, segments);
+                    (path, item)
+                }
+                // Handle cases where we have a single item after the path root
+                QualifiedPath::Relative(segments) if segments.len() == 1 => {
+                    let item = segments[0].clone();
+                    let path = QualifiedPath::Relative(vec![]);
+                    (path, item)
+                }
+                QualifiedPath::Global(segments) if segments.len() == 1 => {
+                    let item = segments[0].clone();
+                    let path = QualifiedPath::Global(vec![]);
+                    (path, item)
+                }
+                QualifiedPath::Absolute(segments) if segments.len() == 1 => {
+                    let item = segments[0].clone();
+                    let path = QualifiedPath::Absolute(vec![]);
+                    (path, item)
+                }
+                QualifiedPath::Self_(segments) if segments.len() == 1 => {
+                    let item = segments[0].clone();
+                    let path = QualifiedPath::Self_(vec![]);
+                    (path, item)
+                }
+                QualifiedPath::Super(levels, segments) if segments.len() == 1 => {
+                    let item = segments[0].clone();
+                    let path = QualifiedPath::Super(levels, vec![]);
+                    (path, item)
+                }
+                QualifiedPath::External(crate_name, segments) if segments.len() == 1 => {
+                    let item = segments[0].clone();
+                    let path = QualifiedPath::External(crate_name, vec![]);
+                    (path, item)
+                }
+                _ => return Err(ParseError::UnexpectedRule(Rule::qualified_path)),
+            };
+
+            Ok(UsePath::Simple(path, item))
+        }
+        Rule::use_path_glob => {
+            // Glob import: use use_path_base::*;
+            let mut parts = inner.into_inner();
+            let use_path_base_pair = parts.next().unwrap();
+
+            let qualified_path = build_use_path_base(use_path_base_pair)?;
+            Ok(UsePath::Glob(qualified_path))
+        }
+        Rule::use_path_list => {
+            // List import: use use_path_base{...};
+            let mut parts = inner.into_inner();
+            let use_path_base_pair = parts.next().unwrap();
+            let _path_sep = parts.next().unwrap(); // Skip the path_sep
+            let list_part = parts.next().unwrap(); // Get the list_import
+
+            let qualified_path = build_use_path_base(use_path_base_pair)?;
+
+            let mut imports = vec![];
+            for import_item in list_part.into_inner() {
+                let mut item_inner = import_item.into_inner();
+                let name = item_inner.next().unwrap().as_str().to_string();
+                let alias = item_inner.next().map(|p| p.as_str().to_string());
+                imports.push((name, alias));
+            }
+            Ok(UsePath::List(qualified_path, imports))
+        }
+        _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
+    }
+}
+
+fn build_type_name(pair: Pair<Rule>) -> ParseResult<String> {
+    match pair.as_rule() {
+        Rule::type_name => {
+            let inner = pair.into_inner().next().unwrap();
+            match inner.as_rule() {
+                Rule::qualified_path => {
+                    let qualified_path = build_qualified_path(inner)?;
+                    Ok(format!("{}", qualified_path))
+                }
+                Rule::ident => Ok(inner.as_str().to_string()),
+                _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
+            }
+        }
+        Rule::ident => Ok(pair.as_str().to_string()),
+        _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
+    }
+}
+
+fn build_use_path_segments(pair: Pair<Rule>) -> ParseResult<Vec<String>> {
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::absolute_path | Rule::crate_path | Rule::super_path | Rule::self_path => {
+            // Use existing qualified path logic but extract just the segments
+            let qualified_path = build_qualified_path(inner)?;
+            Ok(qualified_path.segments().to_vec())
+        }
+        Rule::simple_segments => {
+            // Simple path like "a::b::c"
+            let segments: Vec<String> = inner
+                .into_inner()
+                .filter(|p| p.as_rule() == Rule::ident)
+                .map(|p| p.as_str().to_string())
+                .collect();
+            Ok(segments)
+        }
+        _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
+    }
+}
+
+fn build_qualified_path(pair: Pair<Rule>) -> ParseResult<QualifiedPath> {
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::absolute_path => {
+            // absolute_path = { "::" ~ simple_segments }
+            // Find the simple_segments among the parts
+            let parts: Vec<_> = inner.into_inner().collect();
+
+            // Look for simple_segments among the parts
+            if let Some(simple_segments) =
+                parts.iter().find(|p| p.as_rule() == Rule::simple_segments)
+            {
+                let segments: Vec<String> = simple_segments
+                    .clone()
+                    .into_inner()
+                    .filter(|p| p.as_rule() == Rule::ident)
+                    .map(|p| p.as_str().to_string())
+                    .collect();
+                Ok(QualifiedPath::Global(segments))
+            } else {
+                // Just "::" with no segments
+                Ok(QualifiedPath::Global(vec![]))
+            }
+        }
+        Rule::crate_path => {
+            // crate_path = { crate_keyword ~ (path_sep ~ simple_segments)? }
+            // Find the simple_segments among the parts
+            let parts: Vec<_> = inner.into_inner().collect();
+
+            // Look for simple_segments among the parts
+            if let Some(simple_segments) =
+                parts.iter().find(|p| p.as_rule() == Rule::simple_segments)
+            {
+                let segments: Vec<String> = simple_segments
+                    .clone()
+                    .into_inner()
+                    .filter(|p| p.as_rule() == Rule::ident)
+                    .map(|p| p.as_str().to_string())
+                    .collect();
+                Ok(QualifiedPath::Absolute(segments))
+            } else {
+                // Just "crate" with no segments
+                Ok(QualifiedPath::Absolute(vec![]))
+            }
+        }
+        Rule::super_path => {
+            // super_path = { super_keyword ~ (path_sep ~ simple_segments)? }
+            // Find the simple_segments among the parts
+            let parts: Vec<_> = inner.into_inner().collect();
+
+            // Look for simple_segments among the parts
+            if let Some(simple_segments) =
+                parts.iter().find(|p| p.as_rule() == Rule::simple_segments)
+            {
+                let segments: Vec<String> = simple_segments
+                    .clone()
+                    .into_inner()
+                    .filter(|p| p.as_rule() == Rule::ident)
+                    .map(|p| p.as_str().to_string())
+                    .collect();
+                Ok(QualifiedPath::Super(0, segments))
+            } else {
+                // Just "super" with no segments
+                Ok(QualifiedPath::Super(0, vec![]))
+            }
+        }
+        Rule::self_path => {
+            // self_path = { self_keyword ~ (path_sep ~ simple_segments)? }
+            // Find the simple_segments among the parts
+            let parts: Vec<_> = inner.into_inner().collect();
+
+            // Look for simple_segments among the parts
+            if let Some(simple_segments) =
+                parts.iter().find(|p| p.as_rule() == Rule::simple_segments)
+            {
+                let segments: Vec<String> = simple_segments
+                    .clone()
+                    .into_inner()
+                    .filter(|p| p.as_rule() == Rule::ident)
+                    .map(|p| p.as_str().to_string())
+                    .collect();
+                Ok(QualifiedPath::Self_(segments))
+            } else {
+                // Just "self" with no segments
+                Ok(QualifiedPath::Self_(vec![]))
+            }
+        }
+
+        Rule::external_path => {
+            // external_path = { ident ~ "::" ~ simple_segments }
+            // This creates only 2 tokens: [ident, simple_segments]
+            let mut parts = inner.into_inner();
+
+            let crate_name = parts.next().unwrap().as_str().to_string();
+            let simple_segments = parts.next().unwrap(); // This should always exist
+
+            let segments: Vec<String> = simple_segments
+                .into_inner()
+                .filter(|p| p.as_rule() == Rule::ident)
+                .map(|p| p.as_str().to_string())
+                .collect();
+
+            Ok(QualifiedPath::External(crate_name, segments))
+        }
+        Rule::relative_path => {
+            // relative_path = { simple_segments }
+            let simple_segments = inner.into_inner().next().unwrap();
+            let segments: Vec<String> = simple_segments
+                .into_inner()
+                .filter(|p| p.as_rule() == Rule::ident)
+                .map(|p| p.as_str().to_string())
+                .collect();
+
+            // Check if the first segment is an external crate (like "std")
+            if let Some(first) = segments.first() {
+                if first == "std" && segments.len() > 1 {
+                    // Convert std::... to External("std", [...])
+                    let mut remaining = segments;
+                    remaining.remove(0); // Remove "std"
+                    return Ok(QualifiedPath::External("std".to_string(), remaining));
+                }
+            }
+
+            Ok(QualifiedPath::Relative(segments))
+        }
+        _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
+    }
+}
+
+fn build_use_path_base(pair: Pair<Rule>) -> ParseResult<QualifiedPath> {
+    match pair.as_rule() {
+        Rule::use_path_base => {
+            // Use_path_base now contains qualified_path
+            let inner = pair.into_inner().next().unwrap();
+            build_qualified_path(inner)
+        }
+        Rule::qualified_path => build_qualified_path(pair),
+        _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
+    }
 }
 
 fn build_mod_definition(pair: Pair<Rule>) -> ParseResult<ModuleDefinition> {
     let span = pair_to_span(&pair);
-    let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_str().to_string();
+    let inner = pair.into_inner();
+
+    // Look at all pairs to determine structure
+    let pairs: Vec<_> = inner.collect();
+
+    let (visibility, name_idx) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
+        (build_visibility(pairs[0].clone())?, 1) // visibility, name (we skip "mod" keyword)
+    } else {
+        (ast::Visibility::Private, 0) // name (we skip "mod" keyword)
+    };
+
+    // Find the ident among the pairs
+    let name = pairs
+        .iter()
+        .find(|p| p.as_rule() == Rule::ident)
+        .ok_or(ParseError::UnexpectedRule(Rule::ident))?
+        .as_str()
+        .to_string();
     let mut search_strategy = None;
     let mut items = vec![];
 
-    for part in inner {
+    for part in pairs.iter() {
         match part.as_rule() {
-            Rule::search_strategy => search_strategy = Some(build_search_strategy(part)?),
+            Rule::search_strategy => search_strategy = Some(build_search_strategy(part.clone())?),
             Rule::use_statement
-            | Rule::mod_definition
+            | Rule::mod_declaration
+            | Rule::mod_declaration
             | Rule::struct_definition
             | Rule::impl_block
-            | Rule::predicate_definition => items.push(build_item(part)?),
+            | Rule::predicate_definition => items.push(build_item(part.clone())?),
             _ => (),
         }
     }
     Ok(ModuleDefinition {
+        visibility,
         name,
         search_strategy,
         items,
@@ -123,20 +478,33 @@ fn build_mod_definition(pair: Pair<Rule>) -> ParseResult<ModuleDefinition> {
 
 fn build_struct_definition(pair: Pair<Rule>) -> ParseResult<StructDefinition> {
     let span = pair_to_span(&pair);
-    let mut inner = pair.into_inner();
-    let mut is_pub = false;
+    let inner = pair.into_inner();
 
-    // Check if first token is pub_keyword
-    let first_pair = inner.next().unwrap();
-    let name_pair = if first_pair.as_rule() == Rule::pub_keyword {
-        is_pub = true;
-        inner.next().unwrap() // Skip "struct", get type name
+    // Look at all pairs to determine structure
+    let pairs: Vec<_> = inner.collect();
+
+    // Find the definition pair by iterating through all pairs
+    let mut definition_pair = None;
+    for pair in &pairs {
+        if pair.as_rule() == Rule::named_struct_def || pair.as_rule() == Rule::tuple_struct_def {
+            definition_pair = Some(pair.clone());
+            break;
+        }
+    }
+
+    let def_pair =
+        definition_pair.ok_or_else(|| ParseError::MissingRule(Rule::named_struct_def))?;
+
+    let (visibility, name) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
+        // Has visibility: visibility, struct_keyword, type_name
+        let vis = build_visibility(pairs[0].clone())?;
+        let name = build_type_name(pairs[2].clone())?; // type_name after visibility and struct_keyword
+        (vis, name)
     } else {
-        first_pair // This should be the type name (after "struct" was consumed)
+        // No visibility: struct_keyword, type_name
+        let name = build_type_name(pairs[1].clone())?; // type_name after struct_keyword
+        (ast::Visibility::Private, name)
     };
-
-    let name = name_pair.as_str().to_string();
-    let def_pair = inner.next().unwrap();
     let kind = match def_pair.as_rule() {
         Rule::tuple_struct_def => {
             let mut types = vec![];
@@ -156,7 +524,7 @@ fn build_struct_definition(pair: Pair<Rule>) -> ParseResult<StructDefinition> {
     };
 
     Ok(StructDefinition {
-        is_pub,
+        visibility,
         name,
         kind,
         span,
@@ -165,22 +533,28 @@ fn build_struct_definition(pair: Pair<Rule>) -> ParseResult<StructDefinition> {
 
 fn build_named_field(pair: Pair<Rule>) -> ParseResult<NamedField> {
     let span = pair_to_span(&pair);
-    let mut inner = pair.into_inner();
-    let mut is_pub = false;
+    let inner = pair.into_inner();
 
-    // Check if first token is pub_keyword
-    let first_pair = inner.next().unwrap();
-    let name_pair = if first_pair.as_rule() == Rule::pub_keyword {
-        is_pub = true;
-        inner.next().unwrap()
-    } else {
-        first_pair
-    };
+    // Look at all pairs to determine structure
+    let pairs: Vec<_> = inner.collect();
 
-    let name = name_pair.as_str().to_string();
-    let type_name = inner.next().unwrap().as_str().to_string();
+    let (visibility, name, type_name) =
+        if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
+            // Has visibility: visibility, ident, type_name
+            let vis = build_visibility(pairs[0].clone())?;
+            let name = pairs[1].as_str().to_string(); // ident after visibility
+            let type_name = build_type_name(pairs[2].clone())?; // type_name after visibility and ident
+            (vis, name, type_name)
+        } else {
+            // No visibility: ident, type_name
+            let name = pairs[0].as_str().to_string(); // first element is ident
+            let type_name = build_type_name(pairs[1].clone())?; // type_name after ident
+            (ast::Visibility::Private, name, type_name)
+        };
+    // name and type_name are already Strings from above
+
     Ok(NamedField {
-        is_pub,
+        visibility,
         name,
         type_name,
         span,
@@ -190,7 +564,7 @@ fn build_named_field(pair: Pair<Rule>) -> ParseResult<NamedField> {
 fn build_impl_block(pair: Pair<Rule>) -> ParseResult<ImplBlock> {
     let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
-    let type_name = inner.next().unwrap().as_str().to_string();
+    let type_name = build_type_name(inner.next().unwrap())?;
     let mut predicates = vec![];
     for rel_pair in inner {
         if rel_pair.as_rule() == Rule::predicate_definition {
@@ -238,22 +612,24 @@ fn build_predicate_definition(pair: Pair<Rule>) -> ParseResult<PredicateDefiniti
     let span = pair_to_span(&pair);
     let mut inner = pair.into_inner();
     let mut attributes = vec![];
-    let mut is_pub = false;
     let mut search_strategy = None;
 
-    // The first pairs can be attributes or `pub`, in any order.
+    // First collect all attributes
     while let Some(p) = inner.peek() {
-        match p.as_rule() {
-            Rule::attribute => {
-                attributes.push(build_attribute(inner.next().unwrap())?);
-            }
-            Rule::pub_keyword => {
-                is_pub = true;
-                inner.next(); // Consume pub
-            }
-            _ => break, // Done with optional leading elements
+        if p.as_rule() == Rule::attribute {
+            attributes.push(build_attribute(inner.next().unwrap())?);
+        } else {
+            break;
         }
     }
+
+    // Check if next element is visibility
+    let next_pair = inner.peek().unwrap();
+    let visibility = if next_pair.as_rule() == Rule::visibility {
+        build_visibility(inner.next().unwrap())?
+    } else {
+        ast::Visibility::Private
+    };
 
     // Now we must have `relation_keyword`, `ident`, `(params)`, optionally `search_strategy`, and `{body}`
     let relation_kind_pair = inner.next().unwrap();
@@ -332,7 +708,7 @@ fn build_predicate_definition(pair: Pair<Rule>) -> ParseResult<PredicateDefiniti
 
     Ok(PredicateDefinition {
         span,
-        is_pub,
+        visibility,
         predicate_kind,
         attributes,
         name,
@@ -362,7 +738,7 @@ fn parse_meta_type_annotation(pair: Pair<Rule>) -> ParseResult<TypeAnnotation> {
     // Check if there are any inner pairs (for complex types like relation_type)
     let mut inner_pairs = pair.into_inner();
     if let Some(inner) = inner_pairs.next() {
-        // We have an inner rule (like relation_type)
+        // We have an inner rule (like relation_type or type_name)
         match inner.as_rule() {
             Rule::relation_type => {
                 let arity_pair = inner.into_inner().next().unwrap();
@@ -371,6 +747,11 @@ fn parse_meta_type_annotation(pair: Pair<Rule>) -> ParseResult<TypeAnnotation> {
                     .parse::<usize>()
                     .map_err(|_| ParseError::UnexpectedRule(Rule::number_literal))?;
                 Ok(TypeAnnotation::Relation(arity))
+            }
+            Rule::type_name => {
+                // Handle type_name (qualified paths and simple identifiers)
+                let type_name = build_type_name(inner)?;
+                Ok(TypeAnnotation::Custom(type_name))
             }
             _ => parse_type_annotation(inner.as_str()),
         }
@@ -784,9 +1165,79 @@ fn build_pattern_arm(pair: Pair<Rule>) -> ParseResult<PatternArm> {
     Ok(PatternArm { pattern, body })
 }
 
+fn build_relation_name(pair: Pair<Rule>) -> ParseResult<RelationName> {
+    match pair.as_rule() {
+        Rule::qualified_path => {
+            match build_qualified_path(pair.clone()) {
+                Ok(path) => {
+                    if let Some(name) = path.final_segment() {
+                        // Create the correct module path by preserving the path type but removing the final segment
+                        let module_path = match &path {
+                            QualifiedPath::Global(segments) => {
+                                QualifiedPath::Global(path.module_segments().to_vec())
+                            }
+                            QualifiedPath::Absolute(segments) => {
+                                QualifiedPath::Absolute(path.module_segments().to_vec())
+                            }
+                            QualifiedPath::Relative(segments) => {
+                                QualifiedPath::Relative(path.module_segments().to_vec())
+                            }
+                            QualifiedPath::Super(levels, segments) => {
+                                QualifiedPath::Super(*levels, path.module_segments().to_vec())
+                            }
+                            QualifiedPath::Self_(segments) => {
+                                QualifiedPath::Self_(path.module_segments().to_vec())
+                            }
+
+                            QualifiedPath::External(crate_name, segments) => {
+                                QualifiedPath::External(
+                                    crate_name.clone(),
+                                    path.module_segments().to_vec(),
+                                )
+                            }
+                        };
+
+                        // Semantic disambiguation: if the module path is empty, treat as simple name
+                        if path.module_segments().is_empty() {
+                            Ok(RelationName::Simple(name.clone()))
+                        } else {
+                            Ok(RelationName::Qualified(QualifiedName::new(
+                                module_path,
+                                name.clone(),
+                            )))
+                        }
+                    } else {
+                        Err(ParseError::MissingRule(Rule::ident))
+                    }
+                }
+                Err(_) => {
+                    // build_qualified_path failed, this might be a simple identifier that matched qualified_path rule
+                    // Try to extract as a simple identifier
+                    Ok(RelationName::Simple(pair.as_str().to_string()))
+                }
+            }
+        }
+        Rule::ident => Ok(RelationName::Simple(pair.as_str().to_string())),
+        _ => {
+            // Handle the case where we have a nested structure (relation_call might contain qualified_path or ident)
+            // Try to find the first inner qualified_path or ident
+            let rule = pair.as_rule();
+            for inner in pair.into_inner() {
+                match inner.as_rule() {
+                    Rule::qualified_path => return build_relation_name(inner),
+                    Rule::ident => return Ok(RelationName::Simple(inner.as_str().to_string())),
+                    _ => continue,
+                }
+            }
+            Err(ParseError::UnexpectedRule(rule))
+        }
+    }
+}
+
 fn build_relation_call(pair: Pair<Rule>) -> ParseResult<RelationCall> {
     let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_str().to_string();
+    let name_pair = inner.next().unwrap();
+    let name = build_relation_name(name_pair)?;
     let mut args = vec![];
     for arg_pair in inner {
         args.push(build_call_argument(arg_pair)?);
@@ -884,13 +1335,27 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
             build_compound_construction(pair.clone())?,
             span,
         )),
-        Rule::path_term => Ok(Term::Compound(
-            CompoundConstruction {
-                name: pair.as_str().to_string(),
-                args: vec![],
-            },
-            span,
-        )),
+        Rule::compound_construction_no_parens => {
+            // Extract the qualified path from the inner pair to get clean string without whitespace
+            let qualified_path_pair = pair.into_inner().next().unwrap(); // qualified_path
+            let qualified_path = build_qualified_path(qualified_path_pair)?;
+            let name = qualified_path.to_string();
+
+            // Semantic disambiguation: if this is a simple identifier (no ::) with no args,
+            // treat it as a variable instead of a compound construction
+            if !name.contains("::") {
+                Ok(Term::Variable(name, span))
+            } else {
+                Ok(Term::Compound(
+                    CompoundConstruction { name, args: vec![] },
+                    span,
+                ))
+            }
+        }
+        Rule::path_term => {
+            let path_str = pair.as_str().to_string();
+            Ok(Term::Variable(path_str, span))
+        }
         Rule::parenthesized_term => Ok(Term::Parenthesized(
             Box::new(build_term(pair.into_inner().next().unwrap())?),
             span,
@@ -957,7 +1422,11 @@ fn build_pattern(pair: Pair<Rule>) -> ParseResult<Pattern> {
 
     match pair.as_rule() {
         Rule::literal => Ok(Pattern::Literal(build_literal(pair)?)),
-        Rule::variable => Ok(Pattern::Variable(pair.as_str().to_string())),
+        Rule::variable => {
+            // Extract clean identifier from atomic variable rule to avoid whitespace
+            let clean_name = pair.into_inner().next().unwrap().as_str().to_string(); // Get the ident
+            Ok(Pattern::Variable(clean_name))
+        }
         Rule::wildcard => Ok(Pattern::Wildcard),
         Rule::list_pattern => Ok(Pattern::List(build_list_pattern(pair)?)),
         Rule::named_struct_pattern => Ok(Pattern::NamedStruct(build_named_struct_pattern(pair)?)),
@@ -965,7 +1434,15 @@ fn build_pattern(pair: Pair<Rule>) -> ParseResult<Pattern> {
             Ok(Pattern::Compound(build_compound_pattern_with_parens(pair)?))
         }
         Rule::compound_pattern_no_parens => {
-            Ok(Pattern::Compound(build_compound_pattern_no_parens(pair)?))
+            let compound = build_compound_pattern_no_parens(pair)?;
+
+            // Semantic disambiguation: if this is a simple identifier (no ::) with no args,
+            // treat it as a variable instead of a compound pattern
+            if !compound.name.contains("::") && compound.args.is_empty() {
+                Ok(Pattern::Variable(compound.name))
+            } else {
+                Ok(Pattern::Compound(compound))
+            }
         }
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
     }
@@ -1023,10 +1500,12 @@ fn build_compound_pattern_with_parens(pair: Pair<Rule>) -> ParseResult<CompoundP
 }
 
 fn build_compound_pattern_no_parens(pair: Pair<Rule>) -> ParseResult<CompoundPattern> {
-    Ok(CompoundPattern {
-        name: pair.as_str().to_string(),
-        args: vec![],
-    })
+    // Extract the qualified path from the inner pair to get clean string without whitespace
+    let qualified_path_pair = pair.into_inner().next().unwrap(); // qualified_path
+    let qualified_path = build_qualified_path(qualified_path_pair)?;
+    let name = qualified_path.to_string();
+
+    Ok(CompoundPattern { name, args: vec![] })
 }
 
 fn build_list_construction(pair: Pair<Rule>) -> ParseResult<ListConstruction> {
@@ -1189,6 +1668,51 @@ fn build_meta_for_range(
     Ok(crate::interpreter::metaprogramming::MetaForRange { start, end })
 }
 
+fn build_visibility(pair: Pair<Rule>) -> ParseResult<ast::Visibility> {
+    // Check if the visibility pair has any content (empty string means private)
+    if pair.as_str().is_empty() {
+        return Ok(ast::Visibility::Private);
+    }
+
+    let mut inner = pair.into_inner();
+
+    // If we have a pub_keyword, look for optional scope
+    if let Some(pub_pair) = inner.next() {
+        if pub_pair.as_rule() == Rule::pub_keyword {
+            // Check if there's a visibility scope
+            if let Some(scope_pair) = inner.next() {
+                if scope_pair.as_rule() == Rule::visibility_scope {
+                    if let Some(scope_inner) = scope_pair.into_inner().next() {
+                        match scope_inner.as_rule() {
+                            Rule::crate_keyword => Ok(ast::Visibility::Crate),
+                            Rule::super_keyword => Ok(ast::Visibility::Super),
+                            Rule::self_keyword => Ok(ast::Visibility::SelfModule),
+                            Rule::qualified_path => {
+                                let qualified_path = build_qualified_path(scope_inner)?;
+                                Ok(ast::Visibility::Restricted(qualified_path))
+                            }
+                            _ => Err(ParseError::UnexpectedRule(scope_inner.as_rule())),
+                        }
+                    } else {
+                        // Empty scope
+                        Ok(ast::Visibility::Public)
+                    }
+                } else {
+                    Err(ParseError::UnexpectedRule(scope_pair.as_rule()))
+                }
+            } else {
+                // Just pub without scope
+                Ok(ast::Visibility::Public)
+            }
+        } else {
+            Err(ParseError::UnexpectedRule(pub_pair.as_rule()))
+        }
+    } else {
+        // No pub keyword means private
+        Ok(ast::Visibility::Private)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1211,7 +1735,7 @@ mod tests {
         let expected_ast = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "my_rel".to_string(),
@@ -1231,7 +1755,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: true,
+                visibility: ast::Visibility::Public,
                 predicate_kind: ast::PredicateKind::Macro,
                 attributes: vec![],
                 name: "my_rel".to_string(),
@@ -1263,7 +1787,10 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Use(UseStatement {
-                path: UsePath::Simple(vec!["a".to_string(), "b".to_string(), "c".to_string()]),
+                path: UsePath::Simple(
+                    QualifiedPath::Relative(vec!["a".to_string(), "b".to_string()]),
+                    "c".to_string(),
+                ),
                 span: Default::default(),
             })],
             span: Default::default(),
@@ -1277,7 +1804,10 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Use(UseStatement {
-                path: UsePath::Glob(vec!["a".to_string(), "b".to_string()]),
+                path: UsePath::Glob(QualifiedPath::Relative(vec![
+                    "a".to_string(),
+                    "b".to_string(),
+                ])),
                 span: Default::default(),
             })],
             span: Default::default(),
@@ -1292,7 +1822,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Use(UseStatement {
                 path: UsePath::List(
-                    vec!["a".to_string()],
+                    QualifiedPath::Relative(vec!["a".to_string()]),
                     vec![
                         ("b".to_string(), None),
                         ("c".to_string(), Some("d".to_string())),
@@ -1311,7 +1841,7 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Struct(StructDefinition {
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 name: "MyTuple".to_string(),
                 kind: StructKind::Tuple(vec!["A".to_string(), "B".to_string()]),
                 span: Span::dummy(),
@@ -1327,17 +1857,17 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Struct(StructDefinition {
-                is_pub: true,
+                visibility: ast::Visibility::Public,
                 name: "MyStruct".to_string(),
                 kind: StructKind::Named(vec![
                     NamedField {
-                        is_pub: true,
+                        visibility: ast::Visibility::Public,
                         name: "field".to_string(),
                         type_name: "T".to_string(),
                         span: Span::dummy(),
                     },
                     NamedField {
-                        is_pub: false,
+                        visibility: ast::Visibility::Private,
                         name: "other".to_string(),
                         type_name: "U".to_string(),
                         span: Span::dummy(),
@@ -1366,7 +1896,7 @@ mod tests {
                 span: Span::dummy(),
                 predicates: vec![PredicateDefinition {
                     span: Span::dummy(),
-                    is_pub: false,
+                    visibility: ast::Visibility::Private,
                     predicate_kind: ast::PredicateKind::Relation,
                     attributes: vec![],
                     name: "new".to_string(),
@@ -1426,7 +1956,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1477,7 +2007,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1506,12 +2036,12 @@ mod tests {
 
     #[test]
     fn test_parse_compound_construction() {
-        let input = "rel test() { a == Some(42) }";
+        let input = "rel test() { a == Option::Some(42) }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1521,7 +2051,7 @@ mod tests {
                     Term::Variable("a".to_string(), Span::dummy()),
                     Term::Compound(
                         CompoundConstruction {
-                            name: "Some".to_string(),
+                            name: "Option::Some".to_string(),
                             args: vec![Term::Literal(
                                 Literal::Number("42".to_string()),
                                 Span::dummy(),
@@ -1549,7 +2079,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1586,7 +2116,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1623,7 +2153,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1659,7 +2189,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1679,7 +2209,7 @@ mod tests {
                                 }),
                                 body: vec![Goal::RelationCall(
                                     RelationCall {
-                                        name: "succeed".to_string(),
+                                        name: RelationName::Simple("succeed".to_string()),
                                         args: vec![],
                                     },
                                     Span::dummy(),
@@ -1700,7 +2230,7 @@ mod tests {
                                 pattern: Pattern::Wildcard,
                                 body: vec![Goal::RelationCall(
                                     RelationCall {
-                                        name: "fail".to_string(),
+                                        name: RelationName::Simple("fail".to_string()),
                                         args: vec![],
                                     },
                                     Span::dummy(),
@@ -1729,7 +2259,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1749,7 +2279,7 @@ mod tests {
                                 }),
                                 body: vec![Goal::RelationCall(
                                     RelationCall {
-                                        name: "succeed".to_string(),
+                                        name: RelationName::Simple("succeed".to_string()),
                                         args: vec![],
                                     },
                                     Span::dummy(),
@@ -1770,7 +2300,7 @@ mod tests {
                                 pattern: Pattern::Wildcard,
                                 body: vec![Goal::RelationCall(
                                     RelationCall {
-                                        name: "fail".to_string(),
+                                        name: RelationName::Simple("fail".to_string()),
                                         args: vec![],
                                     },
                                     Span::dummy(),
@@ -1797,7 +2327,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1843,7 +2373,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1886,7 +2416,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1916,7 +2446,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1924,7 +2454,7 @@ mod tests {
                 search_strategy: None,
                 body: vec![Goal::RelationCall(
                     RelationCall {
-                        name: "my_relation".to_string(),
+                        name: RelationName::Simple("my_relation".to_string()),
                         args: vec![
                             CallArgument::Term(Term::Variable("a".to_string(), Span::dummy())),
                             CallArgument::Term(Term::Variable("b".to_string(), Span::dummy())),
@@ -1946,7 +2476,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -1954,7 +2484,7 @@ mod tests {
                 search_strategy: None,
                 body: vec![Goal::RelationCall(
                     RelationCall {
-                        name: "succeed".to_string(),
+                        name: RelationName::Simple("succeed".to_string()),
                         args: vec![],
                     },
                     Span::dummy(),
@@ -1991,7 +2521,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -2022,29 +2552,32 @@ mod tests {
         let ast = parse_str(input).unwrap();
         let expected = Program {
             items: vec![Item::Module(ModuleDefinition {
+                visibility: ast::Visibility::Private,
                 name: "my_module".to_string(),
                 search_strategy: Some(SearchStrategy::Bfs),
                 items: vec![
                     Item::Use(UseStatement {
-                        path: UsePath::Simple(vec![
-                            "std".to_string(),
-                            "collections".to_string(),
+                        path: UsePath::Simple(
+                            QualifiedPath::External(
+                                "std".to_string(),
+                                vec!["collections".to_string()],
+                            ),
                             "HashMap".to_string(),
-                        ]),
+                        ),
                         span: Span::dummy(),
                     }),
                     Item::Struct(StructDefinition {
-                        is_pub: false,
+                        visibility: ast::Visibility::Private,
                         name: "Point".to_string(),
                         kind: StructKind::Named(vec![
                             NamedField {
-                                is_pub: false,
+                                visibility: ast::Visibility::Private,
                                 name: "x".to_string(),
                                 type_name: "i32".to_string(),
                                 span: Span::dummy(),
                             },
                             NamedField {
-                                is_pub: false,
+                                visibility: ast::Visibility::Private,
                                 name: "y".to_string(),
                                 type_name: "i32".to_string(),
                                 span: Span::dummy(),
@@ -2054,7 +2587,7 @@ mod tests {
                     }),
                     Item::Predicate(PredicateDefinition {
                         span: Span::dummy(),
-                        is_pub: false,
+                        visibility: ast::Visibility::Private,
                         predicate_kind: ast::PredicateKind::Relation,
                         attributes: vec![],
                         name: "test".to_string(),
@@ -2062,7 +2595,7 @@ mod tests {
                         search_strategy: None,
                         body: vec![Goal::RelationCall(
                             RelationCall {
-                                name: "succeed".to_string(),
+                                name: RelationName::Simple("succeed".to_string()),
                                 args: vec![],
                             },
                             Span::dummy(),
@@ -2083,7 +2616,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -2117,7 +2650,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -2148,7 +2681,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -2341,7 +2874,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -2629,7 +3162,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -2719,7 +3252,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -2743,7 +3276,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -2778,7 +3311,7 @@ mod tests {
         let expected = Program {
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
                 name: "test".to_string(),
@@ -3018,6 +3551,701 @@ mod tests {
                 }
             }
             _ => panic!("Expected relation"),
+        }
+    }
+
+    #[test]
+    fn test_debug_isolated_mod_declarations() {
+        // Test individual mod declarations
+        let input1 = "mod child;";
+        let result1 = VulcanParser::parse(Rule::mod_declaration, input1);
+        println!("DEBUG: Parsing '{}' -> {:?}", input1, result1.is_ok());
+        assert!(result1.is_ok());
+
+        let input2 = "pub mod utils;";
+        let result2 = VulcanParser::parse(Rule::mod_declaration, input2);
+        println!("DEBUG: Parsing '{}' -> {:?}", input2, result2.is_ok());
+        assert!(result2.is_ok());
+
+        // Test the exact content inside a module
+        let module_content = r#"mod child;
+                pub mod utils;
+                
+                rel helper() {
+                    succeed()
+                }"#;
+
+        // Test if we can parse the module content without the surrounding module brackets
+
+        let items = module_content
+            .split('\n')
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty());
+
+        for (i, item) in items.enumerate() {
+            if item.starts_with("mod ") && item.ends_with(";") {
+                let result = VulcanParser::parse(Rule::mod_declaration, item);
+            } else if item.starts_with("rel ") {
+                // Test if this could be confusing the parser
+            }
+        }
+    }
+
+    #[test]
+    fn test_simple_global_qualified_path() {
+        let input = "use ::std::HashMap;";
+        let result = parse_str(input);
+        if let Err(e) = &result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Failed to parse simple global path: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_simple_type_annotation() {
+        let input = "rel test(x: ::std::HashMap) {}";
+        let result = parse_str(input);
+        if let Err(e) = &result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Failed to parse type annotation: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_simple_list_import() {
+        let input = "use crate::types::{TypeA, TypeB};";
+        let result = parse_str(input);
+        if let Err(e) = &result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Failed to parse simple list import: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_simple_crate_path() {
+        let input = "use crate::types;";
+        let result = parse_str(input);
+        if let Err(e) = &result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Failed to parse simple crate path: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_list_import_with_double_colons() {
+        let input = "use crate::types::{TypeA, TypeB};";
+        let result = parse_str(input);
+        if let Err(e) = &result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Failed to parse list import with double colons: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_global_absolute_path() {
+        let input = "rel test(x: ::std::collections::HashMap) {}";
+        let result = parse_str(input);
+        if let Err(e) = &result {
+            println!("Parse error: {:?}", e);
+        }
+        assert!(
+            result.is_ok(),
+            "Failed to parse global absolute path: {:?}",
+            result
+        );
+    }
+}
+
+#[cfg(test)]
+mod qualified_path_tests {
+    use super::*;
+    use crate::interpreter::parser::ast::{QualifiedName, QualifiedPath, RelationName};
+
+    #[test]
+    fn test_simple_relation_call() {
+        let input = "rel test() { member(x, list) }";
+        let result = parse_str(input);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_std_qualified_path() {
+        let input = "rel test() { std::list::member(x, list) }";
+        let result = parse_str(input);
+        assert!(result.is_ok());
+
+        // Extract the relation call and verify it parsed as std path
+        if let Ok(program) = result {
+            if let Some(Item::Predicate(pred)) = program.items.first() {
+                if let Some(Goal::RelationCall(call, _)) = pred.body.first() {
+                    if let RelationName::Qualified(qualified) = &call.name {
+                        assert!(
+                            matches!(qualified.path, QualifiedPath::External(ref crate_name, _) if crate_name == "std")
+                        );
+                        assert_eq!(qualified.name, "member");
+                        assert_eq!(qualified.path.segments(), &["list"]);
+                    } else {
+                        panic!("Expected qualified relation name");
+                    }
+                } else {
+                    panic!("Expected relation call in body");
+                }
+            } else {
+                panic!("Expected predicate item");
+            }
+        }
+    }
+
+    #[test]
+    fn test_crate_absolute_path() {
+        let input = "rel test() { crate::solver::solve(constraint, result) }";
+        let result = parse_str(input);
+        assert!(result.is_ok());
+
+        if let Ok(program) = result {
+            if let Some(Item::Predicate(pred)) = program.items.first() {
+                if let Some(Goal::RelationCall(call, _)) = pred.body.first() {
+                    if let RelationName::Qualified(qualified) = &call.name {
+                        assert!(matches!(qualified.path, QualifiedPath::Absolute(_)));
+                        assert_eq!(qualified.name, "solve");
+                        assert_eq!(qualified.path.segments(), &["solver"]);
+                    } else {
+                        panic!("Expected qualified relation name");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_global_namespace_path() {
+        let input = "rel test() { ::global::item(x) }";
+        let result = parse_str(input);
+        assert!(result.is_ok());
+
+        if let Ok(program) = result {
+            if let Some(Item::Predicate(pred)) = program.items.first() {
+                if let Some(Goal::RelationCall(call, _)) = pred.body.first() {
+                    if let RelationName::Qualified(qualified) = &call.name {
+                        assert!(matches!(qualified.path, QualifiedPath::Global(_)));
+                        assert_eq!(qualified.name, "item");
+                        assert_eq!(qualified.path.segments(), &["global"]);
+                    } else {
+                        panic!("Expected qualified relation name");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_super_path() {
+        let input = "rel test() { super::parent::function(x) }";
+        let result = parse_str(input);
+        assert!(result.is_ok());
+
+        if let Ok(program) = result {
+            if let Some(Item::Predicate(pred)) = program.items.first() {
+                if let Some(Goal::RelationCall(call, _)) = pred.body.first() {
+                    if let RelationName::Qualified(qualified) = &call.name {
+                        assert!(matches!(qualified.path, QualifiedPath::Super(0, _)));
+                        assert_eq!(qualified.name, "function");
+                        assert_eq!(qualified.path.segments(), &["parent"]);
+                    } else {
+                        panic!("Expected qualified relation name");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_self_path() {
+        let input = "rel test() { self::local::helper(x) }";
+        let result = parse_str(input);
+        assert!(result.is_ok());
+
+        if let Ok(program) = result {
+            if let Some(Item::Predicate(pred)) = program.items.first() {
+                if let Some(Goal::RelationCall(call, _)) = pred.body.first() {
+                    if let RelationName::Qualified(qualified) = &call.name {
+                        assert!(matches!(qualified.path, QualifiedPath::Self_(_)));
+                        assert_eq!(qualified.name, "helper");
+                        assert_eq!(qualified.path.segments(), &["local"]);
+                    } else {
+                        panic!("Expected qualified relation name");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod mod_declaration_tests {
+    use super::*;
+    use crate::interpreter::parser::ast::{Item, ModuleDeclaration};
+
+    #[test]
+    fn test_simple_mod_declaration() {
+        let input = "mod my_module;";
+        let result = VulcanParser::parse(Rule::mod_declaration, input);
+        assert!(result.is_ok());
+
+        let pair = result.unwrap().next().unwrap();
+        let mod_decl = build_mod_declaration(pair).unwrap();
+
+        assert_eq!(mod_decl.name, "my_module");
+        assert!(mod_decl.visibility == ast::Visibility::Private);
+    }
+
+    #[test]
+    fn test_pub_mod_declaration() {
+        let input = "pub mod utils;";
+        let result = VulcanParser::parse(Rule::mod_declaration, input);
+        assert!(result.is_ok());
+
+        let pair = result.unwrap().next().unwrap();
+        let mod_decl = build_mod_declaration(pair).unwrap();
+
+        assert_eq!(mod_decl.name, "utils");
+        assert!(mod_decl.visibility == ast::Visibility::Public);
+    }
+
+    #[test]
+    fn test_mod_declaration_in_program() {
+        let input = r#"
+            mod utils;
+            pub mod solver;
+            
+            rel test() {
+                succeed()
+            }
+        "#;
+
+        let result = VulcanParser::parse(Rule::program, input);
+        assert!(result.is_ok());
+
+        let pair = result.unwrap().next().unwrap();
+        let program = build_program(pair).unwrap();
+
+        assert_eq!(program.items.len(), 3);
+
+        // Check first module declaration
+        if let Item::ModuleDeclaration(mod_decl) = &program.items[0] {
+            assert_eq!(mod_decl.name, "utils");
+            assert!(mod_decl.visibility == ast::Visibility::Private);
+        } else {
+            panic!("Expected ModuleDeclaration");
+        }
+
+        // Check second module declaration
+        if let Item::ModuleDeclaration(mod_decl) = &program.items[1] {
+            assert_eq!(mod_decl.name, "solver");
+            assert!(mod_decl.visibility == ast::Visibility::Public);
+        } else {
+            panic!("Expected ModuleDeclaration");
+        }
+
+        // Check predicate
+        assert!(matches!(program.items[2], Item::Predicate(_)));
+    }
+
+    #[test]
+    fn test_mod_declaration_in_module() {
+        let input = r#"
+            mod parent {
+                mod child;
+                pub mod utils;
+                
+                rel helper() {
+                    succeed()
+                }
+            }
+        "#;
+
+        let result = VulcanParser::parse(Rule::program, input);
+        assert!(result.is_ok());
+
+        let pair = result.unwrap().next().unwrap();
+        let program = build_program(pair).unwrap();
+
+        assert_eq!(program.items.len(), 1);
+
+        if let Item::Module(module) = &program.items[0] {
+            assert_eq!(module.name, "parent");
+            assert_eq!(module.items.len(), 3);
+
+            // Check child module declaration
+            if let Item::ModuleDeclaration(mod_decl) = &module.items[0] {
+                assert_eq!(mod_decl.name, "child");
+                assert!(mod_decl.visibility == ast::Visibility::Private);
+            } else {
+                panic!("Expected ModuleDeclaration");
+            }
+
+            // Check utils module declaration
+            if let Item::ModuleDeclaration(mod_decl) = &module.items[1] {
+                assert_eq!(mod_decl.name, "utils");
+                assert!(mod_decl.visibility == ast::Visibility::Public);
+            } else {
+                panic!("Expected ModuleDeclaration");
+            }
+
+            // Check predicate
+            assert!(matches!(module.items[2], Item::Predicate(_)));
+        } else {
+            panic!("Expected Module");
+        }
+    }
+
+    #[test]
+    fn test_display_mod_declaration() {
+        let mod_decl = ModuleDeclaration {
+            visibility: ast::Visibility::Private,
+            name: "test_module".to_string(),
+            span: Span::dummy(),
+        };
+        assert_eq!(format!("{}", mod_decl), "mod test_module;");
+
+        let pub_mod_decl = ModuleDeclaration {
+            visibility: ast::Visibility::Public,
+            name: "public_module".to_string(),
+            span: Span::dummy(),
+        };
+        assert_eq!(format!("{}", pub_mod_decl), "pub mod public_module;");
+    }
+}
+
+// Add comprehensive module system tests
+#[cfg(test)]
+mod comprehensive_module_tests {
+    use super::*;
+
+    #[test]
+    fn test_visibility_modifiers() {
+        // Test all visibility modifier combinations
+        let test_cases = vec![
+            ("pub struct Foo {}", "pub"),
+            ("pub(crate) struct Foo {}", "pub(crate)"),
+            ("pub(super) struct Foo {}", "pub(super)"),
+            ("pub(self) struct Foo {}", "pub(self)"),
+            ("struct Foo {}", "private"),
+            ("pub rel test() {}", "pub rel"),
+            ("pub(crate) rel test() {}", "pub(crate) rel"),
+        ];
+
+        for (input, description) in test_cases {
+            let result = parse_str(input);
+            assert!(
+                result.is_ok(),
+                "Failed to parse {}: {:?}",
+                description,
+                result
+            );
+
+            let ast = result.unwrap();
+            assert!(!ast.items.is_empty(), "No items parsed for {}", description);
+
+            // Verify visibility is correctly set
+            match &ast.items[0] {
+                Item::Struct(s) => match description {
+                    "pub" => assert_eq!(s.visibility, ast::Visibility::Public),
+                    "pub(crate)" => assert_eq!(s.visibility, ast::Visibility::Crate),
+                    "pub(super)" => assert_eq!(s.visibility, ast::Visibility::Super),
+                    "pub(self)" => assert_eq!(s.visibility, ast::Visibility::SelfModule),
+                    "private" => assert_eq!(s.visibility, ast::Visibility::Private),
+                    _ => {}
+                },
+                Item::Predicate(p) => match description {
+                    "pub relation" => assert_eq!(p.visibility, ast::Visibility::Public),
+                    "pub(crate) relation" => assert_eq!(p.visibility, ast::Visibility::Crate),
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn test_module_declarations() {
+        let test_cases = vec![
+            ("mod foo;", "foo", ast::Visibility::Private),
+            ("pub mod bar;", "bar", ast::Visibility::Public),
+            ("pub(crate) mod baz;", "baz", ast::Visibility::Crate),
+        ];
+
+        for (input, expected_name, expected_vis) in test_cases {
+            let result = parse_str(input);
+            assert!(
+                result.is_ok(),
+                "Failed to parse module declaration: {}",
+                input
+            );
+
+            let ast = result.unwrap();
+            assert_eq!(ast.items.len(), 1);
+
+            match &ast.items[0] {
+                Item::ModuleDeclaration(decl) => {
+                    assert_eq!(decl.name, expected_name);
+                    assert_eq!(decl.visibility, expected_vis);
+                }
+                _ => panic!("Expected module declaration"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_qualified_paths_comprehensive() {
+        let test_cases = vec![
+            "::std::collections::HashMap", // Global absolute
+            "crate::my_module::Type",      // Crate relative
+            "super::parent::Item",         // Super path
+            "self::current::Thing",        // Self path
+            "std::vec::Vec",               // Standard library
+            "external_crate::Type",        // External crate
+            "local::path::Item",           // Relative path
+        ];
+
+        for path in test_cases {
+            let input = format!("rel test(x: {}) {{}}", path);
+            let result = parse_str(&input);
+            assert!(result.is_ok(), "Failed to parse qualified path: {}", path);
+        }
+    }
+
+    #[test]
+    fn test_use_statements_comprehensive() {
+        let test_cases = vec![
+            // Simple use statements
+            ("use std::vec::Vec;", "simple standard library"),
+            ("use crate::module::Type;", "simple crate relative"),
+            ("use super::parent::Item;", "simple super path"),
+            // Glob imports
+            ("use std::collections::*;", "glob standard library"),
+            ("use crate::types::*;", "glob crate relative"),
+            // List imports
+            ("use std::collections::{HashMap, HashSet};", "list import"),
+            ("use crate::types::{A, B, C};", "list crate types"),
+        ];
+
+        for (input, description) in test_cases {
+            let result = parse_str(input);
+            assert!(
+                result.is_ok(),
+                "Failed to parse use statement {}: {:?}",
+                description,
+                result
+            );
+
+            let ast = result.unwrap();
+            assert_eq!(
+                ast.items.len(),
+                1,
+                "Wrong number of items for {}",
+                description
+            );
+
+            match &ast.items[0] {
+                Item::Use(use_stmt) => match description {
+                    desc if desc.contains("simple") => {
+                        assert!(matches!(use_stmt.path, ast::UsePath::Simple(_, _)));
+                    }
+                    desc if desc.contains("glob") => {
+                        assert!(matches!(use_stmt.path, ast::UsePath::Glob(_)));
+                    }
+                    desc if desc.contains("list") => {
+                        assert!(matches!(use_stmt.path, ast::UsePath::List(_, _)));
+                    }
+                    _ => {}
+                },
+                _ => panic!("Expected use statement for {}", description),
+            }
+        }
+    }
+
+    #[test]
+    fn test_nested_modules() {
+        let input = r#"
+        pub mod outer {
+            pub struct OuterType {}
+            
+            pub mod inner {
+                pub rel inner_rel() {}
+            }
+            
+            mod private_inner {
+                rel private_rel() {}
+            }
+        }
+        "#;
+
+        let result = parse_str(input);
+        assert!(
+            result.is_ok(),
+            "Failed to parse nested modules: {:?}",
+            result
+        );
+
+        let ast = result.unwrap();
+        assert_eq!(ast.items.len(), 1);
+
+        match &ast.items[0] {
+            Item::Module(module) => {
+                assert_eq!(module.name, "outer");
+                assert_eq!(module.visibility, ast::Visibility::Public);
+                assert!(module.items.len() >= 3); // struct + 2 modules
+            }
+            _ => panic!("Expected module definition"),
+        }
+    }
+
+    #[test]
+    fn test_complex_program_with_all_features() {
+        let input = r#"
+        use std::collections::HashMap;
+        use crate::types::{TypeA, TypeB};
+        
+        pub mod my_module;
+        
+        pub struct Config {
+            pub name: String,
+            pub(crate) internal_id: i32,
+        }
+        
+        pub(crate) rel configure(config: Config) {}
+        
+        mod utils {
+            pub(super) rel helper() {}
+        }
+        "#;
+
+        let result = parse_str(input);
+        assert!(
+            result.is_ok(),
+            "Failed to parse complex program: {:?}",
+            result
+        );
+
+        let ast = result.unwrap();
+        assert!(ast.items.len() >= 5, "Should have multiple top-level items");
+
+        // Verify we have the expected item types
+        let mut use_count = 0;
+        let mut mod_decl_count = 0;
+        let mut struct_count = 0;
+        let mut relation_count = 0;
+        let mut mod_def_count = 0;
+
+        for item in &ast.items {
+            match item {
+                Item::Use(_) => use_count += 1,
+                Item::ModuleDeclaration(_) => mod_decl_count += 1,
+                Item::Struct(_) => struct_count += 1,
+                Item::Predicate(_) => relation_count += 1,
+                Item::Module(_) => mod_def_count += 1,
+                _ => {}
+            }
+        }
+
+        assert!(use_count >= 2, "Should have multiple use statements");
+        assert!(mod_decl_count >= 1, "Should have module declaration");
+        assert!(struct_count >= 1, "Should have struct definition");
+        assert!(relation_count >= 1, "Should have relation definition");
+        assert!(mod_def_count >= 1, "Should have module definition");
+    }
+
+    #[test]
+    fn test_field_visibility() {
+        let input = r#"
+        struct Example {
+            pub public_field: String,
+            pub(crate) crate_field: i32,
+            pub(super) super_field: bool,
+            private_field: f64,
+        }
+        "#;
+
+        let result = parse_str(input);
+        assert!(
+            result.is_ok(),
+            "Failed to parse struct with field visibility: {:?}",
+            result
+        );
+
+        let ast = result.unwrap();
+        assert_eq!(ast.items.len(), 1);
+
+        match &ast.items[0] {
+            Item::Struct(s) => match &s.kind {
+                ast::StructKind::Named(fields) => {
+                    assert_eq!(fields.len(), 4);
+
+                    assert_eq!(fields[0].visibility, ast::Visibility::Public);
+                    assert_eq!(fields[0].name, "public_field");
+
+                    assert_eq!(fields[1].visibility, ast::Visibility::Crate);
+                    assert_eq!(fields[1].name, "crate_field");
+
+                    assert_eq!(fields[2].visibility, ast::Visibility::Super);
+                    assert_eq!(fields[2].name, "super_field");
+
+                    assert_eq!(fields[3].visibility, ast::Visibility::Private);
+                    assert_eq!(fields[3].name, "private_field");
+                }
+                _ => panic!("Expected named struct"),
+            },
+            _ => panic!("Expected struct definition"),
+        }
+    }
+
+    #[test]
+    fn test_attribute_preservation() {
+        let input = r#"
+        @test(expected = [["hello"]])
+        pub rel test_with_attrs() {
+            eq("hello", "hello")
+        }
+        "#;
+
+        let result = parse_str(input);
+        assert!(
+            result.is_ok(),
+            "Failed to parse relation with attributes: {:?}",
+            result
+        );
+
+        let ast = result.unwrap();
+        assert_eq!(ast.items.len(), 1);
+
+        match &ast.items[0] {
+            Item::Predicate(p) => {
+                assert_eq!(p.visibility, ast::Visibility::Public);
+                assert!(!p.attributes.is_empty(), "Attributes should be preserved");
+                assert_eq!(p.name, "test_with_attrs");
+            }
+            _ => panic!("Expected predicate definition"),
         }
     }
 }

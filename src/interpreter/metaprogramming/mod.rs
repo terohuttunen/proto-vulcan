@@ -20,6 +20,7 @@ pub enum TypeAnnotation {
     String,
     Bool,
     Relation(usize), // New: relation type with arity (e.g., rel(2) for binary relation)
+    Custom(String),  // Custom type names (like qualified paths)
 }
 
 impl fmt::Display for TypeAnnotation {
@@ -29,6 +30,7 @@ impl fmt::Display for TypeAnnotation {
             TypeAnnotation::String => write!(f, "string"),
             TypeAnnotation::Bool => write!(f, "bool"),
             TypeAnnotation::Relation(arity) => write!(f, "rel({})", arity),
+            TypeAnnotation::Custom(name) => write!(f, "{}", name),
         }
     }
 }

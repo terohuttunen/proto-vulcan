@@ -1,6 +1,9 @@
+use super::import::{ImportContext, ImportError, ImportResolver, ImportResult, ModulePath};
 use super::parser::ast::{
-    Item, PredicateDefinition, PredicateKind, Program, StructDefinition, UsePath, UseStatement,
+    Item, ModuleDeclaration, PredicateDefinition, PredicateKind, Program, QualifiedName,
+    QualifiedPath, RelationName, StructDefinition, UsePath, UseStatement, Visibility,
 };
+use super::parser::parse_str;
 use super::runtime_value::{PredicateHandle, RuntimeValue};
 use super::InterpreterError;
 use crate::engine::Engine;
@@ -54,6 +57,8 @@ pub struct Environment<U: User, E: Engine<U>> {
     loading_modules: HashSet<String>,
     /// Relation registry for higher-order predicates (indexed by order of registration)
     relation_registry: Vec<RuntimeValue<U, E>>,
+    /// Enhanced import resolver for comprehensive glob imports
+    import_resolver: ImportResolver<U, E>,
 }
 
 impl<U: User, E: Engine<U>> Environment<U, E> {
@@ -69,6 +74,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             loaded_modules: HashMap::new(),
             loading_modules: HashSet::new(),
             relation_registry: Vec::new(),
+            import_resolver: ImportResolver::new(),
         }
     }
 
@@ -101,20 +107,25 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         // Special handling for std library
         if path_segments.first() == Some(&"std".to_string()) {
             // Try to find std library using the same logic as the interpreter
-            if let Ok(std_base_path) = Self::find_stdlib_path() {
-                if path_segments.len() == 1 {
-                    // "std" alone refers to std/mod.pv
-                    let std_path = std_base_path.join("mod.pv");
-                    if std_path.exists() {
-                        return Ok(std_path);
+            match Self::find_stdlib_path() {
+                Ok(std_base_path) => {
+                    if path_segments.len() == 1 {
+                        // "std" alone refers to std/mod.pv
+                        let std_path = std_base_path.join("mod.pv");
+                        if std_path.exists() {
+                            return Ok(std_path);
+                        }
+                    } else {
+                        // "std::list" refers to std/list.pv
+                        let std_path =
+                            std_base_path.join(format!("{}.pv", &path_segments[1..].join("/")));
+                        if std_path.exists() {
+                            return Ok(std_path);
+                        }
                     }
-                } else {
-                    // "std::list" refers to std/list.pv
-                    let std_path =
-                        std_base_path.join(format!("{}.pv", &path_segments[1..].join("/")));
-                    if std_path.exists() {
-                        return Ok(std_path);
-                    }
+                }
+                Err(_) => {
+                    // Continue to fallback
                 }
             }
 
@@ -211,8 +222,67 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         }
     }
 
+    /// Resolve a module declaration to a file path
+    /// Follows Rust's module resolution: looks for name.pv, then name/mod.pv
+    fn resolve_module_file_path(
+        &self,
+        module_name: &str,
+        current_file_path: Option<&Path>,
+    ) -> Result<PathBuf, InterpreterError> {
+        // Determine the base directory to search from
+        let base_dir = if let Some(current_path) = current_file_path {
+            if let Some(parent) = current_path.parent() {
+                parent.to_path_buf()
+            } else {
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+            }
+        } else {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        };
+
+        // Try name.pv first
+        let file_path = base_dir.join(format!("{}.pv", module_name));
+        if file_path.exists() {
+            return Ok(file_path);
+        }
+
+        // Try name/mod.pv
+        let mod_path = base_dir.join(module_name).join("mod.pv");
+        if mod_path.exists() {
+            return Ok(mod_path);
+        }
+
+        Err(InterpreterError::RuntimeError(format!(
+            "Cannot find module '{}': tried {} and {}",
+            module_name,
+            file_path.display(),
+            mod_path.display()
+        )))
+    }
+
+    /// Load a module from a module declaration (mod name;)
+    fn load_module_declaration(
+        &mut self,
+        mod_decl: &ModuleDeclaration,
+        current_file_path: Option<&Path>,
+        parent_module_name: &str,
+    ) -> Result<(), InterpreterError> {
+        // Calculate the full module path
+        let full_module_name = if parent_module_name == "global" {
+            mod_decl.name.clone()
+        } else {
+            format!("{}::{}", parent_module_name, mod_decl.name)
+        };
+
+        // Resolve the file path
+        let file_path = self.resolve_module_file_path(&mod_decl.name, current_file_path)?;
+
+        // Load the module
+        self.load_module_from_path(&file_path, &full_module_name)
+    }
+
     /// Load a module from a file path
-    fn load_module_from_path(
+    pub fn load_module_from_path(
         &mut self,
         path: &Path,
         module_name: &str,
@@ -248,12 +318,25 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         // Enter module scope
         self.scope_stack.push(module_name.to_string());
 
-        // Load module items
+        // Load module items in two phases to ensure proper import resolution
+        // Phase 1: Load all module declarations first (ensures sibling modules are available)
+        for item in &program.items {
+            match item {
+                Item::ModuleDeclaration(mod_decl) => {
+                    // Handle module declarations (mod name;) - load external file
+                    // Use the current file path for relative resolution
+                    self.load_module_declaration(&mod_decl, Some(path), module_name)?;
+                }
+                _ => {} // Process other items in phase 2
+            }
+        }
+
+        // Phase 2: Process all other items (imports can now resolve sibling modules)
         for item in program.items {
             match item {
                 Item::Predicate(rel) => {
                     let name = rel.name.clone();
-                    let is_public = rel.is_pub;
+                    let is_public = matches!(rel.visibility, Visibility::Public);
                     let value = RuntimeValue::Relation(rel);
 
                     if is_public {
@@ -274,7 +357,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                 }
                 Item::Struct(struct_def) => {
                     let name = struct_def.name.clone();
-                    let is_public = struct_def.is_pub;
+                    let is_public = matches!(struct_def.visibility, Visibility::Public);
 
                     if is_public {
                         module_info
@@ -295,8 +378,11 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                     self.load_module(nested_module)?;
                 }
                 Item::Use(use_stmt) => {
-                    // Handle use statements within modules
+                    // Handle use statements within modules - now sibling modules are loaded
                     self.load_use_statement(use_stmt)?;
+                }
+                Item::ModuleDeclaration(_) => {
+                    // Already processed in phase 1
                 }
                 Item::Impl(_) => {
                     // TODO: Handle impl blocks
@@ -331,6 +417,10 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             Item::Predicate(rel) => self.load_predicate(rel),
             Item::Struct(struct_def) => self.load_struct(struct_def),
             Item::Module(module) => self.load_module(module),
+            Item::ModuleDeclaration(mod_decl) => {
+                // Load external module file for mod declarations at top level
+                self.load_module_declaration(&mod_decl, None, "global")
+            }
             Item::Use(use_stmt) => self.load_use_statement(use_stmt),
             Item::Impl(_) => Ok(()), // TODO: Handle impl blocks
         }
@@ -453,13 +543,31 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     /// Load a use statement
     fn load_use_statement(&mut self, use_stmt: UseStatement) -> Result<(), InterpreterError> {
         match use_stmt.path {
-            UsePath::Simple(path_segments) => {
-                self.import_simple(path_segments)?;
+            UsePath::Simple(qualified_path, item) => {
+                let resolved_path = self.resolve_qualified_path(&qualified_path)?;
+                let full_path = if resolved_path.is_empty() {
+                    item
+                } else {
+                    format!("{}::{}", resolved_path, item)
+                };
+                self.import_simple(vec![full_path])?;
             }
-            UsePath::Glob(path_segments) => {
+            UsePath::Glob(qualified_path) => {
+                let resolved_path = self.resolve_qualified_path(&qualified_path)?;
+                let path_segments = if resolved_path.is_empty() {
+                    vec![]
+                } else {
+                    resolved_path.split("::").map(|s| s.to_string()).collect()
+                };
                 self.import_glob(path_segments)?;
             }
-            UsePath::List(path_segments, imports) => {
+            UsePath::List(qualified_path, imports) => {
+                let resolved_path = self.resolve_qualified_path(&qualified_path)?;
+                let path_segments = if resolved_path.is_empty() {
+                    vec![]
+                } else {
+                    resolved_path.split("::").map(|s| s.to_string()).collect()
+                };
                 self.import_selective(path_segments, imports)?;
             }
         }
@@ -472,15 +580,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             return Ok(());
         }
 
-        // Special handling for std library
-        if path_segments.len() == 1 && path_segments[0] == "std" {
-            return self.load_std_library();
-        }
-
-        // Special handling for std library modules
-        if path_segments.len() == 2 && path_segments[0] == "std" {
-            return self.load_std_module(&path_segments[1]);
-        }
+        // No special handling for std library - treat it like any other module
 
         // Regular module loading
         let module_name = path_segments.join("::");
@@ -500,27 +600,36 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             return Ok(());
         }
 
-        // Special handling for std library
-        if path_segments.len() == 1 && path_segments[0] == "std" {
-            return self.load_std_library();
-        }
-
-        // Regular module loading (including std library modules)
+        // First, ensure the module is loaded for import resolution
         let module_name = path_segments.join("::");
-        let module_path = self.resolve_module_path(&path_segments)?;
-        self.load_module_from_path(&module_path, &module_name)?;
 
-        // Import all public symbols from the module into global namespace
-        if let Some(module_info) = self.loaded_modules.get(&module_name) {
-            for (name, value) in &module_info.public_symbols {
-                self.globals.insert(name.clone(), value.clone());
-            }
-            for (name, struct_def) in &module_info.public_types {
-                self.types.insert(name.clone(), struct_def.clone());
-            }
+        // Only load if not already loaded
+        if !self.loaded_modules.contains_key(&module_name) {
+            let module_path = self.resolve_module_path(&path_segments)?;
+            self.load_module_from_path(&module_path, &module_name)?;
         }
 
-        Ok(())
+        // Then use the enhanced import system to handle glob imports with visibility checking
+        let target_path = QualifiedPath::Absolute(path_segments.clone());
+        let importing_path = ModulePath::from_string(self.current_scope());
+
+        match self.import_resolver.import_glob_enhanced(
+            &target_path,
+            importing_path,
+            &self.loaded_modules,
+            &self.globals,
+            &self.types,
+        ) {
+            Ok(result) => {
+                // Apply the result to maintain legacy behavior
+                self.apply_import_result(&result)?;
+                Ok(())
+            }
+            Err(e) => {
+                // No fallback - require proper import resolution
+                Err(InterpreterError::from(e))
+            }
+        }
     }
 
     /// Handle selective imports like "use std::{member, append}"
@@ -533,73 +642,48 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             return Ok(());
         }
 
-        // Special handling for std library modules
-        if path_segments.len() == 1 && path_segments[0] == "std" {
-            // For "use std::{member, append}" we need to load the list module
-            // and then import selective symbols
-            self.load_std_module("list")?;
-
-            // Import only the requested symbols from global scope
-            for (symbol_name, alias) in imports {
-                let import_name = alias.unwrap_or(symbol_name.clone());
-
-                if let Some(value) = self.globals.get(&symbol_name) {
-                    if import_name != symbol_name {
-                        self.globals.insert(import_name, value.clone());
-                    }
-                } else if let Some(struct_def) = self.types.get(&symbol_name) {
-                    if import_name != symbol_name {
-                        self.types.insert(import_name, struct_def.clone());
-                    }
-                } else {
-                    return Err(InterpreterError::UnknownRelation(format!(
-                        "Symbol '{}' not found in std library",
-                        symbol_name
-                    )));
-                }
-            }
-            return Ok(());
-        }
-
-        // Load the module first
+        // First, ensure the module is loaded for import resolution
         let module_name = path_segments.join("::");
-        let module_path = self.resolve_module_path(&path_segments)?;
-        self.load_module_from_path(&module_path, &module_name)?;
 
-        // Import only the requested symbols
-        if let Some(module_info) = self.loaded_modules.get(&module_name) {
-            for (symbol_name, alias) in imports {
-                let import_name = alias.unwrap_or(symbol_name.clone());
-
-                // Try to find the symbol in public symbols
-                if let Some(value) = module_info.public_symbols.get(&symbol_name) {
-                    self.globals.insert(import_name, value.clone());
-                } else if let Some(struct_def) = module_info.public_types.get(&symbol_name) {
-                    self.types.insert(import_name, struct_def.clone());
-                } else {
-                    return Err(InterpreterError::UnknownRelation(format!(
-                        "Symbol '{}' not found in module '{}'",
-                        symbol_name, module_name
-                    )));
-                }
-            }
+        // Only load if not already loaded
+        if !self.loaded_modules.contains_key(&module_name) {
+            let module_path = self.resolve_module_path(&path_segments)?;
+            self.load_module_from_path(&module_path, &module_name)?;
         }
+
+        // Then use the enhanced import system to handle selective imports with visibility checking
+        let target_path = QualifiedPath::Absolute(path_segments.clone());
+        let importing_path = ModulePath::from_string(self.current_scope());
+
+        match self.import_resolver.import_selective(
+            &target_path,
+            &imports,
+            importing_path,
+            &self.loaded_modules,
+            &self.globals,
+            &self.types,
+        ) {
+            Ok(result) => {
+                // Apply the result to maintain legacy behavior
+                self.apply_import_result(&result)?;
+                Ok(())
+            }
+            Err(e) => {
+                // No fallback - require proper import resolution
+                Err(InterpreterError::from(e))
+            }
+        }?;
 
         Ok(())
     }
 
     /// Load the entire standard library
     pub fn load_std_library(&mut self) -> Result<(), InterpreterError> {
-        // Load the std root module (which may be empty)
+        // Load the std root module only
+        // Submodules will be loaded on-demand via import statements
         let std_path = PathBuf::from("std/mod.pv");
         if std_path.exists() {
             self.load_module_from_path(&std_path, "std")?;
-        }
-
-        // Always load the core modules so they're available for import
-        // but don't automatically import them to global namespace
-        if PathBuf::from("std/list.pv").exists() {
-            self.load_module_from_path(&PathBuf::from("std/list.pv"), "std::list")?;
         }
 
         Ok(())
@@ -624,6 +708,106 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         }
 
         Ok(())
+    }
+
+    /// Enhanced glob import with full visibility support and comprehensive error handling
+    pub fn import_glob_enhanced(
+        &mut self,
+        target_path: &QualifiedPath,
+        importing_module_name: Option<String>,
+    ) -> Result<ImportResult<U, E>, InterpreterError> {
+        let importing_module = importing_module_name
+            .as_deref()
+            .unwrap_or(self.current_scope())
+            .to_string();
+
+        let importing_path = ModulePath::from_string(&importing_module);
+
+        // Use the enhanced import resolver
+        let result = self
+            .import_resolver
+            .import_glob_enhanced(
+                target_path,
+                importing_path,
+                &self.loaded_modules,
+                &self.globals,
+                &self.types,
+            )
+            .map_err(InterpreterError::from)?;
+
+        // Apply the imported symbols to the environment
+        self.apply_import_result(&result)?;
+
+        Ok(result)
+    }
+
+    /// Enhanced selective import with visibility checking
+    pub fn import_selective_enhanced(
+        &mut self,
+        target_path: &QualifiedPath,
+        requested_symbols: &[(String, Option<String>)],
+        importing_module_name: Option<String>,
+    ) -> Result<ImportResult<U, E>, InterpreterError> {
+        let importing_module = importing_module_name
+            .as_deref()
+            .unwrap_or(self.current_scope())
+            .to_string();
+
+        let importing_path = ModulePath::from_string(&importing_module);
+
+        // Use the enhanced import resolver
+        let result = self
+            .import_resolver
+            .import_selective(
+                target_path,
+                requested_symbols,
+                importing_path,
+                &self.loaded_modules,
+                &self.globals,
+                &self.types,
+            )
+            .map_err(InterpreterError::from)?;
+
+        // Apply the imported symbols to the environment
+        self.apply_import_result(&result)?;
+
+        Ok(result)
+    }
+
+    /// Apply an import result to the environment
+    fn apply_import_result(&mut self, result: &ImportResult<U, E>) -> Result<(), InterpreterError> {
+        // Import values into global namespace
+        for (name, value) in &result.imported_symbols.values {
+            self.globals.insert(name.clone(), value.clone());
+        }
+
+        // Import types into type namespace
+        for (name, type_def) in &result.imported_symbols.types {
+            self.types.insert(name.clone(), type_def.clone());
+        }
+
+        // Log warnings (could be enhanced to use a proper logging system)
+        for warning in &result.warnings {
+            eprintln!("Import warning: {}", warning.message);
+        }
+
+        Ok(())
+    }
+
+    /// Get accessibility of symbols from a specific module
+    pub fn get_accessible_symbols(
+        &self,
+        module_path: &str,
+        importing_context: Option<&str>,
+    ) -> Result<super::import::AccessibleSymbols<U, E>, InterpreterError> {
+        // For now, return empty accessible symbols until we expose the visibility checker properly
+        // TODO: Add a public method to ImportResolver to get accessible symbols
+        Ok(super::import::AccessibleSymbols::new())
+    }
+
+    /// Get import statistics for debugging and monitoring
+    pub fn get_import_stats(&self) -> super::import::resolver::ImportStats {
+        self.import_resolver.get_import_stats()
     }
 
     /// Look up a symbol in the current scope
@@ -718,6 +902,123 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         self.scope_stack.last().unwrap()
     }
 
+    /// Resolve a qualified path to an actual module path string
+    pub fn resolve_qualified_path(&self, path: &QualifiedPath) -> Result<String, InterpreterError> {
+        match path {
+            QualifiedPath::Global(segments) => {
+                // Global paths start from the namespace root
+                // For now, treat as relative from crate root
+                Ok(segments.join("::"))
+            }
+            QualifiedPath::Absolute(segments) => {
+                // Absolute paths start from crate root
+                Ok(segments.join("::"))
+            }
+            QualifiedPath::Relative(segments) => {
+                // Relative paths are relative to current module
+                if segments.is_empty() {
+                    Ok(self.current_scope().to_string())
+                } else {
+                    let current = self.current_scope();
+                    if current == "global" {
+                        Ok(segments.join("::"))
+                    } else {
+                        Ok(format!("{}::{}", current, segments.join("::")))
+                    }
+                }
+            }
+            QualifiedPath::Super(levels, segments) => {
+                // Super paths go up from current module
+                let current_parts: Vec<&str> = self.current_scope().split("::").collect();
+                let levels_to_go_up = *levels + 1; // +1 because super means parent
+
+                if levels_to_go_up > current_parts.len() {
+                    return Err(InterpreterError::RuntimeError(
+                        "Cannot go beyond crate root with super::".to_string(),
+                    ));
+                }
+
+                let target_depth = current_parts.len() - levels_to_go_up;
+                let mut target_parts = current_parts[..target_depth].to_vec();
+                target_parts.extend(segments.iter().map(|s| s.as_str()));
+
+                Ok(target_parts.join("::"))
+            }
+            QualifiedPath::Self_(segments) => {
+                // Self paths are relative to current module
+                let current = self.current_scope();
+                if segments.is_empty() {
+                    Ok(current.to_string())
+                } else {
+                    Ok(format!("{}::{}", current, segments.join("::")))
+                }
+            }
+
+            QualifiedPath::External(crate_name, segments) => {
+                // External crate paths
+                if segments.is_empty() {
+                    Ok(crate_name.clone())
+                } else {
+                    Ok(format!("{}::{}", crate_name, segments.join("::")))
+                }
+            }
+        }
+    }
+
+    /// Look up a symbol using a qualified name
+    pub fn lookup_qualified_name(
+        &self,
+        qualified_name: &QualifiedName,
+    ) -> Result<Option<&RuntimeValue<U, E>>, InterpreterError> {
+        let module_path = self.resolve_qualified_path(&qualified_name.path)?;
+        Ok(self.lookup_symbol_in_module(&qualified_name.name, &module_path))
+    }
+
+    /// Look up a symbol in a specific module
+    pub fn lookup_symbol_in_module(
+        &self,
+        symbol_name: &str,
+        module_path: &str,
+    ) -> Option<&RuntimeValue<U, E>> {
+        // Check loaded modules first (new system)
+        if let Some(module_info) = self.loaded_modules.get(module_path) {
+            // Check public symbols first
+            if let Some(value) = module_info.public_symbols.get(symbol_name) {
+                return Some(value);
+            }
+
+            // If we're in the same module, check private symbols too
+            if self.current_scope() == module_path {
+                if let Some(value) = module_info.private_symbols.get(symbol_name) {
+                    return Some(value);
+                }
+            }
+        }
+
+        // Fallback to old module system
+        if let Some(module_symbols) = self.modules.get(module_path) {
+            return module_symbols.get(symbol_name);
+        }
+
+        // If it's the global scope, check globals
+        if module_path == "global" || module_path.is_empty() {
+            return self.globals.get(symbol_name);
+        }
+
+        None
+    }
+
+    /// Look up a relation by name (handles both simple and qualified names)
+    pub fn lookup_relation(
+        &self,
+        relation_name: &RelationName,
+    ) -> Result<Option<&RuntimeValue<U, E>>, InterpreterError> {
+        match relation_name {
+            RelationName::Simple(name) => Ok(self.lookup(name)),
+            RelationName::Qualified(qualified) => self.lookup_qualified_name(qualified),
+        }
+    }
+
     /// Get all relations in the current environment
     pub fn relations(&self) -> HashMap<String, &RuntimeValue<U, E>> {
         let mut relations = HashMap::new();
@@ -792,7 +1093,7 @@ mod tests {
 
         let relation = PredicateDefinition {
             span: Span::dummy(),
-            is_pub: false,
+            visibility: Visibility::Private,
             predicate_kind: PredicateKind::Relation,
             attributes: vec![],
             name: "test_rel".to_string(),
@@ -815,17 +1116,17 @@ mod tests {
         let mut env = TestEnv::new();
 
         let struct_def = StructDefinition {
-            is_pub: false,
+            visibility: Visibility::Private,
             name: "Point".to_string(),
             kind: StructKind::Named(vec![
                 NamedField {
-                    is_pub: false,
+                    visibility: Visibility::Private,
                     name: "x".to_string(),
                     type_name: "i32".to_string(),
                     span: Span::dummy(),
                 },
                 NamedField {
-                    is_pub: false,
+                    visibility: Visibility::Private,
                     name: "y".to_string(),
                     type_name: "i32".to_string(),
                     span: Span::dummy(),
@@ -845,11 +1146,12 @@ mod tests {
         let mut env = TestEnv::new();
 
         let module = ModuleDefinition {
+            visibility: Visibility::Private,
             name: "test_module".to_string(),
             search_strategy: None,
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
-                is_pub: false,
+                visibility: Visibility::Private,
                 predicate_kind: PredicateKind::Relation,
                 attributes: vec![],
                 name: "module_rel".to_string(),
@@ -878,5 +1180,265 @@ mod tests {
         let env = TestEnv::new();
         let var: LTerm<DefaultUser, DefaultEngine<DefaultUser>> = env.fresh_var("x");
         assert!(var.is_var());
+    }
+}
+
+#[cfg(test)]
+mod qualified_path_resolution_tests {
+    use super::*;
+    use crate::engine::DefaultEngine;
+    use crate::interpreter::parser::ast::{
+        PredicateDefinition, PredicateKind, QualifiedName, QualifiedPath, RelationName,
+    };
+    use crate::user::DefaultUser;
+
+    fn create_test_environment() -> Environment<DefaultUser, DefaultEngine<DefaultUser>> {
+        let mut env = Environment::new();
+
+        // Add some test modules to simulate a module hierarchy
+        // Set current scope to be in solver::clpfd module
+        env.scope_stack = vec!["global".to_string(), "solver::clpfd".to_string()];
+
+        // Add some test relations
+        let test_relation = RuntimeValue::Relation(PredicateDefinition {
+            visibility: Visibility::Public,
+            predicate_kind: PredicateKind::Relation,
+            attributes: vec![],
+            name: "test_solve".to_string(),
+            parameters: vec![],
+            search_strategy: None,
+            body: vec![],
+            span: crate::interpreter::parser::ast::Span::dummy(),
+        });
+
+        env.globals
+            .insert("global_relation".to_string(), test_relation.clone());
+
+        // Create test module info
+        let mut module_info = ModuleInfo::new(std::path::PathBuf::from("std/list.pv"));
+        module_info
+            .public_symbols
+            .insert("member".to_string(), test_relation.clone());
+        module_info
+            .public_symbols
+            .insert("append".to_string(), test_relation.clone());
+        env.loaded_modules
+            .insert("std::list".to_string(), module_info);
+
+        let mut solver_module = ModuleInfo::new(std::path::PathBuf::from("solver/mod.pv"));
+        solver_module
+            .public_symbols
+            .insert("solve".to_string(), test_relation.clone());
+        env.loaded_modules
+            .insert("solver".to_string(), solver_module);
+
+        env
+    }
+
+    #[test]
+    fn test_resolve_absolute_path() {
+        let env = create_test_environment();
+        let path = QualifiedPath::Absolute(vec!["solver".to_string(), "constraint".to_string()]);
+        let result = env.resolve_qualified_path(&path).unwrap();
+        assert_eq!(result, "solver::constraint");
+    }
+
+    #[test]
+    fn test_resolve_relative_path() {
+        let env = create_test_environment();
+        let path = QualifiedPath::Relative(vec!["constraint".to_string()]);
+        let result = env.resolve_qualified_path(&path).unwrap();
+        assert_eq!(result, "solver::clpfd::constraint");
+    }
+
+    #[test]
+    fn test_resolve_super_path() {
+        let env = create_test_environment();
+        let path = QualifiedPath::Super(0, vec!["other".to_string()]);
+        let result = env.resolve_qualified_path(&path).unwrap();
+        assert_eq!(result, "solver::other");
+    }
+
+    #[test]
+    fn test_resolve_self_path() {
+        let env = create_test_environment();
+        let path = QualifiedPath::Self_(vec!["helper".to_string()]);
+        let result = env.resolve_qualified_path(&path).unwrap();
+        assert_eq!(result, "solver::clpfd::helper");
+    }
+
+    #[test]
+    fn test_resolve_std_path() {
+        let env = create_test_environment();
+        let path = QualifiedPath::External(
+            "std".to_string(),
+            vec!["collections".to_string(), "list".to_string()],
+        );
+        let result = env.resolve_qualified_path(&path).unwrap();
+        assert_eq!(result, "std::collections::list");
+    }
+
+    #[test]
+    fn test_resolve_global_path() {
+        let env = create_test_environment();
+        let path = QualifiedPath::Global(vec!["root".to_string(), "module".to_string()]);
+        let result = env.resolve_qualified_path(&path).unwrap();
+        assert_eq!(result, "root::module");
+    }
+
+    #[test]
+    fn test_resolve_external_path() {
+        let env = create_test_environment();
+        let path =
+            QualifiedPath::External("external_crate".to_string(), vec!["module".to_string()]);
+        let result = env.resolve_qualified_path(&path).unwrap();
+        assert_eq!(result, "external_crate::module");
+    }
+
+    #[test]
+    fn test_lookup_qualified_name() {
+        let env = create_test_environment();
+        let qualified_name = QualifiedName::new(
+            QualifiedPath::External("std".to_string(), vec!["list".to_string()]),
+            "member".to_string(),
+        );
+        let result = env.lookup_qualified_name(&qualified_name).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_lookup_simple_relation_name() {
+        let env = create_test_environment();
+        let relation_name = RelationName::Simple("global_relation".to_string());
+        let result = env.lookup_relation(&relation_name).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_lookup_qualified_relation_name() {
+        let env = create_test_environment();
+        let qualified_name = QualifiedName::new(
+            QualifiedPath::External("std".to_string(), vec!["list".to_string()]),
+            "member".to_string(),
+        );
+        let relation_name = RelationName::Qualified(qualified_name);
+        let result = env.lookup_relation(&relation_name).unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_lookup_nonexistent_qualified_name() {
+        let env = create_test_environment();
+        let qualified_name = QualifiedName::new(
+            QualifiedPath::External("std".to_string(), vec!["nonexistent".to_string()]),
+            "missing".to_string(),
+        );
+        let result = env.lookup_qualified_name(&qualified_name).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_super_path_too_deep() {
+        let env = create_test_environment();
+        // Current scope is "solver::clpfd" which has 2 parts
+        // Super(2, _) would try to go up 3 levels (2 + 1), which is beyond the root
+        let path = QualifiedPath::Super(2, vec!["unreachable".to_string()]);
+        let result = env.resolve_qualified_path(&path);
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod module_file_resolution_tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    fn create_test_environment(
+    ) -> Environment<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>
+    {
+        Environment::new()
+    }
+
+    #[test]
+    fn test_resolve_module_file_path_simple() {
+        let env = create_test_environment();
+
+        // Create a temporary directory and file
+        let temp_dir = TempDir::new().unwrap();
+        let module_file = temp_dir.path().join("test_module.pv");
+        fs::write(&module_file, "rel test() { succeed() }").unwrap();
+
+        // Create a dummy file path in the temp directory to represent current file
+        let current_file = temp_dir.path().join("main.pv");
+
+        // Test resolution from the temp directory
+        let result = env.resolve_module_file_path("test_module", Some(&current_file));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), module_file);
+    }
+
+    #[test]
+    fn test_resolve_module_file_path_with_mod_pv() {
+        let env = create_test_environment();
+
+        // Create a temporary directory structure
+        let temp_dir = TempDir::new().unwrap();
+        let module_dir = temp_dir.path().join("test_module");
+        fs::create_dir(&module_dir).unwrap();
+        let mod_file = module_dir.join("mod.pv");
+        fs::write(&mod_file, "rel test() { succeed() }").unwrap();
+
+        // Create a dummy file path in the temp directory to represent current file
+        let current_file = temp_dir.path().join("main.pv");
+
+        // Test resolution - should find test_module/mod.pv
+        let result = env.resolve_module_file_path("test_module", Some(&current_file));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), mod_file);
+    }
+
+    #[test]
+    fn test_resolve_module_file_path_precedence() {
+        let env = create_test_environment();
+
+        // Create both test_module.pv and test_module/mod.pv
+        let temp_dir = TempDir::new().unwrap();
+        let direct_file = temp_dir.path().join("test_module.pv");
+        fs::write(&direct_file, "rel direct() { succeed() }").unwrap();
+
+        let module_dir = temp_dir.path().join("test_module");
+        fs::create_dir(&module_dir).unwrap();
+        let mod_file = module_dir.join("mod.pv");
+        fs::write(&mod_file, "rel nested() { succeed() }").unwrap();
+
+        // Create a dummy file path in the temp directory to represent current file
+        let current_file = temp_dir.path().join("main.pv");
+
+        // Should prefer the direct .pv file over mod.pv
+        let result = env.resolve_module_file_path("test_module", Some(&current_file));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), direct_file);
+    }
+
+    #[test]
+    fn test_resolve_module_file_path_not_found() {
+        let env = create_test_environment();
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a dummy file path in the temp directory to represent current file
+        let current_file = temp_dir.path().join("main.pv");
+
+        // Test with non-existent module
+        let result = env.resolve_module_file_path("nonexistent", Some(&current_file));
+        assert!(result.is_err());
+
+        if let Err(InterpreterError::RuntimeError(msg)) = result {
+            assert!(msg.contains("Cannot find module 'nonexistent'"));
+        } else {
+            panic!("Expected RuntimeError");
+        }
     }
 }

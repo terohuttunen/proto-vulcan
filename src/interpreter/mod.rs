@@ -69,6 +69,7 @@ pub fn validate_main_relation(rel_def: &ast::PredicateDefinition) -> Result<(), 
                 metaprogramming::TypeAnnotation::String => "string".to_string(),
                 metaprogramming::TypeAnnotation::Bool => "bool".to_string(),
                 metaprogramming::TypeAnnotation::Relation(arity) => format!("rel({})", arity),
+                metaprogramming::TypeAnnotation::Custom(name) => name.clone(),
             };
 
             return Err(format!(
@@ -327,27 +328,9 @@ where
 
     /// Load the standard library.
     pub fn load_stdlib(&mut self) -> Result<(), InterpreterError> {
-        // Try to find standard library relative to executable first
-        let std_path = Self::find_stdlib_path()?;
-
-        let mod_file = std_path.join("mod.pv");
-        if !mod_file.exists() {
-            return Err(InterpreterError::IoError(format!(
-                "Standard library entrypoint not found at: {}",
-                mod_file.display()
-            )));
-        }
-
-        let source =
-            fs::read_to_string(&mod_file).map_err(|e| InterpreterError::IoError(e.to_string()))?;
-        let program =
-            parser::parse_str(&source).map_err(|e| InterpreterError::ParseError(e.to_string()))?;
-
+        // Use the environment's load_std_library method
         let mut env = self.environment.borrow_mut();
-        env.set_base_path(std_path);
-        let result = env.load_program(program);
-        env.set_base_path(PathBuf::new());
-        result
+        env.load_std_library()
     }
 
     /// Find the standard library path by trying different locations
@@ -537,18 +520,18 @@ mod tests {
                 // Struct definition
                 Item::Struct(StructDefinition {
                     span: Default::default(),
-                    is_pub: true,
+                    visibility: ast::Visibility::Public,
                     name: "Point".to_string(),
                     kind: StructKind::Named(vec![
                         NamedField {
                             span: Default::default(),
-                            is_pub: true,
+                            visibility: ast::Visibility::Public,
                             name: "x".to_string(),
                             type_name: "i32".to_string(),
                         },
                         NamedField {
                             span: Default::default(),
-                            is_pub: true,
+                            visibility: ast::Visibility::Public,
                             name: "y".to_string(),
                             type_name: "i32".to_string(),
                         },
@@ -557,7 +540,7 @@ mod tests {
                 // Relation definition
                 Item::Predicate(PredicateDefinition {
                     span: Default::default(),
-                    is_pub: false,
+                    visibility: ast::Visibility::Private,
                     predicate_kind: PredicateKind::Relation,
                     attributes: vec![],
                     name: "distance".to_string(),
@@ -584,12 +567,13 @@ mod tests {
                 }),
                 // Module definition
                 Item::Module(ModuleDefinition {
+                    visibility: ast::Visibility::Public,
                     span: Default::default(),
                     name: "geometry".to_string(),
                     search_strategy: None,
                     items: vec![Item::Predicate(PredicateDefinition {
                         span: Default::default(),
-                        is_pub: true,
+                        visibility: ast::Visibility::Public,
                         predicate_kind: PredicateKind::Relation,
                         attributes: vec![],
                         name: "area".to_string(),

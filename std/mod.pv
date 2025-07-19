@@ -1,9 +1,6 @@
 // Standard Library for Proto-Vulcan
 // This module provides common relations for list processing, logic operations, and utilities
 
-// The std root namespace should be minimal and only contain core functionality
-// Specific modules like list require explicit imports
-
-// Example: if we want to re-export specific functions, we can use:
-// use list::{member, append};
-// Or for all functions: use list::*;
+// Declare submodules
+pub mod list;
+pub mod higher_order;

@@ -22,17 +22,58 @@ pattern_arrow = @{ "=>" }
 // =============================================================================
 
 program = {
-    SOI ~ (use_statement | mod_definition | struct_definition | impl_block | predicate_definition)* ~ EOI
+    SOI ~ (use_statement | mod_declaration | struct_definition | impl_block | predicate_definition)* ~ EOI
 }
 
-mod_definition = {
-    "mod" ~ ident ~ search_strategy? ~ "{" ~
-        (use_statement | mod_definition | struct_definition | impl_block | predicate_definition)*
+// Module declarations
+mod_declaration = {
+    mod_declaration_body | mod_declaration_simple
+}
+
+mod_declaration_body = {
+    visibility? ~ mod_keyword ~ ident ~ search_strategy? ~ "{" ~
+        (use_statement | mod_declaration | struct_definition | impl_block | predicate_definition)*
     ~ "}"
 }
 
+mod_declaration_simple = {
+    visibility? ~ mod_keyword ~ ident ~ ";"
+}
+
+// Visibility system
+visibility = {
+    pub_keyword ~ ("(" ~ visibility_scope ~ ")")?
+}
+
+visibility_scope = {
+    crate_keyword | super_keyword | self_keyword | qualified_path
+}
+
+// Path system for qualified names (ordered from most specific to most general)
+qualified_path = {
+    absolute_path | crate_path | super_path | self_path | relative_path | external_path
+}
+
+absolute_path = { path_sep ~ simple_segments }
+crate_path = { crate_keyword ~ (path_sep ~ simple_segments)? }
+super_path = { super_keyword ~ (path_sep ~ simple_segments)? }
+self_path = { self_keyword ~ (path_sep ~ simple_segments)? }
+external_path = { ident ~ path_sep ~ simple_segments }
+relative_path = { simple_segments }
+
+path_sep = @{ "::" }
+simple_segments = { ident ~ (path_sep ~ ident)* }
+
+// Keywords
+crate_keyword = @{ "crate" }
+super_keyword = @{ "super" }
+self_keyword = @{ "self" }
+mod_keyword = @{ "mod" }
+use_keyword = @{ "use" }
+struct_keyword = @{ "struct" }
+
 struct_definition = {
-    pub_keyword? ~ "struct" ~ type_name ~ (tuple_struct_def | named_struct_def)
+    visibility? ~ struct_keyword ~ type_name ~ (tuple_struct_def | named_struct_def)
 }
 
 tuple_struct_def = {
@@ -43,7 +84,7 @@ named_struct_def = {
     "{" ~ (named_field ~ ("," ~ named_field)*)? ~ ","? ~ "}"
 }
 
-named_field = { pub_keyword? ~ ident ~ ":" ~ type_name }
+named_field = { visibility? ~ ident ~ ":" ~ type_name }
 
 impl_block = {
     "impl" ~ type_name ~ "{" ~
@@ -55,10 +96,18 @@ impl_block = {
 // Imports
 // =============================================================================
 
-use_statement = { "use" ~ use_path ~ ";" }
+use_statement = { use_keyword ~ use_path ~ ";" }
 
 use_path = {
-    path_segment ~ ("::" ~ (path_segment | glob | list_import))*
+    use_path_glob | use_path_list | use_path_simple
+}
+
+use_path_simple = { use_path_base }
+use_path_glob = { use_path_base ~ path_sep ~ glob }
+use_path_list = { use_path_base ~ path_sep ~ list_import }
+
+use_path_base = {
+    qualified_path
 }
 
 path_segment = { ident }
@@ -71,18 +120,18 @@ import_item = { ident ~ ("as" ~ ident)? }
 // =============================================================================
 
 predicate_definition = {
-    attribute* ~ pub_keyword? ~ predicate_keyword ~ ident ~ "(" ~ (parameter ~ ("," ~ parameter)*)? ~ ","? ~ ")" ~ search_strategy? ~ "{" ~
+    attribute* ~ visibility? ~ predicate_keyword ~ ident ~ "(" ~ (parameter ~ ("," ~ parameter)*)? ~ ","? ~ ")" ~ search_strategy? ~ "{" ~
         goal_body
     ~ "}"
 }
 
-predicate_keyword = { "macro" | "rel" }
+predicate_keyword = @{ "macro" | "rel" }
 
 parameter = { ident ~ (":" ~ meta_type_annotation)? }
 meta_type_annotation = { relation_type | "int" | "string" | "bool" | type_name }
 relation_type = { "rel" ~ "(" ~ number_literal ~ ")" }
-type_name = { ident }
-pub_keyword = { "pub" }
+type_name = { qualified_path | ident }
+pub_keyword = @{ "pub" }
 attribute = { "@" ~ ident ~ ("(" ~ attribute_args? ~ ")")? }
 attribute_args = { attribute_arg ~ ("," ~ attribute_arg)* ~ ","? }
 attribute_arg = { named_attribute_arg | flag_attribute_arg }
@@ -215,7 +264,7 @@ parenthesized_goal = { "(" ~ goal_body ~ ")" }
 equality_goal = { term ~ equality_op ~ term }
 disequality_goal = { term ~ inequality_op ~ term }
 method_call = { term ~ "." ~ ident ~ "(" ~ (term ~ ("," ~ term)*)? ~ ")" }
-relation_call = { path ~ "(" ~ (call_argument ~ ("," ~ call_argument)*)? ~ ","? ~ ")" }
+relation_call = { qualified_path ~ "(" ~ (call_argument ~ ("," ~ call_argument)*)? ~ ","? ~ ")" }
 
 // =============================================================================
 // Terms and Patterns
@@ -233,12 +282,14 @@ term = {
     named_struct_construction |
     compound_construction |
     parenthesized_term |
+    compound_construction_no_parens |
     path_term |
     variable
 }
 
 // Compound term construction (e.g., Some(42), Node(left, right))
-compound_construction = { path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
+compound_construction = { qualified_path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
+compound_construction_no_parens = { qualified_path }
 
 parenthesized_term = { "(" ~ term ~ ")" }
 
@@ -264,13 +315,13 @@ named_struct_pattern = {
 }
 field_pattern = { ident ~ ":" ~ pattern }
 
-path = @{ ident ~ ("::" ~ ident)* }
-compound_pattern_with_parens = { path ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ","? ~ ")" }
-compound_pattern_no_parens = @{ ident ~ ("::" ~ ident)+ }
+// Use unified qualified_path system for all path contexts
+compound_pattern_with_parens = { qualified_path ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ","? ~ ")" }
+compound_pattern_no_parens = { qualified_path }
 
 // -- Term/Pattern Components --
 literal = { boolean_literal | number_literal | string_literal | char_literal }
-path_term = @{ ident ~ ("::" ~ ident)+ }
+path_term = { qualified_path }
 variable = @{ ident }
 list_construction = { "[" ~ term_list? ~ "]" }
 term_list = { term ~ ("," ~ term)* ~ term_tail? }

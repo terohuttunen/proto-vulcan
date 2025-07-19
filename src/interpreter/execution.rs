@@ -330,9 +330,9 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             AstGoal::RelationCall(call, _) => {
                 // Check if the relation exists (either regular relation or relation handle)
                 let env = self.environment.borrow();
-                let rel_val = env
-                    .lookup(&call.name)
-                    .ok_or_else(|| InterpreterError::UnknownRelation(call.name.clone()))?;
+                let rel_val = env.lookup_relation(&call.name)?.ok_or_else(|| {
+                    InterpreterError::UnknownRelation(call.name.name().to_string())
+                })?;
 
                 // Validate that it's actually a callable relation
                 match rel_val {
@@ -667,7 +667,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         call: &RelationCall,
     ) -> Result<Goal<U, E>, InterpreterError> {
         // First check if the relation name refers to a variable containing a relation reference
-        if let Some(var_term) = self.lookup_var(&call.name) {
+        if let Some(var_term) = self.lookup_var(call.name.name()) {
             if var_term.is_relation_ref() {
                 // The variable contains a relation reference - resolve it from the registry
                 if let Some(registry_index) = var_term.get_relation_ref() {
@@ -702,9 +702,9 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         let rel_val = self
             .environment
             .borrow()
-            .lookup(&call.name)
+            .lookup_relation(&call.name)?
             .cloned()
-            .ok_or_else(|| InterpreterError::UnknownRelation(call.name.clone()))?;
+            .ok_or_else(|| InterpreterError::UnknownRelation(call.name.name().to_string()))?;
 
         // Check if this is a macro predicate - if so, handle call arguments directly
         if let RuntimeValue::Relation(ref rel_def) = rel_val {
@@ -723,7 +723,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             arg_terms.push(self.ast_call_argument_to_runtime(arg)?);
         }
 
-        self.handle_relation_value(rel_val, call.name.clone(), arg_terms)
+        self.handle_relation_value(rel_val, call.name.name().to_string(), arg_terms)
     }
 
     fn handle_relation_value(
@@ -1067,6 +1067,10 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                         // Relational parameters are not bound as meta variables - they're handled normally
                         // They should have been bound during the regular parameter binding process
                     }
+                    TypeAnnotation::Custom(_) => {
+                        // Custom type parameters are not bound as meta variables - they're handled normally
+                        // They should have been bound during the regular parameter binding process
+                    }
                 }
             }
             // Untyped parameters are also handled normally, not as meta variables
@@ -1118,7 +1122,15 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         for (param, arg) in rel_def.parameters.iter().zip(args.iter()) {
             match (&param.type_annotation, arg) {
                 // Typed non-relational parameters
-                (Some(TypeAnnotation::Int | TypeAnnotation::String | TypeAnnotation::Bool), _) => {
+                (
+                    Some(
+                        TypeAnnotation::Int
+                        | TypeAnnotation::String
+                        | TypeAnnotation::Bool
+                        | TypeAnnotation::Custom(_),
+                    ),
+                    _,
+                ) => {
                     // For non-relational typed parameters, bind as meta variables for template expansion
                     let meta_value = match arg {
                         super::parser::ast::CallArgument::Term(term) => {
@@ -1260,7 +1272,10 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             // Now handle template expansion context binding for typed parameters
             if let Some(type_annotation) = &param.type_annotation {
                 match type_annotation {
-                    TypeAnnotation::Int | TypeAnnotation::String | TypeAnnotation::Bool => {
+                    TypeAnnotation::Int
+                    | TypeAnnotation::String
+                    | TypeAnnotation::Bool
+                    | TypeAnnotation::Custom(_) => {
                         // Only bind meta variables (non-relational) for template expansion
                         // Do NOT convert LTerms to meta values - maintain strict separation
                         if let Some(meta_value) = self.lookup_meta_var(&param.name) {

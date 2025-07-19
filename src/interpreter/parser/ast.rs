@@ -1,6 +1,155 @@
 use crate::interpreter::metaprogramming::{MetaExpression, MetaStatement, TypeAnnotation};
 use std::fmt::{self, Display};
 
+/// Represents a qualified path for module resolution
+#[derive(Debug, Clone, PartialEq)]
+pub enum QualifiedPath {
+    /// Global namespace root: ::module::item  
+    Global(Vec<String>),
+    /// Absolute path from crate root: crate::module::item
+    Absolute(Vec<String>),
+    /// Relative path: module::item
+    Relative(Vec<String>),
+    /// Parent module path: super::module::item (levels, segments)
+    Super(usize, Vec<String>),
+    /// Current module path: self::module::item
+    Self_(Vec<String>),
+    /// External crate path: crate_name::module::item
+    External(String, Vec<String>),
+}
+
+impl QualifiedPath {
+    /// Create a simple relative path from segments
+    pub fn simple(segments: Vec<String>) -> Self {
+        QualifiedPath::Relative(segments)
+    }
+
+    /// Create a global namespace path  
+    pub fn global(segments: Vec<String>) -> Self {
+        QualifiedPath::Global(segments)
+    }
+
+    /// Create a crate-absolute path
+    pub fn absolute(segments: Vec<String>) -> Self {
+        QualifiedPath::Absolute(segments)
+    }
+
+    /// Create a super path with given levels up
+    pub fn super_path(levels: usize, segments: Vec<String>) -> Self {
+        QualifiedPath::Super(levels, segments)
+    }
+
+    /// Create a self path
+    pub fn self_path(segments: Vec<String>) -> Self {
+        QualifiedPath::Self_(segments)
+    }
+
+    /// Create an external crate path
+    pub fn external_path(crate_name: String, segments: Vec<String>) -> Self {
+        QualifiedPath::External(crate_name, segments)
+    }
+
+    /// Get all segments as a single vector (excluding crate/std/super prefixes)
+    pub fn segments(&self) -> &[String] {
+        match self {
+            QualifiedPath::Global(segments)
+            | QualifiedPath::Absolute(segments)
+            | QualifiedPath::Relative(segments)
+            | QualifiedPath::Super(_, segments)
+            | QualifiedPath::Self_(segments) => segments,
+            QualifiedPath::External(_, segments) => segments,
+        }
+    }
+
+    /// Get the final segment (the actual item name)
+    pub fn final_segment(&self) -> Option<&String> {
+        self.segments().last()
+    }
+
+    /// Get all segments except the final one (the module path)
+    pub fn module_segments(&self) -> &[String] {
+        let segments = self.segments();
+        if segments.is_empty() {
+            segments
+        } else {
+            &segments[..segments.len() - 1]
+        }
+    }
+}
+
+impl Display for QualifiedPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            QualifiedPath::Global(segments) => {
+                write!(f, "::{}", segments.join("::"))
+            }
+            QualifiedPath::Absolute(segments) => {
+                write!(f, "crate::{}", segments.join("::"))
+            }
+            QualifiedPath::Relative(segments) => {
+                write!(f, "{}", segments.join("::"))
+            }
+            QualifiedPath::Super(levels, segments) => {
+                let super_part = "super::".repeat(*levels);
+                write!(f, "{}{}", super_part, segments.join("::"))
+            }
+            QualifiedPath::Self_(segments) => {
+                write!(f, "self::{}", segments.join("::"))
+            }
+            QualifiedPath::External(crate_name, segments) => {
+                write!(f, "{}::{}", crate_name, segments.join("::"))
+            }
+        }
+    }
+}
+
+/// Represents a qualified name (path + final identifier)
+#[derive(Debug, Clone, PartialEq)]
+pub struct QualifiedName {
+    pub path: QualifiedPath,
+    pub name: String,
+}
+
+impl QualifiedName {
+    pub fn new(path: QualifiedPath, name: String) -> Self {
+        Self { path, name }
+    }
+
+    /// Create from a simple identifier (no path)
+    pub fn simple(name: String) -> Self {
+        Self {
+            path: QualifiedPath::Relative(vec![]),
+            name,
+        }
+    }
+
+    /// Create from path segments where the last segment is the name
+    pub fn from_segments(segments: Vec<String>) -> Self {
+        if segments.is_empty() {
+            panic!("Cannot create QualifiedName from empty segments");
+        }
+
+        let name = segments.last().unwrap().clone();
+        let path_segments = segments[..segments.len() - 1].to_vec();
+
+        Self {
+            path: QualifiedPath::Relative(path_segments),
+            name,
+        }
+    }
+}
+
+impl Display for QualifiedName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path_str = self.path.to_string();
+        if path_str.is_empty() {
+            write!(f, "{}", self.name)
+        } else {
+            write!(f, "{}::{}", path_str, self.name)
+        }
+    }
+}
+
 /// Source location information for better error reporting
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Span {
@@ -42,6 +191,42 @@ impl Default for Span {
 impl Display for Span {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}..{}", self.start, self.end)
+    }
+}
+
+/// Visibility modifier for items
+#[derive(Debug, Clone, PartialEq)]
+pub enum Visibility {
+    /// No visibility modifier - private to current module
+    Private,
+    /// `pub` - public to everyone
+    Public,
+    /// `pub(crate)` - visible within the current crate
+    Crate,
+    /// `pub(super)` - visible to parent module
+    Super,
+    /// `pub(self)` - visible within current module (same as Private)
+    SelfModule,
+    /// `pub(module::path)` - visible to specific module path
+    Restricted(QualifiedPath),
+}
+
+impl Default for Visibility {
+    fn default() -> Self {
+        Visibility::Private
+    }
+}
+
+impl Display for Visibility {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Visibility::Private => write!(f, ""),
+            Visibility::Public => write!(f, "pub "),
+            Visibility::Crate => write!(f, "pub(crate) "),
+            Visibility::Super => write!(f, "pub(super) "),
+            Visibility::SelfModule => write!(f, "pub(self) "),
+            Visibility::Restricted(path) => write!(f, "pub({}) ", path),
+        }
     }
 }
 
@@ -115,6 +300,7 @@ impl Spanned for Program {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Use(UseStatement),
+    ModuleDeclaration(ModuleDeclaration),
     Module(ModuleDefinition),
     Struct(StructDefinition),
     Impl(ImplBlock),
@@ -125,6 +311,7 @@ impl Spanned for Item {
     fn span(&self) -> &Span {
         match self {
             Item::Use(use_stmt) => use_stmt.span(),
+            Item::ModuleDeclaration(mod_decl) => mod_decl.span(),
             Item::Module(module) => module.span(),
             Item::Struct(struct_def) => struct_def.span(),
             Item::Impl(impl_block) => impl_block.span(),
@@ -153,13 +340,17 @@ impl Spanned for UseStatement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UsePath {
-    Simple(Vec<String>),
-    Glob(Vec<String>),
-    List(Vec<String>, Vec<(String, Option<String>)>),
+    /// Simple import: use path::to::item;
+    Simple(QualifiedPath, String),
+    /// Glob import: use path::to::*;
+    Glob(QualifiedPath),
+    /// List import: use path::to::{item1, item2 as alias};
+    List(QualifiedPath, Vec<(String, Option<String>)>),
 }
 
 #[derive(Debug, Clone)]
 pub struct ModuleDefinition {
+    pub visibility: Visibility,
     pub name: String,
     pub search_strategy: Option<SearchStrategy>,
     pub items: Vec<Item>,
@@ -168,7 +359,8 @@ pub struct ModuleDefinition {
 
 impl PartialEq for ModuleDefinition {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.visibility == other.visibility
+            && self.name == other.name
             && self.search_strategy == other.search_strategy
             && self.items == other.items
     }
@@ -180,9 +372,35 @@ impl Spanned for ModuleDefinition {
     }
 }
 
+/// Module declaration referencing an external file (mod name;)
+#[derive(Debug, Clone)]
+pub struct ModuleDeclaration {
+    pub visibility: Visibility,
+    pub name: String,
+    pub span: Span,
+}
+
+impl PartialEq for ModuleDeclaration {
+    fn eq(&self, other: &Self) -> bool {
+        self.visibility == other.visibility && self.name == other.name
+    }
+}
+
+impl Spanned for ModuleDeclaration {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+impl Display for ModuleDeclaration {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}mod {};", self.visibility, self.name)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StructDefinition {
-    pub is_pub: bool,
+    pub visibility: Visibility,
     pub name: String,
     pub kind: StructKind,
     pub span: Span,
@@ -190,7 +408,7 @@ pub struct StructDefinition {
 
 impl PartialEq for StructDefinition {
     fn eq(&self, other: &Self) -> bool {
-        self.is_pub == other.is_pub && self.name == other.name && self.kind == other.kind
+        self.visibility == other.visibility && self.name == other.name && self.kind == other.kind
     }
 }
 
@@ -208,7 +426,7 @@ pub enum StructKind {
 
 #[derive(Debug, Clone)]
 pub struct NamedField {
-    pub is_pub: bool,
+    pub visibility: Visibility,
     pub name: String,
     pub type_name: String,
     pub span: Span,
@@ -216,7 +434,9 @@ pub struct NamedField {
 
 impl PartialEq for NamedField {
     fn eq(&self, other: &Self) -> bool {
-        self.is_pub == other.is_pub && self.name == other.name && self.type_name == other.type_name
+        self.visibility == other.visibility
+            && self.name == other.name
+            && self.type_name == other.type_name
     }
 }
 
@@ -274,7 +494,7 @@ impl Display for PredicateKind {
 
 #[derive(Debug, Clone)]
 pub struct PredicateDefinition {
-    pub is_pub: bool,
+    pub visibility: Visibility,
     pub predicate_kind: PredicateKind,
     pub attributes: Vec<Attribute>,
     pub name: String,
@@ -286,7 +506,7 @@ pub struct PredicateDefinition {
 
 impl PartialEq for PredicateDefinition {
     fn eq(&self, other: &Self) -> bool {
-        self.is_pub == other.is_pub
+        self.visibility == other.visibility
             && self.predicate_kind == other.predicate_kind
             && self.attributes == other.attributes
             && self.name == other.name
@@ -534,8 +754,53 @@ pub struct PatternArm {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum RelationName {
+    /// Simple unqualified name
+    Simple(String),
+    /// Qualified name with module path
+    Qualified(QualifiedName),
+}
+
+impl RelationName {
+    /// Get the final name component
+    pub fn name(&self) -> &str {
+        match self {
+            RelationName::Simple(name) => name,
+            RelationName::Qualified(qualified) => &qualified.name,
+        }
+    }
+
+    /// Check if this is a simple (unqualified) name
+    pub fn is_simple(&self) -> bool {
+        matches!(self, RelationName::Simple(_))
+    }
+
+    /// Check if this is a qualified name
+    pub fn is_qualified(&self) -> bool {
+        matches!(self, RelationName::Qualified(_))
+    }
+
+    /// Convert to a qualified name, using empty path for simple names
+    pub fn to_qualified(&self) -> QualifiedName {
+        match self {
+            RelationName::Simple(name) => QualifiedName::simple(name.clone()),
+            RelationName::Qualified(qualified) => qualified.clone(),
+        }
+    }
+}
+
+impl Display for RelationName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RelationName::Simple(name) => write!(f, "{}", name),
+            RelationName::Qualified(qualified) => write!(f, "{}", qualified),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct RelationCall {
-    pub name: String,
+    pub name: RelationName,
     pub args: Vec<CallArgument>,
 }
 
@@ -693,6 +958,7 @@ impl Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Item::Use(u) => write!(f, "{}", u),
+            Item::ModuleDeclaration(md) => write!(f, "{}", md),
             Item::Module(m) => write!(f, "{}", m),
             Item::Struct(s) => write!(f, "{}", s),
             Item::Impl(i) => write!(f, "{}", i),
@@ -710,9 +976,9 @@ impl Display for UseStatement {
 impl Display for UsePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            UsePath::Simple(parts) => write!(f, "{}", parts.join("::")),
-            UsePath::Glob(parts) => write!(f, "{}::*", parts.join("::")),
-            UsePath::List(prefix, imports) => {
+            UsePath::Simple(path, item) => write!(f, "{}::{}", path, item),
+            UsePath::Glob(path) => write!(f, "{}::*", path),
+            UsePath::List(path, imports) => {
                 let import_str = imports
                     .iter()
                     .map(|(name, alias)| {
@@ -724,11 +990,7 @@ impl Display for UsePath {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                if prefix.is_empty() {
-                    write!(f, "{{{}}}", import_str)
-                } else {
-                    write!(f, "{}::{{{}}}", prefix.join("::"), import_str)
-                }
+                write!(f, "{}::{{{}}}", path, import_str)
             }
         }
     }
@@ -746,11 +1008,7 @@ impl Display for ModuleDefinition {
 
 impl Display for StructDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_pub {
-            write!(f, "pub ")?;
-        }
-        write!(f, "struct {} ", self.name)?;
-        write!(f, "{}", self.kind)
+        write!(f, "{}struct {} {}", self.visibility, self.name, self.kind)
     }
 }
 
@@ -782,10 +1040,7 @@ impl Display for StructKind {
 
 impl Display for NamedField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_pub {
-            write!(f, "pub ")?;
-        }
-        write!(f, "{}: {}", self.name, self.type_name)
+        write!(f, "{}{}: {}", self.visibility, self.name, self.type_name)
     }
 }
 
@@ -804,9 +1059,7 @@ impl Display for PredicateDefinition {
         for attr in &self.attributes {
             writeln!(f, "{}", attr)?;
         }
-        if self.is_pub {
-            write!(f, "pub ")?;
-        }
+        write!(f, "{}", self.visibility)?;
         write!(f, "rel {}(", self.name)?;
         for (i, p) in self.parameters.iter().enumerate() {
             if i > 0 {

@@ -1,7 +1,7 @@
 // Higher-Order Predicates Standard Library for Proto-Vulcan
 // Provides essential functional programming constructs for logic programming
 
-use std::list::*;
+use super::list::*;
 
 // =============================================================================
 // CORE HIGHER-ORDER PREDICATES
