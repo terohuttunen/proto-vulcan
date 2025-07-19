@@ -15,6 +15,7 @@ pub mod constraint_domains;
 pub mod deferred;
 mod environment;
 mod execution;
+pub mod import;
 mod integration;
 pub mod metaprogramming;
 pub mod parser;
