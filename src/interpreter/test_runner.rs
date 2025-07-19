@@ -440,12 +440,12 @@ impl TestRunner {
         let assert_eq_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
             assert_eq(args[0].clone(), args[1].clone())
         });
-        env.add_native_relation("assert_eq".to_string(), assert_eq_rel, 2);
+        env.add_builtin_relation("assert_eq".to_string(), assert_eq_rel, 2);
 
         let assert_neq_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
             assert_neq(args[0].clone(), args[1].clone())
         });
-        env.add_native_relation("assert_neq".to_string(), assert_neq_rel, 2);
+        env.add_builtin_relation("assert_neq".to_string(), assert_neq_rel, 2);
 
         let assert_bound_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
             if args.len() != 1 {
@@ -454,7 +454,7 @@ impl TestRunner {
                 assert_bound(args[0].clone())
             }
         });
-        env.add_native_relation("assert_bound".to_string(), assert_bound_rel, 1);
+        env.add_builtin_relation("assert_bound".to_string(), assert_bound_rel, 1);
 
         let assert_unbound_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
             if args.len() != 1 {
@@ -463,7 +463,7 @@ impl TestRunner {
                 assert_unbound(args[0].clone())
             }
         });
-        env.add_native_relation("assert_unbound".to_string(), assert_unbound_rel, 1);
+        env.add_builtin_relation("assert_unbound".to_string(), assert_unbound_rel, 1);
 
         let assert_domain_size_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
             if args.len() != 2 {
@@ -482,7 +482,7 @@ impl TestRunner {
                 }
             }
         });
-        env.add_native_relation("assert_domain_size".to_string(), assert_domain_size_rel, 2);
+        env.add_builtin_relation("assert_domain_size".to_string(), assert_domain_size_rel, 2);
     }
 
     /// Matches an LTerm against an AST Term, supporting wildcards.

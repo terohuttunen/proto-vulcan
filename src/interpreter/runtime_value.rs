@@ -27,14 +27,14 @@ impl PredicateHandle {
     }
 }
 
-// RuntimeValue is not derivable because of the `func` field in NativeRelation.
+// RuntimeValue is not derivable because of the `func` field in BuiltinRelation.
 // We must implement it manually to just clone the Rc.
 impl<U: User, E: Engine<U>> Clone for RuntimeValue<U, E> {
     fn clone(&self) -> Self {
         match self {
             RuntimeValue::Relation(rd) => RuntimeValue::Relation(rd.clone()),
             RuntimeValue::PredicateHandle(rh) => RuntimeValue::PredicateHandle(rh.clone()),
-            RuntimeValue::NativeRelation { func, arity } => RuntimeValue::NativeRelation {
+            RuntimeValue::BuiltinRelation { func, arity } => RuntimeValue::BuiltinRelation {
                 func: func.clone(),
                 arity: *arity,
             },
@@ -44,7 +44,7 @@ impl<U: User, E: Engine<U>> Clone for RuntimeValue<U, E> {
     }
 }
 
-// RuntimeValue is not derivable because of the `func` field in NativeRelation.
+// RuntimeValue is not derivable because of the `func` field in BuiltinRelation.
 // We must implement Debug manually to handle the function pointer.
 impl<U: User, E: Engine<U>> std::fmt::Debug for RuntimeValue<U, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -53,8 +53,8 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RuntimeValue<U, E> {
             RuntimeValue::PredicateHandle(rh) => {
                 f.debug_tuple("PredicateHandle").field(rh).finish()
             }
-            RuntimeValue::NativeRelation { arity, .. } => f
-                .debug_struct("NativeRelation")
+            RuntimeValue::BuiltinRelation { arity, .. } => f
+                .debug_struct("BuiltinRelation")
                 .field("func", &"<function>")
                 .field("arity", arity)
                 .finish(),
@@ -70,7 +70,7 @@ pub enum RuntimeValue<U: User, E: Engine<U>> {
     Relation(PredicateDefinition),
     /// A relation handle for higher-order predicates
     PredicateHandle(PredicateHandle),
-    NativeRelation {
+    BuiltinRelation {
         func: Rc<dyn Fn(Vec<LTerm<U, E>>) -> Goal<U, E>>,
         arity: usize,
     },

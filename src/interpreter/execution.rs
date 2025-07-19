@@ -338,7 +338,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 match rel_val {
                     RuntimeValue::Relation(_)
                     | RuntimeValue::PredicateHandle(_)
-                    | RuntimeValue::NativeRelation { .. } => Ok(()),
+                    | RuntimeValue::BuiltinRelation { .. } => Ok(()),
                     _ => Err(InterpreterError::RuntimeError(format!(
                         "'{}' is not a relation or relation handle.",
                         call.name
@@ -607,7 +607,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     match rel_val {
                         RuntimeValue::Relation(_)
                         | RuntimeValue::PredicateHandle(_)
-                        | RuntimeValue::NativeRelation { .. } => {
+                        | RuntimeValue::BuiltinRelation { .. } => {
                             // Register the relation in the registry and return a reference to the index
                             let registry_index =
                                 self.environment.borrow_mut().register_relation(rel_val);
@@ -806,7 +806,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
                 Ok(Goal::Dynamic(Rc::new(deferred_call)))
             }
-            RuntimeValue::NativeRelation { func, arity } => {
+            RuntimeValue::BuiltinRelation { func, arity } => {
                 if arity != arg_terms.len() {
                     return Err(InterpreterError::ArityMismatch {
                         relation_name: relation_name.clone(),

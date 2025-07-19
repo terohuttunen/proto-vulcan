@@ -546,10 +546,10 @@ rel distinct_test_10(result) {
 // =============================================================================
 
 // Length relation - determines the length of a list
-// This wraps the native __native_length predicate for efficiency
+// This wraps the builtin __builtin_length predicate for efficiency
 // while providing a clean library interface
 pub rel length(list, n) {
-    __native_length(list, n)
+    __builtin_length(list, n)
 }
 
 // Test length with empty list

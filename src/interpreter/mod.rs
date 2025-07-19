@@ -233,7 +233,7 @@ where
     pub fn with_stdlib() -> Self {
         let mut interpreter = Self::new();
 
-        // Register core native relations
+        // Register core builtin relations
         interpreter.register_core_builtins();
 
         if let Err(e) = interpreter.load_stdlib() {
@@ -247,14 +247,14 @@ where
         self.environment.borrow()
     }
 
-    /// Register core builtin native relations
+    /// Register core builtin relations
     fn register_core_builtins(&mut self) {
         use crate::goal::{AnyGoal, Goal, GoalCast};
         use crate::lterm::LValue;
         use crate::relation::{eq, fail};
 
-        // Native length predicate - efficiently calculates list length
-        // Prefixed with __native_ to avoid conflicts with library predicates
+        // Builtin length predicate - efficiently calculates list length
+        // Prefixed with __builtin_ to avoid conflicts with library predicates
         let length_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
             if args.len() != 2 {
                 return fail().cast_into();
@@ -268,12 +268,12 @@ where
 
             #[derive(Derivative)]
             #[derivative(Debug(bound = "U: User"))]
-            struct NativeLengthGoal<U: User, E: Engine<U>> {
+            struct BuiltinLengthGoal<U: User, E: Engine<U>> {
                 list: LTerm<U, E>,
                 length: LTerm<U, E>,
             }
 
-            impl<U: User, E: Engine<U>> Solve<U, E> for NativeLengthGoal<U, E> {
+            impl<U: User, E: Engine<U>> Solve<U, E> for BuiltinLengthGoal<U, E> {
                 fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
                     // Walk the substitution map to get resolved values (same as assertions)
                     let list_walked = state.smap_ref().walk(&self.list).clone();
@@ -299,14 +299,14 @@ where
             }
 
             // Return the goal using the same pattern as assertions
-            Goal::dynamic(Rc::new(NativeLengthGoal {
+            Goal::dynamic(Rc::new(BuiltinLengthGoal {
                 list: args[0].clone(),
                 length: args[1].clone(),
             }))
         });
 
-        self.environment.borrow_mut().add_native_relation(
-            "__native_length".to_string(),
+        self.environment.borrow_mut().add_builtin_relation(
+            "__builtin_length".to_string(),
             length_rel,
             2,
         );

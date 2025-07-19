@@ -88,14 +88,14 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         self.search_paths.push(path);
     }
 
-    /// Adds a native Rust function as a relation to the global scope.
-    pub fn add_native_relation(
+    /// Adds a builtin Rust function as a relation to the global scope.
+    pub fn add_builtin_relation(
         &mut self,
         name: String,
         func: Rc<dyn Fn(Vec<LTerm<U, E>>) -> Goal<U, E>>,
         arity: usize,
     ) {
-        let value = RuntimeValue::NativeRelation { func, arity };
+        let value = RuntimeValue::BuiltinRelation { func, arity };
         self.globals.insert(name, value);
     }
 
@@ -499,7 +499,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         match self.lookup(name) {
             Some(RuntimeValue::Relation(rel_def)) => Some(rel_def.parameters.len()),
             Some(RuntimeValue::PredicateHandle(handle)) => Some(handle.arity),
-            Some(RuntimeValue::NativeRelation { arity, .. }) => Some(*arity),
+            Some(RuntimeValue::BuiltinRelation { arity, .. }) => Some(*arity),
             _ => None,
         }
     }
@@ -817,9 +817,9 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             return self.lookup_qualified(name);
         }
 
-        // For native predicates (prefixed with __native_), always check globals first
-        // This ensures native predicates are accessible from all module scopes
-        if name.starts_with("__native_") {
+        // For builtin predicates (prefixed with __builtin_), always check globals first
+        // This ensures builtin predicates are accessible from all module scopes
+        if name.starts_with("__builtin_") {
             if let Some(value) = self.globals.get(name) {
                 return Some(value);
             }
@@ -836,13 +836,13 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             }
         }
 
-        // Then check globals (this will catch native predicates again as a fallback)
+        // Then check globals (this will catch builtin predicates again as a fallback)
         if let Some(value) = self.globals.get(name) {
             return Some(value);
         }
 
-        // Final fallback: for native predicates, search all scopes
-        if name.starts_with("__native_") {
+        // Final fallback: for builtin predicates, search all scopes
+        if name.starts_with("__builtin_") {
             // Search through all module scopes as a last resort
             for module_symbols in self.modules.values() {
                 if let Some(value) = module_symbols.get(name) {

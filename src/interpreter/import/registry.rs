@@ -131,7 +131,7 @@ impl<U: User, E: Engine<U>> SymbolRegistry<U, E> {
         let symbol_type = match &value {
             RuntimeValue::Relation(_) => SymbolType::Relation,
             RuntimeValue::PredicateHandle(_) => SymbolType::PredicateHandle,
-            RuntimeValue::NativeRelation { .. } => SymbolType::NativeRelation,
+            RuntimeValue::BuiltinRelation { .. } => SymbolType::BuiltinRelation,
             RuntimeValue::Struct(_) => SymbolType::Struct,
             RuntimeValue::Term(_) => SymbolType::Term,
         };

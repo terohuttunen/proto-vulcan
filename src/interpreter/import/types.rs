@@ -125,7 +125,7 @@ impl ImportContext {
 pub enum SymbolType {
     Relation,
     PredicateHandle,
-    NativeRelation,
+    BuiltinRelation,
     Struct,
     Term,
     Type,

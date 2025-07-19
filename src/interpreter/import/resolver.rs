@@ -380,7 +380,7 @@ impl<U: User, E: Engine<U>> SymbolCollector<U, E> {
     /// Determine if a symbol should be filtered out
     fn should_filter_symbol(&self, name: &str, _context: &ImportContext) -> bool {
         // Filter internal symbols (starting with underscore)
-        if name.starts_with('_') && !name.starts_with("__native_") {
+        if name.starts_with('_') && !name.starts_with("__builtin_") {
             return true;
         }
 
