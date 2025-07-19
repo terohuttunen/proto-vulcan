@@ -501,8 +501,8 @@ impl TestRunner {
                 // TODO: Implement struct pattern matching if needed
                 false
             }
-            ast::Term::Compound(..) => {
-                // TODO: Implement compound pattern matching if needed
+            ast::Term::TupleStruct(..) => {
+                // TODO: Implement tuple struct pattern matching if needed
                 false
             }
             ast::Term::Parenthesized(inner, _) => Self::matches_pattern(lterm, inner),

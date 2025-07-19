@@ -824,7 +824,7 @@ pub enum Term {
     Wildcard(Span),
     List(ListConstruction, Span),
     NamedStruct(NamedStructConstruction, Span),
-    Compound(CompoundConstruction, Span),
+    TupleStruct(TupleStructConstruction, Span),
     Parenthesized(Box<Term>, Span),
     // NEW: Interpolation for meta expressions
     Interpolation(MetaExpression, Span),
@@ -838,7 +838,7 @@ impl PartialEq for Term {
             (Term::Wildcard(_), Term::Wildcard(_)) => true,
             (Term::List(a, _), Term::List(b, _)) => a == b,
             (Term::NamedStruct(a, _), Term::NamedStruct(b, _)) => a == b,
-            (Term::Compound(a, _), Term::Compound(b, _)) => a == b,
+            (Term::TupleStruct(a, _), Term::TupleStruct(b, _)) => a == b,
             (Term::Parenthesized(a, _), Term::Parenthesized(b, _)) => a == b,
             (Term::Interpolation(a, _), Term::Interpolation(b, _)) => a == b,
             _ => false,
@@ -854,7 +854,7 @@ impl Spanned for Term {
             Term::Wildcard(span) => span,
             Term::List(_, span) => span,
             Term::NamedStruct(_, span) => span,
-            Term::Compound(_, span) => span,
+            Term::TupleStruct(_, span) => span,
             Term::Parenthesized(_, span) => span,
             Term::Interpolation(_, span) => span,
         }
@@ -880,7 +880,7 @@ pub struct FieldInitializer {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompoundConstruction {
+pub struct TupleStructConstruction {
     pub name: String,
     pub args: Vec<Term>,
 }
@@ -900,7 +900,7 @@ pub enum Pattern {
     Wildcard,
     List(ListPattern),
     NamedStruct(NamedStructPattern),
-    Compound(CompoundPattern),
+    TupleStruct(TupleStructPattern),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -922,7 +922,7 @@ pub struct FieldPattern {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompoundPattern {
+pub struct TupleStructPattern {
     pub name: String,
     pub args: Vec<Pattern>,
 }
@@ -1261,7 +1261,7 @@ impl Display for Term {
             Term::Wildcard(_) => write!(f, "_"),
             Term::List(list, _) => write!(f, "{}", list),
             Term::NamedStruct(s, _) => write!(f, "{}", s),
-            Term::Compound(c, _) => write!(f, "{}", c),
+            Term::TupleStruct(c, _) => write!(f, "{}", c),
             Term::Parenthesized(t, _) => write!(f, "({})", t),
             Term::Interpolation(expr, _) => write!(f, "{{{}}}", expr),
         }
@@ -1302,7 +1302,7 @@ impl Display for FieldInitializer {
     }
 }
 
-impl Display for CompoundConstruction {
+impl Display for TupleStructConstruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}(", self.name)?;
         let mut first = true;
@@ -1336,7 +1336,7 @@ impl Display for Pattern {
             Pattern::Wildcard => write!(f, "_"),
             Pattern::List(p) => write!(f, "{}", p),
             Pattern::NamedStruct(p) => write!(f, "{}", p),
-            Pattern::Compound(p) => write!(f, "{}", p),
+            Pattern::TupleStruct(p) => write!(f, "{}", p),
         }
     }
 }
@@ -1375,7 +1375,7 @@ impl Display for FieldPattern {
     }
 }
 
-impl Display for CompoundPattern {
+impl Display for TupleStructPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}(", self.name)?;
         let mut first = true;

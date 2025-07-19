@@ -663,7 +663,7 @@ fn expand_goal(
 
 /// Try to parse a compound term as an arithmetic expression in macro context
 pub fn try_parse_arithmetic_from_compound(
-    compound: &super::parser::ast::CompoundConstruction,
+    compound: &super::parser::ast::TupleStructConstruction,
     context: &TemplateExpansionContext,
 ) -> Option<Result<super::parser::ast::Term, MetaError>> {
     // Check if this looks like an arithmetic expression
@@ -779,7 +779,7 @@ pub fn expand_term(
                 MetaValue::Boolean(b) => Ok(Term::Literal(Literal::Boolean(b), span.clone())),
             }
         }
-        Term::Compound(compound, span) => {
+        Term::TupleStruct(compound, span) => {
             // First check if this compound term represents arithmetic
             if let Some(arithmetic_result) = try_parse_arithmetic_from_compound(compound, context) {
                 return arithmetic_result;
@@ -790,7 +790,7 @@ pub fn expand_term(
             for arg in &mut expanded_compound.args {
                 *arg = expand_term(arg, context)?;
             }
-            Ok(Term::Compound(expanded_compound, span.clone()))
+            Ok(Term::TupleStruct(expanded_compound, span.clone()))
         }
         Term::List(list, span) => {
             let mut expanded_list = list.clone();

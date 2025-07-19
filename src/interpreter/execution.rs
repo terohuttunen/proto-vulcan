@@ -636,7 +636,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             }
             Term::Parenthesized(inner, _) => self.ast_term_to_runtime(inner),
             Term::NamedStruct(..) => todo!(),
-            Term::Compound(..) => todo!(),
+            Term::TupleStruct(..) => todo!(),
             Term::Interpolation(expr, _) => {
                 // Expand interpolation using template expansion context
                 self.expand_and_evaluate_interpolation(expr)
@@ -894,7 +894,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 Ok(lterm_from_vec_and_tail(elements, tail))
             }
             Pattern::NamedStruct(_) => todo!(),
-            Pattern::Compound(_) => todo!(),
+            Pattern::TupleStruct(_) => todo!(),
         }
     }
 
@@ -957,7 +957,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 .fields
                 .iter()
                 .any(|field| self.term_contains_interpolation(&field.value)),
-            Term::Compound(compound, _) => compound
+            Term::TupleStruct(compound, _) => compound
                 .args
                 .iter()
                 .any(|arg| self.term_contains_interpolation(arg)),

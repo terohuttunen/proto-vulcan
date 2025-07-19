@@ -1331,11 +1331,11 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
             build_named_struct_construction(pair.clone())?,
             span,
         )),
-        Rule::compound_construction => Ok(Term::Compound(
-            build_compound_construction(pair.clone())?,
+        Rule::tuple_struct_construction => Ok(Term::TupleStruct(
+            build_tuple_struct_construction(pair.clone())?,
             span,
         )),
-        Rule::compound_construction_no_parens => {
+        Rule::tuple_struct_construction_no_parens => {
             // Extract the qualified path from the inner pair to get clean string without whitespace
             let qualified_path_pair = pair.into_inner().next().unwrap(); // qualified_path
             let qualified_path = build_qualified_path(qualified_path_pair)?;
@@ -1346,8 +1346,8 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
             if !name.contains("::") {
                 Ok(Term::Variable(name, span))
             } else {
-                Ok(Term::Compound(
-                    CompoundConstruction { name, args: vec![] },
+                Ok(Term::TupleStruct(
+                    TupleStructConstruction { name, args: vec![] },
                     span,
                 ))
             }
@@ -1381,14 +1381,14 @@ fn build_field_initializer(pair: Pair<Rule>) -> ParseResult<FieldInitializer> {
     Ok(FieldInitializer { name, value })
 }
 
-fn build_compound_construction(pair: Pair<Rule>) -> ParseResult<CompoundConstruction> {
+fn build_tuple_struct_construction(pair: Pair<Rule>) -> ParseResult<TupleStructConstruction> {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let mut args = vec![];
     for term_pair in inner {
         args.push(build_term(term_pair)?);
     }
-    Ok(CompoundConstruction { name, args })
+    Ok(TupleStructConstruction { name, args })
 }
 
 fn build_literal(pair: Pair<Rule>) -> ParseResult<Literal> {
@@ -1430,18 +1430,18 @@ fn build_pattern(pair: Pair<Rule>) -> ParseResult<Pattern> {
         Rule::wildcard => Ok(Pattern::Wildcard),
         Rule::list_pattern => Ok(Pattern::List(build_list_pattern(pair)?)),
         Rule::named_struct_pattern => Ok(Pattern::NamedStruct(build_named_struct_pattern(pair)?)),
-        Rule::compound_pattern_with_parens => {
-            Ok(Pattern::Compound(build_compound_pattern_with_parens(pair)?))
+        Rule::tuple_struct_pattern_with_parens => {
+            Ok(Pattern::TupleStruct(build_tuple_struct_pattern_with_parens(pair)?))
         }
-        Rule::compound_pattern_no_parens => {
-            let compound = build_compound_pattern_no_parens(pair)?;
+        Rule::tuple_struct_pattern_no_parens => {
+            let compound = build_tuple_struct_pattern_no_parens(pair)?;
 
             // Semantic disambiguation: if this is a simple identifier (no ::) with no args,
             // treat it as a variable instead of a compound pattern
             if !compound.name.contains("::") && compound.args.is_empty() {
                 Ok(Pattern::Variable(compound.name))
             } else {
-                Ok(Pattern::Compound(compound))
+                Ok(Pattern::TupleStruct(compound))
             }
         }
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
@@ -1489,23 +1489,23 @@ fn build_field_pattern(pair: Pair<Rule>) -> ParseResult<FieldPattern> {
     Ok(FieldPattern { name, pattern })
 }
 
-fn build_compound_pattern_with_parens(pair: Pair<Rule>) -> ParseResult<CompoundPattern> {
+fn build_tuple_struct_pattern_with_parens(pair: Pair<Rule>) -> ParseResult<TupleStructPattern> {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let mut args = vec![];
     for pattern_pair in inner {
         args.push(build_pattern(pattern_pair)?);
     }
-    Ok(CompoundPattern { name, args })
+    Ok(TupleStructPattern { name, args })
 }
 
-fn build_compound_pattern_no_parens(pair: Pair<Rule>) -> ParseResult<CompoundPattern> {
+fn build_tuple_struct_pattern_no_parens(pair: Pair<Rule>) -> ParseResult<TupleStructPattern> {
     // Extract the qualified path from the inner pair to get clean string without whitespace
     let qualified_path_pair = pair.into_inner().next().unwrap(); // qualified_path
     let qualified_path = build_qualified_path(qualified_path_pair)?;
     let name = qualified_path.to_string();
 
-    Ok(CompoundPattern { name, args: vec![] })
+    Ok(TupleStructPattern { name, args: vec![] })
 }
 
 fn build_list_construction(pair: Pair<Rule>) -> ParseResult<ListConstruction> {
@@ -2035,7 +2035,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_compound_construction() {
+    fn test_parse_tuple_struct_construction() {
         let input = "rel test() { a == Option::Some(42) }";
         let ast = parse_str(input).unwrap();
         let expected = Program {
@@ -2049,8 +2049,8 @@ mod tests {
                 search_strategy: None,
                 body: vec![Goal::Equality(
                     Term::Variable("a".to_string(), Span::dummy()),
-                    Term::Compound(
-                        CompoundConstruction {
+                    Term::TupleStruct(
+                        TupleStructConstruction {
                             name: "Option::Some".to_string(),
                             args: vec![Term::Literal(
                                 Literal::Number("42".to_string()),
@@ -2738,7 +2738,7 @@ mod tests {
             _ => panic!("Expected pattern matching goal"),
         };
 
-        let expected_pattern = Pattern::Compound(CompoundPattern {
+        let expected_pattern = Pattern::TupleStruct(TupleStructPattern {
             name: "Cons".to_string(),
             args: vec![
                 Pattern::Variable("h".to_string()),
@@ -2765,7 +2765,7 @@ mod tests {
             _ => panic!("Expected pattern matching goal"),
         };
 
-        let expected_pattern = Pattern::Compound(CompoundPattern {
+        let expected_pattern = Pattern::TupleStruct(TupleStructPattern {
             name: "Option::Some".to_string(),
             args: vec![Pattern::Variable("a".to_string())],
         });
@@ -2789,7 +2789,7 @@ mod tests {
             _ => panic!("Expected pattern matching goal"),
         };
 
-        let expected_pattern = Pattern::Compound(CompoundPattern {
+        let expected_pattern = Pattern::TupleStruct(TupleStructPattern {
             name: "Option::None".to_string(),
             args: vec![],
         });
@@ -2798,7 +2798,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_compound_construction_qualified() {
+    fn test_parse_tuple_struct_construction_qualified() {
         let input = "rel a() { x == std::option::Option::Some(1) }";
         let ast = parse_str(input).unwrap();
         let item = ast.items.get(0).unwrap();
@@ -2812,8 +2812,8 @@ mod tests {
             _ => panic!("Expected equality goal"),
         };
 
-        let expected_term = Term::Compound(
-            CompoundConstruction {
+        let expected_term = Term::TupleStruct(
+            TupleStructConstruction {
                 name: "std::option::Option::Some".to_string(),
                 args: vec![Term::Literal(
                     Literal::Number("1".to_string()),
@@ -2827,7 +2827,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_compound_construction_no_parens() {
+    fn test_parse_tuple_struct_construction_no_parens() {
         let input = "rel a() { x == std::option::Option::None }";
         let ast = parse_str(input).unwrap();
         let item = ast.items.get(0).unwrap();
@@ -2841,8 +2841,8 @@ mod tests {
             _ => panic!("Expected equality goal"),
         };
 
-        let expected_term = Term::Compound(
-            CompoundConstruction {
+        let expected_term = Term::TupleStruct(
+            TupleStructConstruction {
                 name: "std::option::Option::None".to_string(),
                 args: vec![],
             },

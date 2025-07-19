@@ -280,16 +280,16 @@ term = {
     wildcard |
     list_construction |
     named_struct_construction |
-    compound_construction |
+    tuple_struct_construction |
     parenthesized_term |
-    compound_construction_no_parens |
+    tuple_struct_construction_no_parens |
     path_term |
     variable
 }
 
-// Compound term construction (e.g., Some(42), Node(left, right))
-compound_construction = { qualified_path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
-compound_construction_no_parens = { qualified_path }
+// Tuple struct term construction (e.g., Some(42), Node(left, right))
+tuple_struct_construction = { qualified_path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
+tuple_struct_construction_no_parens = { qualified_path }
 
 parenthesized_term = { "(" ~ term ~ ")" }
 
@@ -299,8 +299,8 @@ pattern = {
     wildcard |
     list_pattern |
     named_struct_pattern |
-    compound_pattern_with_parens |
-    compound_pattern_no_parens |
+    tuple_struct_pattern_with_parens |
+    tuple_struct_pattern_no_parens |
     variable
 }
 
@@ -316,8 +316,8 @@ named_struct_pattern = {
 field_pattern = { ident ~ ":" ~ pattern }
 
 // Use unified qualified_path system for all path contexts
-compound_pattern_with_parens = { qualified_path ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ","? ~ ")" }
-compound_pattern_no_parens = { qualified_path }
+tuple_struct_pattern_with_parens = { qualified_path ~ "(" ~ (pattern ~ ("," ~ pattern)*)? ~ ","? ~ ")" }
+tuple_struct_pattern_no_parens = { qualified_path }
 
 // -- Term/Pattern Components --
 literal = { boolean_literal | number_literal | string_literal | char_literal }

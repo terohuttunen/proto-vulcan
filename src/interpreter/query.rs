@@ -338,7 +338,7 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
                 extract_variables_from_term(&field.value, vars);
             }
         }
-        Term::Compound(compound, _) => {
+        Term::TupleStruct(compound, _) => {
             for arg in &compound.args {
                 extract_variables_from_term(arg, vars);
             }
