@@ -8,7 +8,6 @@ use crate::engine::Engine;
 use crate::user::User;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 /// Represents a module path in the import system
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -62,7 +61,7 @@ impl ModulePath {
         true
     }
 
-    pub fn is_same_crate(&self, other: &ModulePath) -> bool {
+    pub fn is_same_crate(&self, _other: &ModulePath) -> bool {
         // For now, all modules are in the same crate
         // This can be extended for multi-crate support
         true
@@ -313,7 +312,7 @@ impl From<ImportError> for InterpreterError {
             )),
             ImportError::ModuleNotFound {
                 requested_path,
-                searched_paths,
+                searched_paths: _,
             } => InterpreterError::ModuleNotFound(PathBuf::from(format!("{:?}", requested_path))),
             ImportError::InvalidGlobTarget {
                 target_path,

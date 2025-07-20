@@ -101,8 +101,6 @@ pub fn execute_query<U: User, E: Engine<U>>(
 where
     U::UserContext: Default,
 {
-    let start_time = std::time::Instant::now();
-
     // Pre-populate the execution context with variables from the query
     let mut execution_context = ExecutionContext::new(environment);
     let query_vars = extract_variables_from_goal(&query);

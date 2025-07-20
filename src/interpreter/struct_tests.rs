@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::{
-    engine::{DefaultEngine, Engine},
-    user::{DefaultUser, User},
+    engine::DefaultEngine,
+    user::DefaultUser,
 };
 
 type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;

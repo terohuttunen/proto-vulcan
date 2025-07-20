@@ -6,7 +6,6 @@
 use super::super::*;
 use crate::engine::DefaultEngine;
 use crate::user::DefaultUser;
-use parser::ast::*;
 
 type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
 

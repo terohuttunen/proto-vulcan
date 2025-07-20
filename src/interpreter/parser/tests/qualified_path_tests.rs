@@ -3,7 +3,7 @@
 //! Tests for parsing qualified paths in relation calls and other contexts.
 
 use super::super::*;
-use crate::interpreter::parser::ast::{QualifiedName, QualifiedPath, RelationName};
+use crate::interpreter::parser::ast::{QualifiedPath, RelationName};
 
 #[test]
 fn test_simple_relation_call() {

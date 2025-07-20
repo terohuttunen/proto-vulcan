@@ -79,7 +79,7 @@ fn build_use_statement(pair: Pair<Rule>) -> ParseResult<UseStatement> {
 }
 
 fn build_mod_declaration(pair: Pair<Rule>) -> ParseResult<ModuleDeclaration> {
-    let span = pair_to_span(&pair);
+    let _span = pair_to_span(&pair);
     let inner = pair.into_inner().next().unwrap(); // Get the specific variant
 
     match inner.as_rule() {
@@ -91,7 +91,7 @@ fn build_mod_declaration(pair: Pair<Rule>) -> ParseResult<ModuleDeclaration> {
 
 fn build_mod_declaration_simple(pair: Pair<Rule>) -> ParseResult<ModuleDeclaration> {
     let span = pair_to_span(&pair);
-    let mut inner = pair.into_inner();
+    let inner = pair.into_inner();
 
     // Look at all pairs to determine structure
     let pairs: Vec<_> = inner.clone().collect();
@@ -116,7 +116,7 @@ fn build_mod_declaration_simple(pair: Pair<Rule>) -> ParseResult<ModuleDeclarati
 
 fn build_mod_declaration_body(pair: Pair<Rule>) -> ParseResult<ModuleDeclaration> {
     let span = pair_to_span(&pair);
-    let mut inner = pair.into_inner();
+    let inner = pair.into_inner();
 
     // Look at all pairs to determine structure
     let pairs: Vec<_> = inner.clone().collect();
@@ -439,7 +439,7 @@ fn build_mod_definition(pair: Pair<Rule>) -> ParseResult<ModuleDefinition> {
     // Look at all pairs to determine structure
     let pairs: Vec<_> = inner.collect();
 
-    let (visibility, name_idx) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
+    let (visibility, _name_idx) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
         (build_visibility(pairs[0].clone())?, 1) // visibility, name (we skip "mod" keyword)
     } else {
         (ast::Visibility::Private, 0) // name (we skip "mod" keyword)
@@ -459,7 +459,6 @@ fn build_mod_definition(pair: Pair<Rule>) -> ParseResult<ModuleDefinition> {
         match part.as_rule() {
             Rule::search_strategy => search_strategy = Some(build_search_strategy(part.clone())?),
             Rule::use_statement
-            | Rule::mod_declaration
             | Rule::mod_declaration
             | Rule::struct_definition
             | Rule::impl_block
@@ -1173,23 +1172,23 @@ fn build_relation_name(pair: Pair<Rule>) -> ParseResult<RelationName> {
                     if let Some(name) = path.final_segment() {
                         // Create the correct module path by preserving the path type but removing the final segment
                         let module_path = match &path {
-                            QualifiedPath::Global(segments) => {
+                            QualifiedPath::Global(_) => {
                                 QualifiedPath::Global(path.module_segments().to_vec())
                             }
-                            QualifiedPath::Absolute(segments) => {
+                            QualifiedPath::Absolute(_) => {
                                 QualifiedPath::Absolute(path.module_segments().to_vec())
                             }
-                            QualifiedPath::Relative(segments) => {
+                            QualifiedPath::Relative(_) => {
                                 QualifiedPath::Relative(path.module_segments().to_vec())
                             }
-                            QualifiedPath::Super(levels, segments) => {
+                            QualifiedPath::Super(levels, _) => {
                                 QualifiedPath::Super(*levels, path.module_segments().to_vec())
                             }
-                            QualifiedPath::Self_(segments) => {
+                            QualifiedPath::Self_(_) => {
                                 QualifiedPath::Self_(path.module_segments().to_vec())
                             }
 
-                            QualifiedPath::External(crate_name, segments) => {
+                            QualifiedPath::External(crate_name, _) => {
                                 QualifiedPath::External(
                                     crate_name.clone(),
                                     path.module_segments().to_vec(),

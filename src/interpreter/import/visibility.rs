@@ -31,7 +31,7 @@ impl VisibilityChecker {
     pub fn is_symbol_accessible(
         &self,
         symbol_visibility: &Visibility,
-        symbol_module: &ModulePath,
+        _symbol_module: &ModulePath,
         context: &ImportContext,
     ) -> VisibilityResult {
         match symbol_visibility {
@@ -210,7 +210,7 @@ impl VisibilityChecker {
                 Ok(ModulePath::new(resolved_segments))
             }
 
-            QualifiedPath::External(crate_name, segments) => {
+            QualifiedPath::External(crate_name, _) => {
                 // External crate paths (not yet supported)
                 Err(ImportError::InvalidGlobTarget {
                     target_path: path.clone(),

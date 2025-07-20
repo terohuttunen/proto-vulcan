@@ -2,16 +2,15 @@
 
 use super::super::environment::ModuleInfo;
 use super::super::parser::ast::StructDefinition;
-use super::super::parser::ast::{QualifiedPath, Visibility};
+use super::super::parser::ast::QualifiedPath;
 use super::super::runtime_value::RuntimeValue;
-use super::super::InterpreterError;
 use super::dependency::DependencyTracker;
-use super::registry::{SymbolId, SymbolRef, SymbolRegistry};
+use super::registry::SymbolRegistry;
 use super::types::*;
 use super::visibility::{SymbolAccessibility, VisibilityChecker};
 use crate::engine::Engine;
 use crate::user::User;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::Instant;
 
 /// Main import resolver that orchestrates the three-phase import process
@@ -401,8 +400,8 @@ impl<U: User, E: Engine<U>> SymbolCollector<U, E> {
     fn enhance_symbol_metadata(
         &self,
         symbols: &mut AccessibleSymbols<U, E>,
-        module_info: &ModuleInfo<U, E>,
-        context: &ImportContext,
+        _module_info: &ModuleInfo<U, E>,
+        _context: &ImportContext,
     ) -> Result<(), ImportError> {
         // For now, symbols are already enhanced through the visibility checker
         // This is where we could add additional metadata like:

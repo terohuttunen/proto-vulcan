@@ -184,7 +184,7 @@ where
         let smap = state.get_smap();
 
         let mut x = LTerm::empty_list();
-        let mut mself = Rc::make_mut(&mut self);
+        let mself = Rc::make_mut(&mut self);
         for y in mself.y.into_iter() {
             let ywalk = smap.walk(&y);
             match ywalk.as_ref() {

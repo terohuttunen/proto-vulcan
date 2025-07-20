@@ -18,7 +18,6 @@ use crate::operator::conj::Conj;
 use crate::user::User;
 use pest::Parser;
 use pest_derive::Parser;
-use std::rc::Rc;
 
 #[derive(Parser)]
 #[grammar = "interpreter/constraint_domains/grammars/clpfd.pest"]

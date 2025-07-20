@@ -1,9 +1,8 @@
-use super::import::{ImportContext, ImportError, ImportResolver, ImportResult, ModulePath};
+use super::import::{ImportResolver, ImportResult, ModulePath};
 use super::parser::ast::{
-    Item, ModuleDeclaration, PredicateDefinition, PredicateKind, Program, QualifiedName,
+    Item, ModuleDeclaration, PredicateDefinition, Program, QualifiedName,
     QualifiedPath, RelationName, StructDefinition, UsePath, UseStatement, Visibility,
 };
-use super::parser::parse_str;
 use super::runtime_value::{PredicateHandle, RuntimeValue};
 use super::InterpreterError;
 use crate::engine::Engine;
@@ -374,7 +373,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                 }
                 Item::Module(nested_module) => {
                     // Handle nested modules
-                    let nested_name = format!("{}::{}", module_name, nested_module.name);
+                    let _nested_name = format!("{}::{}", module_name, nested_module.name);
                     self.load_module(nested_module)?;
                 }
                 Item::Use(use_stmt) => {
@@ -798,7 +797,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     pub fn get_accessible_symbols(
         &self,
         module_path: &str,
-        importing_context: Option<&str>,
+        _importing_context: Option<&str>,
     ) -> Result<super::import::AccessibleSymbols<U, E>, InterpreterError> {
         // For now, return empty accessible symbols until we expose the visibility checker properly
         // TODO: Add a public method to ImportResolver to get accessible symbols

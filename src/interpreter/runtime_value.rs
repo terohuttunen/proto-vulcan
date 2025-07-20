@@ -1,5 +1,5 @@
 use super::parser::ast::{
-    Literal, PredicateDefinition, PredicateKind, StructDefinition, Term, Visibility,
+    Literal, PredicateDefinition, StructDefinition, Term,
 };
 use crate::engine::Engine;
 use crate::goal::Goal;

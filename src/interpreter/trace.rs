@@ -215,7 +215,7 @@ impl TraceState {
     }
 
     /// Enter a choice point with multiple branches
-    pub fn enter_choice_point(&mut self, relation_name: &str, branch_count: usize) {
+    pub fn enter_choice_point(&mut self, _relation_name: &str, branch_count: usize) {
         if !self.enabled || branch_count <= 1 {
             return;
         }

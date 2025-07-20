@@ -8,14 +8,13 @@
 use super::deferred::DeferredRelationCall;
 use super::environment::Environment;
 use super::metaprogramming::{
-    expand_goal_body, expand_meta_statement, expand_term, MetaError, MetaValue,
+    expand_meta_statement, expand_term, MetaValue,
     TemplateExpansionContext,
 };
 use super::parser::ast::{
     Conjunction as AstConjunction, Goal as AstGoal, Literal, Pattern, PatternMatching,
     RelationCall, SearchStrategy, Term,
 };
-use super::runtime_value::PredicateHandle;
 use super::runtime_value::RuntimeValue;
 use super::InterpreterError;
 use crate::compound::{CompoundObject, CompoundWalkStar};
@@ -461,7 +460,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     /// This catches UnknownRelation errors early, before deferred execution
     fn validate_relation_body_symbols(
         &self,
-        body: &[super::parser::ast::Goal],
+        _body: &[super::parser::ast::Goal],
     ) -> Result<(), InterpreterError> {
         // For now, skip validation to avoid issues with relation parameters
         // TODO: Implement proper validation that's aware of relation parameters
@@ -1094,7 +1093,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
     /// Check if a goal contains meta features (meta statements or interpolation)
     pub fn goal_contains_meta_features(&self, goal: &super::parser::ast::Goal) -> bool {
-        use super::parser::ast::{Goal as AstGoal, Term};
+        use super::parser::ast::{Goal as AstGoal};
 
         match goal {
             AstGoal::MetaStatement(..) => true,

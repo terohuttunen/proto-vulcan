@@ -1,5 +1,5 @@
 use self::environment::Environment;
-use self::parser::ast::{self, PredicateDefinition, PredicateKind};
+use self::parser::ast;
 use self::query::QueryResult;
 use crate::engine::Engine;
 use crate::lterm::{LTerm, LTermInner};
@@ -253,7 +253,7 @@ where
     fn register_core_builtins(&mut self) {
         use crate::goal::{AnyGoal, Goal, GoalCast};
         use crate::lterm::LValue;
-        use crate::relation::{eq, fail};
+        use crate::relation::fail;
 
         // Builtin length predicate - efficiently calculates list length
         // Prefixed with __builtin_ to avoid conflicts with library predicates
