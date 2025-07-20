@@ -214,3 +214,6 @@ pub use clpz::plusz::plusz;
 #[cfg(feature = "clpz")]
 #[doc(inline)]
 pub use clpz::timesz::timesz;
+
+#[cfg(test)]
+mod tests;
