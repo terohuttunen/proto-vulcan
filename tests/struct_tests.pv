@@ -1,0 +1,213 @@
+// tests/struct_tests.pv - Tests for struct syntax in Proto-Vulcan
+use std::list::*;
+
+// Test tuple struct construction and equality
+struct Point(i32, i32);
+
+@test(expected = [true])
+rel test_tuple_struct_construction(result) {
+    Point(1, 2) == Point(1, 2);
+    result == true
+}
+
+@test(expected = [42])
+rel test_tuple_struct_pattern_matching(x) {
+    Point(x, _) == Point(42, 13)
+}
+
+// Test named struct construction and equality
+struct Person { name: String, age: i32 }
+
+@test(expected = [true])
+rel test_named_struct_construction(result) {
+    Person {name: "Alice", age: 30} == Person {name: "Alice", age: 30};
+    result == true
+}
+
+@test(expected = ["Bob"])
+rel test_named_struct_pattern_matching(name) {
+    Person {name: name, age: _} == Person {name: "Bob", age: 25}
+}
+
+@test(expected = [true])
+rel test_named_struct_field_order_independence(result) {
+    Person {name: "Alice", age: 30} == Person {age: 30, name: "Alice"};
+    result == true
+}
+
+// Test nested structs
+struct Address { street: String, city: String }
+struct Employee { name: String, address: Address }
+
+@test(expected = [true])
+rel test_nested_named_structs(result) {
+    Employee {
+        name: "Alice", 
+        address: Address {street: "Main St", city: "Boston"}
+    } == Employee {
+        name: "Alice", 
+        address: Address {street: "Main St", city: "Boston"}
+    };
+    result == true
+}
+
+// Test mixed tuple and named structs
+struct Location(i32, i32);
+struct Building { name: String, location: Location }
+
+@test(expected = [true])
+rel test_mixed_struct_types(result) {
+    Building {name: "Office", location: Location(10, 20)} == 
+    Building {name: "Office", location: Location(10, 20)};
+    result == true
+}
+
+// Test struct unification and variable binding
+@test(expected = [[5, 15]])
+rel test_struct_variable_unification(result) {
+    |X, Y| {
+        Point(X, Y) == Point(5, 15);
+        result == [X, Y]
+    }
+}
+
+@test(expected = [["Charlie", 35]])
+rel test_named_struct_variable_unification(result) {
+    |Name, Age| {
+        Person {name: Name, age: Age} == Person {name: "Charlie", age: 35};
+        result == [Name, Age]
+    }
+}
+
+// Test struct conversion/transformation patterns
+struct Pair(i32, i32);
+struct Coordinate { x: i32, y: i32 }
+
+@test(expected = [true])
+rel test_struct_conversion(result) {
+    |X, Y| {
+        Pair(X, Y) == Pair(1, 2);
+        Coordinate {x: X, y: Y} == Coordinate {x: 1, y: 2};
+        result == true
+    }
+}
+
+// Test struct inequality
+@test(expected = [true])
+rel test_struct_inequality(result) {
+    Point(1, 2) != Point(3, 4);
+    result == true
+}
+
+@test(expected = [true])
+rel test_named_struct_inequality(result) {
+    Person {name: "Alice", age: 30} != Person {name: "Bob", age: 30};
+    result == true
+}
+
+// Test match patterns with tuple structs
+@test(expected = [20])
+rel test_tuple_struct_match_pattern(result) {
+    match Point(10, 20) {
+        Point(10, y) => result == y
+    }
+}
+
+@test(expected = [true])
+rel test_tuple_struct_match_wildcard(found) {
+    match Point(5, 15) {
+        Point(_, 15) => found == true
+    }
+}
+
+// Test match patterns with named structs
+@test(expected = [30])
+rel test_named_struct_match_pattern(result) {
+    match Person {name: "Alice", age: 30} {
+        Person {name: "Alice", age: a} => result == a
+    }
+}
+
+@test(expected = ["matched"])
+rel test_named_struct_match_field_order(result) {
+    match Person {name: "Bob", age: 25} {
+        Person {age: 25, name: "Bob"} => result == "matched"
+    }
+}
+
+// Test match patterns with nested structs
+@test(expected = ["John"])
+rel test_nested_struct_match_pattern(result) {
+    match Employee {name: "John", address: Address {street: "Oak St", city: "NYC"}} {
+        Employee {name: n, address: Address {city: "NYC", street: _}} => result == n
+    }
+}
+
+// Test match patterns with mixed struct types
+@test(expected = [100])
+rel test_mixed_struct_match_pattern(result) {
+    match Building {name: "Library", location: Location(100, 200)} {
+        Building {name: "Library", location: Location(x, y)} => result == x
+    }
+}
+
+// Test match with complex patterns
+struct Shape(String, i32, i32);
+struct Rectangle { width: i32, height: i32 }
+
+@test(expected = [[10, 8]])
+rel test_complex_match_patterns(result) {
+    |Area1, Area2| {
+        match Shape("rect", 10, 5) {
+            Shape("rect", w, h) => Area1 == w
+        };
+        
+        match Rectangle {width: 8, height: 6} {
+            Rectangle {width: w, height: h} => Area2 == w
+        };
+        
+        result == [Area1, Area2]
+    }
+}
+
+// Test struct field extraction
+@test(expected = [["Alice", 30]])
+rel test_struct_field_extraction(result) {
+    |P, Name, Age| {
+        P == Person {name: "Alice", age: 30};
+        Person {name: Name, age: Age} == P;
+        result == [Name, Age]
+    }
+}
+
+// Test nested struct field extraction
+@test(expected = ["Boston"])
+rel test_nested_field_extraction(city) {
+    |E| {
+        E == Employee {
+            name: "Alice", 
+            address: Address {street: "Main St", city: "Boston"}
+        };
+        Employee {name: _, address: Address {street: _, city: city}} == E
+    }
+}
+
+// Test multiple struct instances
+@test(expected = [1, 3])
+rel test_multiple_points(x) {
+    |P| {
+        member(P, [Point(1, 2), Point(3, 4)]);
+        Point(x, _) == P
+    }
+}
+
+// Test struct with different field orders in construction
+@test(expected = [true])
+rel test_construction_field_order(result) {
+    |P1, P2| {
+        P1 == Person {name: "Alice", age: 30};
+        P2 == Person {age: 30, name: "Alice"};
+        P1 == P2;
+        result == true
+    }
+}

@@ -21,6 +21,8 @@ pub mod metaprogramming;
 pub mod parser;
 pub mod query;
 mod runtime_value;
+#[cfg(test)]
+mod struct_tests;
 pub mod test_runner;
 pub mod trace;
 

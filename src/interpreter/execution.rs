@@ -18,6 +18,7 @@ use super::parser::ast::{
 use super::runtime_value::PredicateHandle;
 use super::runtime_value::RuntimeValue;
 use super::InterpreterError;
+use crate::compound::{CompoundObject, CompoundWalkStar};
 use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::lterm::LTerm;
@@ -32,6 +33,154 @@ use crate::user::User;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+
+/// A simple tuple struct structure for interpreter-based tuple struct types
+#[derive(Clone)]
+pub struct SimpleTupleStruct<U: User, E: Engine<U>> {
+    pub name: String,
+    pub args: Vec<LTerm<U, E>>,
+}
+
+impl<U: User, E: Engine<U>> std::fmt::Debug for SimpleTupleStruct<U, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}(", self.name)?;
+        for (i, arg) in self.args.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{:?}", arg)?;
+        }
+        write!(f, ")")
+    }
+}
+
+impl<U: User, E: Engine<U>> SimpleTupleStruct<U, E> {
+    pub fn new(name: String, args: Vec<LTerm<U, E>>) -> Self {
+        Self { name, args }
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundObject<U, E> for SimpleTupleStruct<U, E> {
+    fn type_name(&self) -> &'static str {
+        // We can't return &self.name because it's not 'static, so we return a generic name
+        "TupleStruct"
+    }
+
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
+        Box::new(self.args.iter().map(|arg| arg as &dyn CompoundObject<U, E>))
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for SimpleTupleStruct<U, E> {
+    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
+        Self {
+            name: self.name.clone(),
+            args: self.args.iter().map(|arg| arg.compound_walk_star(smap)).collect(),
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> PartialEq for SimpleTupleStruct<U, E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.args == other.args
+    }
+}
+
+impl<U: User, E: Engine<U>> Eq for SimpleTupleStruct<U, E> {}
+
+impl<U: User, E: Engine<U>> std::hash::Hash for SimpleTupleStruct<U, E> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        self.args.hash(state);
+    }
+}
+
+impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for SimpleTupleStruct<U, E> {
+    fn into(self) -> LTerm<U, E> {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
+    }
+}
+
+/// A simple named struct structure for interpreter-based named struct types
+#[derive(Clone)]
+pub struct SimpleNamedStruct<U: User, E: Engine<U>> {
+    pub name: String,
+    pub fields: std::collections::HashMap<String, LTerm<U, E>>,
+}
+
+impl<U: User, E: Engine<U>> std::fmt::Debug for SimpleNamedStruct<U, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {{", self.name)?;
+        let mut first = true;
+        for (field_name, field_value) in &self.fields {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}: {:?}", field_name, field_value)?;
+            first = false;
+        }
+        write!(f, "}}")
+    }
+}
+
+impl<U: User, E: Engine<U>> SimpleNamedStruct<U, E> {
+    pub fn new(name: String, fields: std::collections::HashMap<String, LTerm<U, E>>) -> Self {
+        Self { name, fields }
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundObject<U, E> for SimpleNamedStruct<U, E> {
+    fn type_name(&self) -> &'static str {
+        "NamedStruct"
+    }
+
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
+        // Sort fields by name to ensure deterministic iteration order
+        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
+        sorted_fields.sort_by_key(|(name, _)| *name);
+        Box::new(sorted_fields.into_iter().map(|(_, field)| field as &dyn CompoundObject<U, E>))
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for SimpleNamedStruct<U, E> {
+    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
+        let mut walked_fields = std::collections::HashMap::new();
+        for (name, value) in &self.fields {
+            walked_fields.insert(name.clone(), value.compound_walk_star(smap));
+        }
+        Self {
+            name: self.name.clone(),
+            fields: walked_fields,
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> PartialEq for SimpleNamedStruct<U, E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.fields == other.fields
+    }
+}
+
+impl<U: User, E: Engine<U>> Eq for SimpleNamedStruct<U, E> {}
+
+impl<U: User, E: Engine<U>> std::hash::Hash for SimpleNamedStruct<U, E> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+        // HashMap doesn't implement Hash, so we'll sort the fields first
+        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
+        sorted_fields.sort_by_key(|(k, _)| *k);
+        for (key, value) in sorted_fields {
+            key.hash(state);
+            value.hash(state);
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for SimpleNamedStruct<U, E> {
+    fn into(self) -> LTerm<U, E> {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
+    }
+}
 
 /// A custom disjunction that uses DFS (depth-first search) semantics
 /// This works within the BFS Goal<U, E> framework but uses DFS stream operations
@@ -635,8 +784,29 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 Ok(lterm_from_vec_and_tail(elements, tail))
             }
             Term::Parenthesized(inner, _) => self.ast_term_to_runtime(inner),
-            Term::NamedStruct(..) => todo!(),
-            Term::TupleStruct(..) => todo!(),
+            Term::NamedStruct(named_struct, _) => {
+                // Convert named struct construction to runtime
+                let mut fields = std::collections::HashMap::new();
+                for field in &named_struct.fields {
+                    let field_value = self.ast_term_to_runtime(&field.value)?;
+                    fields.insert(field.name.clone(), field_value);
+                }
+                
+                // Create a simple named struct structure
+                let named_struct_obj = SimpleNamedStruct::new(named_struct.name.clone(), fields);
+                Ok(LTerm::from(Rc::new(named_struct_obj) as Rc<dyn CompoundObject<U, E>>))
+            }
+            Term::TupleStruct(compound, _) => {
+                // Convert tuple struct construction to runtime
+                let mut args = Vec::new();
+                for arg in &compound.args {
+                    args.push(self.ast_term_to_runtime(arg)?);
+                }
+                
+                // Create a simple tuple struct structure
+                let compound_obj = SimpleTupleStruct::new(compound.name.clone(), args);
+                Ok(LTerm::from(Rc::new(compound_obj) as Rc<dyn CompoundObject<U, E>>))
+            }
             Term::Interpolation(expr, _) => {
                 // Expand interpolation using template expansion context
                 self.expand_and_evaluate_interpolation(expr)
@@ -893,8 +1063,32 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
                 Ok(lterm_from_vec_and_tail(elements, tail))
             }
-            Pattern::NamedStruct(_) => todo!(),
-            Pattern::TupleStruct(_) => todo!(),
+            Pattern::NamedStruct(named_struct_pattern) => {
+                // Convert named struct pattern to runtime - recursively process each field pattern
+                let mut field_patterns = std::collections::HashMap::new();
+                for field_pattern in &named_struct_pattern.fields {
+                    // Convert each field pattern recursively
+                    let field_term = self.convert_pattern_to_lterm(&field_pattern.pattern)?;
+                    field_patterns.insert(field_pattern.name.clone(), field_term);
+                }
+                
+                // Create a named struct pattern that will match against SimpleNamedStruct objects
+                let named_struct_term = SimpleNamedStruct::new(named_struct_pattern.name.clone(), field_patterns);
+                Ok(LTerm::from(Rc::new(named_struct_term) as Rc<dyn CompoundObject<U, E>>))
+            }
+            Pattern::TupleStruct(compound_pattern) => {
+                // Convert tuple struct pattern to runtime - recursively process each pattern
+                let mut arg_patterns = Vec::new();
+                for arg_pattern in &compound_pattern.args {
+                    // Convert each pattern argument recursively
+                    let arg_term = self.convert_pattern_to_lterm(arg_pattern)?;
+                    arg_patterns.push(arg_term);
+                }
+                
+                // Create a tuple struct pattern that will match against SimpleTupleStruct objects
+                let compound_term = SimpleTupleStruct::new(compound_pattern.name.clone(), arg_patterns);
+                Ok(LTerm::from(Rc::new(compound_term) as Rc<dyn CompoundObject<U, E>>))
+            }
         }
     }
 
