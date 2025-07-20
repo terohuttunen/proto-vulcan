@@ -21,6 +21,7 @@ pub mod metaprogramming;
 pub mod parser;
 pub mod query;
 mod runtime_value;
+mod semantic_analysis;
 #[cfg(test)]
 mod struct_tests;
 pub mod test_runner;
@@ -319,8 +320,41 @@ where
     }
 
     /// Load a program into the interpreter
-    pub fn load_program(&mut self, program: ast::Program) -> Result<(), InterpreterError> {
-        self.environment.borrow_mut().load_program(program)
+    pub fn load_program(&mut self, mut program: ast::Program) -> Result<(), InterpreterError> {
+        // First pass: Load type definitions (enums, structs) into the environment
+        // This is needed so semantic analysis can resolve type names
+        let mut env = self.environment.borrow_mut();
+        for item in &program.items {
+            match item {
+                ast::Item::Enum(enum_def) => env.load_enum(enum_def.clone())?,
+                ast::Item::Struct(struct_def) => env.load_struct(struct_def.clone())?,
+                _ => {} // Skip other items in first pass
+            }
+        }
+        drop(env);
+        
+        // Second pass: Perform semantic analysis to disambiguate enum variants
+        // Now that types are loaded, semantic analysis can resolve enum variants
+        semantic_analysis::analyze_program(&mut program, self.environment.clone())?;
+        
+        // Third pass: Load the remaining items (relations, modules, etc.)
+        let mut env = self.environment.borrow_mut();
+        for item in program.items {
+            match item {
+                ast::Item::Predicate(rel) => env.load_predicate(rel)?,
+                ast::Item::Module(module) => env.load_module(module)?,
+                ast::Item::ModuleDeclaration(mod_decl) => {
+                    env.load_module_declaration(&mod_decl, None, "global")?
+                }
+                ast::Item::Use(use_stmt) => env.load_use_statement(use_stmt)?,
+                ast::Item::Impl(_) => {}, // TODO: Handle impl blocks
+                ast::Item::Enum(_) | ast::Item::Struct(_) => {
+                    // Already loaded in first pass
+                }
+            }
+        }
+        
+        Ok(())
     }
 
     /// Load a specific module into the interpreter
@@ -409,7 +443,10 @@ where
     where
         U::UserContext: Default,
     {
-        let query_goal = query::parse_query(query_str)?;
+        let mut query_goal = query::parse_query(query_str)?;
+
+        // Apply semantic analysis to the query goal
+        semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
 
         // Create query config with appropriate timeout
         let timeout = test_timeout_info
@@ -445,7 +482,11 @@ where
     where
         U::UserContext: Default,
     {
-        let query_goal = query::parse_query(query_str)?;
+        let mut query_goal = query::parse_query(query_str)?;
+        
+        // Apply semantic analysis to the query goal
+        semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
+        
         // TODO: Integrate tracing with the new unified QueryConfig system
         let config = query::QueryConfig {
             timeout: timeout_ms,
@@ -464,7 +505,11 @@ where
     where
         U::UserContext: Default,
     {
-        let query_goal = query::parse_query(query_str)?;
+        let mut query_goal = query::parse_query(query_str)?;
+        
+        // Apply semantic analysis to the query goal
+        semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
+        
         query::execute_query(self.environment.clone(), query_goal, config)
     }
 }

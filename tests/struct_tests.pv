@@ -211,3 +211,43 @@ rel test_construction_field_order(result) {
         result == true
     }
 }
+
+// Test runner struct pattern matching tests
+// These specifically test the test runner's matches_pattern functionality
+
+// Test empty struct pattern matching in test runner  
+struct Empty {}
+
+@test(expected = [Empty {}])
+rel test_empty_struct_runner_pattern(result) {
+    result == Empty {}
+}
+
+// Test complex nested struct pattern matching in test runner
+struct Container(value);
+struct Item { id: i32, name: String }
+
+@test(expected = [Container(Item { id: 42, name: "test" })])
+rel test_complex_nested_pattern(result) {
+    result == Container(Item { id: 42, name: "test" })
+}
+
+// Test struct patterns with lists in test runner
+@test(expected = [[Point(1, 2), Point(3, 4)]])
+rel test_struct_list_runner_pattern(result) {
+    result == [Point(1, 2), Point(3, 4)]
+}
+
+// Test mixed struct types in test runner patterns
+@test(expected = [Container(Person { name: "Alice", age: 30 })])
+rel test_mixed_struct_runner_pattern(result) {
+    result == Container(Person { name: "Alice", age: 30 })
+}
+
+// Test unit tuple struct pattern
+struct Unit();
+
+@test(expected = [Unit()])
+rel test_unit_tuple_struct_runner_pattern(result) {
+    result == Unit()
+}

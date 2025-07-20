@@ -12,7 +12,7 @@ use super::metaprogramming::{
     TemplateExpansionContext,
 };
 use super::parser::ast::{
-    Conjunction as AstConjunction, Goal as AstGoal, Literal, Pattern, PatternMatching,
+    Conjunction as AstConjunction, EnumVariantPatternKind, Goal as AstGoal, Literal, Pattern, PatternMatching,
     RelationCall, SearchStrategy, StructKind, Term,
 };
 use super::runtime_value::RuntimeValue;
@@ -33,160 +33,15 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// A simple tuple struct structure for interpreter-based tuple struct types
-#[derive(Clone)]
-pub struct SimpleTupleStruct<U: User, E: Engine<U>> {
-    pub name: String,
-    pub args: Vec<LTerm<U, E>>,
-}
-
-impl<U: User, E: Engine<U>> std::fmt::Debug for SimpleTupleStruct<U, E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}(", self.name)?;
-        for (i, arg) in self.args.iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{:?}", arg)?;
-        }
-        write!(f, ")")
-    }
-}
-
-impl<U: User, E: Engine<U>> SimpleTupleStruct<U, E> {
-    pub fn new(name: String, args: Vec<LTerm<U, E>>) -> Self {
-        Self { name, args }
-    }
-}
-
-impl<U: User, E: Engine<U>> CompoundObject<U, E> for SimpleTupleStruct<U, E> {
-    fn type_name(&self) -> &'static str {
-        // We can't return &self.name because it's not 'static, so we return a generic name
-        "TupleStruct"
-    }
-
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
-        Box::new(self.args.iter().map(|arg| arg as &dyn CompoundObject<U, E>))
-    }
-}
-
-impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for SimpleTupleStruct<U, E> {
-    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
-        Self {
-            name: self.name.clone(),
-            args: self.args.iter().map(|arg| arg.compound_walk_star(smap)).collect(),
-        }
-    }
-}
-
-impl<U: User, E: Engine<U>> PartialEq for SimpleTupleStruct<U, E> {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.args == other.args
-    }
-}
-
-impl<U: User, E: Engine<U>> Eq for SimpleTupleStruct<U, E> {}
-
-impl<U: User, E: Engine<U>> std::hash::Hash for SimpleTupleStruct<U, E> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.args.hash(state);
-    }
-}
-
-impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for SimpleTupleStruct<U, E> {
-    fn into(self) -> LTerm<U, E> {
-        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
-    }
-}
-
-/// A simple named struct structure for interpreter-based named struct types
-#[derive(Clone)]
-pub struct SimpleNamedStruct<U: User, E: Engine<U>> {
-    pub name: String,
-    pub fields: std::collections::HashMap<String, LTerm<U, E>>,
-}
-
-impl<U: User, E: Engine<U>> std::fmt::Debug for SimpleNamedStruct<U, E> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {{", self.name)?;
-        let mut first = true;
-        for (field_name, field_value) in &self.fields {
-            if !first {
-                write!(f, ", ")?;
-            }
-            write!(f, "{}: {:?}", field_name, field_value)?;
-            first = false;
-        }
-        write!(f, "}}")
-    }
-}
-
-impl<U: User, E: Engine<U>> SimpleNamedStruct<U, E> {
-    pub fn new(name: String, fields: std::collections::HashMap<String, LTerm<U, E>>) -> Self {
-        Self { name, fields }
-    }
-}
-
-impl<U: User, E: Engine<U>> CompoundObject<U, E> for SimpleNamedStruct<U, E> {
-    fn type_name(&self) -> &'static str {
-        "NamedStruct"
-    }
-
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
-        // Sort fields by name to ensure deterministic iteration order
-        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
-        sorted_fields.sort_by_key(|(name, _)| *name);
-        Box::new(sorted_fields.into_iter().map(|(_, field)| field as &dyn CompoundObject<U, E>))
-    }
-}
-
-impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for SimpleNamedStruct<U, E> {
-    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
-        let mut walked_fields = std::collections::HashMap::new();
-        for (name, value) in &self.fields {
-            walked_fields.insert(name.clone(), value.compound_walk_star(smap));
-        }
-        Self {
-            name: self.name.clone(),
-            fields: walked_fields,
-        }
-    }
-}
-
-impl<U: User, E: Engine<U>> PartialEq for SimpleNamedStruct<U, E> {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.fields == other.fields
-    }
-}
-
-impl<U: User, E: Engine<U>> Eq for SimpleNamedStruct<U, E> {}
-
-impl<U: User, E: Engine<U>> std::hash::Hash for SimpleNamedStruct<U, E> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        // HashMap doesn't implement Hash, so we'll sort the fields first
-        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
-        sorted_fields.sort_by_key(|(k, _)| *k);
-        for (key, value) in sorted_fields {
-            key.hash(state);
-            value.hash(state);
-        }
-    }
-}
-
-impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for SimpleNamedStruct<U, E> {
-    fn into(self) -> LTerm<U, E> {
-        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
-    }
-}
 
 /// Registry-based tuple struct that references type definitions by index
 #[derive(Clone)]
 pub struct RegistryTupleStruct<U: User, E: Engine<U>> {
     pub type_index: usize,
     pub args: Vec<LTerm<U, E>>,
+    pub environment: Rc<RefCell<crate::interpreter::environment::Environment<U, E>>>,
 }
+
 
 impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryTupleStruct<U, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -202,12 +57,30 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryTupleStruct<U, E> {
 }
 
 impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryTupleStruct<U, E> {
-    fn type_name(&self) -> &'static str {
-        "TupleStruct"
+    fn type_name(&self) -> String {
+        let env_ref = self.environment.borrow();
+        env_ref.get_type_by_index(self.type_index)
+            .and_then(|type_def| match type_def {
+                crate::interpreter::environment::TypeDefinition::Struct(s) => Some(s.name.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "TupleStruct".to_string())
     }
     
     fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
         Box::new(self.args.iter().map(|arg| arg as &dyn CompoundObject<U, E>))
+    }
+
+    fn display_string(&self) -> String {
+        let type_name = self.type_name();
+        let arg_strings: Vec<String> = self.args.iter().map(|arg| {
+            if let crate::lterm::LTermInner::Compound(compound) = arg.as_ref() {
+                compound.display_string()
+            } else {
+                format!("{}", arg)
+            }
+        }).collect();
+        format!("{}({})", type_name, arg_strings.join(", "))
     }
 }
 
@@ -216,9 +89,11 @@ impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryTupleStruct<U, E>
         Self {
             type_index: self.type_index,
             args: self.args.iter().map(|arg| arg.compound_walk_star(smap)).collect(),
+            environment: self.environment.clone(),
         }
     }
 }
+
 
 impl<U: User, E: Engine<U>> PartialEq for RegistryTupleStruct<U, E> {
     fn eq(&self, other: &Self) -> bool {
@@ -246,7 +121,9 @@ impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for RegistryTupleStruct<U, E> {
 pub struct RegistryNamedStruct<U: User, E: Engine<U>> {
     pub type_index: usize,
     pub fields: std::collections::HashMap<String, LTerm<U, E>>,
+    pub environment: Rc<RefCell<crate::interpreter::environment::Environment<U, E>>>,
 }
+
 
 impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryNamedStruct<U, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -264,8 +141,14 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryNamedStruct<U, E> {
 }
 
 impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryNamedStruct<U, E> {
-    fn type_name(&self) -> &'static str {
-        "NamedStruct"
+    fn type_name(&self) -> String {
+        let env_ref = self.environment.borrow();
+        env_ref.get_type_by_index(self.type_index)
+            .and_then(|type_def| match type_def {
+                crate::interpreter::environment::TypeDefinition::Struct(s) => Some(s.name.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "NamedStruct".to_string())
     }
     
     fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
@@ -273,6 +156,21 @@ impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryNamedStruct<U, E> {
         let mut sorted_fields: Vec<_> = self.fields.iter().collect();
         sorted_fields.sort_by_key(|(name, _)| *name);
         Box::new(sorted_fields.into_iter().map(|(_, field)| field as &dyn CompoundObject<U, E>))
+    }
+
+    fn display_string(&self) -> String {
+        let type_name = self.type_name();
+        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
+        sorted_fields.sort_by_key(|(name, _)| *name);
+        let field_strings: Vec<String> = sorted_fields.iter().map(|(name, value)| {
+            let value_str = if let crate::lterm::LTermInner::Compound(compound) = value.as_ref() {
+                compound.display_string()
+            } else {
+                format!("{}", value)
+            };
+            format!("{}: {}", name, value_str)
+        }).collect();
+        format!("{} {{ {} }}", type_name, field_strings.join(", "))
     }
 }
 
@@ -285,9 +183,11 @@ impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryNamedStruct<U, E>
         Self {
             type_index: self.type_index,
             fields: walked_fields,
+            environment: self.environment.clone(),
         }
     }
 }
+
 
 impl<U: User, E: Engine<U>> PartialEq for RegistryNamedStruct<U, E> {
     fn eq(&self, other: &Self) -> bool {
@@ -311,6 +211,263 @@ impl<U: User, E: Engine<U>> std::hash::Hash for RegistryNamedStruct<U, E> {
 }
 
 impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for RegistryNamedStruct<U, E> {
+    fn into(self) -> LTerm<U, E> {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
+    }
+}
+
+/// Registry-based enum variant that references type definitions by index
+#[derive(Clone)]
+pub struct RegistryEnumVariant<U: User, E: Engine<U>> {
+    pub enum_type_index: usize,
+    pub variant_index: usize,
+    pub variant_name: String,
+    pub variant_data: VariantData<U, E>,
+    pub environment: Rc<RefCell<crate::interpreter::environment::Environment<U, E>>>,
+}
+
+/// Data contained in an enum variant
+#[derive(Clone)]
+pub enum VariantData<U: User, E: Engine<U>> {
+    Unit,                                               // Color::Red
+    Tuple(Vec<LTerm<U, E>>),                           // Option::Some(42)
+    Named(std::collections::HashMap<String, LTerm<U, E>>), // Person::Named { name: "John", age: 30 }
+}
+
+impl<U: User, E: Engine<U>> RegistryEnumVariant<U, E> {
+    /// Get the enum name from an environment if available
+    pub fn get_enum_name(&self, environment: Option<&crate::interpreter::environment::Environment<U, E>>) -> String {
+        if let Some(env) = environment {
+            if let Some(type_def) = env.get_type_by_index(self.enum_type_index) {
+                if let crate::interpreter::environment::TypeDefinition::Enum(enum_def) = type_def {
+                    return enum_def.name.clone();
+                }
+            }
+        }
+        // Fallback to a generic name
+        format!("Enum{}", self.enum_type_index)
+    }
+}
+
+
+impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryEnumVariant<U, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RegistryEnumVariant(enum_type_index={}, variant_name={}, data=", 
+               self.enum_type_index, self.variant_name)?;
+        match &self.variant_data {
+            VariantData::Unit => write!(f, "Unit"),
+            VariantData::Tuple(args) => {
+                write!(f, "Tuple(")?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", arg)?;
+                }
+                write!(f, ")")
+            }
+            VariantData::Named(fields) => {
+                write!(f, "Named({{")?;
+                let mut first = true;
+                for (field_name, field_value) in fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {:?}", field_name, field_value)?;
+                    first = false;
+                }
+                write!(f, "}})")
+            }
+        }?;
+        write!(f, ")")
+    }
+}
+
+impl<U: User, E: Engine<U>> std::fmt::Debug for VariantData<U, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VariantData::Unit => write!(f, "Unit"),
+            VariantData::Tuple(args) => {
+                write!(f, "Tuple(")?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{:?}", arg)?;
+                }
+                write!(f, ")")
+            }
+            VariantData::Named(fields) => {
+                write!(f, "Named({{")?;
+                let mut first = true;
+                for (field_name, field_value) in fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {:?}", field_name, field_value)?;
+                    first = false;
+                }
+                write!(f, "}})")
+            }
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryEnumVariant<U, E> {
+    fn type_name(&self) -> String {
+        let env_ref = self.environment.borrow();
+        env_ref.get_type_by_index(self.enum_type_index)
+            .and_then(|type_def| match type_def {
+                crate::interpreter::environment::TypeDefinition::Enum(e) => Some(e.name.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "Enum".to_string())
+    }
+    
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
+        match &self.variant_data {
+            VariantData::Unit => Box::new(std::iter::empty()),
+            VariantData::Tuple(args) => {
+                Box::new(args.iter().map(|arg| arg as &dyn CompoundObject<U, E>))
+            }
+            VariantData::Named(fields) => {
+                // Sort fields by name to ensure deterministic iteration order
+                let mut sorted_fields: Vec<_> = fields.iter().collect();
+                sorted_fields.sort_by_key(|(name, _)| *name);
+                Box::new(sorted_fields.into_iter().map(|(_, field)| field as &dyn CompoundObject<U, E>))
+            }
+        }
+    }
+
+
+    fn is_enum_variant(&self) -> bool {
+        true
+    }
+
+    fn variant_index(&self) -> Option<usize> {
+        Some(self.variant_index)
+    }
+
+    fn variant_name(&self) -> Option<String> {
+        Some(self.variant_name.clone())
+    }
+
+    fn type_registry_index(&self) -> Option<usize> {
+        Some(self.enum_type_index)
+    }
+
+    fn display_string(&self) -> String {
+        let enum_name = self.type_name();
+        
+        match &self.variant_data {
+            VariantData::Unit => format!("{}::{}", enum_name, self.variant_name),
+            VariantData::Tuple(args) => {
+                let arg_strings: Vec<String> = args.iter().map(|arg| {
+                    if let crate::lterm::LTermInner::Compound(compound) = arg.as_ref() {
+                        compound.display_string()
+                    } else {
+                        format!("{}", arg)
+                    }
+                }).collect();
+                format!("{}::{}({})", enum_name, self.variant_name, arg_strings.join(", "))
+            }
+            VariantData::Named(fields) => {
+                let mut sorted_fields: Vec<_> = fields.iter().collect();
+                sorted_fields.sort_by_key(|(name, _)| *name);
+                let field_strings: Vec<String> = sorted_fields.iter().map(|(name, value)| {
+                    let value_str = if let crate::lterm::LTermInner::Compound(compound) = value.as_ref() {
+                        compound.display_string()
+                    } else {
+                        format!("{}", value)
+                    };
+                    format!("{}: {}", name, value_str)
+                }).collect();
+                format!("{}::{} {{ {} }}", enum_name, self.variant_name, field_strings.join(", "))
+            }
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryEnumVariant<U, E> {
+    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
+        let walked_data = match &self.variant_data {
+            VariantData::Unit => VariantData::Unit,
+            VariantData::Tuple(args) => {
+                VariantData::Tuple(args.iter().map(|arg| arg.compound_walk_star(smap)).collect())
+            }
+            VariantData::Named(fields) => {
+                let mut walked_fields = std::collections::HashMap::new();
+                for (name, value) in fields {
+                    walked_fields.insert(name.clone(), value.compound_walk_star(smap));
+                }
+                VariantData::Named(walked_fields)
+            }
+        };
+        
+        Self {
+            enum_type_index: self.enum_type_index,
+            variant_index: self.variant_index,
+            variant_name: self.variant_name.clone(),
+            variant_data: walked_data,
+            environment: self.environment.clone(),
+        }
+    }
+}
+
+
+impl<U: User, E: Engine<U>> PartialEq for RegistryEnumVariant<U, E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.enum_type_index == other.enum_type_index 
+            && self.variant_index == other.variant_index
+            && self.variant_data == other.variant_data
+    }
+}
+
+impl<U: User, E: Engine<U>> PartialEq for VariantData<U, E> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (VariantData::Unit, VariantData::Unit) => true,
+            (VariantData::Tuple(a), VariantData::Tuple(b)) => a == b,
+            (VariantData::Named(a), VariantData::Named(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> Eq for RegistryEnumVariant<U, E> {}
+impl<U: User, E: Engine<U>> Eq for VariantData<U, E> {}
+
+impl<U: User, E: Engine<U>> std::hash::Hash for RegistryEnumVariant<U, E> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.enum_type_index.hash(state);
+        self.variant_index.hash(state);
+        self.variant_data.hash(state);
+    }
+}
+
+impl<U: User, E: Engine<U>> std::hash::Hash for VariantData<U, E> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            VariantData::Unit => 0u8.hash(state),
+            VariantData::Tuple(args) => {
+                1u8.hash(state);
+                args.hash(state);
+            }
+            VariantData::Named(fields) => {
+                2u8.hash(state);
+                // HashMap doesn't implement Hash, so we'll sort the fields first
+                let mut sorted_fields: Vec<_> = fields.iter().collect();
+                sorted_fields.sort_by_key(|(k, _)| *k);
+                for (key, value) in sorted_fields {
+                    key.hash(state);
+                    value.hash(state);
+                }
+            }
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for RegistryEnumVariant<U, E> {
     fn into(self) -> LTerm<U, E> {
         LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
     }
@@ -932,6 +1089,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             }
             Term::Parenthesized(inner, _) => self.ast_term_to_runtime(inner),
             Term::NamedStruct(named_struct, _) => {
+                // Named struct construction
                 let type_index = self.resolve_type_to_index(&named_struct.name)?;
                 
                 // Verify it's a named struct
@@ -955,10 +1113,11 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     fields.insert(field.name.clone(), field_value);
                 }
                 
-                let registry_struct = RegistryNamedStruct { type_index, fields };
+                let registry_struct = RegistryNamedStruct { type_index, fields, environment: self.environment.clone() };
                 Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
             }
             Term::TupleStruct(compound, _) => {
+                // Tuple struct construction
                 let type_index = self.resolve_type_to_index(&compound.name)?;
                 
                 // Verify it's a tuple struct
@@ -981,14 +1140,85 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     args.push(self.ast_term_to_runtime(arg)?);
                 }
                 
-                let registry_struct = RegistryTupleStruct { type_index, args };
+                let registry_struct = RegistryTupleStruct { type_index, args, environment: self.environment.clone() };
                 Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
             }
             Term::Interpolation(expr, _) => {
                 // Expand interpolation using template expansion context
                 self.expand_and_evaluate_interpolation(expr)
             }
+            Term::EnumVariant(enum_variant, _) => {
+                // Handle enum variant construction
+                self.ast_enum_variant_to_runtime(enum_variant)
+            }
         }
+    }
+
+    /// Converts an AST enum variant to a runtime LTerm
+    pub fn ast_enum_variant_to_runtime(&mut self, enum_variant: &super::parser::ast::EnumVariantConstruction) -> Result<LTerm<U, E>, InterpreterError> {
+        // Resolve enum type
+        let enum_type_index = self.resolve_type_to_index(&enum_variant.enum_name)?;
+        
+        // Verify it's an enum and the variant exists
+        let (variant_kind, variant_name, variant_index) = {
+            let env = self.environment.borrow();
+            let enum_def = match env.get_type_by_index(enum_type_index) {
+                Some(TypeDefinition::Enum(def)) => def,
+                Some(_) => return Err(InterpreterError::RuntimeError(
+                    format!("{} is not an enum", enum_variant.enum_name)
+                )),
+                None => return Err(InterpreterError::RuntimeError(
+                    format!("Unknown enum type: {}", enum_variant.enum_name)
+                )),
+            };
+            
+            // Find the variant in the enum definition and its index
+            let (variant_index, variant_def) = enum_def.variants.iter()
+                .enumerate()
+                .find(|(_, v)| v.name == enum_variant.variant_name)
+                .ok_or_else(|| InterpreterError::RuntimeError(
+                    format!("Unknown variant {} for enum {}", 
+                           enum_variant.variant_name, enum_variant.enum_name)
+                ))?;
+            
+            (variant_def.kind.clone(), variant_def.name.clone(), variant_index)
+        }; // Drop the borrow here
+        
+        // Create the variant data based on the construction kind
+        let variant_data = match (&enum_variant.kind, &variant_kind) {
+            (super::parser::ast::EnumVariantConstructionKind::Unit, super::parser::ast::VariantKind::Unit) => {
+                VariantData::Unit
+            }
+            (super::parser::ast::EnumVariantConstructionKind::Tuple(args), super::parser::ast::VariantKind::Tuple(_)) => {
+                let mut runtime_args = Vec::new();
+                for arg in args {
+                    runtime_args.push(self.ast_term_to_runtime(arg)?);
+                }
+                VariantData::Tuple(runtime_args)
+            }
+            (super::parser::ast::EnumVariantConstructionKind::Named(fields), super::parser::ast::VariantKind::Named(_)) => {
+                let mut runtime_fields = std::collections::HashMap::new();
+                for field in fields {
+                    let field_value = self.ast_term_to_runtime(&field.value)?;
+                    runtime_fields.insert(field.name.clone(), field_value);
+                }
+                VariantData::Named(runtime_fields)
+            }
+            _ => return Err(InterpreterError::RuntimeError(
+                format!("Variant construction kind does not match enum definition for {}::{}", 
+                       enum_variant.enum_name, enum_variant.variant_name)
+            )),
+        };
+        
+        let enum_variant_obj = RegistryEnumVariant {
+            enum_type_index,
+            variant_index,
+            variant_name: variant_name,
+            variant_data,
+            environment: self.environment.clone(),
+        };
+        
+        Ok(LTerm::from(Rc::new(enum_variant_obj) as Rc<dyn CompoundObject<U, E>>))
     }
 
     pub fn ast_call_argument_to_runtime(
@@ -1241,6 +1471,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 Ok(lterm_from_vec_and_tail(elements, tail))
             }
             Pattern::NamedStruct(named_struct_pattern) => {
+                // Named struct pattern
                 let type_index = self.resolve_type_to_index(&named_struct_pattern.name)?;
                 
                 // Convert field patterns
@@ -1250,10 +1481,11 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     field_patterns.insert(field_pattern.name.clone(), field_term);
                 }
                 
-                let registry_struct = RegistryNamedStruct { type_index, fields: field_patterns };
+                let registry_struct = RegistryNamedStruct { type_index, fields: field_patterns, environment: self.environment.clone() };
                 Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
             }
             Pattern::TupleStruct(compound_pattern) => {
+                // Tuple struct pattern
                 let type_index = self.resolve_type_to_index(&compound_pattern.name)?;
                 
                 // Convert pattern arguments
@@ -1263,8 +1495,57 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     arg_patterns.push(arg_term);
                 }
                 
-                let registry_struct = RegistryTupleStruct { type_index, args: arg_patterns };
+                let registry_struct = RegistryTupleStruct { type_index, args: arg_patterns, environment: self.environment.clone() };
                 Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
+            }
+            Pattern::EnumVariant(enum_variant_pattern) => {
+                // Enum variant pattern
+                let type_index = self.resolve_type_to_index(&enum_variant_pattern.enum_name)?;
+                
+                // Find the variant index
+                let env = self.environment.borrow();
+                let variant_index = if let Some(TypeDefinition::Enum(enum_def)) = env.get_type_by_index(type_index) {
+                    enum_def.variants.iter().enumerate()
+                        .find(|(_, variant)| variant.name == enum_variant_pattern.variant_name)
+                        .map(|(index, _)| index)
+                        .ok_or_else(|| InterpreterError::RuntimeError(
+                            format!("Variant {} not found in enum {}", enum_variant_pattern.variant_name, enum_variant_pattern.enum_name)
+                        ))?
+                } else {
+                    return Err(InterpreterError::RuntimeError(
+                        format!("{} is not an enum", enum_variant_pattern.enum_name)
+                    ));
+                };
+                drop(env);
+                
+                // Convert variant data based on kind
+                let variant_data = match &enum_variant_pattern.kind {
+                    EnumVariantPatternKind::Unit => VariantData::Unit,
+                    EnumVariantPatternKind::Tuple(patterns) => {
+                        let mut runtime_patterns = Vec::new();
+                        for pattern in patterns {
+                            runtime_patterns.push(self.convert_pattern_to_lterm(pattern)?);
+                        }
+                        VariantData::Tuple(runtime_patterns)
+                    }
+                    EnumVariantPatternKind::Named(field_patterns) => {
+                        let mut runtime_field_patterns = std::collections::HashMap::new();
+                        for field_pattern in field_patterns {
+                            let field_term = self.convert_pattern_to_lterm(&field_pattern.pattern)?;
+                            runtime_field_patterns.insert(field_pattern.name.clone(), field_term);
+                        }
+                        VariantData::Named(runtime_field_patterns)
+                    }
+                };
+                
+                let enum_variant_obj = RegistryEnumVariant { 
+                    enum_type_index: type_index, 
+                    variant_index,
+                    variant_name: enum_variant_pattern.variant_name.clone(),
+                    variant_data,
+                    environment: self.environment.clone(),
+                };
+                Ok(LTerm::from(Rc::new(enum_variant_obj) as Rc<dyn CompoundObject<U, E>>))
             }
         }
     }

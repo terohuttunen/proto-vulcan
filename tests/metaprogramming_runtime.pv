@@ -180,4 +180,133 @@ rel test_nested_if_statements(result) {
     } else {
         result == "outer_false"
     }
+}
+
+// Test enum variant expansion in metaprogramming
+enum Color { Red, Green, Blue }
+enum Container { Empty, Single(value), Pair(first, second) }
+enum Person { Anonymous, Named { name: String, age: i32 } }
+
+// Test enum variants with interpolated values
+@test(expected = [Container::Single(42)])
+rel test_enum_value_expansion(result) {
+    let value: int = 42;
+    result == Container::Single({value})
+}
+
+// Test enum variants with multiple interpolated values
+@test(expected = [Container::Pair(10, 20)])
+rel test_enum_multi_value_expansion(result) {
+    let first: int = 10;
+    let second: int = 20;
+    result == Container::Pair({first}, {second})
+}
+
+// Test named enum variant with interpolated fields
+@test(expected = [Person::Named { name: "Alice", age: 30 }])
+rel test_enum_named_field_expansion(result) {
+    let person_name: string = "Alice";
+    let person_age: int = 30;
+    result == Person::Named { name: {person_name}, age: {person_age} }
+}
+
+// Test simple enum expansion without loops (metaprogramming context has limitations)
+@test(expected = [Container::Single(10)])
+rel test_enum_expansion_computed(result) {
+    let value: int = 5;
+    let multiplier: int = 2;
+    let computed: int = value * multiplier;
+    result == Container::Single({computed})
+}
+
+// Test complex enum expansion with nested expressions
+@test(expected = [Container::Pair(5, 15)])
+rel test_enum_complex_expansion(result) {
+    let base: int = 5;
+    let multiplier: int = 3;
+    let computed: int = base * multiplier;
+    result == Container::Pair({base}, {computed})
+}
+
+// Test struct expansion in metaprogramming
+struct Point(i32, i32);
+struct Rectangle { width: i32, height: i32 }
+struct Box { item: String, quantity: i32 }
+
+// Test tuple struct with interpolated values
+@test(expected = [Point(10, 20)])
+rel test_tuple_struct_expansion(result) {
+    let x: int = 10;
+    let y: int = 20;
+    result == Point({x}, {y})
+}
+
+// Test tuple struct with computed values
+@test(expected = [Point(5, 10)])
+rel test_tuple_struct_computed_expansion(result) {
+    let base: int = 5;
+    let multiplier: int = 2;
+    let y_coord: int = base * multiplier;
+    result == Point({base}, {y_coord})
+}
+
+// Test named struct with interpolated fields
+@test(expected = [Rectangle { width: 15, height: 25 }])
+rel test_named_struct_expansion(result) {
+    let w: int = 15;
+    let h: int = 25;
+    result == Rectangle { width: {w}, height: {h} }
+}
+
+// Test named struct with computed fields
+@test(expected = [Rectangle { width: 12, height: 18 }])
+rel test_named_struct_computed_expansion(result) {
+    let base_width: int = 6;
+    let width_multiplier: int = 2;
+    let height_factor: int = 3;
+    let final_width: int = base_width * width_multiplier;
+    let final_height: int = base_width * height_factor;
+    result == Rectangle { width: {final_width}, height: {final_height} }
+}
+
+// Test mixed field types in named struct
+@test(expected = [Box { item: "widget", quantity: 42 }])
+rel test_mixed_field_struct_expansion(result) {
+    let item_name: string = "widget";
+    let count: int = 42;
+    result == Box { item: {item_name}, quantity: {count} }
+}
+
+// Test struct field order independence with interpolation
+@test(expected = [Rectangle { width: 8, height: 12 }])
+rel test_struct_field_order_expansion(result) {
+    let w: int = 8;
+    let h: int = 12;
+    result == Rectangle { height: {h}, width: {w} }
+}
+
+// Test nested struct expansion
+struct Container3D { position: Point, dimensions: Rectangle }
+
+@test(expected = [Container3D { position: Point(1, 2), dimensions: Rectangle { width: 10, height: 20 } }])
+rel test_nested_struct_expansion(result) {
+    let x: int = 1;
+    let y: int = 2;
+    let w: int = 10;
+    let h: int = 20;
+    result == Container3D { 
+        position: Point({x}, {y}), 
+        dimensions: Rectangle { width: {w}, height: {h} } 
+    }
+}
+
+// Test struct expansion with arithmetic expressions
+@test(expected = [Point(15, 35)])
+rel test_struct_arithmetic_expansion(result) {
+    let a: int = 3;
+    let b: int = 5;
+    let c: int = 7;
+    let x_val: int = a * b;
+    let y_val: int = b * c;
+    result == Point({x_val}, {y_val})
 } 

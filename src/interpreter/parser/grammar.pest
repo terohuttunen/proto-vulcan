@@ -22,7 +22,7 @@ pattern_arrow = @{ "=>" }
 // =============================================================================
 
 program = {
-    SOI ~ (use_statement | mod_declaration | struct_definition | impl_block | predicate_definition)* ~ EOI
+    SOI ~ (use_statement | mod_declaration | struct_definition | enum_definition | impl_block | predicate_definition)* ~ EOI
 }
 
 // Module declarations
@@ -32,7 +32,7 @@ mod_declaration = {
 
 mod_declaration_body = {
     visibility? ~ mod_keyword ~ ident ~ search_strategy? ~ "{" ~
-        (use_statement | mod_declaration | struct_definition | impl_block | predicate_definition)*
+        (use_statement | mod_declaration | struct_definition | enum_definition | impl_block | predicate_definition)*
     ~ "}"
 }
 
@@ -71,6 +71,7 @@ self_keyword = @{ "self" }
 mod_keyword = @{ "mod" }
 use_keyword = @{ "use" }
 struct_keyword = @{ "struct" }
+enum_keyword = @{ "enum" }
 
 struct_definition = {
     visibility? ~ struct_keyword ~ type_name ~ (tuple_struct_def | named_struct_def)
@@ -85,6 +86,23 @@ named_struct_def = {
 }
 
 named_field = { visibility? ~ ident ~ ":" ~ type_name }
+
+// Enum definitions
+enum_definition = {
+    visibility? ~ enum_keyword ~ type_name ~ "{" ~ (enum_variant ~ ("," ~ enum_variant)*)? ~ ","? ~ "}"
+}
+
+enum_variant = {
+    ident ~ (enum_variant_tuple | enum_variant_named)?
+}
+
+enum_variant_tuple = {
+    "(" ~ (type_name ~ ("," ~ type_name)*)? ~ ","? ~ ")"
+}
+
+enum_variant_named = {
+    "{" ~ (named_field ~ ("," ~ named_field)*)? ~ ","? ~ "}"
+}
 
 impl_block = {
     "impl" ~ type_name ~ "{" ~
@@ -280,6 +298,7 @@ term = {
     wildcard |
     list_construction |
     named_struct_construction |
+    named_variant_construction |
     tuple_struct_construction |
     parenthesized_term |
     tuple_struct_construction_no_parens |
@@ -287,8 +306,9 @@ term = {
     variable
 }
 
-// Tuple struct term construction (e.g., Some(42), Node(left, right))
+// Struct and enum variant term construction
 tuple_struct_construction = { qualified_path ~ "(" ~ (term ~ ("," ~ term)*)? ~ ","? ~ ")" }
+named_variant_construction = { qualified_path ~ "{" ~ (field_initializer ~ ("," ~ field_initializer)*)? ~ ","? ~ "}" }
 tuple_struct_construction_no_parens = { qualified_path }
 
 parenthesized_term = { "(" ~ term ~ ")" }
@@ -299,6 +319,7 @@ pattern = {
     wildcard |
     list_pattern |
     named_struct_pattern |
+    named_variant_pattern |
     tuple_struct_pattern_with_parens |
     tuple_struct_pattern_no_parens |
     variable
@@ -312,6 +333,9 @@ list_tail = { "|" ~ pattern }
 
 named_struct_pattern = {
     ident ~ "{" ~ (field_pattern ~ ("," ~ field_pattern)*)? ~ ","? ~ "}"
+}
+named_variant_pattern = {
+    qualified_path ~ "{" ~ (field_pattern ~ ("," ~ field_pattern)*)? ~ ","? ~ "}"
 }
 field_pattern = { ident ~ ":" ~ pattern }
 
@@ -329,6 +353,8 @@ term_tail = { "|" ~ term }
 named_struct_construction = {
     ident ~ "{" ~ (field_initializer ~ ("," ~ field_initializer)*)? ~ ","? ~ "}"
 }
+
+
 field_initializer = { ident ~ ":" ~ term }
 
 // =============================================================================

@@ -303,6 +303,7 @@ pub enum Item {
     ModuleDeclaration(ModuleDeclaration),
     Module(ModuleDefinition),
     Struct(StructDefinition),
+    Enum(EnumDefinition),
     Impl(ImplBlock),
     Predicate(PredicateDefinition),
 }
@@ -314,6 +315,7 @@ impl Spanned for Item {
             Item::ModuleDeclaration(mod_decl) => mod_decl.span(),
             Item::Module(module) => module.span(),
             Item::Struct(struct_def) => struct_def.span(),
+            Item::Enum(enum_def) => enum_def.span(),
             Item::Impl(impl_block) => impl_block.span(),
             Item::Predicate(predicate) => predicate.span(),
         }
@@ -444,6 +446,54 @@ impl Spanned for NamedField {
     fn span(&self) -> &Span {
         &self.span
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumDefinition {
+    pub visibility: Visibility,
+    pub name: String,
+    pub variants: Vec<EnumVariant>,
+    pub span: Span,
+}
+
+impl PartialEq for EnumDefinition {
+    fn eq(&self, other: &Self) -> bool {
+        self.visibility == other.visibility 
+            && self.name == other.name 
+            && self.variants == other.variants
+    }
+}
+
+impl Spanned for EnumDefinition {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumVariant {
+    pub name: String,
+    pub kind: VariantKind,
+    pub span: Span,
+}
+
+impl PartialEq for EnumVariant {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.kind == other.kind
+    }
+}
+
+impl Spanned for EnumVariant {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum VariantKind {
+    Unit,                           // Color::Red
+    Tuple(Vec<String>),            // Option::Some(T)
+    Named(Vec<NamedField>),        // Person::Named { name: String, age: u32 }
 }
 
 #[derive(Debug, Clone)]
@@ -817,6 +867,7 @@ pub struct MethodCall {
     pub args: Vec<Term>,
 }
 
+
 #[derive(Debug, Clone)]
 pub enum Term {
     Literal(Literal, Span),
@@ -825,6 +876,7 @@ pub enum Term {
     List(ListConstruction, Span),
     NamedStruct(NamedStructConstruction, Span),
     TupleStruct(TupleStructConstruction, Span),
+    EnumVariant(EnumVariantConstruction, Span),
     Parenthesized(Box<Term>, Span),
     // NEW: Interpolation for meta expressions
     Interpolation(MetaExpression, Span),
@@ -839,6 +891,7 @@ impl PartialEq for Term {
             (Term::List(a, _), Term::List(b, _)) => a == b,
             (Term::NamedStruct(a, _), Term::NamedStruct(b, _)) => a == b,
             (Term::TupleStruct(a, _), Term::TupleStruct(b, _)) => a == b,
+            (Term::EnumVariant(a, _), Term::EnumVariant(b, _)) => a == b,
             (Term::Parenthesized(a, _), Term::Parenthesized(b, _)) => a == b,
             (Term::Interpolation(a, _), Term::Interpolation(b, _)) => a == b,
             _ => false,
@@ -855,6 +908,7 @@ impl Spanned for Term {
             Term::List(_, span) => span,
             Term::NamedStruct(_, span) => span,
             Term::TupleStruct(_, span) => span,
+            Term::EnumVariant(_, span) => span,
             Term::Parenthesized(_, span) => span,
             Term::Interpolation(_, span) => span,
         }
@@ -886,6 +940,20 @@ pub struct TupleStructConstruction {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariantConstruction {
+    pub enum_name: String,
+    pub variant_name: String,
+    pub kind: EnumVariantConstructionKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EnumVariantConstructionKind {
+    Unit,                         // Color::Red
+    Tuple(Vec<Term>),            // Option::Some(42)
+    Named(Vec<FieldInitializer>),     // Result::Ok { value: 42 }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Boolean(bool),
     Number(String),
@@ -901,6 +969,7 @@ pub enum Pattern {
     List(ListPattern),
     NamedStruct(NamedStructPattern),
     TupleStruct(TupleStructPattern),
+    EnumVariant(EnumVariantPattern),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -925,6 +994,20 @@ pub struct FieldPattern {
 pub struct TupleStructPattern {
     pub name: String,
     pub args: Vec<Pattern>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnumVariantPattern {
+    pub enum_name: String,
+    pub variant_name: String,
+    pub kind: EnumVariantPatternKind,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EnumVariantPatternKind {
+    Unit,
+    Tuple(Vec<Pattern>),
+    Named(Vec<FieldPattern>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -961,6 +1044,7 @@ impl Display for Item {
             Item::ModuleDeclaration(md) => write!(f, "{}", md),
             Item::Module(m) => write!(f, "{}", m),
             Item::Struct(s) => write!(f, "{}", s),
+            Item::Enum(e) => write!(f, "{}", e),
             Item::Impl(i) => write!(f, "{}", i),
             Item::Predicate(r) => write!(f, "{}", r),
         }
@@ -1041,6 +1125,54 @@ impl Display for StructKind {
 impl Display for NamedField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{}: {}", self.visibility, self.name, self.type_name)
+    }
+}
+
+impl Display for EnumDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}enum {} {{", self.visibility, self.name)?;
+        for variant in &self.variants {
+            writeln!(f, "    {},", variant)?;
+        }
+        writeln!(f, "}}")
+    }
+}
+
+impl Display for EnumVariant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.name, self.kind)
+    }
+}
+
+impl Display for VariantKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            VariantKind::Unit => Ok(()),
+            VariantKind::Tuple(types) => {
+                write!(f, "(")?;
+                let mut first = true;
+                for ty in types {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", ty)?;
+                    first = false;
+                }
+                write!(f, ")")
+            }
+            VariantKind::Named(fields) => {
+                write!(f, " {{")?;
+                let mut first = true;
+                for field in fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", field)?;
+                    first = false;
+                }
+                write!(f, "}}")
+            }
+        }
     }
 }
 
@@ -1262,6 +1394,7 @@ impl Display for Term {
             Term::List(list, _) => write!(f, "{}", list),
             Term::NamedStruct(s, _) => write!(f, "{}", s),
             Term::TupleStruct(c, _) => write!(f, "{}", c),
+            Term::EnumVariant(e, _) => write!(f, "{}", e),
             Term::Parenthesized(t, _) => write!(f, "({})", t),
             Term::Interpolation(expr, _) => write!(f, "{{{}}}", expr),
         }
@@ -1317,6 +1450,40 @@ impl Display for TupleStructConstruction {
     }
 }
 
+impl Display for EnumVariantConstruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}::{}", self.enum_name, self.variant_name)?;
+        match &self.kind {
+            EnumVariantConstructionKind::Unit => Ok(()),
+            EnumVariantConstructionKind::Tuple(args) => {
+                write!(f, "(")?;
+                let mut first = true;
+                for arg in args {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", arg)?;
+                    first = false;
+                }
+                write!(f, ")")
+            }
+            EnumVariantConstructionKind::Named(fields) => {
+                write!(f, " {{ ")?;
+                let mut first = true;
+                for field in fields {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", field)?;
+                    first = false;
+                }
+                write!(f, " }}")
+            }
+        }
+    }
+}
+
+
 impl Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1337,6 +1504,7 @@ impl Display for Pattern {
             Pattern::List(p) => write!(f, "{}", p),
             Pattern::NamedStruct(p) => write!(f, "{}", p),
             Pattern::TupleStruct(p) => write!(f, "{}", p),
+            Pattern::EnumVariant(p) => write!(f, "{}", p),
         }
     }
 }
@@ -1387,6 +1555,38 @@ impl Display for TupleStructPattern {
             first = false;
         }
         write!(f, ")")
+    }
+}
+
+impl Display for EnumVariantPattern {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            EnumVariantPatternKind::Unit => write!(f, "{}::{}", self.enum_name, self.variant_name),
+            EnumVariantPatternKind::Tuple(patterns) => {
+                write!(f, "{}::{}(", self.enum_name, self.variant_name)?;
+                let mut first = true;
+                for pattern in patterns {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", pattern)?;
+                    first = false;
+                }
+                write!(f, ")")
+            }
+            EnumVariantPatternKind::Named(field_patterns) => {
+                write!(f, "{}::{} {{ ", self.enum_name, self.variant_name)?;
+                let mut first = true;
+                for field_pattern in field_patterns {
+                    if !first {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", field_pattern)?;
+                    first = false;
+                }
+                write!(f, " }}")
+            }
+        }
     }
 }
 

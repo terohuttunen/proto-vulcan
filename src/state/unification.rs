@@ -84,8 +84,40 @@ where
     U: User,
     E: Engine<U>,
 {
-    if ucompound.type_id() != vcompound.type_id() {
-        return Err(());
+    // First check type registry indices for objects that use the type registry (like enums)
+    match (ucompound.type_registry_index(), vcompound.type_registry_index()) {
+        (Some(u_type_idx), Some(v_type_idx)) => {
+            if u_type_idx != v_type_idx {
+                return Err(()); // Different types cannot unify
+            }
+            // Same type, continue to variant check
+        }
+        (None, None) => {
+            // Neither uses type registry, fall back to type_id comparison
+            if ucompound.type_id() != vcompound.type_id() {
+                return Err(());
+            }
+        }
+        _ => {
+            // One uses type registry and the other doesn't, they cannot unify
+            return Err(());
+        }
+    }
+
+    // For compound objects with variant indices (like enums), check if the indices match
+    match (ucompound.variant_index(), vcompound.variant_index()) {
+        (Some(u_idx), Some(v_idx)) => {
+            if u_idx != v_idx {
+                return Err(()); // Different variants cannot unify
+            }
+        }
+        (None, None) => {
+            // Neither has a variant index, continue with children comparison
+        }
+        _ => {
+            // One has a variant index and the other doesn't, they cannot unify
+            return Err(());
+        }
     }
 
     let mut uchildren = ucompound.children();

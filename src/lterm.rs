@@ -593,7 +593,10 @@ where
                     write!(f, "]")
                 }
             }
-            LTermInner::Compound(compound_term) => write!(f, "{:?}", compound_term),
+            LTermInner::Compound(compound_term) => {
+                // Use the display_string method from CompoundObject trait
+                write!(f, "{}", compound_term.display_string())
+            },
             LTermInner::RelationRef(index) => write!(f, "rel_ref_{}", index),
         }
     }

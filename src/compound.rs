@@ -72,14 +72,49 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn type_name(&self) -> &'static str {
-        ""
+    /// Get the type name for this compound object (non-static, can access environment)
+    fn type_name(&self) -> String {
+        "Unknown".to_string()
     }
 
     fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a>;
 
     fn as_term(&self) -> Option<&LTerm<U, E>> {
         None
+    }
+
+    /// Check if this compound object is an enum variant
+    fn is_enum_variant(&self) -> bool {
+        false
+    }
+
+    /// Get the variant name for enum variants, None for other compound objects
+    fn variant_name(&self) -> Option<String> {
+        None
+    }
+
+    /// Get the variant index for enum variants, None for other compound objects
+    /// This allows unification to distinguish between different enum variants
+    /// before comparing their children (bodies)
+    fn variant_index(&self) -> Option<usize> {
+        None
+    }
+
+    /// Get the type registry index for compound objects that use the type registry
+    /// This allows unification to distinguish between different enum types
+    /// Returns None for compound objects that don't use the type registry
+    fn type_registry_index(&self) -> Option<usize> {
+        None
+    }
+
+    /// Get a string representation of this compound object for display purposes
+    /// Default implementation uses type_name and variant_name
+    fn display_string(&self) -> String {
+        if let Some(variant_name) = self.variant_name() {
+            format!("{}::{}", self.type_name(), variant_name)
+        } else {
+            self.type_name()
+        }
     }
 
     fn is_term(&self) -> bool {
@@ -226,10 +261,10 @@ where
     E: Engine<U>,
     T: CompoundObject<U, E> + CompoundWalkStar<U, E> + std::fmt::Debug + PartialEq + Hash,
 {
-    fn type_name(&self) -> &'static str {
+    fn type_name(&self) -> String {
         match self {
-            Some(_) => "Some",
-            None => "None",
+            Some(_) => "Some".to_string(),
+            None => "None".to_string(),
         }
     }
 
@@ -248,6 +283,7 @@ where
         self.as_ref().map(|x| x.compound_walk_star(smap))
     }
 }
+
 
 impl<U, E, T> Upcast<U, E, LTerm<U, E>> for Option<T>
 where
@@ -317,8 +353,8 @@ where
     U: User,
     E: Engine<U>,
 {
-    fn type_name(&self) -> &'static str {
-        "LTerm"
+    fn type_name(&self) -> String {
+        "LTerm".to_string()
     }
 
     fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
@@ -379,6 +415,7 @@ where
         (smap.walk_star(&self.0), smap.walk_star(&self.1))
     }
 }
+
 
 impl<U, E> Into<LTerm<U, E>> for (LTerm<U, E>, LTerm<U, E>)
 where

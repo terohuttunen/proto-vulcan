@@ -63,6 +63,7 @@ fn build_item(pair: Pair<Rule>) -> ParseResult<Item> {
             }
         }
         Rule::struct_definition => Ok(Item::Struct(build_struct_definition(pair)?)),
+        Rule::enum_definition => Ok(Item::Enum(build_enum_definition(pair)?)),
         Rule::impl_block => Ok(Item::Impl(build_impl_block(pair)?)),
         Rule::predicate_definition => Ok(Item::Predicate(build_predicate_definition(pair)?)),
         _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
@@ -528,6 +529,69 @@ fn build_struct_definition(pair: Pair<Rule>) -> ParseResult<StructDefinition> {
         kind,
         span,
     })
+}
+
+fn build_enum_definition(pair: Pair<Rule>) -> ParseResult<EnumDefinition> {
+    let span = pair_to_span(&pair);
+    let inner = pair.into_inner();
+    let pairs: Vec<_> = inner.collect();
+    
+    let (visibility, name) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
+        // Has visibility: visibility, enum_keyword, type_name, variants
+        let vis = build_visibility(pairs[0].clone())?;
+        let name = build_type_name(pairs[2].clone())?;
+        (vis, name)
+    } else {
+        // No visibility: enum_keyword, type_name, variants
+        let name = build_type_name(pairs[1].clone())?;
+        (ast::Visibility::Private, name)
+    };
+    
+    let mut variants = vec![];
+    // Skip visibility, enum_keyword, type_name to find variant pairs
+    let start_idx = if pairs[0].as_rule() == Rule::visibility { 3 } else { 2 };
+    for i in start_idx..pairs.len() {
+        if pairs[i].as_rule() == Rule::enum_variant {
+            variants.push(build_enum_variant(pairs[i].clone())?);
+        }
+    }
+    
+    Ok(EnumDefinition {
+        visibility,
+        name,
+        variants,
+        span,
+    })
+}
+
+fn build_enum_variant(pair: Pair<Rule>) -> ParseResult<EnumVariant> {
+    let span = pair_to_span(&pair);
+    let mut inner = pair.into_inner();
+    let name = inner.next().unwrap().as_str().to_string();
+    
+    let kind = if let Some(variant_def) = inner.next() {
+        match variant_def.as_rule() {
+            Rule::enum_variant_tuple => {
+                let mut types = vec![];
+                for type_pair in variant_def.into_inner() {
+                    types.push(type_pair.as_str().to_string());
+                }
+                VariantKind::Tuple(types)
+            }
+            Rule::enum_variant_named => {
+                let mut fields = vec![];
+                for field_pair in variant_def.into_inner() {
+                    fields.push(build_named_field(field_pair)?);
+                }
+                VariantKind::Named(fields)
+            }
+            _ => return Err(ParseError::UnexpectedRule(variant_def.as_rule())),
+        }
+    } else {
+        VariantKind::Unit
+    };
+    
+    Ok(EnumVariant { name, kind, span })
 }
 
 fn build_named_field(pair: Pair<Rule>) -> ParseResult<NamedField> {
@@ -1330,6 +1394,10 @@ fn build_term(pair: Pair<Rule>) -> ParseResult<Term> {
             build_named_struct_construction(pair.clone())?,
             span,
         )),
+        Rule::named_variant_construction => Ok(Term::NamedStruct(
+            build_named_variant_construction_as_struct(pair.clone())?,
+            span,
+        )),
         Rule::tuple_struct_construction => Ok(Term::TupleStruct(
             build_tuple_struct_construction(pair.clone())?,
             span,
@@ -1372,6 +1440,19 @@ fn build_named_struct_construction(pair: Pair<Rule>) -> ParseResult<NamedStructC
     }
     Ok(NamedStructConstruction { name, fields })
 }
+
+fn build_named_variant_construction_as_struct(pair: Pair<Rule>) -> ParseResult<NamedStructConstruction> {
+    let mut inner = pair.into_inner();
+    let qualified_path_pair = inner.next().unwrap();
+    let qualified_path = build_qualified_path(qualified_path_pair)?;
+    let name = qualified_path.to_string();
+    let mut fields = vec![];
+    for field_pair in inner {
+        fields.push(build_field_initializer(field_pair)?);
+    }
+    Ok(NamedStructConstruction { name, fields })
+}
+
 
 fn build_field_initializer(pair: Pair<Rule>) -> ParseResult<FieldInitializer> {
     let mut inner = pair.into_inner();
@@ -1429,6 +1510,7 @@ fn build_pattern(pair: Pair<Rule>) -> ParseResult<Pattern> {
         Rule::wildcard => Ok(Pattern::Wildcard),
         Rule::list_pattern => Ok(Pattern::List(build_list_pattern(pair)?)),
         Rule::named_struct_pattern => Ok(Pattern::NamedStruct(build_named_struct_pattern(pair)?)),
+        Rule::named_variant_pattern => Ok(Pattern::NamedStruct(build_named_variant_pattern_as_struct(pair)?)),
         Rule::tuple_struct_pattern_with_parens => {
             Ok(Pattern::TupleStruct(build_tuple_struct_pattern_with_parens(pair)?))
         }
@@ -1474,6 +1556,18 @@ fn build_list_pattern(pair: Pair<Rule>) -> ParseResult<ListPattern> {
 fn build_named_struct_pattern(pair: Pair<Rule>) -> ParseResult<NamedStructPattern> {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
+    let mut fields = vec![];
+    for field_pair in inner {
+        fields.push(build_field_pattern(field_pair)?);
+    }
+    Ok(NamedStructPattern { name, fields })
+}
+
+fn build_named_variant_pattern_as_struct(pair: Pair<Rule>) -> ParseResult<NamedStructPattern> {
+    let mut inner = pair.into_inner();
+    let qualified_path_pair = inner.next().unwrap();
+    let qualified_path = build_qualified_path(qualified_path_pair)?;
+    let name = qualified_path.to_string();
     let mut fields = vec![];
     for field_pair in inner {
         fields.push(build_field_pattern(field_pair)?);

@@ -196,8 +196,8 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
             }
 
             impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #inner_ident #type_generics #where_clause {
-                fn type_name(&self) -> &'static str {
-                    stringify!(#struct_name)
+                fn type_name(&self) -> String {
+                    stringify!(#struct_name).to_string()
                 }
 
                 fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
@@ -306,8 +306,8 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
         }
 
         impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #struct_name #type_generics #where_clause {
-            fn type_name(&self) -> &'static str {
-                stringify!(#struct_name)
+            fn type_name(&self) -> String {
+                stringify!(#struct_name).to_string()
             }
 
             fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
@@ -388,8 +388,8 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
             }
 
             impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #inner_ident #type_generics #where_clause {
-                fn type_name(&self) -> &'static str {
-                    stringify!(#struct_name)
+                fn type_name(&self) -> String {
+                    stringify!(#struct_name).to_string()
                 }
 
                 fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
@@ -504,8 +504,8 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
         }
 
         impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #struct_name #type_generics #where_clause {
-            fn type_name(&self) -> &'static str {
-                stringify!(#struct_name)
+            fn type_name(&self) -> String {
+                stringify!(#struct_name).to_string()
             }
 
             fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {

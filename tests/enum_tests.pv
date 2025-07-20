@@ -1,0 +1,373 @@
+// tests/enum_tests.pv - Tests for enum syntax in Proto-Vulcan
+use std::list::*;
+
+// Basic unit variant enums
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+@test(expected = [true])
+rel test_unit_enum_construction(result) {
+    Color::Red == Color::Red;
+    result == true
+}
+
+@test(expected = [true])
+rel test_unit_enum_inequality(result) {
+    Color::Red != Color::Blue;
+    result == true
+}
+
+// Enum with variables and unification  
+@test(expected = [Color::Red])
+rel test_enum_variable_unification(color) {
+    color == Color::Red
+}
+
+// Enum in list structures
+@test(expected = [[Color::Red, Color::Green, Color::Blue]])
+rel test_enum_in_list(colors) {
+    colors == [Color::Red, Color::Green, Color::Blue]
+}
+
+// Complex enum unification scenarios
+@test(expected = [true])
+rel test_complex_enum_unification(result) {
+    // Test that enums unify correctly with variables
+    test_complex_enum_unification_helper(Color::Red, Color::Red);
+    result == true
+}
+
+rel test_complex_enum_unification_helper(X, Y) {
+    X == Y
+}
+
+@test(expected = [true])
+rel test_enum_disequality_constraints(result) {
+    all {
+        Color::Red != Color::Blue,
+        Color::Green != Color::Red
+    };
+    result == true
+}
+
+// Multiple unit variant enums
+enum Status {
+    Active,
+    Inactive,
+    Pending,
+}
+
+@test(expected = [true])
+rel test_multiple_enums(result) {
+    all {
+        Color::Red == Color::Red,
+        Status::Active == Status::Active,
+        Color::Red != Status::Active  // Different enum types
+    };
+    result == true
+}
+
+// Complex enums with tuple and named variants
+enum Shape {
+    Circle(radius),
+    Rectangle { width: i32, height: i32 },
+    Triangle(side1, side2, side3),
+    Point,
+}
+
+enum Container {
+    Empty,
+    Single(value),
+    Pair { first: i32, second: i32 },
+    Triple(a, b, c),
+}
+
+// Test tuple variant construction and equality
+@test(expected = [true])
+rel test_tuple_enum_construction(result) {
+    Shape::Circle(5) == Shape::Circle(5);
+    result == true
+}
+
+@test(expected = [true])
+rel test_tuple_enum_inequality(result) {
+    Shape::Circle(5) != Shape::Circle(3);
+    result == true
+}
+
+// Test named variant construction and equality
+@test(expected = [true])
+rel test_named_enum_construction(result) {
+    Shape::Rectangle { width: 10, height: 20 } == Shape::Rectangle { width: 10, height: 20 };
+    result == true
+}
+
+@test(expected = [true])
+rel test_named_enum_inequality(result) {
+    Shape::Rectangle { width: 10, height: 20 } != Shape::Rectangle { width: 5, height: 20 };
+    result == true
+}
+
+// Test cross-variant inequality within same enum
+@test(expected = [true])
+rel test_cross_variant_inequality(result) {
+    all {
+        Shape::Circle(5) != Shape::Point,
+        Shape::Point != Shape::Rectangle { width: 1, height: 1 },
+        Container::Empty != Container::Single(42)
+    };
+    result == true
+}
+
+// Test enum unification with variables in tuple variants
+@test(expected = [5])
+rel test_tuple_enum_unification(radius) {
+    Shape::Circle(radius) == Shape::Circle(5)
+}
+
+// Test enum unification with variables in named variants
+@test(expected = [10])
+rel test_named_enum_unification(w) {
+    Shape::Rectangle { width: w, height: 20 } == Shape::Rectangle { width: 10, height: 20 }
+}
+
+// Test nested enums in data structures
+@test(expected = [[Shape::Circle(1), Shape::Point, Shape::Triangle(3, 4, 5)]])
+rel test_enum_in_nested_structures(shapes) {
+    shapes == [Shape::Circle(1), Shape::Point, Shape::Triangle(3, 4, 5)]
+}
+
+// Test mixed enum types in same structure
+@test(expected = [true])
+rel test_mixed_enums_in_structure(result) {
+    [
+        Container::Single(Color::Red),
+        Container::Pair { first: Status::Active, second: Color::Blue }
+    ] == [
+        Container::Single(Color::Red),
+        Container::Pair { first: Status::Active, second: Color::Blue }
+    ];
+    result == true
+}
+
+// Test complex unification scenarios
+@test(expected = [Container::Triple(Shape::Circle(7), Color::Green, Status::Pending)])
+rel test_complex_enum_nesting(container) {
+    container == Container::Triple(Shape::Circle(7), Color::Green, Status::Pending)
+}
+
+// Test disequality with complex nested enums
+@test(expected = [true])
+rel test_complex_enum_disequality(result) {
+    all {
+        Container::Single(Color::Red) != Container::Single(Color::Blue),
+        Container::Pair { first: 1, second: 2 } != Container::Pair { first: 1, second: 3 },
+        Container::Triple(Shape::Circle(5), Color::Red, Status::Active) != 
+            Container::Triple(Shape::Circle(5), Color::Red, Status::Inactive)
+    };
+    result == true
+}
+
+// Test enum pattern matching scenarios
+@test(expected = [Color::Red, Color::Blue])
+rel test_enum_extraction_from_container(color) {
+    test_enum_extraction_helper(Container::Single(color))
+}
+
+rel test_enum_extraction_helper(container) {
+    match container {
+        Container::Single(Color::Red) => true,
+        Container::Single(Color::Blue) => true
+    }
+}
+
+// ===== MIXED STRUCT AND ENUM TESTS =====
+
+// Define structs to mix with enums
+struct Point {
+    x: i32,
+    y: i32,
+}
+
+struct Person {
+    name: String,
+    age: i32,
+    status: Status,
+}
+
+struct Rectangle {
+    width: i32,
+    height: i32,
+    color: Color,
+}
+
+// Compound struct containing enums
+struct Vehicle {
+    brand: String,
+    type: VehicleType,
+    color: Color,
+}
+
+enum VehicleType {
+    Car,
+    Truck,
+    Motorcycle,
+    Bicycle,
+}
+
+// Test struct fields containing enum values
+@test(expected = [true])
+rel test_struct_with_enum_fields(result) {
+    Rectangle { width: 10, height: 20, color: Color::Red } == 
+    Rectangle { width: 10, height: 20, color: Color::Red };
+    result == true
+}
+
+@test(expected = [true])
+rel test_struct_enum_field_inequality(result) {
+    Rectangle { width: 10, height: 20, color: Color::Red } != 
+    Rectangle { width: 10, height: 20, color: Color::Blue };
+    result == true
+}
+
+// Test enum variants containing struct values
+@test(expected = [true])
+rel test_enum_with_struct_values(result) {
+    Container::Single(Point { x: 5, y: 10 }) == 
+    Container::Single(Point { x: 5, y: 10 });
+    result == true
+}
+
+@test(expected = [true])
+rel test_enum_struct_value_inequality(result) {
+    Container::Single(Point { x: 5, y: 10 }) != 
+    Container::Single(Point { x: 3, y: 7 });
+    result == true
+}
+
+// Test nested enum and struct combinations
+@test(expected = [true])
+rel test_nested_struct_enum_combinations(result) {
+    all {
+        Person { name: "Alice", age: 30, status: Status::Active } == 
+        Person { name: "Alice", age: 30, status: Status::Active },
+        
+        Vehicle { brand: "Toyota", type: VehicleType::Car, color: Color::Blue } ==
+        Vehicle { brand: "Toyota", type: VehicleType::Car, color: Color::Blue }
+    };
+    result == true
+}
+
+// Test unification with variables in mixed struct/enum scenarios
+@test(expected = [Color::Green])
+rel test_mixed_unification_extract_enum(c) {
+    Rectangle { width: 15, height: 25, color: c } == 
+    Rectangle { width: 15, height: 25, color: Color::Green }
+}
+
+@test(expected = [true])
+rel test_mixed_unification_extract_struct(result) {
+    Container::Single(Point { x: 7, y: 14 }) == Container::Single(Point { x: 7, y: 14 });
+    result == true
+}
+
+@test(expected = [Status::Pending])
+rel test_complex_mixed_unification(s) {
+    Person { name: "Bob", age: 25, status: s } == 
+    Person { name: "Bob", age: 25, status: Status::Pending }
+}
+
+// Test lists containing mixed struct/enum types
+@test(expected = [true])
+rel test_mixed_list_structures(result) {
+    [
+        Rectangle { width: 5, height: 10, color: Color::Red },
+        Rectangle { width: 8, height: 12, color: Color::Blue }
+    ] == [
+        Rectangle { width: 5, height: 10, color: Color::Red },
+        Rectangle { width: 8, height: 12, color: Color::Blue }
+    ];
+    result == true
+}
+
+// Test complex nested scenarios with multiple levels
+@test(expected = [true])
+rel test_deeply_nested_mixed_types(result) {
+    Container::Pair { 
+        first: Rectangle { width: 20, height: 30, color: Color::Green }, 
+        second: Point { x: 100, y: 200 } 
+    } == Container::Pair { 
+        first: Rectangle { width: 20, height: 30, color: Color::Green }, 
+        second: Point { x: 100, y: 200 } 
+    };
+    result == true
+}
+
+// Test pattern matching with mixed types
+@test(expected = [Color::Red, Color::Blue, Color::Green])
+rel test_mixed_pattern_matching(color) {
+    test_extract_color_from_rectangle(Rectangle { width: 10, height: 20, color: color })
+}
+
+rel test_extract_color_from_rectangle(rect) {
+    match rect {
+        Rectangle { width: _, height: _, color: Color::Red } => true,
+        Rectangle { width: _, height: _, color: Color::Blue } => true,
+        Rectangle { width: _, height: _, color: Color::Green } => true
+    }
+}
+
+// Test disequality constraints with mixed types
+@test(expected = [true])
+rel test_mixed_disequality_constraints(result) {
+    all {
+        Rectangle { width: 10, height: 20, color: Color::Red } != 
+        Rectangle { width: 10, height: 20, color: Color::Blue },
+        
+        Container::Single(Point { x: 1, y: 2 }) != 
+        Container::Single(Point { x: 3, y: 4 }),
+        
+        Person { name: "Alice", age: 30, status: Status::Active } != 
+        Person { name: "Alice", age: 30, status: Status::Inactive }
+    };
+    result == true
+}
+
+// Test enum variants with different struct types
+@test(expected = [true])
+rel test_enum_variants_different_structs(result) {
+    all {
+        Container::Single(Point { x: 1, y: 2 }) != 
+        Container::Single(Rectangle { width: 1, height: 2, color: Color::Red }),
+        
+        Container::Pair { first: Point { x: 5, y: 10 }, second: Rectangle { width: 20, height: 30, color: Color::Blue } } ==
+        Container::Pair { first: Point { x: 5, y: 10 }, second: Rectangle { width: 20, height: 30, color: Color::Blue } }
+    };
+    result == true
+}
+
+// Test complex variable binding in mixed scenarios
+@test(expected = [true])
+rel test_complex_mixed_variable_binding(result) {
+    test_extract_point_from_vehicle_container(
+        Container::Triple(
+            Vehicle { brand: "Honda", type: VehicleType::Motorcycle, color: Color::Red },
+            Point { x: 42, y: 84 },
+            Status::Active
+        )
+    );
+    result == true
+}
+
+rel test_extract_point_from_vehicle_container(container) {
+    match container {
+        Container::Triple(
+            Vehicle { brand: "Honda", type: VehicleType::Motorcycle, color: Color::Red },
+            Point { x: 42, y: 84 },
+            Status::Active
+        ) => true
+    }
+}

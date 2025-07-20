@@ -1,6 +1,6 @@
 use super::import::{ImportResolver, ImportResult, ModulePath};
 use super::parser::ast::{
-    Item, ModuleDeclaration, PredicateDefinition, Program, QualifiedName,
+    EnumDefinition, Item, ModuleDeclaration, PredicateDefinition, Program, QualifiedName,
     QualifiedPath, RelationName, StructDefinition, UsePath, UseStatement, Visibility,
 };
 use super::runtime_value::{PredicateHandle, RuntimeValue};
@@ -18,7 +18,7 @@ use std::rc::Rc;
 #[derive(Debug, Clone)]
 pub enum TypeDefinition {
     Struct(StructDefinition),
-    // Enum(EnumDefinition), // Will be added later
+    Enum(EnumDefinition),
 }
 
 /// Information about a loaded module
@@ -267,7 +267,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Load a module from a module declaration (mod name;)
-    fn load_module_declaration(
+    pub fn load_module_declaration(
         &mut self,
         mod_decl: &ModuleDeclaration,
         current_file_path: Option<&Path>,
@@ -384,6 +384,25 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                     }
 
                 }
+                Item::Enum(enum_def) => {
+                    let name = enum_def.name.clone();
+                    let is_public = matches!(enum_def.visibility, Visibility::Public);
+
+                    // Register in type registry
+                    let type_index = self.register_type(TypeDefinition::Enum(enum_def.clone()));
+                    
+                    // Store as RuntimeValue::Type
+                    let value = RuntimeValue::Type(type_index);
+
+                    if is_public {
+                        module_info.public_symbols.insert(name.clone(), value);
+                    } else {
+                        module_info.private_symbols.insert(name.clone(), value);
+                    }
+                    
+                    // Note: Enums are not stored in public_types/private_types since those are
+                    // specifically for StructDefinition. The enum is accessible via the type registry.
+                }
                 Item::Module(nested_module) => {
                     // Handle nested modules
                     let _nested_name = format!("{}::{}", module_name, nested_module.name);
@@ -428,6 +447,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         match item {
             Item::Predicate(rel) => self.load_predicate(rel),
             Item::Struct(struct_def) => self.load_struct(struct_def),
+            Item::Enum(enum_def) => self.load_enum(enum_def),
             Item::Module(module) => self.load_module(module),
             Item::ModuleDeclaration(mod_decl) => {
                 // Load external module file for mod declarations at top level
@@ -439,7 +459,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Load a relation definition
-    fn load_predicate(&mut self, predicate: PredicateDefinition) -> Result<(), InterpreterError> {
+    pub fn load_predicate(&mut self, predicate: PredicateDefinition) -> Result<(), InterpreterError> {
         let name = predicate.name.clone();
         let value = RuntimeValue::Relation(predicate);
 
@@ -569,7 +589,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Load a struct definition
-    fn load_struct(&mut self, struct_def: StructDefinition) -> Result<(), InterpreterError> {
+    pub fn load_struct(&mut self, struct_def: StructDefinition) -> Result<(), InterpreterError> {
         let name = struct_def.name.clone();
         
         // Register in type registry
@@ -591,8 +611,31 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         Ok(())
     }
 
+    /// Load an enum definition
+    pub fn load_enum(&mut self, enum_def: EnumDefinition) -> Result<(), InterpreterError> {
+        let name = enum_def.name.clone();
+        
+        // Register in type registry
+        let type_index = self.register_type(TypeDefinition::Enum(enum_def));
+        
+        // Store as RuntimeValue::Type
+        let value = RuntimeValue::Type(type_index);
+        
+        // Store in appropriate scope
+        if self.scope_stack.last() == Some(&"global".to_string()) {
+            self.globals.insert(name, value);
+        } else {
+            let current_scope = self.scope_stack.last().unwrap().clone();
+            self.modules
+                .entry(current_scope)
+                .or_insert_with(HashMap::new)
+                .insert(name, value);
+        }
+        Ok(())
+    }
+
     /// Load a module
-    fn load_module(
+    pub fn load_module(
         &mut self,
         module: super::parser::ast::ModuleDefinition,
     ) -> Result<(), InterpreterError> {
@@ -608,7 +651,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Load a use statement
-    fn load_use_statement(&mut self, use_stmt: UseStatement) -> Result<(), InterpreterError> {
+    pub fn load_use_statement(&mut self, use_stmt: UseStatement) -> Result<(), InterpreterError> {
         match use_stmt.path {
             UsePath::Simple(qualified_path, item) => {
                 let resolved_path = self.resolve_qualified_path(&qualified_path)?;
@@ -971,6 +1014,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                 // Get the type definition from the registry
                 match self.get_type_by_index(*index)? {
                     TypeDefinition::Struct(struct_def) => Some(struct_def),
+                    TypeDefinition::Enum(_) => None, // get_struct only returns structs, not enums
                 }
             }
             _ => None,

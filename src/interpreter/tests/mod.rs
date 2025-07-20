@@ -9,3 +9,4 @@ mod constraint_tests;
 mod query_tests;
 mod parser_tests;
 mod environment_tests;
+mod enum_tests;

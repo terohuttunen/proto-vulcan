@@ -351,6 +351,22 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
             // TODO: Extract variables from meta expressions in interpolations
             // For now, do nothing
         }
+        Term::EnumVariant(enum_variant, _) => {
+            // Extract variables from enum variant construction
+            match &enum_variant.kind {
+                super::parser::ast::EnumVariantConstructionKind::Unit => {},
+                super::parser::ast::EnumVariantConstructionKind::Tuple(args) => {
+                    for arg in args {
+                        extract_variables_from_term(arg, vars);
+                    }
+                }
+                super::parser::ast::EnumVariantConstructionKind::Named(fields) => {
+                    for field in fields {
+                        extract_variables_from_term(&field.value, vars);
+                    }
+                }
+            }
+        }
     }
 }
 

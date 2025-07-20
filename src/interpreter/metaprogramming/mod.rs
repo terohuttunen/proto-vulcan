@@ -813,6 +813,27 @@ pub fn expand_term(
             }
             Ok(Term::NamedStruct(expanded_struct, span.clone()))
         }
+        Term::EnumVariant(enum_variant, span) => {
+            let mut expanded_enum_variant = enum_variant.clone();
+            match &mut expanded_enum_variant.kind {
+                super::parser::ast::EnumVariantConstructionKind::Unit => {
+                    // Unit variants have no arguments to expand
+                }
+                super::parser::ast::EnumVariantConstructionKind::Tuple(args) => {
+                    // Expand all tuple arguments
+                    for arg in args {
+                        *arg = expand_term(arg, context)?;
+                    }
+                }
+                super::parser::ast::EnumVariantConstructionKind::Named(fields) => {
+                    // Expand all named field values
+                    for field in fields {
+                        field.value = expand_term(&field.value, context)?;
+                    }
+                }
+            }
+            Ok(Term::EnumVariant(expanded_enum_variant, span.clone()))
+        }
         // Terms that don't require expansion
         Term::Variable(_, _) | Term::Wildcard(_) | Term::Literal(_, _) => Ok(term.clone()),
     }
