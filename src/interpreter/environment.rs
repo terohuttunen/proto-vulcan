@@ -14,6 +14,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+/// Type definitions that can be stored in the type registry
+#[derive(Debug, Clone)]
+pub enum TypeDefinition {
+    Struct(StructDefinition),
+    // Enum(EnumDefinition), // Will be added later
+}
+
 /// Information about a loaded module
 #[derive(Debug, Clone)]
 pub struct ModuleInfo<U: User, E: Engine<U>> {
@@ -44,8 +51,6 @@ pub struct Environment<U: User, E: Engine<U>> {
     modules: HashMap<String, HashMap<String, RuntimeValue<U, E>>>,
     /// Current scope stack
     scope_stack: Vec<String>,
-    /// Type definitions
-    types: HashMap<String, StructDefinition>,
     /// The base path for resolving modules.
     base_path: PathBuf,
     /// Module search paths
@@ -58,6 +63,8 @@ pub struct Environment<U: User, E: Engine<U>> {
     relation_registry: Vec<RuntimeValue<U, E>>,
     /// Enhanced import resolver for comprehensive glob imports
     import_resolver: ImportResolver<U, E>,
+    /// Type registry for struct and enum definitions (indexed by registration order)
+    type_registry: Vec<TypeDefinition>,
 }
 
 impl<U: User, E: Engine<U>> Environment<U, E> {
@@ -67,13 +74,13 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             globals: HashMap::new(),
             modules: HashMap::new(),
             scope_stack: vec!["global".to_string()],
-            types: HashMap::new(),
             base_path: PathBuf::new(),
             search_paths: vec![],
             loaded_modules: HashMap::new(),
             loading_modules: HashSet::new(),
             relation_registry: Vec::new(),
             import_resolver: ImportResolver::new(),
+            type_registry: Vec::new(),
         }
     }
 
@@ -358,18 +365,24 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                     let name = struct_def.name.clone();
                     let is_public = matches!(struct_def.visibility, Visibility::Public);
 
+                    // Register in type registry
+                    let type_index = self.register_type(TypeDefinition::Struct(struct_def.clone()));
+                    
+                    // Store as RuntimeValue::Type
+                    let value = RuntimeValue::Type(type_index);
+
                     if is_public {
                         module_info
                             .public_types
                             .insert(name.clone(), struct_def.clone());
+                        module_info.public_symbols.insert(name.clone(), value);
                     } else {
                         module_info
                             .private_types
                             .insert(name.clone(), struct_def.clone());
+                        module_info.private_symbols.insert(name.clone(), value);
                     }
 
-                    // Also add to global types for internal use
-                    self.types.insert(name, struct_def);
                 }
                 Item::Module(nested_module) => {
                     // Handle nested modules
@@ -515,11 +528,66 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     pub fn get_relation_by_index(&self, index: usize) -> Option<&RuntimeValue<U, E>> {
         self.relation_registry.get(index)
     }
+    
+    /// Register a type definition and return its index
+    pub fn register_type(&mut self, type_def: TypeDefinition) -> usize {
+        let index = self.type_registry.len();
+        self.type_registry.push(type_def);
+        index
+    }
+    
+    /// Get a type definition by registry index
+    pub fn get_type_by_index(&self, index: usize) -> Option<&TypeDefinition> {
+        self.type_registry.get(index)
+    }
+    
+    /// Get all struct definitions as a HashMap (for import system compatibility)
+    pub fn get_all_structs(&self) -> HashMap<String, StructDefinition> {
+        let mut structs = HashMap::new();
+        
+        // Collect structs from globals
+        for (name, value) in &self.globals {
+            if let RuntimeValue::Type(index) = value {
+                if let Some(TypeDefinition::Struct(struct_def)) = self.get_type_by_index(*index) {
+                    structs.insert(name.clone(), struct_def.clone());
+                }
+            }
+        }
+        
+        // Collect structs from all modules
+        for module_scope in self.modules.values() {
+            for (name, value) in module_scope {
+                if let RuntimeValue::Type(index) = value {
+                    if let Some(TypeDefinition::Struct(struct_def)) = self.get_type_by_index(*index) {
+                        structs.insert(name.clone(), struct_def.clone());
+                    }
+                }
+            }
+        }
+        
+        structs
+    }
 
     /// Load a struct definition
     fn load_struct(&mut self, struct_def: StructDefinition) -> Result<(), InterpreterError> {
         let name = struct_def.name.clone();
-        self.types.insert(name, struct_def);
+        
+        // Register in type registry
+        let type_index = self.register_type(TypeDefinition::Struct(struct_def));
+        
+        // Store as RuntimeValue::Type
+        let value = RuntimeValue::Type(type_index);
+        
+        // Store in appropriate scope
+        if self.scope_stack.last() == Some(&"global".to_string()) {
+            self.globals.insert(name, value);
+        } else {
+            let current_scope = self.scope_stack.last().unwrap().clone();
+            self.modules
+                .entry(current_scope)
+                .or_insert_with(HashMap::new)
+                .insert(name, value);
+        }
         Ok(())
     }
 
@@ -612,12 +680,13 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         let target_path = QualifiedPath::Absolute(path_segments.clone());
         let importing_path = ModulePath::from_string(self.current_scope());
 
+        let all_structs = self.get_all_structs();
         match self.import_resolver.import_glob_enhanced(
             &target_path,
             importing_path,
             &self.loaded_modules,
             &self.globals,
-            &self.types,
+            &all_structs,
         ) {
             Ok(result) => {
                 // Apply the result to maintain legacy behavior
@@ -654,13 +723,14 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         let target_path = QualifiedPath::Absolute(path_segments.clone());
         let importing_path = ModulePath::from_string(self.current_scope());
 
+        let all_structs = self.get_all_structs();
         match self.import_resolver.import_selective(
             &target_path,
             &imports,
             importing_path,
             &self.loaded_modules,
             &self.globals,
-            &self.types,
+            &all_structs,
         ) {
             Ok(result) => {
                 // Apply the result to maintain legacy behavior
@@ -723,6 +793,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         let importing_path = ModulePath::from_string(&importing_module);
 
         // Use the enhanced import resolver
+        let all_structs = self.get_all_structs();
         let result = self
             .import_resolver
             .import_glob_enhanced(
@@ -730,7 +801,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                 importing_path,
                 &self.loaded_modules,
                 &self.globals,
-                &self.types,
+                &all_structs,
             )
             .map_err(InterpreterError::from)?;
 
@@ -755,6 +826,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         let importing_path = ModulePath::from_string(&importing_module);
 
         // Use the enhanced import resolver
+        let all_structs = self.get_all_structs();
         let result = self
             .import_resolver
             .import_selective(
@@ -763,7 +835,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                 importing_path,
                 &self.loaded_modules,
                 &self.globals,
-                &self.types,
+                &all_structs,
             )
             .map_err(InterpreterError::from)?;
 
@@ -782,7 +854,10 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
         // Import types into type namespace
         for (name, type_def) in &result.imported_symbols.types {
-            self.types.insert(name.clone(), type_def.clone());
+            // Register in type registry and store as RuntimeValue::Type
+            let type_index = self.register_type(TypeDefinition::Struct(type_def.clone()));
+            let value = RuntimeValue::Type(type_index);
+            self.globals.insert(name.clone(), value);
         }
 
         // Log warnings (could be enhanced to use a proper logging system)
@@ -888,7 +963,18 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
     /// Get a struct definition
     pub fn get_struct(&self, name: &str) -> Option<&StructDefinition> {
-        self.types.get(name)
+        // Look up the type name as a symbol to get its registry index
+        let runtime_value = self.lookup(name)?;
+        
+        match runtime_value {
+            RuntimeValue::Type(index) => {
+                // Get the type definition from the registry
+                match self.get_type_by_index(*index)? {
+                    TypeDefinition::Struct(struct_def) => Some(struct_def),
+                }
+            }
+            _ => None,
+        }
     }
 
     /// Create a fresh variable
@@ -1047,10 +1133,6 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         relations
     }
 
-    /// Get all structs in the current environment
-    pub fn structs(&self) -> &HashMap<String, StructDefinition> {
-        &self.types
-    }
 
     /// Get all variables in the current scope (placeholder implementation)
     pub fn variables(&self) -> HashMap<String, &RuntimeValue<U, E>> {

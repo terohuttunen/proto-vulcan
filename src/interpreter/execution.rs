@@ -6,14 +6,14 @@
 //! execution, including variable scopes and relation lookups.
 
 use super::deferred::DeferredRelationCall;
-use super::environment::Environment;
+use super::environment::{Environment, TypeDefinition};
 use super::metaprogramming::{
     expand_meta_statement, expand_term, MetaValue,
     TemplateExpansionContext,
 };
 use super::parser::ast::{
     Conjunction as AstConjunction, Goal as AstGoal, Literal, Pattern, PatternMatching,
-    RelationCall, SearchStrategy, Term,
+    RelationCall, SearchStrategy, StructKind, Term,
 };
 use super::runtime_value::RuntimeValue;
 use super::InterpreterError;
@@ -176,6 +176,141 @@ impl<U: User, E: Engine<U>> std::hash::Hash for SimpleNamedStruct<U, E> {
 }
 
 impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for SimpleNamedStruct<U, E> {
+    fn into(self) -> LTerm<U, E> {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
+    }
+}
+
+/// Registry-based tuple struct that references type definitions by index
+#[derive(Clone)]
+pub struct RegistryTupleStruct<U: User, E: Engine<U>> {
+    pub type_index: usize,
+    pub args: Vec<LTerm<U, E>>,
+}
+
+impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryTupleStruct<U, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RegistryTupleStruct(type_index={}, args=", self.type_index)?;
+        for (i, arg) in self.args.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{:?}", arg)?;
+        }
+        write!(f, ")")
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryTupleStruct<U, E> {
+    fn type_name(&self) -> &'static str {
+        "TupleStruct"
+    }
+    
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
+        Box::new(self.args.iter().map(|arg| arg as &dyn CompoundObject<U, E>))
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryTupleStruct<U, E> {
+    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
+        Self {
+            type_index: self.type_index,
+            args: self.args.iter().map(|arg| arg.compound_walk_star(smap)).collect(),
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> PartialEq for RegistryTupleStruct<U, E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_index == other.type_index && self.args == other.args
+    }
+}
+
+impl<U: User, E: Engine<U>> Eq for RegistryTupleStruct<U, E> {}
+
+impl<U: User, E: Engine<U>> std::hash::Hash for RegistryTupleStruct<U, E> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.type_index.hash(state);
+        self.args.hash(state);
+    }
+}
+
+impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for RegistryTupleStruct<U, E> {
+    fn into(self) -> LTerm<U, E> {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
+    }
+}
+
+/// Registry-based named struct that references type definitions by index
+#[derive(Clone)]
+pub struct RegistryNamedStruct<U: User, E: Engine<U>> {
+    pub type_index: usize,
+    pub fields: std::collections::HashMap<String, LTerm<U, E>>,
+}
+
+impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryNamedStruct<U, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RegistryNamedStruct(type_index={}, fields={{", self.type_index)?;
+        let mut first = true;
+        for (field_name, field_value) in &self.fields {
+            if !first {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}: {:?}", field_name, field_value)?;
+            first = false;
+        }
+        write!(f, "}})")
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryNamedStruct<U, E> {
+    fn type_name(&self) -> &'static str {
+        "NamedStruct"
+    }
+    
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
+        // Sort fields by name to ensure deterministic iteration order
+        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
+        sorted_fields.sort_by_key(|(name, _)| *name);
+        Box::new(sorted_fields.into_iter().map(|(_, field)| field as &dyn CompoundObject<U, E>))
+    }
+}
+
+impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryNamedStruct<U, E> {
+    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
+        let mut walked_fields = std::collections::HashMap::new();
+        for (name, value) in &self.fields {
+            walked_fields.insert(name.clone(), value.compound_walk_star(smap));
+        }
+        Self {
+            type_index: self.type_index,
+            fields: walked_fields,
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> PartialEq for RegistryNamedStruct<U, E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_index == other.type_index && self.fields == other.fields
+    }
+}
+
+impl<U: User, E: Engine<U>> Eq for RegistryNamedStruct<U, E> {}
+
+impl<U: User, E: Engine<U>> std::hash::Hash for RegistryNamedStruct<U, E> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.type_index.hash(state);
+        // HashMap doesn't implement Hash, so we'll sort the fields first
+        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
+        sorted_fields.sort_by_key(|(k, _)| *k);
+        for (key, value) in sorted_fields {
+            key.hash(state);
+            value.hash(state);
+        }
+    }
+}
+
+impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for RegistryNamedStruct<U, E> {
     fn into(self) -> LTerm<U, E> {
         LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
     }
@@ -410,6 +545,19 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     pub fn get_existing_variable(&self, name: &str) -> Result<LTerm<U, E>, InterpreterError> {
         self.lookup_var(name)
             .ok_or_else(|| InterpreterError::UnknownVariable(name.to_string()))
+    }
+    
+    /// Resolve a type name to a registry index
+    fn resolve_type_to_index(&self, name: &str) -> Result<usize, InterpreterError> {
+        // Look up the type name as a symbol
+        let runtime_value = self.environment.borrow().lookup(name)
+            .ok_or_else(|| InterpreterError::UnknownType(name.to_string()))?
+            .clone();
+        
+        match runtime_value {
+            RuntimeValue::Type(index) => Ok(index),
+            _ => Err(InterpreterError::NotAType(name.to_string())),
+        }
     }
 
     /// Adds a goal to the list of deferred goals to be executed.
@@ -784,27 +932,57 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             }
             Term::Parenthesized(inner, _) => self.ast_term_to_runtime(inner),
             Term::NamedStruct(named_struct, _) => {
-                // Convert named struct construction to runtime
+                let type_index = self.resolve_type_to_index(&named_struct.name)?;
+                
+                // Verify it's a named struct
+                let env = self.environment.borrow();
+                match env.get_type_by_index(type_index) {
+                    Some(TypeDefinition::Struct(def)) => {
+                        if !matches!(def.kind, StructKind::Named(_)) {
+                            return Err(InterpreterError::RuntimeError(
+                                format!("{} is not a named struct", named_struct.name)
+                            ));
+                        }
+                    }
+                    _ => return Err(InterpreterError::NotAType(named_struct.name.clone())),
+                }
+                drop(env);
+                
+                // Convert fields
                 let mut fields = std::collections::HashMap::new();
                 for field in &named_struct.fields {
                     let field_value = self.ast_term_to_runtime(&field.value)?;
                     fields.insert(field.name.clone(), field_value);
                 }
                 
-                // Create a simple named struct structure
-                let named_struct_obj = SimpleNamedStruct::new(named_struct.name.clone(), fields);
-                Ok(LTerm::from(Rc::new(named_struct_obj) as Rc<dyn CompoundObject<U, E>>))
+                let registry_struct = RegistryNamedStruct { type_index, fields };
+                Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
             }
             Term::TupleStruct(compound, _) => {
-                // Convert tuple struct construction to runtime
+                let type_index = self.resolve_type_to_index(&compound.name)?;
+                
+                // Verify it's a tuple struct
+                let env = self.environment.borrow();
+                match env.get_type_by_index(type_index) {
+                    Some(TypeDefinition::Struct(def)) => {
+                        if !matches!(def.kind, StructKind::Tuple(_)) {
+                            return Err(InterpreterError::RuntimeError(
+                                format!("{} is not a tuple struct", compound.name)
+                            ));
+                        }
+                    }
+                    _ => return Err(InterpreterError::NotAType(compound.name.clone())),
+                }
+                drop(env);
+                
+                // Convert arguments
                 let mut args = Vec::new();
                 for arg in &compound.args {
                     args.push(self.ast_term_to_runtime(arg)?);
                 }
                 
-                // Create a simple tuple struct structure
-                let compound_obj = SimpleTupleStruct::new(compound.name.clone(), args);
-                Ok(LTerm::from(Rc::new(compound_obj) as Rc<dyn CompoundObject<U, E>>))
+                let registry_struct = RegistryTupleStruct { type_index, args };
+                Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
             }
             Term::Interpolation(expr, _) => {
                 // Expand interpolation using template expansion context
@@ -1063,30 +1241,30 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 Ok(lterm_from_vec_and_tail(elements, tail))
             }
             Pattern::NamedStruct(named_struct_pattern) => {
-                // Convert named struct pattern to runtime - recursively process each field pattern
+                let type_index = self.resolve_type_to_index(&named_struct_pattern.name)?;
+                
+                // Convert field patterns
                 let mut field_patterns = std::collections::HashMap::new();
                 for field_pattern in &named_struct_pattern.fields {
-                    // Convert each field pattern recursively
                     let field_term = self.convert_pattern_to_lterm(&field_pattern.pattern)?;
                     field_patterns.insert(field_pattern.name.clone(), field_term);
                 }
                 
-                // Create a named struct pattern that will match against SimpleNamedStruct objects
-                let named_struct_term = SimpleNamedStruct::new(named_struct_pattern.name.clone(), field_patterns);
-                Ok(LTerm::from(Rc::new(named_struct_term) as Rc<dyn CompoundObject<U, E>>))
+                let registry_struct = RegistryNamedStruct { type_index, fields: field_patterns };
+                Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
             }
             Pattern::TupleStruct(compound_pattern) => {
-                // Convert tuple struct pattern to runtime - recursively process each pattern
+                let type_index = self.resolve_type_to_index(&compound_pattern.name)?;
+                
+                // Convert pattern arguments
                 let mut arg_patterns = Vec::new();
                 for arg_pattern in &compound_pattern.args {
-                    // Convert each pattern argument recursively
                     let arg_term = self.convert_pattern_to_lterm(arg_pattern)?;
                     arg_patterns.push(arg_term);
                 }
                 
-                // Create a tuple struct pattern that will match against SimpleTupleStruct objects
-                let compound_term = SimpleTupleStruct::new(compound_pattern.name.clone(), arg_patterns);
-                Ok(LTerm::from(Rc::new(compound_term) as Rc<dyn CompoundObject<U, E>>))
+                let registry_struct = RegistryTupleStruct { type_index, args: arg_patterns };
+                Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
             }
         }
     }

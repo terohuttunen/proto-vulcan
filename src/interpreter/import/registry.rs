@@ -133,6 +133,7 @@ impl<U: User, E: Engine<U>> SymbolRegistry<U, E> {
             RuntimeValue::PredicateHandle(_) => SymbolType::PredicateHandle,
             RuntimeValue::BuiltinRelation { .. } => SymbolType::BuiltinRelation,
             RuntimeValue::Struct(_) => SymbolType::Struct,
+            RuntimeValue::Type(_) => SymbolType::Type, // Registry types are their own symbol type
             RuntimeValue::Term(_) => SymbolType::Term,
         };
 

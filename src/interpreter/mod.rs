@@ -102,6 +102,8 @@ pub enum InterpreterError {
     RuntimeError(String),
     UnknownRelation(String),
     UnknownVariable(String),
+    UnknownType(String),
+    NotAType(String),
     DuplicateDefinition(String),
     ModuleNotFound(PathBuf),
     IoError(String),
@@ -141,6 +143,8 @@ impl Display for InterpreterError {
             InterpreterError::RuntimeError(e) => write!(f, "Runtime error: {}", e),
             InterpreterError::UnknownRelation(name) => write!(f, "Unknown predicate: {}", name),
             InterpreterError::UnknownVariable(name) => write!(f, "Unknown variable: {}", name),
+            InterpreterError::UnknownType(name) => write!(f, "Unknown type: {}", name),
+            InterpreterError::NotAType(name) => write!(f, "{} is not a type", name),
             InterpreterError::DuplicateDefinition(name) => {
                 write!(f, "Duplicate definition: {}", name)
             }

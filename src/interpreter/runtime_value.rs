@@ -39,6 +39,7 @@ impl<U: User, E: Engine<U>> Clone for RuntimeValue<U, E> {
                 arity: *arity,
             },
             RuntimeValue::Struct(sd) => RuntimeValue::Struct(sd.clone()),
+            RuntimeValue::Type(index) => RuntimeValue::Type(*index),
             RuntimeValue::Term(t) => RuntimeValue::Term(t.clone()),
         }
     }
@@ -59,6 +60,7 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RuntimeValue<U, E> {
                 .field("arity", arity)
                 .finish(),
             RuntimeValue::Struct(sd) => f.debug_tuple("Struct").field(sd).finish(),
+            RuntimeValue::Type(index) => f.debug_tuple("Type").field(index).finish(),
             RuntimeValue::Term(t) => f.debug_tuple("Term").field(t).finish(),
         }
     }
@@ -75,6 +77,8 @@ pub enum RuntimeValue<U: User, E: Engine<U>> {
         arity: usize,
     },
     Struct(StructDefinition),
+    /// Registry index for type definitions
+    Type(usize),
     /// A runtime term/value
     Term(LTerm<U, E>),
 }
