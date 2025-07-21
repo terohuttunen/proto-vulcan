@@ -4,6 +4,7 @@
 
 use super::super::*;
 use crate::interpreter::parser::ast::{Item, ModuleDeclaration};
+use super::super::builder::AstBuilder;
 
 #[test]
 fn test_simple_mod_declaration() {
@@ -12,7 +13,8 @@ fn test_simple_mod_declaration() {
     assert!(result.is_ok());
 
     let pair = result.unwrap().next().unwrap();
-    let mod_decl = build_mod_declaration(pair).unwrap();
+    let mut builder = AstBuilder::new();
+    let mod_decl = builder.build_mod_declaration(pair).unwrap();
 
     assert_eq!(mod_decl.name, "my_module");
     assert!(mod_decl.visibility == ast::Visibility::Private);
@@ -25,7 +27,8 @@ fn test_pub_mod_declaration() {
     assert!(result.is_ok());
 
     let pair = result.unwrap().next().unwrap();
-    let mod_decl = build_mod_declaration(pair).unwrap();
+    let mut builder = AstBuilder::new();
+    let mod_decl = builder.build_mod_declaration(pair).unwrap();
 
     assert_eq!(mod_decl.name, "utils");
     assert!(mod_decl.visibility == ast::Visibility::Public);
@@ -46,7 +49,8 @@ fn test_mod_declaration_in_program() {
     assert!(result.is_ok());
 
     let pair = result.unwrap().next().unwrap();
-    let program = build_program(pair).unwrap();
+    let mut builder = AstBuilder::new();
+    let program = builder.build_program(pair).unwrap();
 
     assert_eq!(program.items.len(), 3);
 
@@ -87,7 +91,8 @@ fn test_mod_declaration_in_module() {
     assert!(result.is_ok());
 
     let pair = result.unwrap().next().unwrap();
-    let program = build_program(pair).unwrap();
+    let mut builder = AstBuilder::new();
+    let program = builder.build_program(pair).unwrap();
 
     assert_eq!(program.items.len(), 1);
 

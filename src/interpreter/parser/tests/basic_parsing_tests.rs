@@ -4,6 +4,7 @@
 //! structs, goals, terms, patterns, and other fundamental language constructs.
 
 use super::super::*;
+use crate::interpreter::metaprogramming::TypeAnnotation;
 
 #[test]
 fn test_parse_empty_program() {
