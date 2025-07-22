@@ -5,6 +5,8 @@
 use super::super::*;
 use crate::interpreter::parser::ast::{Item, ModuleDeclaration};
 use super::super::builder::AstBuilder;
+use crate::interpreter::symbol_table::SymbolTable;
+use std::path::PathBuf;
 
 #[test]
 fn test_simple_mod_declaration() {
@@ -13,10 +15,12 @@ fn test_simple_mod_declaration() {
     assert!(result.is_ok());
 
     let pair = result.unwrap().next().unwrap();
-    let mut builder = AstBuilder::new();
+    let mut symbol_table = SymbolTable::new();
+    let path = PathBuf::from("test.pv");
+    let mut builder = AstBuilder::new(&mut symbol_table, &path);
     let mod_decl = builder.build_mod_declaration(pair).unwrap();
 
-    assert_eq!(mod_decl.name, "my_module");
+    assert_eq!(mod_decl.name.as_ref(), "my_module");
     assert!(mod_decl.visibility == ast::Visibility::Private);
 }
 
@@ -27,10 +31,12 @@ fn test_pub_mod_declaration() {
     assert!(result.is_ok());
 
     let pair = result.unwrap().next().unwrap();
-    let mut builder = AstBuilder::new();
+    let mut symbol_table = SymbolTable::new();
+    let path = PathBuf::from("test.pv");
+    let mut builder = AstBuilder::new(&mut symbol_table, &path);
     let mod_decl = builder.build_mod_declaration(pair).unwrap();
 
-    assert_eq!(mod_decl.name, "utils");
+    assert_eq!(mod_decl.name.as_ref(), "utils");
     assert!(mod_decl.visibility == ast::Visibility::Public);
 }
 
@@ -49,14 +55,16 @@ fn test_mod_declaration_in_program() {
     assert!(result.is_ok());
 
     let pair = result.unwrap().next().unwrap();
-    let mut builder = AstBuilder::new();
+    let mut symbol_table = SymbolTable::new();
+    let path = PathBuf::from("test.pv");
+    let mut builder = AstBuilder::new(&mut symbol_table, &path);
     let program = builder.build_program(pair).unwrap();
 
     assert_eq!(program.items.len(), 3);
 
     // Check first module declaration
     if let Item::ModuleDeclaration(mod_decl) = &program.items[0] {
-        assert_eq!(mod_decl.name, "utils");
+        assert_eq!(mod_decl.name.as_ref(), "utils");
         assert!(mod_decl.visibility == ast::Visibility::Private);
     } else {
         panic!("Expected ModuleDeclaration");
@@ -64,7 +72,7 @@ fn test_mod_declaration_in_program() {
 
     // Check second module declaration
     if let Item::ModuleDeclaration(mod_decl) = &program.items[1] {
-        assert_eq!(mod_decl.name, "solver");
+        assert_eq!(mod_decl.name.as_ref(), "solver");
         assert!(mod_decl.visibility == ast::Visibility::Public);
     } else {
         panic!("Expected ModuleDeclaration");
@@ -91,18 +99,20 @@ fn test_mod_declaration_in_module() {
     assert!(result.is_ok());
 
     let pair = result.unwrap().next().unwrap();
-    let mut builder = AstBuilder::new();
+    let mut symbol_table = SymbolTable::new();
+    let path = PathBuf::from("test.pv");
+    let mut builder = AstBuilder::new(&mut symbol_table, &path);
     let program = builder.build_program(pair).unwrap();
 
     assert_eq!(program.items.len(), 1);
 
     if let Item::Module(module) = &program.items[0] {
-        assert_eq!(module.name, "parent");
+        assert_eq!(module.name.as_ref(), "parent");
         assert_eq!(module.items.len(), 3);
 
         // Check child module declaration
         if let Item::ModuleDeclaration(mod_decl) = &module.items[0] {
-            assert_eq!(mod_decl.name, "child");
+            assert_eq!(mod_decl.name.as_ref(), "child");
             assert!(mod_decl.visibility == ast::Visibility::Private);
         } else {
             panic!("Expected ModuleDeclaration");
@@ -110,7 +120,7 @@ fn test_mod_declaration_in_module() {
 
         // Check utils module declaration
         if let Item::ModuleDeclaration(mod_decl) = &module.items[1] {
-            assert_eq!(mod_decl.name, "utils");
+            assert_eq!(mod_decl.name.as_ref(), "utils");
             assert!(mod_decl.visibility == ast::Visibility::Public);
         } else {
             panic!("Expected ModuleDeclaration");
@@ -127,14 +137,14 @@ fn test_mod_declaration_in_module() {
 fn test_display_mod_declaration() {
     let mod_decl = ModuleDeclaration {
         visibility: ast::Visibility::Private,
-        name: "test_module".to_string(),
+        name: "test_module".to_string().into(),
         span: Span::dummy(),
     };
     assert_eq!(format!("{}", mod_decl), "mod test_module;");
 
     let pub_mod_decl = ModuleDeclaration {
         visibility: ast::Visibility::Public,
-        name: "public_module".to_string(),
+        name: "public_module".to_string().into(),
         span: Span::dummy(),
     };
     assert_eq!(format!("{}", pub_mod_decl), "pub mod public_module;");

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 
 use super::parser::ast::Spanned;
+use super::symbol_table::InternedSymbol;
 
 /// Core meta values used in template expansion
 #[derive(Debug, Clone, PartialEq)]
@@ -20,7 +21,7 @@ pub enum TypeAnnotation {
     String,
     Bool,
     Relation(usize), // New: relation type with arity (e.g., rel(2) for binary relation)
-    Custom(String),  // Custom type names (like qualified paths)
+    Custom(super::parser::ast::QualifiedPath),  // Custom type names (like qualified paths)
 }
 
 impl fmt::Display for TypeAnnotation {
@@ -82,7 +83,7 @@ pub enum MetaBinaryOp {
 /// Let statement for meta variable binding
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetStatement {
-    pub variable: String,
+    pub variable: super::symbol_table::InternedSymbol,
     pub variable_type: TypeAnnotation,
     pub expression: MetaExpression,
 }
@@ -111,7 +112,7 @@ pub enum MetaStatement {
         else_body: Option<super::parser::ast::GoalBody>,
     },
     For {
-        variable: String,
+        variable: super::symbol_table::InternedSymbol,
         variable_type: TypeAnnotation,
         range: MetaForRange,
         body: super::parser::ast::GoalBody,
@@ -409,12 +410,12 @@ fn expand_let_statement(
     if !check_meta_type(&value, &let_stmt.variable_type) {
         return Err(MetaError::TypeMismatch(format!(
             "Variable '{}' expected type {}, got {:?}",
-            let_stmt.variable, let_stmt.variable_type, value
+            let_stmt.variable.to_string(), let_stmt.variable_type, value
         )));
     }
 
     // Bind the variable in template context for further meta expansion
-    context.bind(let_stmt.variable.clone(), value.clone());
+    context.bind(let_stmt.variable.to_string(), value.clone());
 
     // Generate a runtime Let goal to introduce the variable in execution scope
     use super::parser::ast::{Goal, LetDeclaration, Literal, Term};
@@ -531,7 +532,7 @@ fn expand_for_statement(
         // Create let statement to bind the loop variable
         let runtime_value = Term::Literal(Literal::Number(i.to_string()), original_span.clone());
         let let_decl = LetDeclaration {
-            var_name: variable.to_string(),
+            var_name: InternedSymbol::from_text(variable),
             value: Some(runtime_value),
         };
 
@@ -672,7 +673,7 @@ pub fn try_parse_arithmetic_from_compound(
         let operator = &compound.name;
 
         // Only handle basic arithmetic operators
-        let meta_op = match operator.as_str() {
+        let meta_op = match operator.to_string().as_str() {
             "-" => MetaBinaryOp::Subtract,
             "+" => MetaBinaryOp::Add,
             "*" => MetaBinaryOp::Multiply,
@@ -728,10 +729,10 @@ fn term_to_meta_expression(
     use super::parser::ast::{Literal, Term};
 
     match term {
-        Term::Variable(name, span) => {
+        Term::Variable(name) => {
             // Check if this variable is bound in the meta context
-            if context.bindings.contains_key(name) {
-                Some(MetaExpression::Variable(name.clone(), span.clone()))
+            if context.bindings.contains_key(&name.to_string()) {
+                Some(MetaExpression::Variable(name.to_string(), term.span().clone()))
             } else {
                 None
             }
@@ -835,7 +836,7 @@ pub fn expand_term(
             Ok(Term::EnumVariant(expanded_enum_variant, span.clone()))
         }
         // Terms that don't require expansion
-        Term::Variable(_, _) | Term::Wildcard(_) | Term::Literal(_, _) => Ok(term.clone()),
+        Term::Variable(_) | Term::Wildcard(_) | Term::Literal(_, _) => Ok(term.clone()),
     }
 }
 

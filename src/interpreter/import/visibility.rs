@@ -177,16 +177,16 @@ impl VisibilityChecker {
             QualifiedPath::Relative(segments) => {
                 // Relative paths are resolved relative to the importing module
                 let mut resolved_segments = context.importing_module.segments.clone();
-                resolved_segments.extend(segments.clone());
+                resolved_segments.extend(segments.iter().map(|s| s.to_string()));
                 Ok(ModulePath::new(resolved_segments))
             }
             QualifiedPath::Absolute(segments) => {
                 // Absolute paths start from crate root
-                Ok(ModulePath::new(segments.clone()))
+                Ok(ModulePath::new(segments.iter().map(|s| s.to_string()).collect()))
             }
             QualifiedPath::Global(segments) => {
                 // Global paths start from global namespace
-                Ok(ModulePath::new(segments.clone()))
+                Ok(ModulePath::new(segments.iter().map(|s| s.to_string()).collect()))
             }
             QualifiedPath::Super(levels, segments) => {
                 // Super paths go up the module hierarchy
@@ -200,13 +200,13 @@ impl VisibilityChecker {
                                 reason: "Cannot go beyond crate root with super::".to_string(),
                             })?;
                 }
-                current_module.segments.extend(segments.clone());
+                current_module.segments.extend(segments.iter().map(|s| s.to_string()));
                 Ok(current_module)
             }
             QualifiedPath::Self_(segments) => {
                 // Self paths start from current module
                 let mut resolved_segments = context.importing_module.segments.clone();
-                resolved_segments.extend(segments.clone());
+                resolved_segments.extend(segments.iter().map(|s| s.to_string()));
                 Ok(ModulePath::new(resolved_segments))
             }
 

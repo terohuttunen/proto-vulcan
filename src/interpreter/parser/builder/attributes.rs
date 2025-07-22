@@ -5,7 +5,8 @@ use crate::interpreter::parser::ast::*;
 impl<'a> AstBuilder<'a> {
     pub fn build_attribute(&mut self, pair: Pair<Rule>) -> ParseResult<Attribute> {
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = self.create_symbol_from_pair(&name_pair);
         let mut args = vec![];
         if let Some(args_pair) = inner.next() {
             if args_pair.as_rule() == Rule::attribute_args {
@@ -35,7 +36,8 @@ impl<'a> AstBuilder<'a> {
 
     pub fn build_parameter(&mut self, pair: Pair<Rule>) -> ParseResult<Parameter> {
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = self.create_symbol_from_pair(&name_pair);
         let type_annotation = inner
             .next()
             .map(|p| self.parse_meta_type_annotation(p))

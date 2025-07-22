@@ -51,11 +51,11 @@ impl<'a> AstBuilder<'a> {
                     Err(_) => {
                         // build_qualified_path failed, this might be a simple identifier that matched qualified_path rule
                         // Try to extract as a simple identifier
-                        Ok(RelationName::Simple(pair.as_str().to_string()))
+                        Ok(RelationName::Simple(self.create_symbol_from_pair(&pair)))
                     }
                 }
             }
-            Rule::ident => Ok(RelationName::Simple(pair.as_str().to_string())),
+            Rule::ident => Ok(RelationName::Simple(self.create_symbol_from_pair(&pair))),
             _ => {
                 // Handle the case where we have a nested structure (relation_call might contain qualified_path or ident)
                 // Try to find the first inner qualified_path or ident
@@ -63,7 +63,7 @@ impl<'a> AstBuilder<'a> {
                 for inner in pair.into_inner() {
                     match inner.as_rule() {
                         Rule::qualified_path => return self.build_relation_name(inner),
-                        Rule::ident => return Ok(RelationName::Simple(inner.as_str().to_string())),
+                        Rule::ident => return Ok(RelationName::Simple(self.create_symbol_from_pair(&inner))),
                         _ => continue,
                     }
                 }
@@ -124,7 +124,8 @@ impl<'a> AstBuilder<'a> {
     pub fn build_method_call(&mut self, pair: Pair<Rule>) -> ParseResult<MethodCall> {
         let mut inner = pair.into_inner();
         let receiver = Box::new(self.build_term(inner.next().unwrap())?);
-        let method = inner.next().unwrap().as_str().to_string();
+        let method_pair = inner.next().unwrap();
+        let method = self.create_symbol_from_pair(&method_pair);
         let mut args = vec![];
         for term_pair in inner {
             args.push(self.build_term(term_pair)?);

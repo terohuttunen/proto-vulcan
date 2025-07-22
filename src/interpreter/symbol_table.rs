@@ -45,17 +45,24 @@ impl std::fmt::Display for Symbol {
     }
 }
 
-/// A reference to a symbol that provides a clean API for AST nodes
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SymbolRef(Rc<Symbol>);
+/// An interned symbol reference that provides a clean API for AST nodes
+#[derive(Debug, Clone, Eq)]
+pub struct InternedSymbol(Rc<Symbol>);
 
-impl SymbolRef {
+impl PartialEq for InternedSymbol {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare only the text, not spans or file paths
+        self.0.text == other.0.text
+    }
+}
+
+impl InternedSymbol {
     /// Create a new symbol reference
     pub fn new(symbol: Rc<Symbol>) -> Self {
         Self(symbol)
     }
 
-    /// Create a SymbolRef from just text (no source location info)
+    /// Create a InternedSymbol from just text (no source location info)
     /// Useful for tests and when source location doesn't matter
     pub fn from_text(text: &str) -> Self {
         use std::rc::Rc;
@@ -98,44 +105,44 @@ impl SymbolRef {
     }
 }
 
-impl std::fmt::Display for SymbolRef {
+impl std::fmt::Display for InternedSymbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.text)
     }
 }
 
-impl From<Rc<Symbol>> for SymbolRef {
+impl From<Rc<Symbol>> for InternedSymbol {
     fn from(symbol: Rc<Symbol>) -> Self {
         Self(symbol)
     }
 }
 
-impl PartialEq<str> for SymbolRef {
+impl PartialEq<str> for InternedSymbol {
     fn eq(&self, other: &str) -> bool {
         self.0.text.as_ref() == other
     }
 }
 
-impl PartialEq<&str> for SymbolRef {
+impl PartialEq<&str> for InternedSymbol {
     fn eq(&self, other: &&str) -> bool {
         self.0.text.as_ref() == *other
     }
 }
 
-impl PartialEq<String> for SymbolRef {
+impl PartialEq<String> for InternedSymbol {
     fn eq(&self, other: &String) -> bool {
         self.0.text.as_ref() == other.as_str()
     }
 }
 
-impl PartialEq<Symbol> for SymbolRef {
+impl PartialEq<Symbol> for InternedSymbol {
     fn eq(&self, other: &Symbol) -> bool {
         self.0.text == other.text
     }
 }
 
-impl PartialEq<SymbolRef> for Symbol {
-    fn eq(&self, other: &SymbolRef) -> bool {
+impl PartialEq<InternedSymbol> for Symbol {
+    fn eq(&self, other: &InternedSymbol) -> bool {
         self.text == other.0.text
     }
 }
@@ -158,49 +165,49 @@ impl PartialEq for Symbol {
     }
 }
 
-impl From<SymbolRef> for String {
-    fn from(symbol: SymbolRef) -> String {
+impl From<InternedSymbol> for String {
+    fn from(symbol: InternedSymbol) -> String {
         symbol.0.text.to_string()
     }
 }
 
-impl From<&SymbolRef> for String {
-    fn from(symbol: &SymbolRef) -> String {
+impl From<&InternedSymbol> for String {
+    fn from(symbol: &InternedSymbol) -> String {
         symbol.0.text.to_string()
     }
 }
 
-impl From<&str> for SymbolRef {
+impl From<&str> for InternedSymbol {
     fn from(text: &str) -> Self {
-        SymbolRef::from_text(text)
+        InternedSymbol::from_text(text)
     }
 }
 
-impl From<String> for SymbolRef {
+impl From<String> for InternedSymbol {
     fn from(text: String) -> Self {
-        SymbolRef::from_text(&text)
+        InternedSymbol::from_text(&text)
     }
 }
 
-impl AsRef<str> for SymbolRef {
+impl AsRef<str> for InternedSymbol {
     fn as_ref(&self) -> &str {
         &self.0.text
     }
 }
 
-impl std::borrow::Borrow<str> for SymbolRef {
+impl std::borrow::Borrow<str> for InternedSymbol {
     fn borrow(&self) -> &str {
         &self.0.text
     }
 }
 
-impl Ord for SymbolRef {
+impl Ord for InternedSymbol {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.text.cmp(&other.0.text)
     }
 }
 
-impl PartialOrd for SymbolRef {
+impl PartialOrd for InternedSymbol {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -231,15 +238,15 @@ impl std::hash::Hash for Symbol {
     }
 }
 
-impl std::hash::Hash for SymbolRef {
+impl std::hash::Hash for InternedSymbol {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // Only hash the text content, not the span or file path
         self.0.text.hash(state);
     }
 }
 
-impl SymbolRef {
-    /// Temporary method to create a SymbolRef from a string and span (TODO: remove when parser uses symbol table)
+impl InternedSymbol {
+    /// Temporary method to create a InternedSymbol from a string and span (TODO: remove when parser uses symbol table)
     pub fn from_string_and_span(text: String, span: crate::interpreter::parser::ast::Span) -> Self {
         use std::rc::Rc;
         let symbol = Rc::new(Symbol {
@@ -247,7 +254,20 @@ impl SymbolRef {
             span,
             file_path: Rc::new(std::path::PathBuf::new()),
         });
-        SymbolRef::new(symbol)
+        InternedSymbol::new(symbol)
+    }
+    
+    /// Check if the symbol text contains a substring (useful for "::" checks)
+    pub fn contains(&self, pattern: &str) -> bool {
+        self.0.text.contains(pattern)
+    }
+}
+
+/// Additional useful trait implementations for better ergonomics
+impl std::ops::Deref for InternedSymbol {
+    type Target = str;
+    fn deref(&self) -> &Self::Target {
+        &self.0.text
     }
 }
 
@@ -350,7 +370,7 @@ impl SymbolTable {
     }
 
     /// Create a new symbol with interned string and file path
-    pub fn create_symbol(&mut self, text: &str, span: Span, file_path: PathBuf) -> SymbolRef {
+    pub fn create_symbol(&mut self, text: &str, span: Span, file_path: PathBuf) -> InternedSymbol {
         let interned_text = self.string_table.intern(text);
         let interned_file = self.file_table.intern(file_path);
 
@@ -360,7 +380,7 @@ impl SymbolTable {
             file_path: interned_file,
         });
 
-        SymbolRef::new(symbol)
+        InternedSymbol::new(symbol)
     }
 
     /// Get statistics about the symbol table

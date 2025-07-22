@@ -30,15 +30,21 @@ pub type ParseResult<T> = Result<T, ParseError>;
 
 /// AST builder that contains methods for converting Pest parse tree nodes into AST nodes
 pub struct AstBuilder<'a> {
-    // Currently no state needed, but the mutable reference allows for future extensibility
-    _phantom: std::marker::PhantomData<&'a ()>,
+    /// Symbol table for interning identifiers with source location information
+    symbol_table: &'a mut crate::interpreter::symbol_table::SymbolTable,
+    /// Current file path being parsed (for source location tracking)
+    current_file: &'a std::path::PathBuf,
 }
 
 impl<'a> AstBuilder<'a> {
-    /// Create a new AstBuilder instance
-    pub fn new() -> Self {
+    /// Create a new AstBuilder instance with symbol table and file path
+    pub fn new(
+        symbol_table: &'a mut crate::interpreter::symbol_table::SymbolTable,
+        current_file: &'a std::path::PathBuf,
+    ) -> Self {
         Self {
-            _phantom: std::marker::PhantomData,
+            symbol_table,
+            current_file,
         }
     }
 
@@ -47,10 +53,34 @@ impl<'a> AstBuilder<'a> {
         let span = pair.as_span();
         Span::new(span.start(), span.end())
     }
-}
 
-impl<'a> Default for AstBuilder<'a> {
-    fn default() -> Self {
-        Self::new()
+    /// Create an interned symbol from text and span
+    pub fn create_symbol(
+        &mut self,
+        text: &str,
+        span: Span,
+    ) -> crate::interpreter::symbol_table::InternedSymbol {
+        self.symbol_table
+            .create_symbol(text, span, self.current_file.clone())
+    }
+
+    /// Extract text from a Pest pair
+    pub fn extract_text_from_pair(pair: &Pair<Rule>) -> String {
+        pair.as_str().to_string()
+    }
+
+    /// Create an interned symbol from a Pest pair (extracts text and span automatically)
+    pub fn create_symbol_from_pair(
+        &mut self,
+        pair: &Pair<Rule>,
+    ) -> crate::interpreter::symbol_table::InternedSymbol {
+        let text = self.extract_clean_text_from_pair(pair);
+        let span = self.pair_to_span(pair);
+        self.create_symbol(&text, span)
+    }
+
+    /// Extract text from a Pest pair - no cleaning, just raw text
+    fn extract_clean_text_from_pair(&self, pair: &Pair<Rule>) -> String {
+        pair.as_str().to_string()
     }
 }

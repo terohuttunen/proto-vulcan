@@ -61,7 +61,7 @@ impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryTupleStruct<U, E> {
         let env_ref = self.environment.borrow();
         env_ref.get_type_by_index(self.type_index)
             .and_then(|type_def| match type_def {
-                crate::interpreter::environment::TypeDefinition::Struct(s) => Some(s.name.clone()),
+                crate::interpreter::environment::TypeDefinition::Struct(s) => Some(s.name.to_string()),
                 _ => None,
             })
             .unwrap_or_else(|| "TupleStruct".to_string())
@@ -145,7 +145,7 @@ impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryNamedStruct<U, E> {
         let env_ref = self.environment.borrow();
         env_ref.get_type_by_index(self.type_index)
             .and_then(|type_def| match type_def {
-                crate::interpreter::environment::TypeDefinition::Struct(s) => Some(s.name.clone()),
+                crate::interpreter::environment::TypeDefinition::Struct(s) => Some(s.name.to_string()),
                 _ => None,
             })
             .unwrap_or_else(|| "NamedStruct".to_string())
@@ -240,7 +240,7 @@ impl<U: User, E: Engine<U>> RegistryEnumVariant<U, E> {
         if let Some(env) = environment {
             if let Some(type_def) = env.get_type_by_index(self.enum_type_index) {
                 if let crate::interpreter::environment::TypeDefinition::Enum(enum_def) = type_def {
-                    return enum_def.name.clone();
+                    return enum_def.name.to_string();
                 }
             }
         }
@@ -318,7 +318,7 @@ impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryEnumVariant<U, E> {
         let env_ref = self.environment.borrow();
         env_ref.get_type_by_index(self.enum_type_index)
             .and_then(|type_def| match type_def {
-                crate::interpreter::environment::TypeDefinition::Enum(e) => Some(e.name.clone()),
+                crate::interpreter::environment::TypeDefinition::Enum(e) => Some(e.name.to_string()),
                 _ => None,
             })
             .unwrap_or_else(|| "Enum".to_string())
@@ -633,14 +633,14 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
     /// Searches for a variable in the current scope stack.
     /// It looks from the innermost scope outwards, returning only relational variables as LTerms.
-    fn lookup_var(&self, name: &str) -> Option<LTerm<U, E>> {
+    fn lookup_var<N: AsRef<str>>(&self, name: N) -> Option<LTerm<U, E>> {
         self.lookup_variable_value(name)?.to_lterm()
     }
 
     /// Searches for a variable value (relational or meta) in the current scope stack.
-    fn lookup_variable_value(&self, name: &str) -> Option<VariableValue<U, E>> {
+    fn lookup_variable_value<N: AsRef<str>>(&self, name: N) -> Option<VariableValue<U, E>> {
         for scope in self.locals.iter().rev() {
-            if let Some(var) = scope.get(name) {
+            if let Some(var) = scope.get(name.as_ref()) {
                 return Some(var.clone());
             }
         }
@@ -648,34 +648,34 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Searches for a meta variable in the current scope stack.
-    fn lookup_meta_var(&self, name: &str) -> Option<MetaValue> {
+    fn lookup_meta_var<N: AsRef<str>>(&self, name: N) -> Option<MetaValue> {
         self.lookup_variable_value(name)?.as_meta().cloned()
     }
 
     /// Searches for a variable only in the current (innermost) scope.
     /// Used for pattern matching to ensure variables within a pattern are unified.
-    fn lookup_var_current_scope(&self, name: &str) -> Option<LTerm<U, E>> {
+    fn lookup_var_current_scope<N: AsRef<str>>(&self, name: N) -> Option<LTerm<U, E>> {
         if let Some(scope) = self.locals.last() {
-            scope.get(name).and_then(|var| var.to_lterm())
+            scope.get(name.as_ref()).and_then(|var| var.to_lterm())
         } else {
             None
         }
     }
 
     /// Binds a variable name to an `LTerm` in the current (innermost) scope.
-    pub fn bind_var(&mut self, name: String, var: LTerm<U, E>) {
+    pub fn bind_var<N: AsRef<str>>(&mut self, name: N, var: LTerm<U, E>) {
         self.bind_variable_value(name, VariableValue::Relational(var));
     }
 
     /// Binds a variable name to a `MetaValue` in the current (innermost) scope.
-    pub fn bind_meta_var(&mut self, name: String, meta: MetaValue) {
+    pub fn bind_meta_var<N: AsRef<str>>(&mut self, name: N, meta: MetaValue) {
         self.bind_variable_value(name, VariableValue::Meta(meta));
     }
 
     /// Binds a variable name to a `VariableValue` in the current (innermost) scope.
-    pub fn bind_variable_value(&mut self, name: String, value: VariableValue<U, E>) {
+    pub fn bind_variable_value<N: AsRef<str>>(&mut self, name: N, value: VariableValue<U, E>) {
         if let Some(scope) = self.locals.last_mut() {
-            scope.insert(name, value);
+            scope.insert(name.as_ref().to_string(), value);
         }
     }
 
@@ -705,15 +705,16 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
     
     /// Resolve a type name to a registry index
-    fn resolve_type_to_index(&self, name: &str) -> Result<usize, InterpreterError> {
+    fn resolve_type_to_index<S: AsRef<str>>(&self, name: S) -> Result<usize, InterpreterError> {
         // Look up the type name as a symbol
-        let runtime_value = self.environment.borrow().lookup(name)
-            .ok_or_else(|| InterpreterError::UnknownType(name.to_string()))?
+        let name_str = name.as_ref();
+        let runtime_value = self.environment.borrow().lookup(name_str)
+            .ok_or_else(|| InterpreterError::UnknownType(name_str.to_string()))?
             .clone();
         
         match runtime_value {
             RuntimeValue::Type(index) => Ok(index),
-            _ => Err(InterpreterError::NotAType(name.to_string())),
+            _ => Err(InterpreterError::NotAType(name_str.to_string())),
         }
     }
 
@@ -1048,7 +1049,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     /// Converts an AST term to a runtime LTerm.
     pub fn ast_term_to_runtime(&mut self, term: &Term) -> Result<LTerm<U, E>, InterpreterError> {
         match term {
-            Term::Variable(name, _) => {
+            Term::Variable(name) => {
                 // First check if it's a regular variable
                 if let Some(var) = self.lookup_var(name) {
                     return Ok(var);
@@ -1070,7 +1071,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     }
                 }
 
-                Err(InterpreterError::UnknownVariable(name.clone()))
+                Err(InterpreterError::UnknownVariable(name.to_string()))
             }
             Term::Wildcard(_) => Ok(LTerm::any()),
             Term::Literal(literal, _) => convert_ast_literal_to_runtime(literal),
@@ -1102,7 +1103,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                             ));
                         }
                     }
-                    _ => return Err(InterpreterError::NotAType(named_struct.name.clone())),
+                    _ => return Err(InterpreterError::NotAType(named_struct.name.to_string())),
                 }
                 drop(env);
                 
@@ -1110,7 +1111,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 let mut fields = std::collections::HashMap::new();
                 for field in &named_struct.fields {
                     let field_value = self.ast_term_to_runtime(&field.value)?;
-                    fields.insert(field.name.clone(), field_value);
+                    fields.insert(field.name.to_string(), field_value);
                 }
                 
                 let registry_struct = RegistryNamedStruct { type_index, fields, environment: self.environment.clone() };
@@ -1118,7 +1119,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             }
             Term::TupleStruct(compound, _) => {
                 // Tuple struct construction
-                let type_index = self.resolve_type_to_index(&compound.name)?;
+                let type_index = self.resolve_type_to_index(&compound.name.to_string())?;
                 
                 // Verify it's a tuple struct
                 let env = self.environment.borrow();
@@ -1130,7 +1131,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                             ));
                         }
                     }
-                    _ => return Err(InterpreterError::NotAType(compound.name.clone())),
+                    _ => return Err(InterpreterError::NotAType(compound.name.to_string())),
                 }
                 drop(env);
                 
@@ -1200,7 +1201,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 let mut runtime_fields = std::collections::HashMap::new();
                 for field in fields {
                     let field_value = self.ast_term_to_runtime(&field.value)?;
-                    runtime_fields.insert(field.name.clone(), field_value);
+                    runtime_fields.insert(field.name.to_string(), field_value);
                 }
                 VariantData::Named(runtime_fields)
             }
@@ -1213,7 +1214,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         let enum_variant_obj = RegistryEnumVariant {
             enum_type_index,
             variant_index,
-            variant_name: variant_name,
+            variant_name: variant_name.to_string(),
             variant_data,
             environment: self.environment.clone(),
         };
@@ -1478,7 +1479,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 let mut field_patterns = std::collections::HashMap::new();
                 for field_pattern in &named_struct_pattern.fields {
                     let field_term = self.convert_pattern_to_lterm(&field_pattern.pattern)?;
-                    field_patterns.insert(field_pattern.name.clone(), field_term);
+                    field_patterns.insert(field_pattern.name.to_string(), field_term);
                 }
                 
                 let registry_struct = RegistryNamedStruct { type_index, fields: field_patterns, environment: self.environment.clone() };
@@ -1532,7 +1533,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                         let mut runtime_field_patterns = std::collections::HashMap::new();
                         for field_pattern in field_patterns {
                             let field_term = self.convert_pattern_to_lterm(&field_pattern.pattern)?;
-                            runtime_field_patterns.insert(field_pattern.name.clone(), field_term);
+                            runtime_field_patterns.insert(field_pattern.name.to_string(), field_term);
                         }
                         VariantData::Named(runtime_field_patterns)
                     }
@@ -1541,7 +1542,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 let enum_variant_obj = RegistryEnumVariant { 
                     enum_type_index: type_index, 
                     variant_index,
-                    variant_name: enum_variant_pattern.variant_name.clone(),
+                    variant_name: enum_variant_pattern.variant_name.to_string(),
                     variant_data,
                     environment: self.environment.clone(),
                 };
@@ -1681,7 +1682,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                         // Extract integer value from the argument term
                         if let Some(number) = arg_term.get_number() {
                             template_context
-                                .bind(param.name.clone(), MetaValue::Integer(number as i64));
+                                .bind(param.name.to_string(), MetaValue::Integer(number as i64));
                         } else {
                             return Err(InterpreterError::RuntimeError(format!(
                                 "Macro parameter '{}' expects integer value, got: {:?}",
@@ -1696,7 +1697,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                         )) = arg_term.as_ref()
                         {
                             template_context
-                                .bind(param.name.clone(), MetaValue::String(string_val.clone()));
+                                .bind(param.name.to_string(), MetaValue::String(string_val.clone()));
                         } else {
                             return Err(InterpreterError::RuntimeError(format!(
                                 "Macro parameter '{}' expects string value, got: {:?}",
@@ -1707,7 +1708,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     TypeAnnotation::Bool => {
                         // Extract boolean value from the argument term
                         if let Some(bool_val) = arg_term.get_bool() {
-                            template_context.bind(param.name.clone(), MetaValue::Boolean(bool_val));
+                            template_context.bind(param.name.to_string(), MetaValue::Boolean(bool_val));
                         } else {
                             return Err(InterpreterError::RuntimeError(format!(
                                 "Macro parameter '{}' expects boolean value, got: {:?}",
@@ -1807,7 +1808,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                                         ))),
                                     }
                                 }
-                                super::parser::ast::Term::Variable(var_name, _) => {
+                                super::parser::ast::Term::Variable(var_name) => {
                                     // Look up variable value and convert to meta value if possible
                                     if let Some(var_value) = self.lookup_variable_value(var_name) {
                                         match var_value.as_meta() {
@@ -1931,7 +1932,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                         // Only bind meta variables (non-relational) for template expansion
                         // Do NOT convert LTerms to meta values - maintain strict separation
                         if let Some(meta_value) = self.lookup_meta_var(&param.name) {
-                            template_context.bind(param.name.clone(), meta_value);
+                            template_context.bind(param.name.to_string(), meta_value);
                         }
                         // If the parameter was bound as a relational variable (LTerm),
                         // it cannot be used for meta template expansion

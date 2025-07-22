@@ -1,6 +1,7 @@
 use super::parser::ast::{
     Literal, PredicateDefinition, StructDefinition, Term,
 };
+use super::symbol_table::InternedSymbol;
 use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
@@ -91,8 +92,8 @@ impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
                 let lterm = Self::literal_to_lterm(lit)?;
                 Ok(RuntimeValue::Term(lterm))
             }
-            Term::Variable(name, _) => {
-                let lterm = LTerm::var(Box::leak(name.clone().into_boxed_str()));
+            Term::Variable(name) => {
+                let lterm = LTerm::var(Box::leak(name.to_string().into_boxed_str()));
                 Ok(RuntimeValue::Term(lterm))
             }
             Term::List(list_construction, _) => {
@@ -226,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_from_ast_variable() {
-        let term = Term::Variable("x".to_string(), Default::default());
+        let term = Term::Variable(InternedSymbol::from_text("x"));
         let runtime_val = TestRuntimeValue::from_ast_term(&term).unwrap();
 
         assert!(runtime_val.as_term().is_some());
@@ -262,7 +263,7 @@ mod tests {
             visibility: Visibility::Private,
             predicate_kind: PredicateKind::Relation,
             attributes: vec![],
-            name: "test_rel".to_string(),
+            name: "test_rel".to_string().into(),
             parameters: vec![],
             search_strategy: None,
             body: vec![],

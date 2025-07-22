@@ -4,6 +4,7 @@ use super::super::environment::ModuleInfo;
 use super::super::parser::ast::StructDefinition;
 use super::super::parser::ast::QualifiedPath;
 use super::super::runtime_value::RuntimeValue;
+use super::super::symbol_table::InternedSymbol;
 use super::dependency::DependencyTracker;
 use super::registry::SymbolRegistry;
 use super::types::*;
@@ -957,7 +958,7 @@ mod tests {
             attributes: vec![],
             visibility: Visibility::Public,
             predicate_kind: PredicateKind::Relation,
-            name: "example_predicate".to_string(),
+            name: "example_predicate".to_string().into(),
             parameters: vec![],
             search_strategy: None,
             body: vec![AstGoal::Conjunction(
@@ -987,7 +988,7 @@ mod tests {
 
         loaded_modules.insert("test_module".to_string(), create_test_module_info());
 
-        let target_path = QualifiedPath::Absolute(vec!["test_module".to_string()]);
+        let target_path = QualifiedPath::Absolute(vec![InternedSymbol::from_text("test_module")]);
         let importing_module = ModulePath::from_string("importing_module");
 
         let result = resolver.import_glob_enhanced(
@@ -1016,7 +1017,7 @@ mod tests {
 
         loaded_modules.insert("test_module".to_string(), create_test_module_info());
 
-        let target_path = QualifiedPath::Absolute(vec!["test_module".to_string()]);
+        let target_path = QualifiedPath::Absolute(vec![InternedSymbol::from_text("test_module")]);
         let importing_module = ModulePath::from_string("importing_module");
         let requested_symbols = vec![("example_symbol".to_string(), None)];
 
@@ -1059,7 +1060,7 @@ mod tests {
         );
 
         // Try to import A from B (should detect cycle)
-        let target_path = QualifiedPath::Absolute(vec!["module_a".to_string()]);
+        let target_path = QualifiedPath::Absolute(vec![InternedSymbol::from_text("module_a")]);
         let result = resolver.import_glob_enhanced(
             &target_path,
             module_b,
@@ -1086,7 +1087,7 @@ mod tests {
 
         loaded_modules.insert("test_module".to_string(), create_test_module_info());
 
-        let target_path = QualifiedPath::Absolute(vec!["test_module".to_string()]);
+        let target_path = QualifiedPath::Absolute(vec![InternedSymbol::from_text("test_module")]);
         let importing_module = ModulePath::from_string("importing_module");
 
         // First import (cache miss)

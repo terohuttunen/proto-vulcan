@@ -33,7 +33,8 @@ impl<'a> AstBuilder<'a> {
     pub fn build_meta_let_statement(&mut self, pair: Pair<Rule>) -> ParseResult<LetStatement> {
         let span = self.pair_to_span(&pair);
         let mut inner = pair.into_inner();
-        let variable = inner.next().unwrap().as_str().to_string();
+        let variable_pair = inner.next().unwrap();
+        let variable = self.create_symbol_from_pair(&variable_pair);
         let variable_type = self.parse_type_annotation(inner.next().unwrap().as_str())?;
         let content = inner.next().unwrap().as_str();
         let expression = meta_parser::parse_meta_expression(content, &span)
@@ -93,13 +94,14 @@ impl<'a> AstBuilder<'a> {
     }
 
     pub fn build_meta_for_statement(&mut self, pair: Pair<Rule>) -> ParseResult<(
-        String,
+        crate::interpreter::symbol_table::InternedSymbol,
         TypeAnnotation,
         MetaForRange,
         GoalBody,
     )> {
         let mut inner = pair.into_inner();
-        let variable = inner.next().unwrap().as_str().to_string();
+        let variable_pair = inner.next().unwrap();
+        let variable = self.create_symbol_from_pair(&variable_pair);
         let variable_type = self.parse_type_annotation(inner.next().unwrap().as_str())?;
         let range_pair = inner.next().unwrap(); // meta_for_range
         let range = self.build_meta_for_range(range_pair)?;

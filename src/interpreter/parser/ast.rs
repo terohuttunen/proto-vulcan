@@ -1,56 +1,65 @@
 use crate::interpreter::metaprogramming::{MetaExpression, MetaStatement, TypeAnnotation};
+use crate::interpreter::symbol_table::InternedSymbol;
 use std::fmt::{self, Display};
+
+/// Helper function to join InternedSymbol slices with a separator
+fn join_symbols(symbols: &[InternedSymbol], separator: &str) -> String {
+    symbols.iter()
+        .map(|s| s.text())
+        .collect::<Vec<_>>()
+        .join(separator)
+}
 
 /// Represents a qualified path for module resolution
 #[derive(Debug, Clone, PartialEq)]
 pub enum QualifiedPath {
     /// Global namespace root: ::module::item  
-    Global(Vec<String>),
+    Global(Vec<InternedSymbol>),
     /// Absolute path from crate root: crate::module::item
-    Absolute(Vec<String>),
+    Absolute(Vec<InternedSymbol>),
     /// Relative path: module::item
-    Relative(Vec<String>),
+    Relative(Vec<InternedSymbol>),
     /// Parent module path: super::module::item (levels, segments)
-    Super(usize, Vec<String>),
+    Super(usize, Vec<InternedSymbol>),
     /// Current module path: self::module::item
-    Self_(Vec<String>),
+    Self_(Vec<InternedSymbol>),
     /// External crate path: crate_name::module::item
-    External(String, Vec<String>),
+    External(InternedSymbol, Vec<InternedSymbol>),
 }
 
 impl QualifiedPath {
     /// Create a simple relative path from segments
-    pub fn simple(segments: Vec<String>) -> Self {
+    pub fn simple(segments: Vec<InternedSymbol>) -> Self {
         QualifiedPath::Relative(segments)
     }
 
     /// Create a global namespace path  
-    pub fn global(segments: Vec<String>) -> Self {
+    pub fn global(segments: Vec<InternedSymbol>) -> Self {
         QualifiedPath::Global(segments)
     }
 
     /// Create a crate-absolute path
-    pub fn absolute(segments: Vec<String>) -> Self {
+    pub fn absolute(segments: Vec<InternedSymbol>) -> Self {
         QualifiedPath::Absolute(segments)
     }
 
     /// Create a super path with given levels up
-    pub fn super_path(levels: usize, segments: Vec<String>) -> Self {
+    pub fn super_path(levels: usize, segments: Vec<InternedSymbol>) -> Self {
         QualifiedPath::Super(levels, segments)
     }
 
     /// Create a self path
-    pub fn self_path(segments: Vec<String>) -> Self {
+    pub fn self_path(segments: Vec<InternedSymbol>) -> Self {
         QualifiedPath::Self_(segments)
     }
 
     /// Create an external crate path
-    pub fn external_path(crate_name: String, segments: Vec<String>) -> Self {
+    pub fn external_path(crate_name: InternedSymbol, segments: Vec<InternedSymbol>) -> Self {
         QualifiedPath::External(crate_name, segments)
     }
 
     /// Get all segments as a single vector (excluding crate/std/super prefixes)
-    pub fn segments(&self) -> &[String] {
+    pub fn segments(&self) -> &[InternedSymbol] {
         match self {
             QualifiedPath::Global(segments)
             | QualifiedPath::Absolute(segments)
@@ -62,12 +71,12 @@ impl QualifiedPath {
     }
 
     /// Get the final segment (the actual item name)
-    pub fn final_segment(&self) -> Option<&String> {
+    pub fn final_segment(&self) -> Option<&InternedSymbol> {
         self.segments().last()
     }
 
     /// Get all segments except the final one (the module path)
-    pub fn module_segments(&self) -> &[String] {
+    pub fn module_segments(&self) -> &[InternedSymbol] {
         let segments = self.segments();
         if segments.is_empty() {
             segments
@@ -81,23 +90,23 @@ impl Display for QualifiedPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             QualifiedPath::Global(segments) => {
-                write!(f, "::{}", segments.join("::"))
+                write!(f, "::{}", join_symbols(segments, "::"))
             }
             QualifiedPath::Absolute(segments) => {
-                write!(f, "crate::{}", segments.join("::"))
+                write!(f, "crate::{}", join_symbols(segments, "::"))
             }
             QualifiedPath::Relative(segments) => {
-                write!(f, "{}", segments.join("::"))
+                write!(f, "{}", join_symbols(segments, "::"))
             }
             QualifiedPath::Super(levels, segments) => {
                 let super_part = "super::".repeat(*levels);
-                write!(f, "{}{}", super_part, segments.join("::"))
+                write!(f, "{}{}", super_part, join_symbols(segments, "::"))
             }
             QualifiedPath::Self_(segments) => {
-                write!(f, "self::{}", segments.join("::"))
+                write!(f, "self::{}", join_symbols(segments, "::"))
             }
             QualifiedPath::External(crate_name, segments) => {
-                write!(f, "{}::{}", crate_name, segments.join("::"))
+                write!(f, "{}::{}", crate_name, join_symbols(segments, "::"))
             }
         }
     }
@@ -107,16 +116,16 @@ impl Display for QualifiedPath {
 #[derive(Debug, Clone, PartialEq)]
 pub struct QualifiedName {
     pub path: QualifiedPath,
-    pub name: String,
+    pub name: InternedSymbol,
 }
 
 impl QualifiedName {
-    pub fn new(path: QualifiedPath, name: String) -> Self {
+    pub fn new(path: QualifiedPath, name: InternedSymbol) -> Self {
         Self { path, name }
     }
 
     /// Create from a simple identifier (no path)
-    pub fn simple(name: String) -> Self {
+    pub fn simple(name: InternedSymbol) -> Self {
         Self {
             path: QualifiedPath::Relative(vec![]),
             name,
@@ -124,7 +133,7 @@ impl QualifiedName {
     }
 
     /// Create from path segments where the last segment is the name
-    pub fn from_segments(segments: Vec<String>) -> Self {
+    pub fn from_segments(segments: Vec<InternedSymbol>) -> Self {
         if segments.is_empty() {
             panic!("Cannot create QualifiedName from empty segments");
         }
@@ -353,7 +362,7 @@ pub enum UsePath {
 #[derive(Debug, Clone)]
 pub struct ModuleDefinition {
     pub visibility: Visibility,
-    pub name: String,
+    pub name: InternedSymbol,
     pub search_strategy: Option<SearchStrategy>,
     pub items: Vec<Item>,
     pub span: Span,
@@ -378,7 +387,7 @@ impl Spanned for ModuleDefinition {
 #[derive(Debug, Clone)]
 pub struct ModuleDeclaration {
     pub visibility: Visibility,
-    pub name: String,
+    pub name: InternedSymbol,
     pub span: Span,
 }
 
@@ -403,7 +412,7 @@ impl Display for ModuleDeclaration {
 #[derive(Debug, Clone)]
 pub struct StructDefinition {
     pub visibility: Visibility,
-    pub name: String,
+    pub name: InternedSymbol,
     pub kind: StructKind,
     pub span: Span,
 }
@@ -422,15 +431,15 @@ impl Spanned for StructDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StructKind {
-    Tuple(Vec<String>),
+    Tuple(Vec<InternedSymbol>),
     Named(Vec<NamedField>),
 }
 
 #[derive(Debug, Clone)]
 pub struct NamedField {
     pub visibility: Visibility,
-    pub name: String,
-    pub type_name: String,
+    pub name: InternedSymbol,
+    pub type_name: QualifiedPath,
     pub span: Span,
 }
 
@@ -451,7 +460,7 @@ impl Spanned for NamedField {
 #[derive(Debug, Clone)]
 pub struct EnumDefinition {
     pub visibility: Visibility,
-    pub name: String,
+    pub name: InternedSymbol,
     pub variants: Vec<EnumVariant>,
     pub span: Span,
 }
@@ -472,7 +481,7 @@ impl Spanned for EnumDefinition {
 
 #[derive(Debug, Clone)]
 pub struct EnumVariant {
-    pub name: String,
+    pub name: InternedSymbol,
     pub kind: VariantKind,
     pub span: Span,
 }
@@ -492,13 +501,13 @@ impl Spanned for EnumVariant {
 #[derive(Debug, Clone, PartialEq)]
 pub enum VariantKind {
     Unit,                           // Color::Red
-    Tuple(Vec<String>),            // Option::Some(T)
+    Tuple(Vec<InternedSymbol>),            // Option::Some(T)
     Named(Vec<NamedField>),        // Person::Named { name: String, age: u32 }
 }
 
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
-    pub type_name: String,
+    pub type_name: InternedSymbol,
     pub predicates: Vec<PredicateDefinition>,
     pub span: Span,
 }
@@ -523,7 +532,7 @@ pub enum AttributeArg {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attribute {
-    pub name: String,
+    pub name: InternedSymbol,
     pub args: Vec<AttributeArg>,
 }
 
@@ -547,7 +556,7 @@ pub struct PredicateDefinition {
     pub visibility: Visibility,
     pub predicate_kind: PredicateKind,
     pub attributes: Vec<Attribute>,
-    pub name: String,
+    pub name: InternedSymbol,
     pub parameters: Vec<Parameter>,
     pub search_strategy: Option<SearchStrategy>,
     pub body: GoalBody,
@@ -574,7 +583,7 @@ impl Spanned for PredicateDefinition {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
-    pub name: String,
+    pub name: InternedSymbol,
     pub type_annotation: Option<TypeAnnotation>,
 }
 
@@ -617,8 +626,8 @@ impl SearchParams {
         self
     }
 
-    pub fn with_custom_param(mut self, name: String, value: SearchParamValue) -> Self {
-        self.custom_params.push((name, value));
+    pub fn with_custom_param(mut self, name: InternedSymbol, value: SearchParamValue) -> Self {
+        self.custom_params.push((name.to_string(), value));
         self
     }
 }
@@ -743,13 +752,13 @@ impl Spanned for Goal {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetDeclaration {
-    pub var_name: String,
+    pub var_name: InternedSymbol,
     pub value: Option<Term>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FreshVariables {
-    pub vars: Vec<String>,
+    pub vars: Vec<InternedSymbol>,
     pub body: GoalBody,
 }
 
@@ -806,7 +815,7 @@ pub struct PatternArm {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RelationName {
     /// Simple unqualified name
-    Simple(String),
+    Simple(InternedSymbol),
     /// Qualified name with module path
     Qualified(QualifiedName),
 }
@@ -815,8 +824,8 @@ impl RelationName {
     /// Get the final name component
     pub fn name(&self) -> &str {
         match self {
-            RelationName::Simple(name) => name,
-            RelationName::Qualified(qualified) => &qualified.name,
+            RelationName::Simple(name) => name.text(),
+            RelationName::Qualified(qualified) => qualified.name.text(),
         }
     }
 
@@ -863,7 +872,7 @@ pub enum CallArgument {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethodCall {
     pub receiver: Box<Term>,
-    pub method: String,
+    pub method: InternedSymbol,
     pub args: Vec<Term>,
 }
 
@@ -871,7 +880,7 @@ pub struct MethodCall {
 #[derive(Debug, Clone)]
 pub enum Term {
     Literal(Literal, Span),
-    Variable(String, Span),
+    Variable(InternedSymbol),
     Wildcard(Span),
     List(ListConstruction, Span),
     NamedStruct(NamedStructConstruction, Span),
@@ -886,7 +895,7 @@ impl PartialEq for Term {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Term::Literal(a, _), Term::Literal(b, _)) => a == b,
-            (Term::Variable(a, _), Term::Variable(b, _)) => a == b,
+            (Term::Variable(a), Term::Variable(b)) => a == b,
             (Term::Wildcard(_), Term::Wildcard(_)) => true,
             (Term::List(a, _), Term::List(b, _)) => a == b,
             (Term::NamedStruct(a, _), Term::NamedStruct(b, _)) => a == b,
@@ -903,7 +912,7 @@ impl Spanned for Term {
     fn span(&self) -> &Span {
         match self {
             Term::Literal(_, span) => span,
-            Term::Variable(_, span) => span,
+            Term::Variable(symbol) => symbol.span_ref(),
             Term::Wildcard(span) => span,
             Term::List(_, span) => span,
             Term::NamedStruct(_, span) => span,
@@ -923,26 +932,26 @@ pub struct ListConstruction {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NamedStructConstruction {
-    pub name: String,
+    pub name: InternedSymbol,
     pub fields: Vec<FieldInitializer>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldInitializer {
-    pub name: String,
+    pub name: InternedSymbol,
     pub value: Term,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TupleStructConstruction {
-    pub name: String,
+    pub name: QualifiedPath,
     pub args: Vec<Term>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariantConstruction {
-    pub enum_name: String,
-    pub variant_name: String,
+    pub enum_name: InternedSymbol,
+    pub variant_name: InternedSymbol,
     pub kind: EnumVariantConstructionKind,
 }
 
@@ -964,7 +973,7 @@ pub enum Literal {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
     Literal(Literal),
-    Variable(String),
+    Variable(InternedSymbol),
     Wildcard,
     List(ListPattern),
     NamedStruct(NamedStructPattern),
@@ -980,26 +989,26 @@ pub struct ListPattern {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NamedStructPattern {
-    pub name: String,
+    pub name: InternedSymbol,
     pub fields: Vec<FieldPattern>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldPattern {
-    pub name: String,
+    pub name: InternedSymbol,
     pub pattern: Pattern,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TupleStructPattern {
-    pub name: String,
+    pub name: InternedSymbol,
     pub args: Vec<Pattern>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariantPattern {
-    pub enum_name: String,
-    pub variant_name: String,
+    pub enum_name: InternedSymbol,
+    pub variant_name: InternedSymbol,
     pub kind: EnumVariantPatternKind,
 }
 
@@ -1389,7 +1398,7 @@ impl Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Term::Literal(lit, _) => write!(f, "{}", lit),
-            Term::Variable(v, _) => write!(f, "{}", v),
+            Term::Variable(v) => write!(f, "{}", v),
             Term::Wildcard(_) => write!(f, "_"),
             Term::List(list, _) => write!(f, "{}", list),
             Term::NamedStruct(s, _) => write!(f, "{}", s),
@@ -1627,7 +1636,7 @@ mod tests {
             .with_limit(100)
             .with_depth(5)
             .with_custom_param(
-                "mode".to_string(),
+                "mode".to_string().into(),
                 SearchParamValue::String("exhaustive".to_string()),
             );
 

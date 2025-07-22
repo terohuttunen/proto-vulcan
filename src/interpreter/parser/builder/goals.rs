@@ -1,6 +1,7 @@
 use pest::iterators::Pair;
 use super::{AstBuilder, ParseError, ParseResult, Rule};
 use crate::interpreter::parser::ast::*;
+use crate::interpreter::symbol_table::InternedSymbol;
 
 impl<'a> AstBuilder<'a> {
     pub fn build_goal_body(&mut self, pair: Pair<Rule>) -> ParseResult<GoalBody> {
@@ -241,11 +242,10 @@ impl<'a> AstBuilder<'a> {
                 }
                 Rule::custom_param => {
                     let mut inner = param_pair.into_inner();
-                    let name = inner
+                    let name_pair = inner
                         .next()
-                        .ok_or_else(|| ParseError::MissingRule(Rule::custom_param))?
-                        .as_str()
-                        .to_string();
+                        .ok_or_else(|| ParseError::MissingRule(Rule::custom_param))?;
+                    let name = self.create_symbol_from_pair(&name_pair);
                     let value_pair = inner
                         .next()
                         .ok_or_else(|| ParseError::MissingRule(Rule::custom_param))?;
@@ -286,14 +286,15 @@ impl<'a> AstBuilder<'a> {
                     _ => Err(ParseError::UnexpectedRule(Rule::boolean_literal)),
                 }
             }
-            Rule::ident => Ok(SearchParamValue::Identifier(pair.as_str().to_string())),
+            Rule::ident => Ok(SearchParamValue::Identifier(Self::extract_text_from_pair(&pair))),
             _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
         }
     }
 
     pub fn build_let_declaration(&mut self, pair: Pair<Rule>) -> ParseResult<LetDeclaration> {
         let mut inner = pair.into_inner();
-        let var_name = inner.next().unwrap().as_str().to_string();
+        let var_name_pair = inner.next().unwrap();
+        let var_name = self.create_symbol_from_pair(&var_name_pair);
         let value = if let Some(term_pair) = inner.next() {
             Some(self.build_term(term_pair)?)
         } else {
@@ -309,7 +310,7 @@ impl<'a> AstBuilder<'a> {
 
         for part in inner {
             match part.as_rule() {
-                Rule::ident => vars.push(part.as_str().to_string()),
+                Rule::ident => vars.push(self.create_symbol_from_pair(&part)),
                 Rule::goal_body => body = Some(self.build_goal_body(part)?),
                 _ => (),
             }

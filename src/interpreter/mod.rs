@@ -58,7 +58,7 @@ pub fn find_main_relation(
         n => Err(format!(
             "Found {} relations with @main attribute, but only one is allowed per file. Relations: {}",
             n,
-            main_relations.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(", ")
+            main_relations.iter().map(|r| &*r.name).collect::<Vec<_>>().join(", ")
         )),
     }
 }
@@ -73,7 +73,7 @@ pub fn validate_main_relation(rel_def: &ast::PredicateDefinition) -> Result<(), 
                 metaprogramming::TypeAnnotation::String => "string".to_string(),
                 metaprogramming::TypeAnnotation::Bool => "bool".to_string(),
                 metaprogramming::TypeAnnotation::Relation(arity) => format!("rel({})", arity),
-                metaprogramming::TypeAnnotation::Custom(name) => name.clone(),
+                metaprogramming::TypeAnnotation::Custom(name) => name.to_string(),
             };
 
             return Err(format!(
@@ -93,7 +93,7 @@ pub fn create_main_query(main_rel: &ast::PredicateDefinition) -> String {
     if main_rel.parameters.is_empty() {
         format!("{}()", main_rel.name)
     } else {
-        let param_vars: Vec<String> = main_rel.parameters.iter().map(|p| p.name.clone()).collect();
+        let param_vars: Vec<String> = main_rel.parameters.iter().map(|p| p.name.to_string()).collect();
         format!("{}({})", main_rel.name, param_vars.join(", "))
     }
 }

@@ -6,6 +6,7 @@
 use super::super::*;
 use crate::engine::DefaultEngine;
 use crate::user::DefaultUser;
+use crate::interpreter::symbol_table::InternedSymbol;
 
 type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
 
@@ -142,12 +143,12 @@ fn test_end_to_end_struct_and_relations() {
 
     // Verify struct definition
     let person_struct = env.get_struct("Person").unwrap();
-    assert_eq!(person_struct.name, "Person");
+    assert_eq!(person_struct.name.as_ref(), "Person");
     match &person_struct.kind {
         parser::ast::StructKind::Named(fields) => {
             assert_eq!(fields.len(), 2);
-            assert_eq!(fields[0].name, "name");
-            assert_eq!(fields[1].name, "age");
+            assert_eq!(fields[0].name.as_ref(), "name");
+            assert_eq!(fields[1].name.as_ref(), "age");
         }
         _ => panic!("Expected named struct"),
     }
@@ -254,7 +255,7 @@ fn test_end_to_end_execution_context() {
     exec_context.bind_var("x".to_string(), x_var);
 
     let equality_goal = Goal::Equality(
-        Term::Variable("x".to_string(), Default::default()),
+        Term::Variable(InternedSymbol::from_text("x")),
         Term::Literal(Literal::Number("42".to_string()), Default::default()),
         Default::default(),
     );

@@ -2,6 +2,7 @@
 
 use super::super::parser::ast::StructDefinition;
 use super::super::runtime_value::RuntimeValue;
+use super::super::symbol_table::InternedSymbol;
 use super::types::*;
 use crate::engine::Engine;
 use crate::user::User;
@@ -408,7 +409,7 @@ mod tests {
             attributes: vec![],
             visibility: Visibility::Public,
             predicate_kind: PredicateKind::Relation,
-            name: "test_predicate".to_string(),
+            name: "test_predicate".to_string().into(),
             parameters: vec![],
             search_strategy: None,
             body: vec![AstGoal::Conjunction(
@@ -426,8 +427,8 @@ mod tests {
         use crate::interpreter::parser::ast::StructKind;
         StructDefinition {
             visibility: Visibility::Public,
-            name: "TestStruct".to_string(),
-            kind: StructKind::Tuple(vec!["i32".to_string()]),
+            name: "TestStruct".to_string().into(),
+            kind: StructKind::Tuple(vec![InternedSymbol::from_text("i32")]),
             span: Span::dummy(),
         }
     }

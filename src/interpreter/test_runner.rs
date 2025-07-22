@@ -490,7 +490,7 @@ impl TestRunner {
         match term {
             ast::Term::Wildcard(_) => true, // Wildcard matches anything
             ast::Term::Literal(literal, _) => Self::matches_literal(lterm, literal),
-            ast::Term::Variable(_, _) => {
+            ast::Term::Variable(_) => {
                 // Variables in expected terms act as wildcards for matching
                 true
             }
@@ -617,7 +617,7 @@ impl TestRunner {
         if let LTermInner::Compound(compound_obj) = lterm.as_ref() {
             if let Some(enum_var) = compound_obj.as_any().downcast_ref::<RegistryEnumVariant<U, E>>() {
                 // Check variant name matches
-                if enum_var.variant_name != enum_variant.variant_name {
+                if enum_var.variant_name != enum_variant.variant_name.to_string() {
                     return false;
                 }
                 
@@ -647,7 +647,7 @@ impl TestRunner {
                         
                         // Check that all AST fields exist in LTerm fields and match
                         ast_fields.iter().all(|ast_field| {
-                            lterm_fields.get(&ast_field.name)
+                            lterm_fields.get(&*ast_field.name)
                                 .map(|field_value| Self::matches_pattern(field_value, &ast_field.value))
                                 .unwrap_or(false)
                         })
@@ -682,7 +682,7 @@ impl TestRunner {
                 
                 // Check that all AST fields exist in LTerm fields and match
                 named_struct.fields.iter().all(|ast_field| {
-                    named_struct_obj.fields.get(&ast_field.name)
+                    named_struct_obj.fields.get(&*ast_field.name)
                         .map(|field_value| Self::matches_pattern(field_value, &ast_field.value))
                         .unwrap_or(false)
                 })
@@ -1099,11 +1099,11 @@ impl TestRunner {
                             }
                         }
 
-                        let query_variable = rel_def.parameters.first().map(|p| p.name.clone());
+                        let query_variable = rel_def.parameters.first().map(|p| p.name.to_string());
 
                         tests.push(TestItem {
                             file_path: path.to_path_buf(),
-                            test_name: rel_def.name.clone(),
+                            test_name: rel_def.name.to_string(),
                             should_fail,
                             should_timeout,
                             timeout_ms,
@@ -1177,11 +1177,11 @@ impl TestRunner {
                         }
                     }
 
-                    let query_variable = rel_def.parameters.first().map(|p| p.name.clone());
+                    let query_variable = rel_def.parameters.first().map(|p| p.name.to_string());
 
                     tests.push(TestItem {
                         file_path: file_path.to_path_buf(),
-                        test_name: rel_def.name.clone(),
+                        test_name: rel_def.name.to_string(),
                         should_fail,
                         should_timeout,
                         timeout_ms,

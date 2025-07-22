@@ -1,6 +1,7 @@
-use pest::iterators::Pair;
 use super::{AstBuilder, ParseError, ParseResult, Rule};
 use crate::interpreter::parser::{ast::*, meta_parser};
+use crate::interpreter::symbol_table::InternedSymbol;
+use pest::iterators::Pair;
 
 impl<'a> AstBuilder<'a> {
     pub fn build_term(&mut self, pair: Pair<Rule>) -> ParseResult<Term> {
@@ -29,9 +30,12 @@ impl<'a> AstBuilder<'a> {
                     .ok_or_else(|| ParseError::MissingRule(Rule::literal))?;
                 Ok(Term::Literal(self.build_literal(lit_pair)?, span))
             }
-            Rule::variable => Ok(Term::Variable(pair.as_str().to_string(), span)),
+            Rule::variable => Ok(Term::Variable(self.create_symbol_from_pair(&pair))),
             Rule::wildcard => Ok(Term::Wildcard(span)),
-            Rule::list_construction => Ok(Term::List(self.build_list_construction(pair.clone())?, span)),
+            Rule::list_construction => Ok(Term::List(
+                self.build_list_construction(pair.clone())?,
+                span,
+            )),
             Rule::named_struct_construction => Ok(Term::NamedStruct(
                 self.build_named_struct_construction(pair.clone())?,
                 span,
@@ -48,23 +52,35 @@ impl<'a> AstBuilder<'a> {
                 // Extract the qualified path from the inner pair to get clean string without whitespace
                 let qualified_path_pair = pair.into_inner().next().unwrap(); // qualified_path
                 let qualified_path = self.build_qualified_path(qualified_path_pair)?;
-                let name = qualified_path.to_string();
 
                 // Semantic disambiguation: if this is a simple identifier (no ::) with no args,
                 // treat it as a variable instead of a compound construction
-                if !name.contains("::") {
-                    Ok(Term::Variable(name, span))
+                if let QualifiedPath::Relative(segments) = &qualified_path {
+                    if segments.len() == 1 {
+                        // Simple identifier - treat as variable
+                        Ok(Term::Variable(segments[0].clone()))
+                    } else {
+                        // Multi-segment qualified path - treat as tuple struct construction
+                        Ok(Term::TupleStruct(
+                            TupleStructConstruction {
+                                name: qualified_path,
+                                args: vec![],
+                            },
+                            span,
+                        ))
+                    }
                 } else {
+                    // Non-relative qualified paths are always tuple struct constructions
                     Ok(Term::TupleStruct(
-                        TupleStructConstruction { name, args: vec![] },
+                        TupleStructConstruction {
+                            name: qualified_path,
+                            args: vec![],
+                        },
                         span,
                     ))
                 }
             }
-            Rule::path_term => {
-                let path_str = pair.as_str().to_string();
-                Ok(Term::Variable(path_str, span))
-            }
+            Rule::path_term => Ok(Term::Variable(self.create_symbol_from_pair(&pair))),
             Rule::parenthesized_term => Ok(Term::Parenthesized(
                 Box::new(self.build_term(pair.into_inner().next().unwrap())?),
                 span,
@@ -104,18 +120,18 @@ impl<'a> AstBuilder<'a> {
 
         match pair.as_rule() {
             Rule::literal => Ok(Pattern::Literal(self.build_literal(pair)?)),
-            Rule::variable => {
-                // Extract clean identifier from atomic variable rule to avoid whitespace
-                let clean_name = pair.into_inner().next().unwrap().as_str().to_string(); // Get the ident
-                Ok(Pattern::Variable(clean_name))
-            }
+            Rule::variable => Ok(Pattern::Variable(self.create_symbol_from_pair(&pair))),
             Rule::wildcard => Ok(Pattern::Wildcard),
             Rule::list_pattern => Ok(Pattern::List(self.build_list_pattern(pair)?)),
-            Rule::named_struct_pattern => Ok(Pattern::NamedStruct(self.build_named_struct_pattern(pair)?)),
-            Rule::named_variant_pattern => Ok(Pattern::NamedStruct(self.build_named_variant_pattern_as_struct(pair)?)),
-            Rule::tuple_struct_pattern_with_parens => {
-                Ok(Pattern::TupleStruct(self.build_tuple_struct_pattern_with_parens(pair)?))
+            Rule::named_struct_pattern => {
+                Ok(Pattern::NamedStruct(self.build_named_struct_pattern(pair)?))
             }
+            Rule::named_variant_pattern => Ok(Pattern::NamedStruct(
+                self.build_named_variant_pattern_as_struct(pair)?,
+            )),
+            Rule::tuple_struct_pattern_with_parens => Ok(Pattern::TupleStruct(
+                self.build_tuple_struct_pattern_with_parens(pair)?,
+            )),
             Rule::tuple_struct_pattern_no_parens => {
                 let compound = self.build_tuple_struct_pattern_no_parens(pair)?;
 
@@ -131,9 +147,13 @@ impl<'a> AstBuilder<'a> {
         }
     }
 
-    pub fn build_named_struct_construction(&mut self, pair: Pair<Rule>) -> ParseResult<NamedStructConstruction> {
+    pub fn build_named_struct_construction(
+        &mut self,
+        pair: Pair<Rule>,
+    ) -> ParseResult<NamedStructConstruction> {
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = self.create_symbol_from_pair(&name_pair);
         let mut fields = vec![];
         for field_pair in inner {
             fields.push(self.build_field_initializer(field_pair)?);
@@ -141,11 +161,24 @@ impl<'a> AstBuilder<'a> {
         Ok(NamedStructConstruction { name, fields })
     }
 
-    pub fn build_named_variant_construction_as_struct(&mut self, pair: Pair<Rule>) -> ParseResult<NamedStructConstruction> {
+    pub fn build_named_variant_construction_as_struct(
+        &mut self,
+        pair: Pair<Rule>,
+    ) -> ParseResult<NamedStructConstruction> {
         let mut inner = pair.into_inner();
         let qualified_path_pair = inner.next().unwrap();
-        let qualified_path = self.build_qualified_path(qualified_path_pair)?;
-        let name = qualified_path.to_string();
+
+        // Use build_qualified_path to get clean symbols without whitespace issues
+        let name =
+            if let Ok(qualified_path) = self.build_qualified_path(qualified_path_pair.clone()) {
+                match qualified_path {
+                    QualifiedPath::Relative(segments) if segments.len() == 1 => segments[0].clone(),
+                    _ => self.create_symbol_from_pair(&qualified_path_pair),
+                }
+            } else {
+                self.create_symbol_from_pair(&qualified_path_pair)
+            };
+
         let mut fields = vec![];
         for field_pair in inner {
             fields.push(self.build_field_initializer(field_pair)?);
@@ -155,14 +188,25 @@ impl<'a> AstBuilder<'a> {
 
     pub fn build_field_initializer(&mut self, pair: Pair<Rule>) -> ParseResult<FieldInitializer> {
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = self.create_symbol_from_pair(&name_pair);
         let value = self.build_term(inner.next().unwrap())?;
         Ok(FieldInitializer { name, value })
     }
 
-    pub fn build_tuple_struct_construction(&mut self, pair: Pair<Rule>) -> ParseResult<TupleStructConstruction> {
+    pub fn build_tuple_struct_construction(
+        &mut self,
+        pair: Pair<Rule>,
+    ) -> ParseResult<TupleStructConstruction> {
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = if name_pair.as_rule() == Rule::qualified_path {
+            self.build_qualified_path(name_pair)?
+        } else {
+            // Simple identifier - create a relative qualified path with one segment
+            let symbol = self.create_symbol_from_pair(&name_pair);
+            QualifiedPath::Relative(vec![symbol])
+        };
         let mut args = vec![];
         for term_pair in inner {
             args.push(self.build_term(term_pair)?);
@@ -218,9 +262,13 @@ impl<'a> AstBuilder<'a> {
         Ok(ListPattern { elements, tail })
     }
 
-    pub fn build_named_struct_pattern(&mut self, pair: Pair<Rule>) -> ParseResult<NamedStructPattern> {
+    pub fn build_named_struct_pattern(
+        &mut self,
+        pair: Pair<Rule>,
+    ) -> ParseResult<NamedStructPattern> {
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = self.create_symbol_from_pair(&name_pair);
         let mut fields = vec![];
         for field_pair in inner {
             fields.push(self.build_field_pattern(field_pair)?);
@@ -228,11 +276,24 @@ impl<'a> AstBuilder<'a> {
         Ok(NamedStructPattern { name, fields })
     }
 
-    pub fn build_named_variant_pattern_as_struct(&mut self, pair: Pair<Rule>) -> ParseResult<NamedStructPattern> {
+    pub fn build_named_variant_pattern_as_struct(
+        &mut self,
+        pair: Pair<Rule>,
+    ) -> ParseResult<NamedStructPattern> {
         let mut inner = pair.into_inner();
         let qualified_path_pair = inner.next().unwrap();
-        let qualified_path = self.build_qualified_path(qualified_path_pair)?;
-        let name = qualified_path.to_string();
+
+        // Use build_qualified_path to get clean symbols without whitespace issues
+        let name =
+            if let Ok(qualified_path) = self.build_qualified_path(qualified_path_pair.clone()) {
+                match qualified_path {
+                    QualifiedPath::Relative(segments) if segments.len() == 1 => segments[0].clone(),
+                    _ => self.create_symbol_from_pair(&qualified_path_pair),
+                }
+            } else {
+                self.create_symbol_from_pair(&qualified_path_pair)
+            };
+
         let mut fields = vec![];
         for field_pair in inner {
             fields.push(self.build_field_pattern(field_pair)?);
@@ -242,14 +303,22 @@ impl<'a> AstBuilder<'a> {
 
     pub fn build_field_pattern(&mut self, pair: Pair<Rule>) -> ParseResult<FieldPattern> {
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
-        let pattern = self.build_pattern(inner.next().unwrap())?;
+        let name_pair = inner.next().unwrap();
+
+        let name = self.create_symbol_from_pair(&name_pair);
+
+        let pattern_pair = inner.next().unwrap();
+        let pattern = self.build_pattern(pattern_pair)?;
         Ok(FieldPattern { name, pattern })
     }
 
-    pub fn build_tuple_struct_pattern_with_parens(&mut self, pair: Pair<Rule>) -> ParseResult<TupleStructPattern> {
+    pub fn build_tuple_struct_pattern_with_parens(
+        &mut self,
+        pair: Pair<Rule>,
+    ) -> ParseResult<TupleStructPattern> {
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = self.create_symbol_from_pair(&name_pair);
         let mut args = vec![];
         for pattern_pair in inner {
             args.push(self.build_pattern(pattern_pair)?);
@@ -257,11 +326,31 @@ impl<'a> AstBuilder<'a> {
         Ok(TupleStructPattern { name, args })
     }
 
-    pub fn build_tuple_struct_pattern_no_parens(&mut self, pair: Pair<Rule>) -> ParseResult<TupleStructPattern> {
+    pub fn build_tuple_struct_pattern_no_parens(
+        &mut self,
+        pair: Pair<Rule>,
+    ) -> ParseResult<TupleStructPattern> {
         // Extract the qualified path from the inner pair to get clean string without whitespace
         let qualified_path_pair = pair.into_inner().next().unwrap(); // qualified_path
-        let qualified_path = self.build_qualified_path(qualified_path_pair)?;
-        let name = qualified_path.to_string();
+
+        // For qualified paths that are simple identifiers, drill down to the innermost ident
+        // to avoid whitespace issues as user indicated all whitespace issues fixed with into_inner
+        let name =
+            if let Ok(qualified_path) = self.build_qualified_path(qualified_path_pair.clone()) {
+                match qualified_path {
+                    QualifiedPath::Relative(segments) if segments.len() == 1 => {
+                        // Simple identifier case - use the already properly parsed symbol
+                        segments[0].clone()
+                    }
+                    _ => {
+                        // Complex qualified path - build it normally
+                        self.create_symbol_from_pair(&qualified_path_pair)
+                    }
+                }
+            } else {
+                // Fallback to original logic
+                self.create_symbol_from_pair(&qualified_path_pair)
+            };
 
         Ok(TupleStructPattern { name, args: vec![] })
     }

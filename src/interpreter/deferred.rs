@@ -104,7 +104,7 @@ impl<U: User, E: Engine<U>> Solve<U, E> for DeferredRelationCall<U, E> {
         // Directly bind call arguments to parameter names (no fresh variables needed)
         // This preserves variable identity and eliminates coordination issues
         for (param, arg) in self.rel_def.parameters.iter().zip(self.call_args.iter()) {
-            exec_context.bind_var(param.name.clone(), arg.clone());
+            exec_context.bind_var(&param.name, arg.clone());
         }
 
         // Convert the relation's body (AST) into a runtime goal. This is the core of the lazy evaluation.

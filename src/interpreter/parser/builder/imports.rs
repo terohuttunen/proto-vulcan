@@ -1,6 +1,7 @@
 use pest::iterators::Pair;
 use super::{AstBuilder, ParseError, ParseResult, Rule};
 use crate::interpreter::parser::ast::*;
+use crate::interpreter::symbol_table::InternedSymbol;
 
 impl<'a> AstBuilder<'a> {
     pub fn build_use_statement(&mut self, pair: Pair<Rule>) -> ParseResult<UseStatement> {
@@ -91,7 +92,7 @@ impl<'a> AstBuilder<'a> {
                     _ => return Err(ParseError::UnexpectedRule(Rule::qualified_path)),
                 };
 
-                Ok(UsePath::Simple(path, item))
+                Ok(UsePath::Simple(path, item.to_string()))
             }
             Rule::use_path_glob => {
                 // Glob import: use use_path_base::*;
@@ -148,11 +149,11 @@ impl<'a> AstBuilder<'a> {
                 if let Some(simple_segments) =
                     parts.iter().find(|p| p.as_rule() == Rule::simple_segments)
                 {
-                    let segments: Vec<String> = simple_segments
+                    let segments: Vec<InternedSymbol> = simple_segments
                         .clone()
                         .into_inner()
                         .filter(|p| p.as_rule() == Rule::ident)
-                        .map(|p| p.as_str().to_string())
+                        .map(|p| self.create_symbol_from_pair(&p))
                         .collect();
                     Ok(QualifiedPath::Global(segments))
                 } else {
@@ -169,11 +170,11 @@ impl<'a> AstBuilder<'a> {
                 if let Some(simple_segments) =
                     parts.iter().find(|p| p.as_rule() == Rule::simple_segments)
                 {
-                    let segments: Vec<String> = simple_segments
+                    let segments: Vec<InternedSymbol> = simple_segments
                         .clone()
                         .into_inner()
                         .filter(|p| p.as_rule() == Rule::ident)
-                        .map(|p| p.as_str().to_string())
+                        .map(|p| self.create_symbol_from_pair(&p))
                         .collect();
                     Ok(QualifiedPath::Absolute(segments))
                 } else {
@@ -190,11 +191,11 @@ impl<'a> AstBuilder<'a> {
                 if let Some(simple_segments) =
                     parts.iter().find(|p| p.as_rule() == Rule::simple_segments)
                 {
-                    let segments: Vec<String> = simple_segments
+                    let segments: Vec<InternedSymbol> = simple_segments
                         .clone()
                         .into_inner()
                         .filter(|p| p.as_rule() == Rule::ident)
-                        .map(|p| p.as_str().to_string())
+                        .map(|p| self.create_symbol_from_pair(&p))
                         .collect();
                     Ok(QualifiedPath::Super(0, segments))
                 } else {
@@ -211,11 +212,11 @@ impl<'a> AstBuilder<'a> {
                 if let Some(simple_segments) =
                     parts.iter().find(|p| p.as_rule() == Rule::simple_segments)
                 {
-                    let segments: Vec<String> = simple_segments
+                    let segments: Vec<InternedSymbol> = simple_segments
                         .clone()
                         .into_inner()
                         .filter(|p| p.as_rule() == Rule::ident)
-                        .map(|p| p.as_str().to_string())
+                        .map(|p| self.create_symbol_from_pair(&p))
                         .collect();
                     Ok(QualifiedPath::Self_(segments))
                 } else {
@@ -229,13 +230,14 @@ impl<'a> AstBuilder<'a> {
                 // This creates only 2 tokens: [ident, simple_segments]
                 let mut parts = inner.into_inner();
 
-                let crate_name = parts.next().unwrap().as_str().to_string();
+                let crate_name_pair = parts.next().unwrap();
+                let crate_name = self.create_symbol_from_pair(&crate_name_pair);
                 let simple_segments = parts.next().unwrap(); // This should always exist
 
-                let segments: Vec<String> = simple_segments
+                let segments: Vec<InternedSymbol> = simple_segments
                     .into_inner()
                     .filter(|p| p.as_rule() == Rule::ident)
-                    .map(|p| p.as_str().to_string())
+                    .map(|p| self.create_symbol_from_pair(&p))
                     .collect();
 
                 Ok(QualifiedPath::External(crate_name, segments))
@@ -243,42 +245,54 @@ impl<'a> AstBuilder<'a> {
             Rule::relative_path => {
                 // relative_path = { simple_segments }
                 let simple_segments = inner.into_inner().next().unwrap();
-                let segments: Vec<String> = simple_segments
+                let segment_pairs: Vec<_> = simple_segments
                     .into_inner()
                     .filter(|p| p.as_rule() == Rule::ident)
-                    .map(|p| p.as_str().to_string())
                     .collect();
 
                 // Check if the first segment is an external crate (like "std")
-                if let Some(first) = segments.first() {
-                    if first == "std" && segments.len() > 1 {
+                if let Some(first_pair) = segment_pairs.first() {
+                    if first_pair.as_str() == "std" && segment_pairs.len() > 1 {
                         // Convert std::... to External("std", [...])
-                        let mut remaining = segments;
-                        remaining.remove(0); // Remove "std"
-                        return Ok(QualifiedPath::External("std".to_string(), remaining));
+                        let std_symbol = self.create_symbol_from_pair(first_pair);
+                        let remaining: Vec<InternedSymbol> = segment_pairs
+                            .iter()
+                            .skip(1)
+                            .map(|p| self.create_symbol_from_pair(p))
+                            .collect();
+                        return Ok(QualifiedPath::External(std_symbol, remaining));
                     }
                 }
 
+                let segments: Vec<InternedSymbol> = segment_pairs
+                    .iter()
+                    .map(|p| self.create_symbol_from_pair(p))
+                    .collect();
                 Ok(QualifiedPath::Relative(segments))
             }
             _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
         }
     }
 
-    pub fn build_type_name(&mut self, pair: Pair<Rule>) -> ParseResult<String> {
+    pub fn build_type_name(&mut self, pair: Pair<Rule>) -> ParseResult<QualifiedPath> {
         match pair.as_rule() {
             Rule::type_name => {
                 let inner = pair.into_inner().next().unwrap();
                 match inner.as_rule() {
                     Rule::qualified_path => {
-                        let qualified_path = self.build_qualified_path(inner)?;
-                        Ok(format!("{}", qualified_path))
+                        self.build_qualified_path(inner)
                     }
-                    Rule::ident => Ok(inner.as_str().to_string()),
+                    Rule::ident => {
+                        let symbol = self.create_symbol_from_pair(&inner);
+                        Ok(QualifiedPath::Relative(vec![symbol]))
+                    }
                     _ => Err(ParseError::UnexpectedRule(inner.as_rule())),
                 }
             }
-            Rule::ident => Ok(pair.as_str().to_string()),
+            Rule::ident => {
+                let symbol = self.create_symbol_from_pair(&pair);
+                Ok(QualifiedPath::Relative(vec![symbol]))
+            }
             _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
         }
     }
@@ -290,7 +304,7 @@ impl<'a> AstBuilder<'a> {
             Rule::absolute_path | Rule::crate_path | Rule::super_path | Rule::self_path => {
                 // Use existing qualified path logic but extract just the segments
                 let qualified_path = self.build_qualified_path(inner)?;
-                Ok(qualified_path.segments().to_vec())
+                Ok(qualified_path.segments().iter().map(|s| s.to_string()).collect())
             }
             Rule::simple_segments => {
                 // Simple path like "a::b::c"

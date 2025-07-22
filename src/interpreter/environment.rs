@@ -3,6 +3,7 @@ use super::parser::ast::{
     EnumDefinition, Item, ModuleDeclaration, PredicateDefinition, Program, QualifiedName,
     QualifiedPath, RelationName, StructDefinition, UsePath, UseStatement, Visibility,
 };
+use super::symbol_table::InternedSymbol;
 use super::runtime_value::{PredicateHandle, RuntimeValue};
 use super::InterpreterError;
 use crate::engine::Engine;
@@ -275,13 +276,13 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     ) -> Result<(), InterpreterError> {
         // Calculate the full module path
         let full_module_name = if parent_module_name == "global" {
-            mod_decl.name.clone()
+            mod_decl.name.to_string()
         } else {
             format!("{}::{}", parent_module_name, mod_decl.name)
         };
 
         // Resolve the file path
-        let file_path = self.resolve_module_file_path(&mod_decl.name, current_file_path)?;
+        let file_path = self.resolve_module_file_path(mod_decl.name.as_ref(), current_file_path)?;
 
         // Load the module
         self.load_module_from_path(&file_path, &full_module_name)
@@ -348,18 +349,18 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                     if is_public {
                         module_info
                             .public_symbols
-                            .insert(name.clone(), value.clone());
+                            .insert(name.to_string(), value.clone());
                     } else {
                         module_info
                             .private_symbols
-                            .insert(name.clone(), value.clone());
+                            .insert(name.to_string(), value.clone());
                     }
 
                     // Also add to module scope for internal use
                     self.modules
                         .entry(module_name.to_string())
                         .or_insert_with(HashMap::new)
-                        .insert(name, value);
+                        .insert(name.to_string(), value);
                 }
                 Item::Struct(struct_def) => {
                     let name = struct_def.name.clone();
@@ -374,13 +375,13 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                     if is_public {
                         module_info
                             .public_types
-                            .insert(name.clone(), struct_def.clone());
-                        module_info.public_symbols.insert(name.clone(), value);
+                            .insert(name.to_string(), struct_def.clone());
+                        module_info.public_symbols.insert(name.to_string(), value);
                     } else {
                         module_info
                             .private_types
-                            .insert(name.clone(), struct_def.clone());
-                        module_info.private_symbols.insert(name.clone(), value);
+                            .insert(name.to_string(), struct_def.clone());
+                        module_info.private_symbols.insert(name.to_string(), value);
                     }
 
                 }
@@ -395,9 +396,9 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                     let value = RuntimeValue::Type(type_index);
 
                     if is_public {
-                        module_info.public_symbols.insert(name.clone(), value);
+                        module_info.public_symbols.insert(name.to_string(), value);
                     } else {
-                        module_info.private_symbols.insert(name.clone(), value);
+                        module_info.private_symbols.insert(name.to_string(), value);
                     }
                     
                     // Note: Enums are not stored in public_types/private_types since those are
@@ -460,7 +461,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
     /// Load a relation definition
     pub fn load_predicate(&mut self, predicate: PredicateDefinition) -> Result<(), InterpreterError> {
-        let name = predicate.name.clone();
+        let name = predicate.name.to_string();
         let value = RuntimeValue::Relation(predicate);
 
         if self.scope_stack.last() == Some(&"global".to_string()) {
@@ -590,7 +591,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
     /// Load a struct definition
     pub fn load_struct(&mut self, struct_def: StructDefinition) -> Result<(), InterpreterError> {
-        let name = struct_def.name.clone();
+        let name = struct_def.name.to_string();
         
         // Register in type registry
         let type_index = self.register_type(TypeDefinition::Struct(struct_def));
@@ -613,7 +614,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
     /// Load an enum definition
     pub fn load_enum(&mut self, enum_def: EnumDefinition) -> Result<(), InterpreterError> {
-        let name = enum_def.name.clone();
+        let name = enum_def.name.to_string();
         
         // Register in type registry
         let type_index = self.register_type(TypeDefinition::Enum(enum_def));
@@ -639,7 +640,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         &mut self,
         module: super::parser::ast::ModuleDefinition,
     ) -> Result<(), InterpreterError> {
-        let module_name = module.name.clone();
+        let module_name = module.name.to_string();
         self.scope_stack.push(module_name.clone());
 
         for item in module.items {
@@ -685,7 +686,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Handle simple imports like "use std::list"
-    fn import_simple(&mut self, path_segments: Vec<String>) -> Result<(), InterpreterError> {
+    fn import_simple<S: AsRef<str> + Into<InternedSymbol>>(&mut self, path_segments: Vec<S>) -> Result<(), InterpreterError> {
         if path_segments.is_empty() {
             return Ok(());
         }
@@ -693,8 +694,9 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         // No special handling for std library - treat it like any other module
 
         // Regular module loading
-        let module_name = path_segments.join("::");
-        let module_path = self.resolve_module_path(&path_segments)?;
+        let module_name = path_segments.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join("::");
+        let path_strings: Vec<String> = path_segments.iter().map(|s| s.as_ref().to_string()).collect();
+        let module_path = self.resolve_module_path(&path_strings)?;
         self.load_module_from_path(&module_path, &module_name)?;
 
         // For simple imports, do NOT import symbols into global namespace
@@ -705,22 +707,27 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Handle glob imports like "use std::*"
-    fn import_glob(&mut self, path_segments: Vec<String>) -> Result<(), InterpreterError> {
+    fn import_glob<S: AsRef<str> + Into<InternedSymbol>>(&mut self, path_segments: Vec<S>) -> Result<(), InterpreterError> {
         if path_segments.is_empty() {
             return Ok(());
         }
 
         // First, ensure the module is loaded for import resolution
-        let module_name = path_segments.join("::");
+        let module_name = path_segments.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join("::");
 
         // Only load if not already loaded
         if !self.loaded_modules.contains_key(&module_name) {
-            let module_path = self.resolve_module_path(&path_segments)?;
+            let path_strings: Vec<String> = path_segments.iter().map(|s| s.as_ref().to_string()).collect();
+            let module_path = self.resolve_module_path(&path_strings)?;
             self.load_module_from_path(&module_path, &module_name)?;
         }
 
         // Then use the enhanced import system to handle glob imports with visibility checking
-        let target_path = QualifiedPath::Absolute(path_segments.clone());
+        let target_path = QualifiedPath::Absolute(
+            path_segments.into_iter()
+                .map(|s| s.into())
+                .collect()
+        );
         let importing_path = ModulePath::from_string(self.current_scope());
 
         let all_structs = self.get_all_structs();
@@ -744,32 +751,46 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Handle selective imports like "use std::{member, append}"
-    fn import_selective(
+    fn import_selective<S: AsRef<str> + Into<InternedSymbol>, T: AsRef<str> + Into<InternedSymbol>, V: AsRef<str> + Into<InternedSymbol>>(
         &mut self,
-        path_segments: Vec<String>,
-        imports: Vec<(String, Option<String>)>,
+        path_segments: Vec<S>,
+        imports: Vec<(T, Option<V>)>,
     ) -> Result<(), InterpreterError> {
         if path_segments.is_empty() {
             return Ok(());
         }
 
         // First, ensure the module is loaded for import resolution
-        let module_name = path_segments.join("::");
+        let module_name = path_segments.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join("::");
 
         // Only load if not already loaded
         if !self.loaded_modules.contains_key(&module_name) {
-            let module_path = self.resolve_module_path(&path_segments)?;
+            let path_strings: Vec<String> = path_segments.iter().map(|s| s.as_ref().to_string()).collect();
+            let module_path = self.resolve_module_path(&path_strings)?;
             self.load_module_from_path(&module_path, &module_name)?;
         }
 
         // Then use the enhanced import system to handle selective imports with visibility checking
-        let target_path = QualifiedPath::Absolute(path_segments.clone());
+        let target_path = QualifiedPath::Absolute(
+            path_segments.into_iter()
+                .map(|s| s.into())
+                .collect()
+        );
         let importing_path = ModulePath::from_string(self.current_scope());
+
+        // Convert imports to the expected format - preserve location information where possible
+        let import_strings: Vec<(String, Option<String>)> = imports.into_iter()
+            .map(|(name, alias)| {
+                let name_symbol: InternedSymbol = name.into();
+                let alias_symbol: Option<InternedSymbol> = alias.map(|a| a.into());
+                (name_symbol.to_string(), alias_symbol.map(|s| s.to_string()))
+            })
+            .collect();
 
         let all_structs = self.get_all_structs();
         match self.import_resolver.import_selective(
             &target_path,
-            &imports,
+            &import_strings,
             importing_path,
             &self.loaded_modules,
             &self.globals,
@@ -1037,11 +1058,11 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             QualifiedPath::Global(segments) => {
                 // Global paths start from the namespace root
                 // For now, treat as relative from crate root
-                Ok(segments.join("::"))
+                Ok(segments.iter().map(|s| &**s).collect::<Vec<_>>().join("::"))
             }
             QualifiedPath::Absolute(segments) => {
                 // Absolute paths start from crate root
-                Ok(segments.join("::"))
+                Ok(segments.iter().map(|s| &**s).collect::<Vec<_>>().join("::"))
             }
             QualifiedPath::Relative(segments) => {
                 // Relative paths are relative to current module
@@ -1050,7 +1071,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                 } else {
                     let current = self.current_scope();
                     if current == "global" {
-                        Ok(segments.join("::"))
+                        Ok(segments.iter().map(|s| &**s).collect::<Vec<_>>().join("::"))
                     } else {
                         Ok(format!("{}::{}", current, segments.join("::")))
                     }
@@ -1069,7 +1090,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
                 let target_depth = current_parts.len() - levels_to_go_up;
                 let mut target_parts = current_parts[..target_depth].to_vec();
-                target_parts.extend(segments.iter().map(|s| s.as_str()));
+                target_parts.extend(segments.iter().map(|s| &**s));
 
                 Ok(target_parts.join("::"))
             }
@@ -1086,7 +1107,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             QualifiedPath::External(crate_name, segments) => {
                 // External crate paths
                 if segments.is_empty() {
-                    Ok(crate_name.clone())
+                    Ok(crate_name.to_string())
                 } else {
                     Ok(format!("{}::{}", crate_name, segments.join("::")))
                 }
@@ -1221,7 +1242,7 @@ mod tests {
             visibility: Visibility::Private,
             predicate_kind: PredicateKind::Relation,
             attributes: vec![],
-            name: "test_rel".to_string(),
+            name: "test_rel".to_string().into(),
             parameters: vec![],
             search_strategy: None,
             body: vec![],
@@ -1231,7 +1252,7 @@ mod tests {
 
         assert!(env.lookup("test_rel").is_some());
         match env.lookup("test_rel").unwrap() {
-            RuntimeValue::Relation(rel) => assert_eq!(rel.name, "test_rel"),
+            RuntimeValue::Relation(rel) => assert_eq!(rel.name.as_ref(), "test_rel"),
             _ => panic!("Expected relation"),
         }
     }
@@ -1242,18 +1263,18 @@ mod tests {
 
         let struct_def = StructDefinition {
             visibility: Visibility::Private,
-            name: "Point".to_string(),
+            name: "Point".to_string().into(),
             kind: StructKind::Named(vec![
                 NamedField {
                     visibility: Visibility::Private,
-                    name: "x".to_string(),
-                    type_name: "i32".to_string(),
+                    name: "x".to_string().into(),
+                    type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
                     span: Span::dummy(),
                 },
                 NamedField {
                     visibility: Visibility::Private,
-                    name: "y".to_string(),
-                    type_name: "i32".to_string(),
+                    name: "y".to_string().into(),
+                    type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
                     span: Span::dummy(),
                 },
             ]),
@@ -1263,7 +1284,7 @@ mod tests {
         env.load_struct(struct_def).unwrap();
 
         let struct_def = env.get_struct("Point").unwrap();
-        assert_eq!(struct_def.name, "Point");
+        assert_eq!(struct_def.name.as_ref(), "Point");
     }
 
     #[test]
@@ -1272,14 +1293,14 @@ mod tests {
 
         let module = ModuleDefinition {
             visibility: Visibility::Private,
-            name: "test_module".to_string(),
+            name: "test_module".to_string().into(),
             search_strategy: None,
             items: vec![Item::Predicate(PredicateDefinition {
                 span: Span::dummy(),
                 visibility: Visibility::Private,
                 predicate_kind: PredicateKind::Relation,
                 attributes: vec![],
-                name: "module_rel".to_string(),
+                name: "module_rel".to_string().into(),
                 parameters: vec![],
                 search_strategy: None,
                 body: vec![],
@@ -1329,7 +1350,7 @@ mod qualified_path_resolution_tests {
             visibility: Visibility::Public,
             predicate_kind: PredicateKind::Relation,
             attributes: vec![],
-            name: "test_solve".to_string(),
+            name: "test_solve".to_string().into(),
             parameters: vec![],
             search_strategy: None,
             body: vec![],
@@ -1363,7 +1384,7 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_resolve_absolute_path() {
         let env = create_test_environment();
-        let path = QualifiedPath::Absolute(vec!["solver".to_string(), "constraint".to_string()]);
+        let path = QualifiedPath::Absolute(vec!["solver".to_string().into(), "constraint".to_string().into()]);
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "solver::constraint");
     }
@@ -1371,7 +1392,7 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_resolve_relative_path() {
         let env = create_test_environment();
-        let path = QualifiedPath::Relative(vec!["constraint".to_string()]);
+        let path = QualifiedPath::Relative(vec!["constraint".to_string().into()]);
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "solver::clpfd::constraint");
     }
@@ -1379,7 +1400,7 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_resolve_super_path() {
         let env = create_test_environment();
-        let path = QualifiedPath::Super(0, vec!["other".to_string()]);
+        let path = QualifiedPath::Super(0, vec!["other".to_string().into()]);
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "solver::other");
     }
@@ -1387,7 +1408,7 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_resolve_self_path() {
         let env = create_test_environment();
-        let path = QualifiedPath::Self_(vec!["helper".to_string()]);
+        let path = QualifiedPath::Self_(vec!["helper".to_string().into()]);
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "solver::clpfd::helper");
     }
@@ -1396,8 +1417,8 @@ mod qualified_path_resolution_tests {
     fn test_resolve_std_path() {
         let env = create_test_environment();
         let path = QualifiedPath::External(
-            "std".to_string(),
-            vec!["collections".to_string(), "list".to_string()],
+            "std".to_string().into(),
+            vec!["collections".to_string().into(), "list".to_string().into()],
         );
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "std::collections::list");
@@ -1406,7 +1427,7 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_resolve_global_path() {
         let env = create_test_environment();
-        let path = QualifiedPath::Global(vec!["root".to_string(), "module".to_string()]);
+        let path = QualifiedPath::Global(vec!["root".to_string().into(), "module".to_string().into()]);
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "root::module");
     }
@@ -1415,7 +1436,7 @@ mod qualified_path_resolution_tests {
     fn test_resolve_external_path() {
         let env = create_test_environment();
         let path =
-            QualifiedPath::External("external_crate".to_string(), vec!["module".to_string()]);
+            QualifiedPath::External("external_crate".to_string().into(), vec!["module".to_string().into()]);
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "external_crate::module");
     }
@@ -1424,8 +1445,8 @@ mod qualified_path_resolution_tests {
     fn test_lookup_qualified_name() {
         let env = create_test_environment();
         let qualified_name = QualifiedName::new(
-            QualifiedPath::External("std".to_string(), vec!["list".to_string()]),
-            "member".to_string(),
+            QualifiedPath::External("std".to_string().into(), vec!["list".to_string().into()]),
+            "member".to_string().into(),
         );
         let result = env.lookup_qualified_name(&qualified_name).unwrap();
         assert!(result.is_some());
@@ -1434,7 +1455,7 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_lookup_simple_relation_name() {
         let env = create_test_environment();
-        let relation_name = RelationName::Simple("global_relation".to_string());
+        let relation_name = RelationName::Simple("global_relation".to_string().into());
         let result = env.lookup_relation(&relation_name).unwrap();
         assert!(result.is_some());
     }
@@ -1443,8 +1464,8 @@ mod qualified_path_resolution_tests {
     fn test_lookup_qualified_relation_name() {
         let env = create_test_environment();
         let qualified_name = QualifiedName::new(
-            QualifiedPath::External("std".to_string(), vec!["list".to_string()]),
-            "member".to_string(),
+            QualifiedPath::External("std".to_string().into(), vec!["list".to_string().into()]),
+            "member".to_string().into(),
         );
         let relation_name = RelationName::Qualified(qualified_name);
         let result = env.lookup_relation(&relation_name).unwrap();
@@ -1455,8 +1476,8 @@ mod qualified_path_resolution_tests {
     fn test_lookup_nonexistent_qualified_name() {
         let env = create_test_environment();
         let qualified_name = QualifiedName::new(
-            QualifiedPath::External("std".to_string(), vec!["nonexistent".to_string()]),
-            "missing".to_string(),
+            QualifiedPath::External("std".to_string().into(), vec!["nonexistent".to_string().into()]),
+            "missing".to_string().into(),
         );
         let result = env.lookup_qualified_name(&qualified_name).unwrap();
         assert!(result.is_none());
@@ -1467,7 +1488,7 @@ mod qualified_path_resolution_tests {
         let env = create_test_environment();
         // Current scope is "solver::clpfd" which has 2 parts
         // Super(2, _) would try to go up 3 levels (2 + 1), which is beyond the root
-        let path = QualifiedPath::Super(2, vec!["unreachable".to_string()]);
+        let path = QualifiedPath::Super(2, vec!["unreachable".to_string().into()]);
         let result = env.resolve_qualified_path(&path);
         assert!(result.is_err());
     }

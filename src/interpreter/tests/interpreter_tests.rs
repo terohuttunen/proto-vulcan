@@ -5,6 +5,7 @@
 use super::super::*;
 use crate::engine::DefaultEngine;
 use crate::user::DefaultUser;
+use crate::interpreter::symbol_table::InternedSymbol;
 use parser::ast::*;
 
 type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
@@ -48,19 +49,19 @@ fn test_comprehensive_program_loading() {
             Item::Struct(StructDefinition {
                 span: Default::default(),
                 visibility: ast::Visibility::Public,
-                name: "Point".to_string(),
+                name: "Point".to_string().into(),
                 kind: StructKind::Named(vec![
                     NamedField {
                         span: Default::default(),
                         visibility: ast::Visibility::Public,
-                        name: "x".to_string(),
-                        type_name: "i32".to_string(),
+                        name: "x".to_string().into(),
+                        type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
                     },
                     NamedField {
                         span: Default::default(),
                         visibility: ast::Visibility::Public,
-                        name: "y".to_string(),
-                        type_name: "i32".to_string(),
+                        name: "y".to_string().into(),
+                        type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
                     },
                 ]),
             }),
@@ -70,24 +71,24 @@ fn test_comprehensive_program_loading() {
                 visibility: ast::Visibility::Private,
                 predicate_kind: PredicateKind::Relation,
                 attributes: vec![],
-                name: "distance".to_string(),
+                name: "distance".to_string().into(),
                 parameters: vec![
                     Parameter {
-                        name: "p1".to_string(),
+                        name: "p1".to_string().into(),
                         type_annotation: None,
                     },
                     Parameter {
-                        name: "p2".to_string(),
+                        name: "p2".to_string().into(),
                         type_annotation: None,
                     },
                     Parameter {
-                        name: "result".to_string(),
+                        name: "result".to_string().into(),
                         type_annotation: None,
                     },
                 ],
                 search_strategy: Some(SearchStrategy::Bfs),
                 body: vec![Goal::Equality(
-                    Term::Variable("result".to_string(), Default::default()),
+                    Term::Variable(InternedSymbol::from_text("result")),
                     Term::Literal(Literal::Number("0.0".to_string()), Default::default()),
                     Default::default(),
                 )],
@@ -96,25 +97,25 @@ fn test_comprehensive_program_loading() {
             Item::Module(ModuleDefinition {
                 visibility: ast::Visibility::Public,
                 span: Default::default(),
-                name: "geometry".to_string(),
+                name: "geometry".to_string().into(),
                 search_strategy: None,
                 items: vec![Item::Predicate(PredicateDefinition {
                     span: Default::default(),
                     visibility: ast::Visibility::Public,
                     predicate_kind: PredicateKind::Relation,
                     attributes: vec![],
-                    name: "area".to_string(),
+                    name: "area".to_string().into(),
                     parameters: vec![
                         Parameter {
-                            name: "width".to_string(),
+                            name: "width".to_string().into(),
                             type_annotation: None,
                         },
                         Parameter {
-                            name: "height".to_string(),
+                            name: "height".to_string().into(),
                             type_annotation: None,
                         },
                         Parameter {
-                            name: "result".to_string(),
+                            name: "result".to_string().into(),
                             type_annotation: None,
                         },
                     ],
@@ -144,7 +145,7 @@ fn test_comprehensive_program_loading() {
     // Check that the struct was loaded
     let point_struct = env.get_struct("Point");
     assert!(point_struct.is_some(), "Point struct should be loaded");
-    assert_eq!(point_struct.unwrap().name, "Point");
+    assert_eq!(point_struct.unwrap().name.as_ref(), "Point");
 
     // Check that module scoping works
     assert_eq!(env.current_scope(), "global");
@@ -169,7 +170,7 @@ fn test_runtime_value_conversion() {
     assert!(num_runtime.as_term().unwrap().is_val());
 
     // Test variable
-    let var_term = Term::Variable("x".to_string(), Default::default());
+    let var_term = Term::Variable(InternedSymbol::from_text("x"));
     let var_runtime = TestRuntimeValue::from_ast_term(&var_term).unwrap();
     assert!(var_runtime.as_term().is_some());
     assert!(var_runtime.as_term().unwrap().is_var());

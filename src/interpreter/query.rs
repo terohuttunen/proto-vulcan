@@ -317,8 +317,8 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
     use super::parser::ast::*;
 
     match term {
-        Term::Variable(var_name, _) => {
-            vars.push(var_name.clone());
+        Term::Variable(var_name) => {
+            vars.push(var_name.to_string());
         }
         Term::Wildcard(_) => {
             // Wildcards don't contain variables to extract
@@ -450,7 +450,7 @@ mod tests {
             Goal::Equality(left, right, _) => {
                 assert!(matches!(
                     left,
-                    super::super::parser::ast::Term::Variable(_, _)
+                    super::super::parser::ast::Term::Variable(_)
                 ));
                 assert!(matches!(
                     right,
