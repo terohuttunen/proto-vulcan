@@ -8,6 +8,7 @@
 use super::environment::{Environment, TypeDefinition};
 use super::runtime_value::RuntimeValue;
 use super::parser::ast::*;
+use super::symbol_table::InternedSymbol;
 use super::InterpreterError;
 use crate::engine::Engine;
 use crate::user::User;
@@ -158,7 +159,7 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
     /// Analyze and potentially transform a term
     fn analyze_term(&mut self, term: &mut Term) -> Result<(), InterpreterError> {
         match term {
-            Term::Variable(_, _) | Term::Wildcard(_) | Term::Literal(_, _) => {
+            Term::Variable(_) | Term::Wildcard(_) | Term::Literal(_, _) => {
                 // These don't need disambiguation
                 Ok(())
             }
@@ -294,7 +295,7 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
         tuple_struct: &TupleStructConstruction,
     ) -> Result<Option<EnumVariantConstruction>, InterpreterError> {
         // Check if the name contains "::" which indicates potential enum variant
-        if let Some((enum_name, variant_name)) = tuple_struct.name.rsplit_once("::") {
+        if let Some((enum_name, variant_name)) = tuple_struct.name.to_string().rsplit_once("::") {
             // Try to resolve the enum type
             let env = self.environment.borrow();
             
@@ -329,8 +330,8 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                             };
 
                             return Ok(Some(EnumVariantConstruction {
-                                enum_name: enum_name.to_string(),
-                                variant_name: variant_name.to_string(),
+                                enum_name: InternedSymbol::from_text(enum_name),
+                                variant_name: InternedSymbol::from_text(variant_name),
                                 kind: construction_kind,
                             }));
                         }
@@ -372,8 +373,8 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                                 }).collect();
 
                                 return Ok(Some(EnumVariantConstruction {
-                                    enum_name: enum_name.to_string(),
-                                    variant_name: variant_name.to_string(),
+                                    enum_name: InternedSymbol::from_text(enum_name),
+                                    variant_name: InternedSymbol::from_text(variant_name),
                                     kind: EnumVariantConstructionKind::Named(named_fields),
                                 }));
                             }
@@ -410,8 +411,8 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                                 let named_field_patterns = named_struct_pattern.fields.clone();
 
                                 return Ok(Some(EnumVariantPattern {
-                                    enum_name: enum_name.to_string(),
-                                    variant_name: variant_name.to_string(),
+                                    enum_name: InternedSymbol::from_text(enum_name),
+                                    variant_name: InternedSymbol::from_text(variant_name),
                                     kind: EnumVariantPatternKind::Named(named_field_patterns),
                                 }));
                             }
@@ -464,8 +465,8 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                             };
 
                             return Ok(Some(EnumVariantPattern {
-                                enum_name: enum_name.to_string(),
-                                variant_name: variant_name.to_string(),
+                                enum_name: InternedSymbol::from_text(enum_name),
+                                variant_name: InternedSymbol::from_text(variant_name),
                                 kind: pattern_kind,
                             }));
                         }
@@ -478,15 +479,16 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
     }
 
     /// Resolve a type name to its registry index
-    fn resolve_type_to_index(&self, name: &str) -> Result<usize, InterpreterError> {
+    fn resolve_type_to_index<S: AsRef<str>>(&self, name: S) -> Result<usize, InterpreterError> {
         // Look up the type name as a symbol
-        let runtime_value = self.environment.borrow().lookup(name)
-            .ok_or_else(|| InterpreterError::UnknownType(name.to_string()))?
+        let name_str = name.as_ref();
+        let runtime_value = self.environment.borrow().lookup(name_str)
+            .ok_or_else(|| InterpreterError::UnknownType(name_str.to_string()))?
             .clone();
         
         match runtime_value {
             RuntimeValue::Type(index) => Ok(index),
-            _ => Err(InterpreterError::NotAType(name.to_string())),
+            _ => Err(InterpreterError::NotAType(name_str.to_string())),
         }
     }
 }

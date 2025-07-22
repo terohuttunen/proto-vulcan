@@ -1,8 +1,33 @@
 use pest::iterators::Pair;
 use super::{AstBuilder, ParseError, ParseResult, Rule};
 use crate::interpreter::parser::ast::*;
+use crate::interpreter::symbol_table::InternedSymbol;
 
 impl<'a> AstBuilder<'a> {
+    /// Extract the actual ident pair from a type_name rule, drilling down through the grammar hierarchy
+    fn extract_ident_from_type_name(type_name_pair: Pair<Rule>) -> ParseResult<Pair<Rule>> {
+        // type_name = { qualified_path | ident }
+        let inner = type_name_pair.into_inner().next().unwrap();
+        match inner.as_rule() {
+            Rule::ident => Ok(inner),
+            Rule::qualified_path => {
+                // For simple identifiers wrapped in qualified_path, drill down to the ident
+                // qualified_path -> relative_path -> simple_segments -> ident
+                let path_inner = inner.into_inner().next().unwrap();
+                match path_inner.as_rule() {
+                    Rule::ident => Ok(path_inner),
+                    Rule::relative_path => {
+                        let simple_segments = path_inner.into_inner().next().unwrap();
+                        let ident = simple_segments.into_inner().next().unwrap();
+                        Ok(ident)
+                    }
+                    _ => Err(ParseError::UnexpectedRule(path_inner.as_rule()))
+                }
+            }
+            _ => Err(ParseError::UnexpectedRule(inner.as_rule()))
+        }
+    }
+
     pub fn build_program(&mut self, pair: Pair<Rule>) -> ParseResult<Program> {
         let span = self.pair_to_span(&pair);
         let mut items = vec![];
@@ -58,11 +83,11 @@ impl<'a> AstBuilder<'a> {
         let (visibility, name) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
             // Has visibility: visibility, mod_keyword, ident, ";"
             let vis = self.build_visibility(pairs[0].clone())?;
-            let name = pairs[2].as_str().to_string(); // ident comes after visibility and mod_keyword
+            let name = self.create_symbol_from_pair(&pairs[2]); // ident comes after visibility and mod_keyword
             (vis, name)
         } else {
             // No visibility: mod_keyword, ident, ";"
-            let name = pairs[1].as_str().to_string(); // ident comes after mod_keyword
+            let name = self.create_symbol_from_pair(&pairs[1]); // ident comes after mod_keyword
             (Visibility::Private, name)
         };
 
@@ -83,11 +108,11 @@ impl<'a> AstBuilder<'a> {
         let (visibility, name) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
             // Has visibility: visibility, mod_keyword, ident, search_strategy?, "{", body content, "}"
             let vis = self.build_visibility(pairs[0].clone())?;
-            let name = pairs[2].as_str().to_string(); // ident comes after visibility and mod_keyword
+            let name = self.create_symbol_from_pair(&pairs[2]); // ident comes after visibility and mod_keyword
             (vis, name)
         } else {
             // No visibility: mod_keyword, ident, search_strategy?, "{", body content, "}"
-            let name = pairs[1].as_str().to_string(); // ident comes after mod_keyword
+            let name = self.create_symbol_from_pair(&pairs[1]); // ident comes after mod_keyword
             (Visibility::Private, name)
         };
 
@@ -112,12 +137,11 @@ impl<'a> AstBuilder<'a> {
         };
 
         // Find the ident among the pairs
-        let name = pairs
+        let name_pair = pairs
             .iter()
             .find(|p| p.as_rule() == Rule::ident)
-            .ok_or(ParseError::UnexpectedRule(Rule::ident))?
-            .as_str()
-            .to_string();
+            .ok_or(ParseError::UnexpectedRule(Rule::ident))?;
+        let name = self.create_symbol_from_pair(name_pair);
         let mut search_strategy = None;
         let mut items = vec![];
 
@@ -163,18 +187,24 @@ impl<'a> AstBuilder<'a> {
         let (visibility, name) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
             // Has visibility: visibility, struct_keyword, type_name
             let vis = self.build_visibility(pairs[0].clone())?;
-            let name = self.build_type_name(pairs[2].clone())?; // type_name after visibility and struct_keyword
+            // Extract the actual ident from the type_name rule
+            let type_name_pair = &pairs[2];
+            let ident_pair = Self::extract_ident_from_type_name(type_name_pair.clone())?;
+            let name = self.create_symbol_from_pair(&ident_pair);
             (vis, name)
         } else {
             // No visibility: struct_keyword, type_name
-            let name = self.build_type_name(pairs[1].clone())?; // type_name after struct_keyword
+            // Extract the actual ident from the type_name rule  
+            let type_name_pair = &pairs[1];
+            let ident_pair = Self::extract_ident_from_type_name(type_name_pair.clone())?;
+            let name = self.create_symbol_from_pair(&ident_pair);
             (Visibility::Private, name)
         };
         let kind = match def_pair.as_rule() {
             Rule::tuple_struct_def => {
                 let mut types = vec![];
                 for type_pair in def_pair.into_inner() {
-                    types.push(type_pair.as_str().to_string());
+                    types.push(self.create_symbol_from_pair(&type_pair));
                 }
                 StructKind::Tuple(types)
             }
@@ -204,11 +234,17 @@ impl<'a> AstBuilder<'a> {
         let (visibility, name) = if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
             // Has visibility: visibility, enum_keyword, type_name, variants
             let vis = self.build_visibility(pairs[0].clone())?;
-            let name = self.build_type_name(pairs[2].clone())?;
+            // Extract the actual ident from the type_name rule
+            let type_name_pair = &pairs[2];
+            let ident_pair = Self::extract_ident_from_type_name(type_name_pair.clone())?;
+            let name = self.create_symbol_from_pair(&ident_pair);
             (vis, name)
         } else {
             // No visibility: enum_keyword, type_name, variants
-            let name = self.build_type_name(pairs[1].clone())?;
+            // Extract the actual ident from the type_name rule
+            let type_name_pair = &pairs[1];
+            let ident_pair = Self::extract_ident_from_type_name(type_name_pair.clone())?;
+            let name = self.create_symbol_from_pair(&ident_pair);
             (Visibility::Private, name)
         };
         
@@ -232,14 +268,15 @@ impl<'a> AstBuilder<'a> {
     pub fn build_enum_variant(&mut self, pair: Pair<Rule>) -> ParseResult<EnumVariant> {
         let span = self.pair_to_span(&pair);
         let mut inner = pair.into_inner();
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = self.create_symbol_from_pair(&name_pair);
         
         let kind = if let Some(variant_def) = inner.next() {
             match variant_def.as_rule() {
                 Rule::enum_variant_tuple => {
                     let mut types = vec![];
                     for type_pair in variant_def.into_inner() {
-                        types.push(type_pair.as_str().to_string());
+                        types.push(self.create_symbol_from_pair(&type_pair));
                     }
                     VariantKind::Tuple(types)
                 }
@@ -270,16 +307,16 @@ impl<'a> AstBuilder<'a> {
             if !pairs.is_empty() && pairs[0].as_rule() == Rule::visibility {
                 // Has visibility: visibility, ident, type_name
                 let vis = self.build_visibility(pairs[0].clone())?;
-                let name = pairs[1].as_str().to_string(); // ident after visibility
+                let name = self.create_symbol_from_pair(&pairs[1]); // ident after visibility
                 let type_name = self.build_type_name(pairs[2].clone())?; // type_name after visibility and ident
                 (vis, name, type_name)
             } else {
                 // No visibility: ident, type_name
-                let name = pairs[0].as_str().to_string(); // first element is ident
+                let name = self.create_symbol_from_pair(&pairs[0]); // first element is ident
                 let type_name = self.build_type_name(pairs[1].clone())?; // type_name after ident
                 (Visibility::Private, name, type_name)
             };
-        // name and type_name are already Strings from above
+        // name is InternedSymbol, type_name is InternedSymbol
 
         Ok(NamedField {
             visibility,
@@ -292,7 +329,8 @@ impl<'a> AstBuilder<'a> {
     pub fn build_impl_block(&mut self, pair: Pair<Rule>) -> ParseResult<ImplBlock> {
         let span = self.pair_to_span(&pair);
         let mut inner = pair.into_inner();
-        let type_name = self.build_type_name(inner.next().unwrap())?;
+        let type_name_pair = inner.next().unwrap();
+        let type_name = self.create_symbol_from_pair(&type_name_pair);
         let mut predicates = vec![];
         for rel_pair in inner {
             if rel_pair.as_rule() == Rule::predicate_definition {
@@ -337,7 +375,8 @@ impl<'a> AstBuilder<'a> {
             _ => return Err(ParseError::UnexpectedRule(relation_kind_pair.as_rule())),
         };
 
-        let name = inner.next().unwrap().as_str().to_string();
+        let name_pair = inner.next().unwrap();
+        let name = self.create_symbol_from_pair(&name_pair);
 
         let mut parameters = vec![];
         if let Some(p) = inner.peek() {
