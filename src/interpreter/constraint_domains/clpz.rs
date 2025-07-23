@@ -21,6 +21,52 @@ use pest_derive::Parser;
 #[grammar = "interpreter/constraint_domains/grammars/clpz.pest"]
 pub struct ClpzParser;
 
+/// CLPZ constraint template that stores compiled constraint information
+#[derive(Debug, Clone)]
+pub struct ClpzTemplate {
+    body: ConstraintBody,
+    variables: std::collections::HashMap<String, super::VariableInfo>,
+}
+
+impl super::DomainConstraintTemplate for ClpzTemplate {
+    fn execute(&self, execution_context: &mut super::super::execution::ExecutionContext<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>) 
+        -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
+        // For now, fall back to the original parsing approach
+        // TODO: Implement proper template-based execution
+        let domain = ClpzDomain::new();
+        let parsed_constraints = domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+        parsed_constraints.convert_to_goals(execution_context)
+    }
+}
+
+/// CLPZ IR constraint template that stores compiled constraint information for IR system
+#[derive(Debug, Clone)]
+pub struct ClpzIrTemplate {
+    body: ConstraintBody,
+    variables: std::collections::HashMap<String, super::VariableInfo>,
+}
+
+impl super::IrDomainConstraintTemplate for ClpzIrTemplate {
+    fn execute(&self, execution_context: &mut super::super::ir::context::ExecutionContext) 
+        -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
+        // Create a temporary bridge between IR ExecutionContext and regular ExecutionContext
+        // This is a temporary implementation until we have full IR-native constraint compilation
+        use super::super::execution::ExecutionContext as RegularExecutionContext;
+        use crate::user::DefaultUser;
+        use crate::engine::DefaultEngine;
+        
+        // Create a temporary execution context for constraint compilation
+        let mut temp_execution_context = RegularExecutionContext::<DefaultUser, DefaultEngine<DefaultUser>>::new(
+            execution_context.environment().clone()
+        );
+        
+        // For now, fall back to the original parsing approach with temporary context
+        let domain = ClpzDomain::new();
+        let parsed_constraints = domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+        parsed_constraints.convert_to_goals(&mut temp_execution_context)
+    }
+}
+
 /// CLPZ constraint domain
 pub struct ClpzDomain;
 
@@ -71,6 +117,42 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
 - Arithmetic: x + y == z, x - y == z, x * y == z
 - Comparison: x < y, x <= y, x > y, x >= y, x != y, x == y
 - Fresh: |x, y| { x + y == z }"#
+    }
+
+    fn get_unbound_variables(&self, body: &ConstraintBody) -> Result<Vec<String>, InterpreterError> {
+        // For now, parse the constraint to extract variables using concrete types
+        // TODO: Implement proper variable extraction without full parsing
+        use crate::user::DefaultUser;
+        use crate::engine::DefaultEngine;
+        let parsed_constraints: Box<dyn DomainConstraints<DefaultUser, DefaultEngine<DefaultUser>>> = 
+            self.parse_constraints(body, &super::super::parser::ast::Span::dummy())?;
+        Ok(parsed_constraints.extract_variables())
+    }
+
+    fn compile_template(
+        &self,
+        body: &ConstraintBody,
+        variables: std::collections::HashMap<String, super::VariableInfo>,
+    ) -> Result<std::rc::Rc<dyn super::DomainConstraintTemplate>, InterpreterError> {
+        // Create a CLPZ template with the constraint body and variable information
+        let template = ClpzTemplate {
+            body: body.clone(),
+            variables,
+        };
+        Ok(std::rc::Rc::new(template))
+    }
+
+    fn compile_ir_template(
+        &self,
+        body: &ConstraintBody,
+        variables: std::collections::HashMap<String, super::VariableInfo>,
+    ) -> Result<std::rc::Rc<dyn super::IrDomainConstraintTemplate>, InterpreterError> {
+        // Create a CLPZ IR template with the constraint body and variable information
+        let template = ClpzIrTemplate {
+            body: body.clone(),
+            variables,
+        };
+        Ok(std::rc::Rc::new(template))
     }
 }
 

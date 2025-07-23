@@ -92,7 +92,7 @@ impl<'a> AstBuilder<'a> {
                     _ => return Err(ParseError::UnexpectedRule(Rule::qualified_path)),
                 };
 
-                Ok(UsePath::Simple(path, item.to_string()))
+                Ok(UsePath::Simple(path, item))
             }
             Rule::use_path_glob => {
                 // Glob import: use use_path_base::*;
@@ -114,8 +114,9 @@ impl<'a> AstBuilder<'a> {
                 let mut imports = vec![];
                 for import_item in list_part.into_inner() {
                     let mut item_inner = import_item.into_inner();
-                    let name = item_inner.next().unwrap().as_str().to_string();
-                    let alias = item_inner.next().map(|p| p.as_str().to_string());
+                    let name_pair = item_inner.next().unwrap();
+                    let name = self.create_symbol_from_pair(&name_pair);
+                    let alias = item_inner.next().map(|p| self.create_symbol_from_pair(&p));
                     imports.push((name, alias));
                 }
                 Ok(UsePath::List(qualified_path, imports))

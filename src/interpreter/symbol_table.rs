@@ -273,6 +273,7 @@ impl std::ops::Deref for InternedSymbol {
 
 
 /// String interning table for deduplicating string content
+#[derive(Debug)]
 pub struct StringTable {
     strings: HashSet<Rc<str>>,
 }
@@ -314,6 +315,7 @@ impl Default for StringTable {
 }
 
 /// File path interning table for deduplicating file paths
+#[derive(Debug)]
 pub struct FileTable {
     files: HashSet<Rc<PathBuf>>,
 }
@@ -355,6 +357,7 @@ impl Default for FileTable {
 }
 
 /// Central symbol table that manages string and file interning
+#[derive(Debug)]
 pub struct SymbolTable {
     string_table: StringTable,
     file_table: FileTable,

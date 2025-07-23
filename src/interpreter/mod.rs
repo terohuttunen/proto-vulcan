@@ -17,6 +17,7 @@ mod environment;
 mod execution;
 pub mod import;
 mod integration;
+pub mod ir;
 pub mod metaprogramming;
 pub mod parser;
 pub mod query;

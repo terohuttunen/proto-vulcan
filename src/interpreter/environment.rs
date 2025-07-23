@@ -657,7 +657,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
             UsePath::Simple(qualified_path, item) => {
                 let resolved_path = self.resolve_qualified_path(&qualified_path)?;
                 let full_path = if resolved_path.is_empty() {
-                    item
+                    item.to_string()
                 } else {
                     format!("{}::{}", resolved_path, item)
                 };

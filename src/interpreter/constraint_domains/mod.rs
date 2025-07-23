@@ -7,10 +7,11 @@
 use super::execution::ExecutionContext;
 use super::parser::ast::ConstraintBody;
 use super::InterpreterError;
-use crate::engine::Engine;
+use crate::engine::{Engine, DefaultEngine};
 use crate::goal::Goal;
-use crate::user::User;
+use crate::user::{User, DefaultUser};
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub mod clpfd;
 pub mod clpz;
@@ -42,6 +43,38 @@ pub fn map_constraint_error_position(
     }
 }
 
+/// Variable information for constraint template compilation
+#[derive(Debug, Clone)]
+pub struct VariableInfo {
+    /// Variable name
+    pub name: String,
+    /// Variable type (relational or meta)
+    pub var_type: VariableType,
+}
+
+/// Type of variable for constraint compilation
+#[derive(Debug, Clone, PartialEq)]
+pub enum VariableType {
+    /// Relational variable for logic computation
+    Relational,
+    /// Meta variable for compile-time computation
+    Meta,
+}
+
+/// Non-generic trait for compiled constraint templates that execute to produce Goals
+pub trait DomainConstraintTemplate: std::fmt::Debug {
+    /// Execute the template with the given execution context to produce a Goal
+    fn execute(&self, execution_context: &mut super::execution::ExecutionContext<DefaultUser, DefaultEngine<DefaultUser>>) 
+        -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, InterpreterError>;
+}
+
+/// IR-specific trait for compiled constraint templates that work with IR ExecutionContext
+pub trait IrDomainConstraintTemplate: std::fmt::Debug {
+    /// Execute the template with the IR execution context to produce a Goal
+    fn execute(&self, execution_context: &mut super::ir::context::ExecutionContext) 
+        -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, InterpreterError>;
+}
+
 /// Trait that all constraint domains must implement
 pub trait ConstraintDomain<U: User, E: Engine<U>> {
     /// Domain name (e.g., "clpfd", "clpr", "clpb")
@@ -56,6 +89,23 @@ pub trait ConstraintDomain<U: User, E: Engine<U>> {
 
     /// Get description of supported syntax for error messages
     fn syntax_help(&self) -> &str;
+
+    /// Get list of unbound variable names that this constraint block requires
+    fn get_unbound_variables(&self, body: &ConstraintBody) -> Result<Vec<String>, InterpreterError>;
+
+    /// Compile constraint block with resolved variable information into a template
+    fn compile_template(
+        &self,
+        body: &ConstraintBody,
+        variables: HashMap<String, VariableInfo>,
+    ) -> Result<Rc<dyn DomainConstraintTemplate>, InterpreterError>;
+
+    /// Compile constraint block for IR system with resolved variable information into an IR template
+    fn compile_ir_template(
+        &self,
+        body: &ConstraintBody,
+        variables: HashMap<String, VariableInfo>,
+    ) -> Result<Rc<dyn IrDomainConstraintTemplate>, InterpreterError>;
 }
 
 /// Trait for parsed domain-specific constraints

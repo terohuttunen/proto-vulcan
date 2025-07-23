@@ -286,7 +286,7 @@ impl<'a> AstBuilder<'a> {
                     _ => Err(ParseError::UnexpectedRule(Rule::boolean_literal)),
                 }
             }
-            Rule::ident => Ok(SearchParamValue::Identifier(Self::extract_text_from_pair(&pair))),
+            Rule::ident => Ok(SearchParamValue::Identifier(self.create_symbol_from_pair(&pair))),
             _ => Err(ParseError::UnexpectedRule(pair.as_rule())),
         }
     }

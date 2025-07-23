@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
 use proto_vulcan::engine::DefaultEngine;
+use proto_vulcan::interpreter::ir::compiler::{CompilationOptions, CompileWarning};
 use proto_vulcan::interpreter::parser::parse_str;
 use proto_vulcan::interpreter::query::QueryResult;
 use proto_vulcan::interpreter::test_runner::{TestRunOptions, TestRunner};
@@ -90,6 +91,18 @@ struct Cli {
     /// Timeout for query execution in seconds (0 = no timeout)
     #[arg(long, value_name = "SECONDS", default_value = "0")]
     timeout: u64,
+    
+    /// Treat warnings as errors (strict mode)
+    #[arg(long)]
+    strict: bool,
+    
+    /// Enable/disable shadowing warnings
+    #[arg(long, default_value = "true")]
+    warn_shadowing: bool,
+    
+    /// Enable/disable unused import warnings
+    #[arg(long, default_value = "true")]
+    warn_unused_imports: bool,
 }
 
 #[derive(Subcommand)]
@@ -113,6 +126,18 @@ enum Commands {
         /// Show the parsed AST structure
         #[arg(long, help = "Display the parsed abstract syntax tree")]
         show_ast: bool,
+        
+        /// Treat warnings as errors (strict mode)
+        #[arg(long)]
+        strict: bool,
+        
+        /// Enable/disable shadowing warnings
+        #[arg(long, default_value = "true")]
+        warn_shadowing: bool,
+        
+        /// Enable/disable unused import warnings
+        #[arg(long, default_value = "true")]
+        warn_unused_imports: bool,
     },
     /// Runs the test suite
     Test {
@@ -176,7 +201,14 @@ fn main() {
             cli.trace_level,
             cli.timeout,
         ),
-        Some(Commands::Check { file, show_ast }) => parse_file(file.clone(), *show_ast),
+        Some(Commands::Check { file, show_ast, strict, warn_shadowing, warn_unused_imports }) => {
+                let options = CompilationOptions {
+                    strict_mode: *strict,
+                    warn_shadowing: *warn_shadowing,
+                    warn_unused_imports: *warn_unused_imports,
+                };
+                parse_file(file.clone(), *show_ast, options)
+            },
         Some(Commands::Test {
             test_name,
             filter,
@@ -240,7 +272,9 @@ fn setup_colors(choice: ColorChoice) {
     }
 }
 
-fn parse_file(path: PathBuf, show_ast: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn parse_file(path: PathBuf, show_ast: bool, options: CompilationOptions) -> Result<(), Box<dyn std::error::Error>> {
+    use proto_vulcan::interpreter::ir::compiler::Compiler;
+    
     let file_contents = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
 
@@ -250,6 +284,27 @@ fn parse_file(path: PathBuf, show_ast: bool) -> Result<(), Box<dyn std::error::E
             if show_ast {
                 println!("\nParsed AST:");
                 println!("{:#?}", program);
+            }
+            
+            // Now perform IR compilation with validation
+            let mut compiler: Compiler<DefaultUser, DefaultEngine<DefaultUser>> = Compiler::with_options(options);
+            match compiler.compile_from_ast(program) {
+                Ok(_ir_program) => {
+                    println!("✓ IR compilation passed for '{}'", path.display());
+                    
+                    // Display warnings if any
+                    let warnings = compiler.get_warnings();
+                    if !warnings.is_empty() {
+                        println!("\nCompilation warnings:");
+                        for warning in warnings {
+                            println!("  {}", warning);
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("✗ IR compilation error in '{}': {}", path.display(), e);
+                    return Err(e.into());
+                }
             }
         }
         Err(e) => {

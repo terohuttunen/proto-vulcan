@@ -352,11 +352,11 @@ impl Spanned for UseStatement {
 #[derive(Debug, Clone, PartialEq)]
 pub enum UsePath {
     /// Simple import: use path::to::item;
-    Simple(QualifiedPath, String),
+    Simple(QualifiedPath, InternedSymbol),
     /// Glob import: use path::to::*;
     Glob(QualifiedPath),
     /// List import: use path::to::{item1, item2 as alias};
-    List(QualifiedPath, Vec<(String, Option<String>)>),
+    List(QualifiedPath, Vec<(InternedSymbol, Option<InternedSymbol>)>),
 }
 
 #[derive(Debug, Clone)]
@@ -526,8 +526,8 @@ impl Spanned for ImplBlock {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AttributeArg {
-    Flag(String),
-    Named(String, Term),
+    Flag(InternedSymbol),
+    Named(InternedSymbol, Term),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -674,7 +674,7 @@ impl Display for SearchParams {
 pub enum SearchParamValue {
     Number(i64),
     String(String),
-    Identifier(String),
+    Identifier(InternedSymbol),
     Boolean(bool),
 }
 
@@ -1078,7 +1078,7 @@ impl Display for UsePath {
                         if let Some(alias) = alias {
                             format!("{} as {}", name, alias)
                         } else {
-                            name.clone()
+                            name.to_string()
                         }
                     })
                     .collect::<Vec<_>>()
@@ -1666,7 +1666,7 @@ mod tests {
             "\"test\""
         );
         assert_eq!(
-            SearchParamValue::Identifier("var".to_string()).to_string(),
+            SearchParamValue::Identifier(InternedSymbol::from_text("var")).to_string(),
             "var"
         );
         assert_eq!(SearchParamValue::Boolean(true).to_string(), "true");

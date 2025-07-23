@@ -79,7 +79,7 @@ fn test_parse_use_statement_simple() {
         items: vec![Item::Use(UseStatement {
             path: UsePath::Simple(
                 QualifiedPath::Relative(vec![InternedSymbol::from_text("a"), InternedSymbol::from_text("b")]),
-                "c".to_string(),
+                InternedSymbol::from_text("c"),
             ),
             span: Default::default(),
         })],
@@ -114,8 +114,8 @@ fn test_parse_use_statement_list() {
             path: UsePath::List(
                 QualifiedPath::Relative(vec![InternedSymbol::from_text("a")]),
                 vec![
-                    ("b".to_string(), None),
-                    ("c".to_string(), Some("d".to_string())),
+                    (InternedSymbol::from_text("b"), None),
+                    (InternedSymbol::from_text("c"), Some(InternedSymbol::from_text("d"))),
                 ],
             ),
             span: Default::default(),
@@ -870,7 +870,7 @@ fn test_parse_module() {
                             InternedSymbol::from_text("std"),
                             vec![InternedSymbol::from_text("collections")],
                         ),
-                        "HashMap".to_string(),
+                        InternedSymbol::from_text("HashMap"),
                     ),
                     span: Span::dummy(),
                 }),

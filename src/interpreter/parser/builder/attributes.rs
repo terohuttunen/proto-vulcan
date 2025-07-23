@@ -17,12 +17,13 @@ impl<'a> AstBuilder<'a> {
                         match arg_rule_pair.as_rule() {
                             Rule::named_attribute_arg => {
                                 let mut named_inner = arg_rule_pair.into_inner();
-                                let arg_name = named_inner.next().unwrap().as_str().to_string();
+                                let arg_name_pair = named_inner.next().unwrap();
+                                let arg_name = self.create_symbol_from_pair(&arg_name_pair);
                                 let arg_value = self.build_term(named_inner.next().unwrap())?;
                                 args.push(AttributeArg::Named(arg_name, arg_value));
                             }
                             Rule::flag_attribute_arg => {
-                                let flag_name = arg_rule_pair.as_str().to_string();
+                                let flag_name = self.create_symbol_from_pair(&arg_rule_pair);
                                 args.push(AttributeArg::Flag(flag_name));
                             }
                             _ => return Err(ParseError::UnexpectedRule(arg_rule_pair.as_rule())),

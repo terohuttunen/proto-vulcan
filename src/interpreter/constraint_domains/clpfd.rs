@@ -23,6 +23,52 @@ use pest_derive::Parser;
 #[grammar = "interpreter/constraint_domains/grammars/clpfd.pest"]
 pub struct ClpfdParser;
 
+/// CLPFD constraint template that stores compiled constraint information
+#[derive(Debug, Clone)]
+pub struct ClpfdTemplate {
+    body: ConstraintBody,
+    variables: std::collections::HashMap<String, super::VariableInfo>,
+}
+
+/// CLPFD IR constraint template that stores compiled constraint information for IR system
+#[derive(Debug, Clone)]
+pub struct ClpfdIrTemplate {
+    body: ConstraintBody,
+    variables: std::collections::HashMap<String, super::VariableInfo>,
+}
+
+impl super::DomainConstraintTemplate for ClpfdTemplate {
+    fn execute(&self, execution_context: &mut super::super::execution::ExecutionContext<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>) 
+        -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
+        // For now, fall back to the original parsing approach
+        // TODO: Implement proper template-based execution
+        let domain = ClpfdDomain::new();
+        let parsed_constraints = domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+        parsed_constraints.convert_to_goals(execution_context)
+    }
+}
+
+impl super::IrDomainConstraintTemplate for ClpfdIrTemplate {
+    fn execute(&self, execution_context: &mut super::super::ir::context::ExecutionContext) 
+        -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
+        // For now, fall back to the original parsing approach adapted for IR
+        // TODO: Implement proper IR template-based execution
+        let domain = ClpfdDomain::new();
+        let parsed_constraints = domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+        
+        // Create a temporary execution context for the constraint execution
+        // Since we need to bridge IR and execution contexts
+        let temp_environment = std::rc::Rc::new(std::cell::RefCell::new(
+            super::super::environment::Environment::<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>::new()
+        ));
+        let mut temp_context = super::super::execution::ExecutionContext::<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>::new(
+            temp_environment
+        );
+        
+        parsed_constraints.convert_to_goals(&mut temp_context)
+    }
+}
+
 /// CLPFD constraint domain
 pub struct ClpfdDomain;
 
@@ -77,6 +123,42 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
 - Comparison: x < y, x <= y, x > y, x >= y, x != y
 - Global: distinct [x, y, z], alldiff [x, y, z]
 - Fresh: |x, y| { x < y, x in 1..10 }"#
+    }
+
+    fn get_unbound_variables(&self, body: &ConstraintBody) -> Result<Vec<String>, InterpreterError> {
+        // For now, parse the constraint to extract variables using concrete types
+        // TODO: Implement proper variable extraction without full parsing
+        use crate::user::DefaultUser;
+        use crate::engine::DefaultEngine;
+        let parsed_constraints: Box<dyn DomainConstraints<DefaultUser, DefaultEngine<DefaultUser>>> = 
+            self.parse_constraints(body, &super::super::parser::ast::Span::dummy())?;
+        Ok(parsed_constraints.extract_variables())
+    }
+
+    fn compile_template(
+        &self,
+        body: &ConstraintBody,
+        variables: std::collections::HashMap<String, super::VariableInfo>,
+    ) -> Result<std::rc::Rc<dyn super::DomainConstraintTemplate>, InterpreterError> {
+        // Create a CLPFD template with the constraint body and variable information
+        let template = ClpfdTemplate {
+            body: body.clone(),
+            variables,
+        };
+        Ok(std::rc::Rc::new(template))
+    }
+
+    fn compile_ir_template(
+        &self,
+        body: &ConstraintBody,
+        variables: std::collections::HashMap<String, super::VariableInfo>,
+    ) -> Result<std::rc::Rc<dyn super::IrDomainConstraintTemplate>, InterpreterError> {
+        // Create a CLPFD IR template with the constraint body and variable information
+        let template = ClpfdIrTemplate {
+            body: body.clone(),
+            variables,
+        };
+        Ok(std::rc::Rc::new(template))
     }
 }
 
