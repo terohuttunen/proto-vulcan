@@ -71,7 +71,7 @@ pub trait DomainConstraintTemplate: std::fmt::Debug {
 /// IR-specific trait for compiled constraint templates that work with IR ExecutionContext
 pub trait IrDomainConstraintTemplate: std::fmt::Debug {
     /// Execute the template with the IR execution context to produce a Goal
-    fn execute(&self, execution_context: &mut super::ir::context::ExecutionContext) 
+    fn execute(&self, execution_context: &mut super::runtime::context::ExecutionContext) 
         -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, InterpreterError>;
 }
 

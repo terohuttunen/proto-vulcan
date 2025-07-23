@@ -16,7 +16,6 @@ use std::fmt::{self, Display};
 use std::rc::Rc;
 
 pub mod compiler;
-pub mod context;
 pub mod display;
 pub mod errors;
 pub mod normalizer;

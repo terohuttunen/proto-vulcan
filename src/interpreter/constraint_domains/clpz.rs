@@ -47,7 +47,7 @@ pub struct ClpzIrTemplate {
 }
 
 impl super::IrDomainConstraintTemplate for ClpzIrTemplate {
-    fn execute(&self, execution_context: &mut super::super::ir::context::ExecutionContext) 
+    fn execute(&self, execution_context: &mut super::super::runtime::context::ExecutionContext) 
         -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
         // Create a temporary bridge between IR ExecutionContext and regular ExecutionContext
         // This is a temporary implementation until we have full IR-native constraint compilation

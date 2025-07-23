@@ -49,7 +49,7 @@ impl super::DomainConstraintTemplate for ClpfdTemplate {
 }
 
 impl super::IrDomainConstraintTemplate for ClpfdIrTemplate {
-    fn execute(&self, execution_context: &mut super::super::ir::context::ExecutionContext) 
+    fn execute(&self, execution_context: &mut super::super::runtime::context::ExecutionContext) 
         -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
         // For now, fall back to the original parsing approach adapted for IR
         // TODO: Implement proper IR template-based execution

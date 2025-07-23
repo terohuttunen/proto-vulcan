@@ -3,8 +3,9 @@
 //! This module provides the ExecutionContext that takes compiled IR and
 //! converts it to runtime goals for the Proto-Vulcan engine.
 
-use super::*;
-use super::compiler::CompileError;
+use crate::interpreter::ir::*;
+use crate::interpreter::ir::compiler::CompileError;
+use crate::interpreter::symbol_table::InternedSymbol;
 use crate::engine::{Engine, DefaultEngine};
 use crate::goal::{Goal, AnyGoal, GoalCast};
 use crate::interpreter::environment::Environment;
@@ -111,7 +112,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR goal to a runtime goal
-    pub fn ir_goal_to_runtime(&mut self, ir_goal: &super::Goal) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    pub fn ir_goal_to_runtime(&mut self, ir_goal: &crate::interpreter::ir::Goal) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         // Add tracing if enabled
         if let Some(trace_config) = &self.trace_config {
             if trace_config.enabled {
@@ -121,24 +122,24 @@ impl<'a> ExecutionContext<'a> {
         }
         
         let result = match ir_goal {
-            super::Goal::Equality(left, right) => {
+            crate::interpreter::ir::Goal::Equality(left, right) => {
                 let left_term = self.ir_term_to_runtime(left)?;
                 let right_term = self.ir_term_to_runtime(right)?;
                 Ok(crate::relation::eq::eq(left_term, right_term).cast_into())
             }
-            super::Goal::Disequality(left, right) => {
+            crate::interpreter::ir::Goal::Disequality(left, right) => {
                 let left_term = self.ir_term_to_runtime(left)?;
                 let right_term = self.ir_term_to_runtime(right)?;
                 Ok(crate::relation::diseq::diseq(left_term, right_term).cast_into())
             }
-            super::Goal::Conjunction(goals) => {
+            crate::interpreter::ir::Goal::Conjunction(goals) => {
                 let mut runtime_goals = Vec::new();
                 for goal in goals.iter() {
                     runtime_goals.push(self.ir_goal_to_runtime(goal)?);
                 }
                 Ok(self.build_conjunction(runtime_goals))
             }
-            super::Goal::Disjunction(goals) => {
+            crate::interpreter::ir::Goal::Disjunction(goals) => {
                 let mut runtime_goals = Vec::new();
                 for goal in goals.iter() {
                     runtime_goals.push(self.ir_goal_to_runtime(goal)?);
@@ -149,39 +150,39 @@ impl<'a> ExecutionContext<'a> {
                     SearchStrategy::Dfs => Ok(self.create_dfs_disjunction(runtime_goals)),
                 }
             }
-            super::Goal::PredicateCall(predicate_call) => {
+            crate::interpreter::ir::Goal::PredicateCall(predicate_call) => {
                 self.ir_predicate_call_to_runtime(predicate_call)
             }
-            super::Goal::Fresh(fresh) => {
+            crate::interpreter::ir::Goal::Fresh(fresh) => {
                 self.ir_fresh_to_runtime(fresh)
             }
-            super::Goal::Let(let_binding) => {
+            crate::interpreter::ir::Goal::Let(let_binding) => {
                 self.ir_let_to_runtime(let_binding)
             }
-            super::Goal::Boolean(value) => {
+            crate::interpreter::ir::Goal::Boolean(value) => {
                 if *value {
                     Ok(Goal::succeed())
                 } else {
                     Ok(Goal::fail())
                 }
             }
-            super::Goal::PatternMatch(pattern_match) => {
+            crate::interpreter::ir::Goal::PatternMatch(pattern_match) => {
                 self.ir_pattern_match_to_runtime(pattern_match)
             }
-            super::Goal::Constraint(constraint_block) => {
+            crate::interpreter::ir::Goal::Constraint(constraint_block) => {
                 self.ir_constraint_to_runtime(constraint_block)
             }
-            super::Goal::MetaLet(_meta_let) => {
+            crate::interpreter::ir::Goal::MetaLet(_meta_let) => {
                 // Meta constructs should be expanded before runtime execution
                 // For now, return success (true)
                 Ok(Goal::succeed())
             }
-            super::Goal::MetaIf(_meta_if) => {
+            crate::interpreter::ir::Goal::MetaIf(_meta_if) => {
                 // Meta constructs should be expanded before runtime execution
                 // For now, return success (true)
                 Ok(Goal::succeed())
             }
-            super::Goal::MetaFor(_meta_for) => {
+            crate::interpreter::ir::Goal::MetaFor(_meta_for) => {
                 // Meta constructs should be expanded before runtime execution
                 // For now, return success (true)
                 Ok(Goal::succeed())
@@ -200,9 +201,9 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR term to a runtime LTerm
-    pub fn ir_term_to_runtime(&mut self, ir_term: &super::Term) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    pub fn ir_term_to_runtime(&mut self, ir_term: &crate::interpreter::ir::Term) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         match ir_term {
-            super::Term::Variable(name) => {
+            crate::interpreter::ir::Term::Variable(name) => {
                 // Look up variable in current scopes
                 if let Some(var_value) = self.lookup_variable_value(name) {
                     if let Some(lterm) = var_value.to_lterm() {
@@ -219,20 +220,20 @@ impl<'a> ExecutionContext<'a> {
                 self.bind_var(name.clone(), fresh_var.clone());
                 Ok(fresh_var)
             }
-            super::Term::Wildcard => Ok(self.create_fresh_var()),
-            super::Term::Literal(literal) => {
+            crate::interpreter::ir::Term::Wildcard => Ok(self.create_fresh_var()),
+            crate::interpreter::ir::Term::Literal(literal) => {
                 self.ir_literal_to_runtime(literal)
             }
-            super::Term::List(list) => {
+            crate::interpreter::ir::Term::List(list) => {
                 self.ir_list_to_runtime(list)
             }
-            super::Term::Struct(struct_construction) => {
+            crate::interpreter::ir::Term::Struct(struct_construction) => {
                 self.ir_struct_to_runtime(struct_construction)
             }
-            super::Term::EnumVariant(enum_construction) => {
+            crate::interpreter::ir::Term::EnumVariant(enum_construction) => {
                 self.ir_enum_variant_to_runtime(enum_construction)
             }
-            super::Term::MetaInterpolation(_meta_expr) => {
+            crate::interpreter::ir::Term::MetaInterpolation(_meta_expr) => {
                 // Meta interpolation should be expanded before runtime execution
                 // For now, return a fresh variable as placeholder
                 Ok(self.create_fresh_var())
@@ -241,17 +242,17 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR literal to a runtime LTerm
-    fn ir_literal_to_runtime(&self, ir_literal: &super::Literal) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_literal_to_runtime(&self, ir_literal: &crate::interpreter::ir::Literal) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         match ir_literal {
-            super::Literal::Boolean(b) => Ok(LTerm::from(*b)),
-            super::Literal::Integer(i) => Ok(LTerm::from(*i as isize)),
-            super::Literal::String(s) => Ok(LTerm::from(s.as_ref().to_string())),
-            super::Literal::Char(c) => Ok(LTerm::from(*c)),
+            crate::interpreter::ir::Literal::Boolean(b) => Ok(LTerm::from(*b)),
+            crate::interpreter::ir::Literal::Integer(i) => Ok(LTerm::from(*i as isize)),
+            crate::interpreter::ir::Literal::String(s) => Ok(LTerm::from(s.as_ref().to_string())),
+            crate::interpreter::ir::Literal::Char(c) => Ok(LTerm::from(*c)),
         }
     }
 
     /// Convert an IR list to a runtime LTerm
-    fn ir_list_to_runtime(&mut self, list: &super::List) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_list_to_runtime(&mut self, list: &crate::interpreter::ir::List) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         let mut elements = Vec::new();
         for element in &list.elements {
             elements.push(self.ir_term_to_runtime(element)?);
@@ -271,7 +272,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR struct construction to a runtime LTerm
-    fn ir_struct_to_runtime(&mut self, struct_construction: &super::StructConstruction) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_struct_to_runtime(&mut self, struct_construction: &crate::interpreter::ir::StructConstruction) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         // Look up the struct definition
         let struct_def = self.program.registry.get_type(&struct_construction.type_ref)
             .ok_or_else(|| CompileError::UnresolvedType {
@@ -280,7 +281,7 @@ impl<'a> ExecutionContext<'a> {
             })?;
 
         match &struct_construction.fields {
-            super::StructConstructionFields::Named(named_fields) => {
+            crate::interpreter::ir::StructConstructionFields::Named(named_fields) => {
                 // Create compound term with struct name as functor
                 let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
                 for field in named_fields {
@@ -289,7 +290,7 @@ impl<'a> ExecutionContext<'a> {
                 }
                 Ok(LTerm::from_vec(args))
             }
-            super::StructConstructionFields::Tuple(tuple_fields) => {
+            crate::interpreter::ir::StructConstructionFields::Tuple(tuple_fields) => {
                 // Create compound term with struct name as functor
                 let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
                 for field in tuple_fields {
@@ -302,7 +303,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR enum variant construction to a runtime LTerm
-    fn ir_enum_variant_to_runtime(&mut self, enum_construction: &super::EnumVariantConstruction) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_enum_variant_to_runtime(&mut self, enum_construction: &crate::interpreter::ir::EnumVariantConstruction) -> Result<LTerm<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         // Look up the enum definition
         let _enum_def = self.program.registry.get_type(&enum_construction.enum_ref)
             .ok_or_else(|| CompileError::UnresolvedType {
@@ -311,11 +312,11 @@ impl<'a> ExecutionContext<'a> {
             })?;
 
         match &enum_construction.kind {
-            super::EnumVariantConstructionKind::Unit => {
+            crate::interpreter::ir::EnumVariantConstructionKind::Unit => {
                 // Create atom with variant name
                 Ok(LTerm::from(enum_construction.variant_name.to_string()))
             }
-            super::EnumVariantConstructionKind::Tuple(tuple_fields) => {
+            crate::interpreter::ir::EnumVariantConstructionKind::Tuple(tuple_fields) => {
                 // Create compound term with variant name as functor
                 let mut args = vec![LTerm::from(enum_construction.variant_name.to_string())];
                 for field in tuple_fields {
@@ -324,7 +325,7 @@ impl<'a> ExecutionContext<'a> {
                 }
                 Ok(LTerm::from_vec(args))
             }
-            super::EnumVariantConstructionKind::Named(named_fields) => {
+            crate::interpreter::ir::EnumVariantConstructionKind::Named(named_fields) => {
                 // Create compound term with variant name as functor
                 let mut args = vec![LTerm::from(enum_construction.variant_name.to_string())];
                 for field in named_fields {
@@ -337,7 +338,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR predicate call to a runtime goal
-    fn ir_predicate_call_to_runtime(&mut self, predicate_call: &super::PredicateCall) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_predicate_call_to_runtime(&mut self, predicate_call: &crate::interpreter::ir::PredicateCall) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         // Convert arguments first
         let mut runtime_args = Vec::new();
         for arg in &predicate_call.arguments {
@@ -383,7 +384,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR fresh goal to runtime
-    fn ir_fresh_to_runtime(&mut self, fresh: &super::Fresh) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_fresh_to_runtime(&mut self, fresh: &crate::interpreter::ir::Fresh) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         // Push new scope
         self.push_scope();
         
@@ -407,7 +408,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR let goal to runtime
-    fn ir_let_to_runtime(&mut self, let_binding: &super::Let) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_let_to_runtime(&mut self, let_binding: &crate::interpreter::ir::Let) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         // Push new scope
         self.push_scope();
         
@@ -435,7 +436,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR pattern match to runtime
-    fn ir_pattern_match_to_runtime(&mut self, pattern_match: &super::PatternMatch) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_pattern_match_to_runtime(&mut self, pattern_match: &crate::interpreter::ir::PatternMatch) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         let term = self.ir_term_to_runtime(&pattern_match.term)?;
         
         // Convert each pattern arm to a goal
@@ -458,7 +459,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR constraint block to runtime
-    fn ir_constraint_to_runtime(&mut self, constraint_block: &super::ConstraintBlock) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_constraint_to_runtime(&mut self, constraint_block: &crate::interpreter::ir::ConstraintBlock) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         // Execute the template using this IR execution context directly
         // The template can access variables and state from the IR execution
         constraint_block.template.execute(self)
@@ -599,7 +600,7 @@ impl<'a> ExecutionContext<'a> {
     }
     
     /// Convert IR predicate definition to runtime goal
-    fn ir_predicate_to_runtime(&mut self, predicate: &Predicate, args: Vec<LTerm<DefaultUser, DefaultEngine<DefaultUser>>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn ir_predicate_to_runtime(&mut self, predicate: &crate::interpreter::ir::Predicate, args: Vec<LTerm<DefaultUser, DefaultEngine<DefaultUser>>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         // Push new scope for predicate execution
         self.push_scope();
         
@@ -651,36 +652,36 @@ impl<'a> ExecutionContext<'a> {
     }
     
     /// Compile a pattern into unification goals against a term
-    fn compile_pattern(&mut self, pattern: &super::Pattern, term: LTerm<DefaultUser, DefaultEngine<DefaultUser>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn compile_pattern(&mut self, pattern: &crate::interpreter::ir::Pattern, term: LTerm<DefaultUser, DefaultEngine<DefaultUser>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         match pattern {
-            super::Pattern::Variable(var_name) => {
+            crate::interpreter::ir::Pattern::Variable(var_name) => {
                 // Pattern variables bind to the matched term
                 self.bind_var(var_name.clone(), term.clone());
                 Ok(Goal::succeed())
             }
-            super::Pattern::Wildcard => {
+            crate::interpreter::ir::Pattern::Wildcard => {
                 // Wildcards always match
                 Ok(Goal::succeed())
             }
-            super::Pattern::Literal(literal) => {
+            crate::interpreter::ir::Pattern::Literal(literal) => {
                 // Unify the term with the literal value
                 let literal_term = self.ir_literal_to_runtime(literal)?;
                 Ok(crate::relation::eq::eq(term, literal_term).cast_into())
             }
-            super::Pattern::List(list_pattern) => {
+            crate::interpreter::ir::Pattern::List(list_pattern) => {
                 self.compile_list_pattern(list_pattern, term)
             }
-            super::Pattern::Struct(struct_pattern) => {
+            crate::interpreter::ir::Pattern::Struct(struct_pattern) => {
                 self.compile_struct_pattern(struct_pattern, term)
             }
-            super::Pattern::EnumVariant(enum_pattern) => {
+            crate::interpreter::ir::Pattern::EnumVariant(enum_pattern) => {
                 self.compile_enum_variant_pattern(enum_pattern, term)
             }
         }
     }
     
     /// Compile a list pattern into unification goals
-    fn compile_list_pattern(&mut self, list_pattern: &super::ListPattern, term: LTerm<DefaultUser, DefaultEngine<DefaultUser>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn compile_list_pattern(&mut self, list_pattern: &crate::interpreter::ir::ListPattern, term: LTerm<DefaultUser, DefaultEngine<DefaultUser>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         let mut goals = Vec::new();
         
         // Create fresh variables for list elements
@@ -723,7 +724,7 @@ impl<'a> ExecutionContext<'a> {
     }
     
     /// Compile a struct pattern into unification goals
-    fn compile_struct_pattern(&mut self, struct_pattern: &super::StructPattern, term: LTerm<DefaultUser, DefaultEngine<DefaultUser>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn compile_struct_pattern(&mut self, struct_pattern: &crate::interpreter::ir::StructPattern, term: LTerm<DefaultUser, DefaultEngine<DefaultUser>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         let mut goals = Vec::new();
         
         // Look up the struct definition
@@ -734,7 +735,7 @@ impl<'a> ExecutionContext<'a> {
             })?;
         
         match &struct_pattern.fields {
-            super::StructPatternFields::Named(named_patterns) => {
+            crate::interpreter::ir::StructPatternFields::Named(named_patterns) => {
                 // Create compound term with struct name as functor
                 let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
                 let mut field_vars = Vec::new();
@@ -755,7 +756,7 @@ impl<'a> ExecutionContext<'a> {
                     goals.push(field_goal);
                 }
             }
-            super::StructPatternFields::Tuple(tuple_patterns) => {
+            crate::interpreter::ir::StructPatternFields::Tuple(tuple_patterns) => {
                 // Create compound term with struct name as functor
                 let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
                 let mut field_vars = Vec::new();
@@ -782,7 +783,7 @@ impl<'a> ExecutionContext<'a> {
     }
     
     /// Compile an enum variant pattern into unification goals
-    fn compile_enum_variant_pattern(&mut self, enum_pattern: &super::EnumVariantPattern, term: LTerm<DefaultUser, DefaultEngine<DefaultUser>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
+    fn compile_enum_variant_pattern(&mut self, enum_pattern: &crate::interpreter::ir::EnumVariantPattern, term: LTerm<DefaultUser, DefaultEngine<DefaultUser>>) -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, CompileError> {
         let mut goals = Vec::new();
         
         // Look up the enum definition
@@ -793,12 +794,12 @@ impl<'a> ExecutionContext<'a> {
             })?;
         
         match &enum_pattern.kind {
-            super::EnumVariantPatternKind::Unit => {
+            crate::interpreter::ir::EnumVariantPatternKind::Unit => {
                 // Create atom with variant name
                 let variant_term = LTerm::from(enum_pattern.variant_name.to_string());
                 goals.push(crate::relation::eq::eq(term, variant_term).cast_into());
             }
-            super::EnumVariantPatternKind::Tuple(tuple_patterns) => {
+            crate::interpreter::ir::EnumVariantPatternKind::Tuple(tuple_patterns) => {
                 // Create compound term with variant name as functor
                 let mut args = vec![LTerm::from(enum_pattern.variant_name.to_string())];
                 let mut field_vars = Vec::new();
@@ -819,7 +820,7 @@ impl<'a> ExecutionContext<'a> {
                     goals.push(field_goal);
                 }
             }
-            super::EnumVariantPatternKind::Named(named_patterns) => {
+            crate::interpreter::ir::EnumVariantPatternKind::Named(named_patterns) => {
                 // Create compound term with variant name as functor
                 let mut args = vec![LTerm::from(enum_pattern.variant_name.to_string())];
                 let mut field_vars = Vec::new();
@@ -912,17 +913,17 @@ mod tests {
         let context = TestContext::new(program, environment);
         
         // Test boolean literal
-        let bool_literal = super::Literal::Boolean(true);
+        let bool_literal = crate::interpreter::ir::Literal::Boolean(true);
         let bool_lterm = context.ir_literal_to_runtime(&bool_literal).unwrap();
         assert!(bool_lterm.is_val());
         
         // Test integer literal
-        let int_literal = super::Literal::Integer(42);
+        let int_literal = crate::interpreter::ir::Literal::Integer(42);
         let int_lterm = context.ir_literal_to_runtime(&int_literal).unwrap();
         assert!(int_lterm.is_val());
         
         // Test string literal
-        let string_literal = super::Literal::String("hello".into());
+        let string_literal = crate::interpreter::ir::Literal::String("hello".into());
         let string_lterm = context.ir_literal_to_runtime(&string_literal).unwrap();
         assert!(string_lterm.is_val());
     }

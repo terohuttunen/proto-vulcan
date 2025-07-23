@@ -21,6 +21,7 @@ pub mod ir;
 pub mod metaprogramming;
 pub mod parser;
 pub mod query;
+pub mod runtime;
 mod runtime_value;
 mod semantic_analysis;
 #[cfg(test)]
