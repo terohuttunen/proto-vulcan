@@ -15,14 +15,14 @@ pub enum CompileWarning {
         local_symbol: InternedSymbol,
         import_symbol: InternedSymbol,
     },
-    
+
     #[allow(dead_code)]
     AmbiguousImportWarning {
         symbol_name: String,
         sources: Vec<String>,
         symbol: InternedSymbol,
     },
-    
+
     #[allow(dead_code)]
     UnusedImport {
         symbol_name: String,
@@ -34,17 +34,42 @@ pub enum CompileWarning {
 impl std::fmt::Display for CompileWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompileWarning::ShadowingWarning { symbol_name, import_source, local_symbol, import_symbol } => {
-                write!(f, "Warning: Symbol '{}' imported from '{}' shadows local symbol defined at {}:{}", 
-                       symbol_name, import_source, local_symbol.file_path().display(), local_symbol.span())
+            CompileWarning::ShadowingWarning {
+                symbol_name,
+                import_source,
+                local_symbol,
+                import_symbol,
+            } => {
+                write!(
+                    f,
+                    "Warning: Symbol '{}' imported from '{}' shadows local symbol defined at {}:{}",
+                    symbol_name,
+                    import_source,
+                    local_symbol.file_path().display(),
+                    local_symbol.span()
+                )
             }
-            CompileWarning::AmbiguousImportWarning { symbol_name, sources, symbol } => {
+            CompileWarning::AmbiguousImportWarning {
+                symbol_name,
+                sources,
+                symbol,
+            } => {
                 write!(f, "Warning: Ambiguous import: symbol '{}' can be resolved from multiple sources: [{}] at {}:{}", 
                        symbol_name, sources.join(", "), symbol.file_path().display(), symbol.span())
             }
-            CompileWarning::UnusedImport { symbol_name, import_source, symbol } => {
-                write!(f, "Warning: Unused import: symbol '{}' from '{}' at {}:{}", 
-                       symbol_name, import_source, symbol.file_path().display(), symbol.span())
+            CompileWarning::UnusedImport {
+                symbol_name,
+                import_source,
+                symbol,
+            } => {
+                write!(
+                    f,
+                    "Warning: Unused import: symbol '{}' from '{}' at {}:{}",
+                    symbol_name,
+                    import_source,
+                    symbol.file_path().display(),
+                    symbol.span()
+                )
             }
         }
     }
@@ -87,12 +112,12 @@ impl CompilationContext {
             options,
         }
     }
-    
+
     /// Add a warning to the compilation context
     pub fn add_warning(&mut self, warning: CompileWarning) {
         self.warnings.push(warning);
     }
-    
+
     /// Convert warnings to errors if in strict mode
     pub fn validate_warnings(&self) -> Result<(), CompileError> {
         if self.options.strict_mode && !self.warnings.is_empty() {
@@ -102,41 +127,48 @@ impl CompilationContext {
         }
         Ok(())
     }
-    
+
     /// Convert a warning to an error
     fn warning_to_error(&self, warning: &CompileWarning) -> CompileError {
         match warning {
-            CompileWarning::ShadowingWarning { symbol_name, import_source, local_symbol, import_symbol } => {
-                CompileError::ShadowingError {
-                    symbol_name: symbol_name.clone(),
-                    import_source: import_source.clone(),
-                    local_symbol: local_symbol.clone(),
-                    import_symbol: import_symbol.clone(),
-                }
-            }
-            CompileWarning::AmbiguousImportWarning { symbol_name, sources, symbol } => {
-                CompileError::AmbiguousImport {
-                    symbol_name: symbol_name.clone(),
-                    sources: sources.clone(),
-                    symbol: symbol.clone(),
-                }
-            }
-            CompileWarning::UnusedImport { symbol_name, import_source, symbol } => {
-                CompileError::ConflictingSymbol {
-                    symbol_name: symbol_name.clone(),
-                    conflict_description: format!("Unused import from '{}'", import_source),
-                    symbol: symbol.clone(),
-                    related_symbols: vec![],
-                }
-            }
+            CompileWarning::ShadowingWarning {
+                symbol_name,
+                import_source,
+                local_symbol,
+                import_symbol,
+            } => CompileError::ShadowingError {
+                symbol_name: symbol_name.clone(),
+                import_source: import_source.clone(),
+                local_symbol: local_symbol.clone(),
+                import_symbol: import_symbol.clone(),
+            },
+            CompileWarning::AmbiguousImportWarning {
+                symbol_name,
+                sources,
+                symbol,
+            } => CompileError::AmbiguousImport {
+                symbol_name: symbol_name.clone(),
+                sources: sources.clone(),
+                symbol: symbol.clone(),
+            },
+            CompileWarning::UnusedImport {
+                symbol_name,
+                import_source,
+                symbol,
+            } => CompileError::ConflictingSymbol {
+                symbol_name: symbol_name.clone(),
+                conflict_description: format!("Unused import from '{}'", import_source),
+                symbol: symbol.clone(),
+                related_symbols: vec![],
+            },
         }
     }
-    
+
     /// Get all warnings
     pub fn get_warnings(&self) -> &[CompileWarning] {
         &self.warnings
     }
-    
+
     /// Clear all warnings
     pub fn clear_warnings(&mut self) {
         self.warnings.clear();
@@ -147,12 +179,26 @@ impl CompilationContext {
 impl From<CompileError> for CompileWarning {
     fn from(error: CompileError) -> Self {
         match error {
-            CompileError::ShadowingError { symbol_name, import_source, local_symbol, import_symbol } => {
-                CompileWarning::ShadowingWarning { symbol_name, import_source, local_symbol, import_symbol }
-            }
-            CompileError::AmbiguousImport { symbol_name, sources, symbol } => {
-                CompileWarning::AmbiguousImportWarning { symbol_name, sources, symbol }
-            }
+            CompileError::ShadowingError {
+                symbol_name,
+                import_source,
+                local_symbol,
+                import_symbol,
+            } => CompileWarning::ShadowingWarning {
+                symbol_name,
+                import_source,
+                local_symbol,
+                import_symbol,
+            },
+            CompileError::AmbiguousImport {
+                symbol_name,
+                sources,
+                symbol,
+            } => CompileWarning::AmbiguousImportWarning {
+                symbol_name,
+                sources,
+                symbol,
+            },
             _ => {
                 // For other errors, create a generic unused import warning as fallback
                 CompileWarning::UnusedImport {
@@ -299,7 +345,7 @@ pub enum CompileError {
 
 /// Result of path resolution during use-clause resolution
 #[derive(Debug, Clone)]
-pub(super) enum ResolutionError {
+pub enum ResolutionError {
     /// Temporarily blocked - segment not resolved yet, should retry in next iteration
     Blocked,
     /// Permanent failure - segment doesn't exist
@@ -308,7 +354,7 @@ pub(super) enum ResolutionError {
 
 /// A fully resolved canonical path to an item
 #[derive(Debug, Clone)]
-pub(super) struct CanonicalPath {
+pub struct CanonicalPath {
     /// Absolute module tree path (e.g., "::std::collections")
     pub module_path: String,
     /// Final symbol name (e.g., "HashMap")
@@ -319,7 +365,10 @@ impl CompileError {
     /// Get the source location information from this error, if available
     pub fn source_location(
         &self,
-    ) -> Option<(std::path::PathBuf, crate::interpreter::parser::ast::Location)> {
+    ) -> Option<(
+        std::path::PathBuf,
+        crate::interpreter::parser::ast::Location,
+    )> {
         match self {
             CompileError::UnresolvedType { symbol, .. } => {
                 Some((symbol.file_path().clone(), symbol.span()))

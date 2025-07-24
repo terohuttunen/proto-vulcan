@@ -3,8 +3,8 @@
 //! This module handles the first phase of compilation: collecting all type, predicate,
 //! and module declarations into symbol tables and processing use statements.
 
+use super::errors::CompileWarning;
 use super::*;
-use super::super::errors::CompileWarning;
 
 /// Symbol resolution context during compilation
 #[derive(Debug, Clone)]
@@ -66,7 +66,6 @@ impl ModuleSymbolMap {
         self.local_symbols.insert(name, item.into());
     }
 
-
     /// Get a local module (not imported) - enforces no-shadowing rule
     pub fn get_local_module(&self, name: &str) -> Option<&ItemId> {
         // Only return if it's a local module (local symbol)
@@ -92,7 +91,9 @@ impl ModuleSymbolMap {
 
     /// Get all symbols (both local and imported) in this module (for glob imports)
     pub fn get_all_symbols(&self) -> impl Iterator<Item = (&String, &ItemId)> {
-        self.local_symbols.iter().chain(self.imported_symbols.iter())
+        self.local_symbols
+            .iter()
+            .chain(self.imported_symbols.iter())
     }
 
     /// Try to add a symbol from a glob import - silently skips if symbol already exists
@@ -104,7 +105,7 @@ impl ModuleSymbolMap {
         import_source: &str,
     ) -> Result<bool, CompileError> {
         let source_item_id = source_item.into();
-        
+
         // Check if this symbol already exists (either local or imported)
         if self.has_symbol(&local_name).is_some() {
             // Symbol already exists - glob import is shadowed, skip silently
@@ -126,7 +127,7 @@ impl ModuleSymbolMap {
     ) -> Result<Option<CompileWarning>, CompileError> {
         let source_item_id = source_item.into();
         let mut warning = None;
-        
+
         // Check if this import would shadow a local symbol
         if let Some(local_item_id) = self.local_symbols.get(&local_name) {
             // HARD ERROR: Never allow shadowing of local modules (breaks path resolution)
@@ -139,7 +140,7 @@ impl ModuleSymbolMap {
                     import_symbol: import_symbol.clone(),
                 });
             }
-            
+
             // WARNING: Allow shadowing of non-module symbols but warn
             let local_symbol = InternedSymbol::from_text(&local_item_id.path);
             warning = Some(CompileWarning::ShadowingWarning {
@@ -156,10 +157,13 @@ impl ModuleSymbolMap {
                 // WARNING: Allow ambiguous imports but warn
                 let ambiguous_warning = CompileWarning::AmbiguousImportWarning {
                     symbol_name: local_name.clone(),
-                    sources: vec![existing_import.path.to_string(), source_item_id.path.to_string()],
+                    sources: vec![
+                        existing_import.path.to_string(),
+                        source_item_id.path.to_string(),
+                    ],
                     symbol: import_symbol.clone(),
                 };
-                
+
                 // If we already have a shadowing warning, prefer the ambiguous import warning
                 warning = Some(ambiguous_warning);
             } else {
@@ -378,7 +382,7 @@ impl Compiler {
         // Create predicate definition (body will be compiled in phase 2)
         let ir_predicate = Predicate {
             id: predicate_id.clone(),
-            parameters: vec![], // Placeholder
+            parameters: vec![],                      // Placeholder
             body: StructuralGoal::empty_container(), // Placeholder
             kind: match predicate.predicate_kind {
                 ast::PredicateKind::Relation => PredicateKind::Relation,

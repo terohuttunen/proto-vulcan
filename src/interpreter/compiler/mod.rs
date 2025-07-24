@@ -10,23 +10,37 @@
 //! 2. Import resolution: Resolve use clauses and build final symbol maps
 //! 3. Body compilation: Compile bodies with full symbol resolution
 
-use super::*;
 use crate::interpreter::constraint_domains::ConstraintDomainRegistry;
 use crate::interpreter::parser::ast;
 use crate::interpreter::symbol_table::InternedSymbol;
 use std::collections::HashMap;
 
-use super::errors::{CanonicalPath, ResolutionError};
-pub use super::errors::{CompilationContext, CompilationOptions, CompileError, CompileWarning};
+use errors::{CanonicalPath, ResolutionError};
+pub use errors::{CompilationContext, CompilationOptions, CompileError, CompileWarning};
 
 // Import phase modules
 mod compilation;
 mod resolution;
 mod symbol_collection;
 
+pub mod errors;
+pub mod ir;
+
 // Re-export types used by multiple phases
 pub(super) use symbol_collection::{
     CompilationPhase, ModuleSymbolMap, PendingImport, SymbolContext,
+};
+
+// Re-export IR types for use by compilation modules
+pub(super) use ir::{
+    ConstraintBlock, EnumDefinition, EnumVariant, EnumVariantConstruction,
+    EnumVariantConstructionKind, EnumVariantKind, EnumVariantPattern, EnumVariantPatternKind,
+    Fresh, Goal, Item, ItemId, ItemKind, Let, List, ListPattern, Literal, MetaBinaryOp,
+    MetaExpression, MetaFor, MetaIf, MetaLet, MetaValue, Module, ModuleId, NamedField,
+    NamedFieldConstruction, NamedFieldPattern, Parameter, Pattern, PatternArm, PatternMatch,
+    Predicate, PredicateCall, PredicateId, PredicateKind, Program, StructConstruction,
+    StructConstructionFields, StructDefinition, StructFields, StructPattern, StructPatternFields,
+    StructuralGoal, Term, TypeAnnotation, TypeDefinition, TypeId, TypeKind, Visibility,
 };
 
 /// The IR compiler transforms AST to IR with full symbol resolution
@@ -118,7 +132,7 @@ impl Compiler {
     /// Phase 4: Validate compilation and handle warnings
     fn validate_compilation(&self, ir_program: &Program) -> Result<(), CompileError> {
         // Run existing IR validation
-        let validator = super::validation::Validator::new();
+        let validator = ir::validation::Validator::new();
         validator.validate_program(ir_program)?;
 
         // Validate warnings based on compilation options

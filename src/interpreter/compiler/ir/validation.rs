@@ -21,7 +21,7 @@ impl Validator {
     }
 
     /// Validate an IR program
-    pub fn validate_program(&self, program: &Program) -> Result<(), super::compiler::CompileError> {
+    pub fn validate_program(&self, program: &Program) -> Result<(), super::super::CompileError> {
         let mut validator = Validator::new();
 
         // Validate all items in the registry
@@ -42,7 +42,7 @@ impl Validator {
         &mut self,
         item_id: T,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         let item_id = item_id.as_ref();
         // Skip if already validated
         if self.validated_items.contains_key(item_id) {
@@ -51,7 +51,7 @@ impl Validator {
 
         // Check for circular dependency
         if self.validation_stack.contains(item_id) {
-            return Err(super::compiler::CompileError::CircularDependency {
+            return Err(super::super::CompileError::CircularDependency {
                 cycle: self.format_dependency_cycle(item_id),
                 symbol: InternedSymbol::from_text(&item_id.path),
             });
@@ -62,7 +62,7 @@ impl Validator {
 
         // Get the item from registry
         let item = program.registry.get_item(item_id).ok_or_else(|| {
-            super::compiler::CompileError::UnresolvedReference {
+            super::super::CompileError::UnresolvedReference {
                 attempted_item: item_id.clone(),
                 symbol: InternedSymbol::from_text(&item_id.path),
             }
@@ -90,12 +90,12 @@ impl Validator {
         &mut self,
         module: &Module,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         // Validate all child items exist and are accessible
         for child_id in &module.items {
             // Check that child item exists
             if !program.registry.contains_item(child_id) {
-                return Err(super::compiler::CompileError::UnresolvedReference {
+                return Err(super::super::CompileError::UnresolvedReference {
                     attempted_item: child_id.clone(),
                     symbol: InternedSymbol::from_text(&child_id.path),
                 });
@@ -113,7 +113,7 @@ impl Validator {
         &mut self,
         type_def: &TypeDefinition,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         match &type_def.kind {
             TypeKind::Struct(struct_def) => self.validate_struct_definition(struct_def, program)?,
             TypeKind::Enum(enum_def) => self.validate_enum_definition(enum_def, program)?,
@@ -126,14 +126,14 @@ impl Validator {
         &mut self,
         struct_def: &StructDefinition,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         match &struct_def.fields {
             StructFields::Named(named_fields) => {
                 let mut field_names = HashSet::new();
                 for field in named_fields {
                     // Check for duplicate field names
                     if !field_names.insert(&field.name) {
-                        return Err(super::compiler::CompileError::DuplicateField {
+                        return Err(super::super::CompileError::DuplicateField {
                             field_name: field.name.to_string(),
                             symbol: field.name.clone(),
                         });
@@ -158,13 +158,13 @@ impl Validator {
         &mut self,
         enum_def: &EnumDefinition,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         let mut variant_names = HashSet::new();
 
         for variant in &enum_def.variants {
             // Check for duplicate variant names
             if !variant_names.insert(&variant.name) {
-                return Err(super::compiler::CompileError::DuplicateEnumVariant {
+                return Err(super::super::CompileError::DuplicateEnumVariant {
                     variant_name: variant.name.to_string(),
                     symbol: variant.name.clone(),
                 });
@@ -185,7 +185,7 @@ impl Validator {
                     for field in named_fields {
                         // Check for duplicate field names within variant
                         if !field_names.insert(&field.name) {
-                            return Err(super::compiler::CompileError::DuplicateField {
+                            return Err(super::super::CompileError::DuplicateField {
                                 field_name: field.name.to_string(),
                                 symbol: field.name.clone(),
                             });
@@ -206,12 +206,12 @@ impl Validator {
         &mut self,
         predicate: &Predicate,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         // Check for duplicate parameter names
         let mut param_names = HashSet::new();
         for param in &predicate.parameters {
             if !param_names.insert(&param.name) {
-                return Err(super::compiler::CompileError::DuplicateParameter {
+                return Err(super::super::CompileError::DuplicateParameter {
                     parameter_name: param.name.to_string(),
                     symbol: param.name.clone(),
                 });
@@ -236,10 +236,10 @@ impl Validator {
         &mut self,
         import: &Import,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         // Check that the source reference exists and is accessible
         if !program.registry.contains_item(&import.source_ref) {
-            return Err(super::compiler::CompileError::UnresolvedReference {
+            return Err(super::super::CompileError::UnresolvedReference {
                 attempted_item: import.source_ref.clone(),
                 symbol: InternedSymbol::from_text(&import.source_ref.path),
             });
@@ -256,11 +256,11 @@ impl Validator {
         &mut self,
         type_ref: T,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         let type_ref = type_ref.as_ref();
         // Check that the type exists
         let type_item = program.registry.get_type(type_ref).ok_or_else(|| {
-            super::compiler::CompileError::UnresolvedType {
+            super::super::CompileError::UnresolvedType {
                 attempted_item: TypeId::new(type_ref.path.clone()),
                 symbol: InternedSymbol::from_text(&type_ref.path),
             }
@@ -277,7 +277,7 @@ impl Validator {
         &mut self,
         type_annotation: &TypeAnnotation,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         match type_annotation {
             TypeAnnotation::Int | TypeAnnotation::String | TypeAnnotation::Bool => {
                 // Built-in types are always valid
@@ -286,7 +286,7 @@ impl Validator {
             TypeAnnotation::Relation(arity) => {
                 // Validate arity is reasonable (not negative, not too large)
                 if *arity > 1000 {
-                    return Err(super::compiler::CompileError::SemanticError {
+                    return Err(super::super::CompileError::SemanticError {
                         message: format!("Relation arity {} is unreasonably large", arity),
                         symbol: InternedSymbol::from_text("relation_arity"),
                     });
@@ -305,7 +305,7 @@ impl Validator {
         &mut self,
         goal: &Goal,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         match goal {
             Goal::Equality(left, right) | Goal::Disequality(left, right) => {
                 self.validate_term(left, program)?;
@@ -377,18 +377,18 @@ impl Validator {
         &mut self,
         predicate_call: &PredicateCall,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         // Check arity match using registry convenience method
         let expected_arity = program
             .registry
             .get_predicate_arity(&predicate_call.predicate)
-            .ok_or_else(|| super::compiler::CompileError::UnresolvedPredicate {
+            .ok_or_else(|| super::super::CompileError::UnresolvedPredicate {
                 attempted_item: predicate_call.predicate.clone(),
                 symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
             })?;
 
         if predicate_call.arguments.len() != expected_arity {
-            return Err(super::compiler::CompileError::ArityMismatch {
+            return Err(super::super::CompileError::ArityMismatch {
                 predicate_item: predicate_call.predicate.clone(),
                 expected_arity,
                 actual_arity: predicate_call.arguments.len(),
@@ -412,7 +412,7 @@ impl Validator {
         &mut self,
         pattern_match: &PatternMatch,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         // Validate the matched term
         self.validate_term(&pattern_match.term, program)?;
 
@@ -432,7 +432,7 @@ impl Validator {
         &mut self,
         pattern: &Pattern,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         match pattern {
             Pattern::Variable(_) | Pattern::Wildcard => {
                 // Variables and wildcards are always valid
@@ -493,7 +493,7 @@ impl Validator {
         &mut self,
         term: &Term,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         match term {
             Term::Variable(_) | Term::Wildcard | Term::Literal(_) => {
                 // Variables, wildcards, and literals are always valid
@@ -551,7 +551,7 @@ impl Validator {
         &mut self,
         meta_expr: &MetaExpression,
         program: &Program,
-    ) -> Result<(), super::compiler::CompileError> {
+    ) -> Result<(), super::super::CompileError> {
         match meta_expr {
             MetaExpression::Variable(_) => {
                 // Meta variables are validated at expansion time

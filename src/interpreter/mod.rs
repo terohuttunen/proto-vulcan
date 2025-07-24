@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 mod assertions;
+pub mod compiler;
 pub mod constraint_domains;
 pub mod deferred;
 mod environment;
 mod execution;
 pub mod import;
 mod integration;
-pub mod ir;
 pub mod metaprogramming;
 pub mod parser;
 pub mod query;

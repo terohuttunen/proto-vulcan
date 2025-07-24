@@ -9,15 +9,13 @@
 //! The IR supports dynamic modification through Rc::make_mut while maintaining
 //! path-based stable identifiers for efficient symbol resolution.
 
-use crate::interpreter::symbol_table::InternedSymbol;
 use crate::interpreter::constraint_domains::IrDomainConstraintTemplate;
+use crate::interpreter::symbol_table::InternedSymbol;
 use std::borrow::Borrow;
 use std::fmt::{self, Display};
 use std::rc::Rc;
 
-pub mod compiler;
 pub mod display;
-pub mod errors;
 pub mod normalizer;
 pub mod registry;
 pub mod validation;
@@ -470,8 +468,8 @@ pub enum Goal {
 #[derive(Debug, Clone)]
 pub struct HashedGoal {
     goal: Goal,
-    content_hash: u64,     // Exact goal structure hash (including variable names)
-    structural_hash: u64,  // Variable-normalized structure hash (for alpha-equivalence)
+    content_hash: u64,    // Exact goal structure hash (including variable names)
+    structural_hash: u64, // Variable-normalized structure hash (for alpha-equivalence)
 }
 
 impl HashedGoal {
@@ -485,22 +483,22 @@ impl HashedGoal {
             structural_hash,
         }
     }
-    
+
     /// Get the content hash (exact structure including variable names)
     pub fn content_hash(goal: &HashedGoal) -> u64 {
         goal.content_hash
     }
-    
+
     /// Get the structural hash (variable-normalized for alpha-equivalence)
     pub fn structural_hash(goal: &HashedGoal) -> u64 {
         goal.structural_hash
     }
-    
+
     /// Check if two goals have the same content (exact equality)
     pub fn same_content(a: &HashedGoal, b: &HashedGoal) -> bool {
         a.content_hash == b.content_hash
     }
-    
+
     /// Check if two goals have the same structure (alpha-equivalent)
     pub fn same_structure(a: &HashedGoal, b: &HashedGoal) -> bool {
         a.structural_hash == b.structural_hash
@@ -541,25 +539,25 @@ impl StructuralGoal {
     /// Create a new StructuralGoal from a Goal
     pub fn new(goal: Goal) -> Self {
         StructuralGoal {
-            inner: Rc::new(HashedGoal::new(goal))
+            inner: Rc::new(HashedGoal::new(goal)),
         }
     }
-    
+
     /// Get the content hash (exact structure including variable names)
     pub fn content_hash(goal: &StructuralGoal) -> u64 {
         HashedGoal::content_hash(&goal.inner)
     }
-    
+
     /// Get the structural hash (variable-normalized for alpha-equivalence)
     pub fn structural_hash(goal: &StructuralGoal) -> u64 {
         HashedGoal::structural_hash(&goal.inner)
     }
-    
+
     /// Check if two goals have the same content (exact equality)
     pub fn same_content(a: &StructuralGoal, b: &StructuralGoal) -> bool {
         HashedGoal::same_content(&a.inner, &b.inner)
     }
-    
+
     /// Check if two goals have the same structure (alpha-equivalent)
     pub fn same_structure(a: &StructuralGoal, b: &StructuralGoal) -> bool {
         HashedGoal::same_structure(&a.inner, &b.inner)
@@ -569,7 +567,7 @@ impl StructuralGoal {
 impl std::ops::Deref for StructuralGoal {
     type Target = Goal;
     fn deref(&self) -> &Self::Target {
-        &self.inner.goal  // Double deref: StructuralGoal -> HashedGoal -> Goal
+        &self.inner.goal // Double deref: StructuralGoal -> HashedGoal -> Goal
     }
 }
 
@@ -607,8 +605,8 @@ impl Ord for StructuralGoal {
 #[derive(Debug, Clone)]
 pub struct HashedType {
     type_def: TypeDefinition,
-    content_hash: u64,     // Exact type structure hash (including field names)
-    structural_hash: u64,  // Field-normalized structure hash (for alpha-equivalence)
+    content_hash: u64,    // Exact type structure hash (including field names)
+    structural_hash: u64, // Field-normalized structure hash (for alpha-equivalence)
 }
 
 impl HashedType {
@@ -622,22 +620,22 @@ impl HashedType {
             structural_hash,
         }
     }
-    
+
     /// Get the content hash (exact structure including field names)
     pub fn content_hash(type_def: &HashedType) -> u64 {
         type_def.content_hash
     }
-    
+
     /// Get the structural hash (field-normalized for alpha-equivalence)
     pub fn structural_hash(type_def: &HashedType) -> u64 {
         type_def.structural_hash
     }
-    
+
     /// Check if two types have the same content (exact equality)
     pub fn same_content(a: &HashedType, b: &HashedType) -> bool {
         a.content_hash == b.content_hash
     }
-    
+
     /// Check if two types have the same structure (alpha-equivalent)
     pub fn same_structure(a: &HashedType, b: &HashedType) -> bool {
         a.structural_hash == b.structural_hash
@@ -678,25 +676,25 @@ impl StructuralType {
     /// Create a new StructuralType from a TypeDefinition
     pub fn new(type_def: TypeDefinition) -> Self {
         StructuralType {
-            inner: Rc::new(HashedType::new(type_def))
+            inner: Rc::new(HashedType::new(type_def)),
         }
     }
-    
+
     /// Get the content hash (exact structure including field names)
     pub fn content_hash(type_def: &StructuralType) -> u64 {
         HashedType::content_hash(&type_def.inner)
     }
-    
+
     /// Get the structural hash (field-normalized for alpha-equivalence)
     pub fn structural_hash(type_def: &StructuralType) -> u64 {
         HashedType::structural_hash(&type_def.inner)
     }
-    
+
     /// Check if two types have the same content (exact equality)
     pub fn same_content(a: &StructuralType, b: &StructuralType) -> bool {
         HashedType::same_content(&a.inner, &b.inner)
     }
-    
+
     /// Check if two types have the same structure (alpha-equivalent)
     pub fn same_structure(a: &StructuralType, b: &StructuralType) -> bool {
         HashedType::same_structure(&a.inner, &b.inner)
@@ -706,7 +704,7 @@ impl StructuralType {
 impl std::ops::Deref for StructuralType {
     type Target = TypeDefinition;
     fn deref(&self) -> &Self::Target {
-        &self.inner.type_def  // Double deref: StructuralType -> HashedType -> TypeDefinition
+        &self.inner.type_def // Double deref: StructuralType -> HashedType -> TypeDefinition
     }
 }
 
@@ -755,7 +753,7 @@ fn compute_content_hash(goal: &Goal) -> u64 {
 fn compute_structural_hash(goal: &Goal) -> u64 {
     let mut normalizer = normalizer::VariableNormalizer::new();
     let normalized = normalizer.normalize_goal(goal);
-    
+
     let mut hasher = DefaultHasher::new();
     normalized.hash(&mut hasher);
     hasher.finish()
@@ -915,10 +913,10 @@ fn hash_term_content(term: &Term, hasher: &mut impl Hasher) {
 fn hash_type_content(type_def: &TypeDefinition, hasher: &mut impl Hasher) {
     // Hash the type ID path
     type_def.id.id.path.hash(hasher);
-    
+
     // Hash the visibility
     hash_visibility(&type_def.visibility, hasher);
-    
+
     // Hash the type kind
     match &type_def.kind {
         TypeKind::Struct(struct_def) => {
@@ -1243,20 +1241,14 @@ impl StructuralGoal {
     pub fn empty_container() -> Rc<[StructuralGoal]> {
         Rc::from(Vec::<StructuralGoal>::new())
     }
-    
+
     /// Create a goal container from a vector of goals
     pub fn from_vec(goals: Vec<Goal>) -> Rc<[StructuralGoal]> {
-        let structural_goals: Vec<StructuralGoal> = goals
-            .into_iter()
-            .map(StructuralGoal::new)
-            .collect();
+        let structural_goals: Vec<StructuralGoal> =
+            goals.into_iter().map(StructuralGoal::new).collect();
         Rc::from(structural_goals)
     }
 }
 
 // Registry implementation will be in registry.rs
 pub use registry::ItemRegistry;
-
-// Compiler error types and main compiler
-pub use errors::CompileError;
-pub use compiler::Compiler;

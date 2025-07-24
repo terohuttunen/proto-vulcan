@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
-use proto_vulcan::interpreter::ir::compiler::{CompilationOptions, CompileWarning};
+use proto_vulcan::interpreter::compiler::{CompilationOptions, CompileWarning};
 use proto_vulcan::interpreter::parser::parse_str;
 use proto_vulcan::interpreter::query::QueryResult;
 use proto_vulcan::interpreter::test_runner::{TestRunOptions, TestRunner};
@@ -281,7 +281,7 @@ fn parse_file(
     show_ast: bool,
     options: CompilationOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use proto_vulcan::interpreter::ir::compiler::Compiler;
+    use proto_vulcan::interpreter::compiler::Compiler;
 
     let file_contents = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
