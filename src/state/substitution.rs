@@ -1,32 +1,22 @@
 use crate::compound::CompoundObject;
 use crate::lterm::{LTerm, LTermInner};
-use crate::user::User;
-use crate::engine::Engine;
 use std::collections::HashMap;
 use std::ops::Deref;
 
 /// Substitution Map
 ///
 /// Substitution maps track the binding of variables to terms.
-#[derive(Derivative)]
-#[derivative(Debug(bound="U: User"), Clone(bound="U: User"))]
-pub struct SMap<U, E>(HashMap<LTerm<U, E>, LTerm<U, E>>)
-where
-    U: User,
-    E: Engine<U>;
+#[derive(Debug, Clone)]
+pub struct SMap(HashMap<LTerm, LTerm>);
 
-impl<U, E> SMap<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl SMap {
     /// Construct an an empty substitution map with no substitutions
-    pub fn new() -> SMap<U, E> {
+    pub fn new() -> SMap {
         SMap(HashMap::new())
     }
 
     /// Extend substitution map with a new substitution
-    pub fn extend(&mut self, k: LTerm<U, E>, v: LTerm<U, E>) {
+    pub fn extend(&mut self, k: LTerm, v: LTerm) {
         self.0.insert(k, v);
     }
 
@@ -38,7 +28,7 @@ where
     ///
     /// Walking the substitution map recursively traverses the map until no next term is found,
     /// or the term found is a non-variable.
-    pub fn walk<'a>(&'a self, mut k: &'a LTerm<U, E>) -> &'a LTerm<U, E> {
+    pub fn walk<'a>(&'a self, mut k: &'a LTerm) -> &'a LTerm {
         loop {
             match k.as_ref() {
                 LTermInner::Var(_, _) => {
@@ -54,7 +44,7 @@ where
 
     /// Alternative walk of the substitution map that does not bind the return value lifetime
     /// to lifetime of the input variable `k`.
-    pub fn walk_if<'a, 'b>(&'a self, k: &'b LTerm<U, E>) -> Option<&'a LTerm<U, E>> {
+    pub fn walk_if<'a, 'b>(&'a self, k: &'b LTerm) -> Option<&'a LTerm> {
         if k.is_var() {
             // First step
             let mut step = match self.0.get(k) {
@@ -82,7 +72,7 @@ where
     /// Walks the substitution map recursively like `walk()`, but does not stop at lists, and
     /// instead recurses to do the deep walk also for the list elements. Returns a term which
     /// is a tree where all leaves are walked terms.
-    pub fn walk_star(&self, v: &LTerm<U, E>) -> LTerm<U, E> {
+    pub fn walk_star(&self, v: &LTerm) -> LTerm {
         let v = self.walk(v);
         match v.as_ref() {
             LTermInner::Cons(head, tail) => LTerm::cons(self.walk_star(head), self.walk_star(tail)),
@@ -92,7 +82,7 @@ where
     }
 
     /// Check that the variable `x` is not contained in the compound object `compound`.
-    fn occurs_check_compound(&self, x: &LTerm<U, E>, compound: &dyn CompoundObject<U, E>) -> bool {
+    fn occurs_check_compound(&self, x: &LTerm, compound: &dyn CompoundObject) -> bool {
         compound.children().any(|child| match child.as_term() {
             Some(v) => self.occurs_check(x, v),
             None => self.occurs_check_compound(x, child),
@@ -103,7 +93,7 @@ where
     ///
     /// Occurs check is used to prevent unification of terms that would cause the variable to
     /// be contained in itself.
-    pub fn occurs_check(&self, x: &LTerm<U, E>, v: &LTerm<U, E>) -> bool {
+    pub fn occurs_check(&self, x: &LTerm, v: &LTerm) -> bool {
         match self.walk(v).as_ref() {
             LTermInner::Var(vvar, _) => match x.as_ref() {
                 LTermInner::Var(xvar, _) => *vvar == *xvar,
@@ -117,7 +107,7 @@ where
         }
     }
 
-    fn reify_compound(&self, compound: &dyn CompoundObject<U, E>) -> SMap<U, E> {
+    fn reify_compound(&self, compound: &dyn CompoundObject) -> SMap {
         let mut smap = self.clone();
         for child in compound.children() {
             match child.as_term() {
@@ -137,7 +127,7 @@ where
     ///
     /// This is typically used to generate a reifying substitution map from an empty map. The
     /// reifying map maps free variables to reified names. See State::reify().
-    pub fn reify(&self, v: &LTerm<U, E>) -> SMap<U, E> {
+    pub fn reify(&self, v: &LTerm) -> SMap {
         let walkv = self.walk(v);
         match walkv.as_ref() {
             LTermInner::Var(_, _) => {
@@ -153,7 +143,7 @@ where
         }
     }
 
-    fn is_anyvar_compound(&self, compound: &dyn CompoundObject<U, E>) -> bool {
+    fn is_anyvar_compound(&self, compound: &dyn CompoundObject) -> bool {
         compound.children().any(|child| match child.as_term() {
             Some(v) => self.is_anyvar(v),
             None => self.is_anyvar_compound(child),
@@ -161,7 +151,7 @@ where
     }
 
     /// Check if the given logic term refers to any unassociated variables
-    pub fn is_anyvar(&self, v: &LTerm<U, E>) -> bool {
+    pub fn is_anyvar(&self, v: &LTerm) -> bool {
         match v.as_ref() {
             LTermInner::Var(_, _) if self.contains_key(v) => {
                 let walkv = self.walk(&v);
@@ -174,7 +164,7 @@ where
     }
 
     /// Returns a list of variables referenced by the substitution map
-    pub fn get_vars(&self) -> Vec<&LTerm<U, E>> {
+    pub fn get_vars(&self) -> Vec<&LTerm> {
         let mut vars = vec![];
         for (k, v) in self.0.iter() {
             vars.push(k);
@@ -186,7 +176,7 @@ where
     }
 
     /// Returns a set of variables operands referencesd by the substitution
-    pub fn operands(&self) -> Vec<LTerm<U, E>> {
+    pub fn operands(&self) -> Vec<LTerm> {
         let mut operands = vec![];
         for (k, v) in self.0.iter() {
             operands.push(k.clone());
@@ -198,28 +188,19 @@ where
     }
 }
 
-impl<U, E> IntoIterator for SMap<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    type Item = (LTerm<U, E>, LTerm<U, E>);
-    type IntoIter = ::std::collections::hash_map::IntoIter<LTerm<U, E>, LTerm<U, E>>;
+impl IntoIterator for SMap {
+    type Item = (LTerm, LTerm);
+    type IntoIter = ::std::collections::hash_map::IntoIter<LTerm, LTerm>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl<U, E> Deref for SMap<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    type Target = HashMap<LTerm<U, E>, LTerm<U, E>>;
+impl Deref for SMap {
+    type Target = HashMap<LTerm, LTerm>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-

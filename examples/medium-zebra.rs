@@ -32,7 +32,7 @@ use std::time::Instant;
 
 */
 
-fn righto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
+fn righto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
     proto_vulcan_closure!(
         match l {
             [first, second | _] => {
@@ -44,14 +44,14 @@ fn righto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>)
     )
 }
 
-fn nexto<U: User, E: Engine<U>>(x: LTerm<U, E>, y: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
+fn nexto(x: LTerm, y: LTerm, l: LTerm) -> Goal {
     proto_vulcan!(conde {
         righto(x, y, l),
         righto(y, x, l)
     })
 }
 
-fn medium_zebrao<U: User, E: Engine<U>>(houses: LTerm<U, E>) -> Goal<U, E> {
+fn medium_zebrao(houses: LTerm) -> Goal {
     proto_vulcan!([
         [_, _, [_, _, "milk", _, _], _, _] == houses,
         first(houses, ["norwegian", _, _, _, _]),

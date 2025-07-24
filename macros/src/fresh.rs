@@ -52,7 +52,7 @@ impl ToTokens for Fresh {
             self.variables.iter().map(|x| &x.path).cloned().collect();
         let body: Vec<&Clause> = self.body.iter().collect();
         let output = quote! {{
-            #( let #variables: #variable_types <_, _> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
+            #( let #variables: #variable_types = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#variables)); )*
             ::proto_vulcan::operator::fresh::Fresh::new(vec![ #( ::proto_vulcan::Upcast::to_super(&#variables) ),* ],
                 ::proto_vulcan::GoalCast::cast_into(
                     ::proto_vulcan::operator::conj::InferredConj::from_array(&[ #( ::proto_vulcan::GoalCast::cast_into( #body ) ),* ]))

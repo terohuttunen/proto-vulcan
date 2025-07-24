@@ -1,9 +1,7 @@
 use self::environment::Environment;
 use self::parser::ast;
 use self::query::QueryResult;
-use crate::engine::Engine;
 use crate::lterm::{LTerm, LTermInner};
-use crate::user::User;
 use std::cell::RefCell;
 use std::fmt::{self, Display};
 use std::fs;
@@ -95,7 +93,11 @@ pub fn create_main_query(main_rel: &ast::PredicateDefinition) -> String {
     if main_rel.parameters.is_empty() {
         format!("{}()", main_rel.name)
     } else {
-        let param_vars: Vec<String> = main_rel.parameters.iter().map(|p| p.name.to_string()).collect();
+        let param_vars: Vec<String> = main_rel
+            .parameters
+            .iter()
+            .map(|p| p.name.to_string())
+            .collect();
         format!("{}({})", main_rel.name, param_vars.join(", "))
     }
 }
@@ -223,15 +225,11 @@ impl Display for InterpreterError {
 impl std::error::Error for InterpreterError {}
 
 /// The main interpreter struct
-pub struct Interpreter<U: User, E: Engine<U>> {
-    pub environment: Rc<RefCell<Environment<U, E>>>,
+pub struct Interpreter {
+    pub environment: Rc<RefCell<Environment>>,
 }
 
-impl<U, E> Interpreter<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl Interpreter {
     /// Create a new interpreter
     pub fn new() -> Self {
         Self {
@@ -253,7 +251,7 @@ where
     }
 
     /// Get a reference to the environment
-    pub fn environment(&self) -> std::cell::Ref<Environment<U, E>> {
+    pub fn environment(&self) -> std::cell::Ref<Environment> {
         self.environment.borrow()
     }
 
@@ -265,7 +263,7 @@ where
 
         // Builtin length predicate - efficiently calculates list length
         // Prefixed with __builtin_ to avoid conflicts with library predicates
-        let length_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+        let length_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
             if args.len() != 2 {
                 return fail().cast_into();
             }
@@ -274,17 +272,15 @@ where
             use crate::solver::{Solve, Solver};
             use crate::state::State;
             use crate::stream::Stream;
-            use derivative::Derivative;
 
-            #[derive(Derivative)]
-            #[derivative(Debug(bound = "U: User"))]
-            struct BuiltinLengthGoal<U: User, E: Engine<U>> {
-                list: LTerm<U, E>,
-                length: LTerm<U, E>,
+            #[derive(Debug)]
+            struct BuiltinLengthGoal {
+                list: LTerm,
+                length: LTerm,
             }
 
-            impl<U: User, E: Engine<U>> Solve<U, E> for BuiltinLengthGoal<U, E> {
-                fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+            impl Solve for BuiltinLengthGoal {
+                fn solve(&self, _solver: &Solver, state: State) -> Stream {
                     // Walk the substitution map to get resolved values (same as assertions)
                     let list_walked = state.smap_ref().walk(&self.list).clone();
                     let length_walked = state.smap_ref().walk(&self.length).clone();
@@ -292,7 +288,7 @@ where
                     // Check if list is now a concrete list
                     if list_walked.is_list() {
                         let count = list_walked.iter().count();
-                        let count_term =
+                        let count_term: LTerm =
                             LTerm::from(LTermInner::Val(LValue::Number(count as isize)));
 
                         // Use the constraint system's unification (same as assertions)
@@ -335,11 +331,11 @@ where
             }
         }
         drop(env);
-        
+
         // Second pass: Perform semantic analysis to disambiguate enum variants
         // Now that types are loaded, semantic analysis can resolve enum variants
         semantic_analysis::analyze_program(&mut program, self.environment.clone())?;
-        
+
         // Third pass: Load the remaining items (relations, modules, etc.)
         let mut env = self.environment.borrow_mut();
         for item in program.items {
@@ -350,13 +346,13 @@ where
                     env.load_module_declaration(&mod_decl, None, "global")?
                 }
                 ast::Item::Use(use_stmt) => env.load_use_statement(use_stmt)?,
-                ast::Item::Impl(_) => {}, // TODO: Handle impl blocks
+                ast::Item::Impl(_) => {} // TODO: Handle impl blocks
                 ast::Item::Enum(_) | ast::Item::Struct(_) => {
                     // Already loaded in first pass
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -417,10 +413,7 @@ where
     }
 
     /// Execute a query string
-    pub fn query(&mut self, query_str: &str) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
-    where
-        U::UserContext: Default,
-    {
+    pub fn query(&mut self, query_str: &str) -> Result<Vec<QueryResult>, InterpreterError> {
         self.query_with_timeout(query_str, None)
     }
 
@@ -429,10 +422,7 @@ where
         &mut self,
         query_str: &str,
         timeout_ms: Option<u64>,
-    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
-    where
-        U::UserContext: Default,
-    {
+    ) -> Result<Vec<QueryResult>, InterpreterError> {
         self.query_with_test_timeout(query_str, timeout_ms, None)
     }
 
@@ -442,10 +432,7 @@ where
         query_str: &str,
         timeout_ms: Option<u64>,
         test_timeout_info: Option<(std::time::Instant, u64)>,
-    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
-    where
-        U::UserContext: Default,
-    {
+    ) -> Result<Vec<QueryResult>, InterpreterError> {
         let mut query_goal = query::parse_query(query_str)?;
 
         // Apply semantic analysis to the query goal
@@ -468,10 +455,7 @@ where
         &mut self,
         query_str: &str,
         trace_config: &mut trace::TraceConfig,
-    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
-    where
-        U::UserContext: Default,
-    {
+    ) -> Result<Vec<QueryResult>, InterpreterError> {
         self.query_with_trace_and_timeout(query_str, trace_config, None)
     }
 
@@ -481,15 +465,12 @@ where
         query_str: &str,
         trace_config: &mut trace::TraceConfig,
         timeout_ms: Option<u64>,
-    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
-    where
-        U::UserContext: Default,
-    {
+    ) -> Result<Vec<QueryResult>, InterpreterError> {
         let mut query_goal = query::parse_query(query_str)?;
-        
+
         // Apply semantic analysis to the query goal
         semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
-        
+
         // TODO: Integrate tracing with the new unified QueryConfig system
         let config = query::QueryConfig {
             timeout: timeout_ms,
@@ -504,24 +485,17 @@ where
         &mut self,
         query_str: &str,
         config: query::QueryConfig,
-    ) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
-    where
-        U::UserContext: Default,
-    {
+    ) -> Result<Vec<QueryResult>, InterpreterError> {
         let mut query_goal = query::parse_query(query_str)?;
-        
+
         // Apply semantic analysis to the query goal
         semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
-        
+
         query::execute_query(self.environment.clone(), query_goal, config)
     }
 }
 
-impl<U, E> Default for Interpreter<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl Default for Interpreter {
     fn default() -> Self {
         Self::new()
     }

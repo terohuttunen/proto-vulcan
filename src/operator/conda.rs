@@ -1,4 +1,3 @@
-use crate::engine::Engine;
 /// Conditional ?
 ///
 /// Returns stream from first clause [x0 AND x1 AND ...] whose first (a0, b0, ...) goal succeeds
@@ -11,33 +10,24 @@ use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
 use crate::GoalCast;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct Conda<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+#[derivative(Debug)]
+pub struct Conda {
     // First goal of this conda clause
-    first: Goal<U, E>,
+    first: Goal,
 
     // Rest of the goals of this conda clause
-    rest: Goal<U, E>,
+    rest: Goal,
 
     // Next conda clause
-    next: Goal<U, E>,
+    next: Goal,
 }
 
-impl<U, E> Conda<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn from_conjunctions(body: &[&[Goal<U, E>]]) -> Goal<U, E> {
+impl Conda {
+    pub fn from_conjunctions(body: &[&[Goal]]) -> Goal {
         let mut next = Goal::fail();
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
@@ -51,12 +41,8 @@ where
     }
 }
 
-impl<U, E> Solve<U, E> for Conda<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for Conda {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         let mut stream = solver.start(&self.first, state.clone());
 
         match solver.peek(&mut stream) {
@@ -67,11 +53,7 @@ where
 }
 
 /// Soft cut operator.
-pub fn conda<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn conda(param: OperatorParam<Goal>) -> Goal {
     Conda::from_conjunctions(param.body)
 }
 

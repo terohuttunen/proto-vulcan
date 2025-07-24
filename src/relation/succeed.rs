@@ -1,6 +1,6 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
-use crate::user::User;
+
 
 /// A relation that succeeds.
 ///
@@ -21,11 +21,9 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn succeed<U, E, G>() -> InferredGoal<U, E, G>
+pub fn succeed<G>() -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     InferredGoal::new(G::succeed())
 }

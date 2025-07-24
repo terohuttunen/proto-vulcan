@@ -11,7 +11,7 @@ use crate::prelude::*;
 use crate::interpreter::Interpreter;
 use crate::interpreter::parser;
 
-type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+type TestInterpreter = Interpreter;
 
 /// Helper function to create a test interpreter with basic enum definitions
 fn create_test_interpreter_with_enums() -> TestInterpreter {

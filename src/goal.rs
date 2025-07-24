@@ -10,8 +10,8 @@
 //! infinite streams of solutions. If all solutions are needed, and the order does
 //! not matter, then DFS is recommended.
 //!
-//! * BFS goals are represented by the `Goal<U, E>` type.
-//! * DFS goals are represented by the `DFSGoal<U, E>` type.
+//! * BFS goals are represented by the `Goal` type.
+//! * DFS goals are represented by the `DFSGoal` type.
 //!
 //! Proto-vulcan allows any branch in the tree of goals to be DFS; by default, queries
 //! are BFS. Preventing embedding of BFS goals in DFS branches is enforced with Rust
@@ -22,23 +22,16 @@
 //! the kind of the parent goal constructor parameter.
 //!
 //! Often an operator or relation can be either DFS or BFS; such goals can be wrapped
-//! into `InferredGoal<U, E, G>` which is always cast into the search type of the
+//! into `InferredGoal<G>` which is always cast into the search type of the
 //! parent goal.
-use crate::engine::Engine;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
-use std::marker::PhantomData;
 use std::rc::Rc;
 
 pub use crate::GoalCast;
 
-pub trait AnyGoal<U, E>: std::fmt::Debug + std::clone::Clone + 'static
-where
-    U: User,
-    E: Engine<U>,
-{
+pub trait AnyGoal: std::fmt::Debug + std::clone::Clone + 'static {
     fn succeed() -> Self
     where
         Self: Sized;
@@ -51,7 +44,7 @@ where
     where
         Self: Sized;
 
-    fn dynamic(u: Rc<dyn Solve<U, E>>) -> Self
+    fn dynamic(u: Rc<dyn Solve>) -> Self
     where
         Self: Sized;
 
@@ -61,41 +54,32 @@ where
 
     fn is_breakpoint(&self) -> bool;
 
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E>;
+    fn solve(&self, solver: &Solver, state: State) -> Stream;
 }
 
 /// Breadth-first searched goal
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
-pub enum Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+#[derive(Debug, Clone)]
+pub enum Goal {
     Succeed,
     Fail,
     Breakpoint(&'static str),
-    Dynamic(Rc<dyn Solve<U, E>>),
+    Dynamic(Rc<dyn Solve>),
 }
 
-impl<U, E> AnyGoal<U, E> for Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn succeed() -> Goal<U, E> {
+impl AnyGoal for Goal {
+    fn succeed() -> Goal {
         Goal::Succeed
     }
 
-    fn fail() -> Goal<U, E> {
+    fn fail() -> Goal {
         Goal::Fail
     }
 
-    fn breakpoint(id: &'static str) -> Goal<U, E> {
+    fn breakpoint(id: &'static str) -> Goal {
         Goal::Breakpoint(id)
     }
 
-    fn dynamic(u: Rc<dyn Solve<U, E>>) -> Goal<U, E> {
+    fn dynamic(u: Rc<dyn Solve>) -> Goal {
         Goal::Dynamic(u)
     }
 
@@ -120,7 +104,7 @@ where
         }
     }
 
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         match self {
             Goal::Succeed => Stream::unit(Box::new(state)),
             Goal::Fail => Stream::empty(),
@@ -131,37 +115,28 @@ where
 }
 
 /// Depth-first searched goal
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
-pub enum DFSGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+#[derive(Debug, Clone)]
+pub enum DFSGoal {
     Succeed,
     Fail,
     Breakpoint(&'static str),
-    Dynamic(Rc<dyn Solve<U, E>>),
+    Dynamic(Rc<dyn Solve>),
 }
 
-impl<U, E> AnyGoal<U, E> for DFSGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn succeed() -> DFSGoal<U, E> {
+impl AnyGoal for DFSGoal {
+    fn succeed() -> DFSGoal {
         DFSGoal::Succeed
     }
 
-    fn fail() -> DFSGoal<U, E> {
+    fn fail() -> DFSGoal {
         DFSGoal::Fail
     }
 
-    fn breakpoint(id: &'static str) -> DFSGoal<U, E> {
+    fn breakpoint(id: &'static str) -> DFSGoal {
         DFSGoal::Breakpoint(id)
     }
 
-    fn dynamic(u: Rc<dyn Solve<U, E>>) -> DFSGoal<U, E> {
+    fn dynamic(u: Rc<dyn Solve>) -> DFSGoal {
         DFSGoal::Dynamic(u)
     }
 
@@ -186,7 +161,7 @@ where
         }
     }
 
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         match self {
             DFSGoal::Succeed => Stream::unit(Box::new(state)),
             DFSGoal::Fail => Stream::empty(),
@@ -196,12 +171,8 @@ where
     }
 }
 
-impl<U, E> Into<Goal<U, E>> for DFSGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn into(self) -> Goal<U, E> {
+impl Into<Goal> for DFSGoal {
+    fn into(self) -> Goal {
         match self {
             DFSGoal::Succeed => Goal::Succeed,
             DFSGoal::Fail => Goal::Fail,
@@ -215,52 +186,35 @@ where
 ///
 /// The correct kind is inferred at compile time from the type of the parent goal
 /// constructor parameter where the goal is placed.
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
-pub struct InferredGoal<U, E, G>
+#[derive(Debug, Clone)]
+pub struct InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     pub goal: G,
-    _phantom: PhantomData<U>,
-    _phantom2: PhantomData<E>,
 }
 
-impl<U, E, G> InferredGoal<U, E, G>
+impl<G> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
-    pub fn new(goal: G) -> InferredGoal<U, E, G> {
-        InferredGoal {
-            goal,
-            _phantom: PhantomData,
-            _phantom2: PhantomData,
-        }
+    pub fn new(goal: G) -> InferredGoal<G> {
+        InferredGoal { goal }
     }
 }
 
 // DFSGoal -> Goal
-impl<U, E> GoalCast<U, E, Goal<U, E>> for DFSGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl GoalCast<Goal> for DFSGoal {
     #[inline]
-    fn cast_into(self) -> Goal<U, E> {
+    fn cast_into(self) -> Goal {
         self.into()
     }
 }
 
 // InferredGoal<G> -> G
-impl<U, E, G> GoalCast<U, E, G> for InferredGoal<U, E, G>
+impl<G> GoalCast<G> for InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     #[inline]
     fn cast_into(self) -> G {
@@ -269,24 +223,18 @@ where
 }
 
 // InferredGoal<G> -> InferredGoal<G>
-impl<U, E, G> GoalCast<U, E, InferredGoal<U, E, G>> for InferredGoal<U, E, G>
+impl<G> GoalCast<InferredGoal<G>> for InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     #[inline]
-    fn cast_into(self) -> InferredGoal<U, E, G> {
+    fn cast_into(self) -> InferredGoal<G> {
         self
     }
 }
 
 // Goal -> Goal
-impl<U, E> GoalCast<U, E, Goal<U, E>> for Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl GoalCast<Goal> for Goal {
     #[inline]
     fn cast_into(self) -> Self {
         self
@@ -294,11 +242,7 @@ where
 }
 
 // DFSGoal -> DFSGoal
-impl<U, E> GoalCast<U, E, DFSGoal<U, E>> for DFSGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl GoalCast<DFSGoal> for DFSGoal {
     #[inline]
     fn cast_into(self) -> Self {
         self
@@ -313,19 +257,19 @@ mod test {
     use crate::solver::Solve;
     use crate::state::State;
     use crate::stream::Stream;
-    use crate::user::DefaultUser;
+
     use std::rc::Rc;
 
     #[test]
     fn test_goal_succeed() {
-        let g = Goal::<DefaultUser, DefaultEngine<DefaultUser>>::succeed();
+        let g = Goal::succeed();
         assert!(g.is_succeed());
         assert!(!g.is_fail());
     }
 
     #[test]
     fn test_goal_fail() {
-        let g = Goal::<DefaultUser, DefaultEngine<DefaultUser>>::fail();
+        let g = Goal::fail();
         assert!(g.is_fail());
         assert!(!g.is_succeed());
     }
@@ -333,15 +277,15 @@ mod test {
     #[derive(Debug)]
     struct TestGoal {}
 
-    impl<E: Engine<U>, U: User> Solve<U, E> for TestGoal {
-        fn solve(&self, _engine: &Solver<U, E>, _state: State<U, E>) -> Stream<U, E> {
+    impl Solve for TestGoal {
+        fn solve(&self, _engine: &Solver, _state: State) -> Stream {
             Stream::empty()
         }
     }
 
     #[test]
     fn test_goal_inner() {
-        let g = Goal::<DefaultUser, DefaultEngine<DefaultUser>>::dynamic(Rc::new(TestGoal {}));
+        let g = Goal::dynamic(Rc::new(TestGoal {}));
         assert!(!g.is_succeed());
         assert!(!g.is_fail());
     }

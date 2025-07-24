@@ -7,9 +7,7 @@
 use super::execution::ExecutionContext;
 use super::parser::ast::ConstraintBody;
 use super::InterpreterError;
-use crate::engine::{Engine, DefaultEngine};
 use crate::goal::Goal;
-use crate::user::{User, DefaultUser};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -64,19 +62,23 @@ pub enum VariableType {
 /// Non-generic trait for compiled constraint templates that execute to produce Goals
 pub trait DomainConstraintTemplate: std::fmt::Debug {
     /// Execute the template with the given execution context to produce a Goal
-    fn execute(&self, execution_context: &mut super::execution::ExecutionContext<DefaultUser, DefaultEngine<DefaultUser>>) 
-        -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, InterpreterError>;
+    fn execute(
+        &self,
+        execution_context: &mut super::execution::ExecutionContext,
+    ) -> Result<Goal, InterpreterError>;
 }
 
 /// IR-specific trait for compiled constraint templates that work with IR ExecutionContext
 pub trait IrDomainConstraintTemplate: std::fmt::Debug {
     /// Execute the template with the IR execution context to produce a Goal
-    fn execute(&self, execution_context: &mut super::runtime::context::ExecutionContext) 
-        -> Result<Goal<DefaultUser, DefaultEngine<DefaultUser>>, InterpreterError>;
+    fn execute(
+        &self,
+        execution_context: &mut super::runtime::context::ExecutionContext,
+    ) -> Result<Goal, InterpreterError>;
 }
 
 /// Trait that all constraint domains must implement
-pub trait ConstraintDomain<U: User, E: Engine<U>> {
+pub trait ConstraintDomain {
     /// Domain name (e.g., "clpfd", "clpr", "clpb")
     fn name(&self) -> &str;
 
@@ -85,13 +87,14 @@ pub trait ConstraintDomain<U: User, E: Engine<U>> {
         &self,
         body: &ConstraintBody,
         source_span: &super::parser::ast::Span,
-    ) -> Result<Box<dyn DomainConstraints<U, E>>, InterpreterError>;
+    ) -> Result<Box<dyn DomainConstraints>, InterpreterError>;
 
     /// Get description of supported syntax for error messages
     fn syntax_help(&self) -> &str;
 
     /// Get list of unbound variable names that this constraint block requires
-    fn get_unbound_variables(&self, body: &ConstraintBody) -> Result<Vec<String>, InterpreterError>;
+    fn get_unbound_variables(&self, body: &ConstraintBody)
+        -> Result<Vec<String>, InterpreterError>;
 
     /// Compile constraint block with resolved variable information into a template
     fn compile_template(
@@ -109,34 +112,34 @@ pub trait ConstraintDomain<U: User, E: Engine<U>> {
 }
 
 /// Trait for parsed domain-specific constraints
-pub trait DomainConstraints<U: User, E: Engine<U>> {
+pub trait DomainConstraints {
     /// Convert parsed constraints to runtime goals
     fn convert_to_goals(
         &self,
-        execution_context: &mut ExecutionContext<U, E>,
-    ) -> Result<Goal<U, E>, InterpreterError>;
+        execution_context: &mut ExecutionContext,
+    ) -> Result<Goal, InterpreterError>;
 
     /// Extract variable names for query processing
     fn extract_variables(&self) -> Vec<String>;
 }
 
 /// Registry for constraint domains
-pub struct ConstraintDomainRegistry<U: User, E: Engine<U>> {
-    domains: HashMap<String, Box<dyn ConstraintDomain<U, E>>>,
+pub struct ConstraintDomainRegistry {
+    domains: HashMap<String, Box<dyn ConstraintDomain>>,
 }
 
-impl<U: User, E: Engine<U>> ConstraintDomainRegistry<U, E> {
+impl ConstraintDomainRegistry {
     pub fn new() -> Self {
         Self {
             domains: HashMap::new(),
         }
     }
 
-    pub fn register(&mut self, domain: Box<dyn ConstraintDomain<U, E>>) {
+    pub fn register(&mut self, domain: Box<dyn ConstraintDomain>) {
         self.domains.insert(domain.name().to_string(), domain);
     }
 
-    pub fn get_domain(&self, name: &str) -> Option<&dyn ConstraintDomain<U, E>> {
+    pub fn get_domain(&self, name: &str) -> Option<&dyn ConstraintDomain> {
         self.domains.get(name).map(|d| d.as_ref())
     }
 
@@ -146,11 +149,11 @@ impl<U: User, E: Engine<U>> ConstraintDomainRegistry<U, E> {
 
     pub fn convert_constraint_block(
         &self,
-        execution_context: &mut ExecutionContext<U, E>,
+        execution_context: &mut ExecutionContext,
         domain_name: &str,
         body: &ConstraintBody,
         source_span: &super::parser::ast::Span,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         let domain = self.get_domain(domain_name).ok_or_else(|| {
             InterpreterError::InvalidConstraintSyntax {
                 domain: domain_name.to_string(),
@@ -163,7 +166,7 @@ impl<U: User, E: Engine<U>> ConstraintDomainRegistry<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> Default for ConstraintDomainRegistry<U, E> {
+impl Default for ConstraintDomainRegistry {
     fn default() -> Self {
         let mut registry = Self::new();
         registry.register(Box::new(clpfd::ClpfdDomain::new()));

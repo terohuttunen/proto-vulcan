@@ -2,11 +2,10 @@ use super::environment::Environment;
 use super::execution::ExecutionContext;
 use super::parser::ast::Goal;
 use super::InterpreterError;
-use crate::engine::Engine;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
 // Removed unused imports for cleaner code
-use crate::user::User;
+use crate::user::{DefaultUser, User};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -47,11 +46,11 @@ impl QueryConfig {
 
 /// Query result containing variable bindings
 #[derive(Debug, Clone)]
-pub struct QueryResult<U: User, E: Engine<U>> {
-    pub bindings: HashMap<String, LResult<U, E>>,
+pub struct QueryResult {
+    pub bindings: HashMap<String, LResult>,
 }
 
-impl<U: User, E: Engine<U>> QueryResult<U, E> {
+impl QueryResult {
     /// Create a new empty query result
     pub fn new() -> Self {
         Self {
@@ -60,12 +59,12 @@ impl<U: User, E: Engine<U>> QueryResult<U, E> {
     }
 
     /// Add a variable binding
-    pub fn bind(&mut self, var_name: String, value: LResult<U, E>) {
+    pub fn bind(&mut self, var_name: String, value: LResult) {
         self.bindings.insert(var_name, value);
     }
 
     /// Get a variable binding
-    pub fn get(&self, var_name: &str) -> Option<&LResult<U, E>> {
+    pub fn get(&self, var_name: &str) -> Option<&LResult> {
         self.bindings.get(var_name)
     }
 
@@ -75,7 +74,7 @@ impl<U: User, E: Engine<U>> QueryResult<U, E> {
     }
 
     /// Create a new any LResult
-    fn any() -> LResult<U, E> {
+    fn any() -> LResult {
         LResult(
             LTerm::any(),
             Rc::new(crate::state::constraint::store::ConstraintStore::new()),
@@ -83,7 +82,7 @@ impl<U: User, E: Engine<U>> QueryResult<U, E> {
     }
 
     /// Create from LResult vector (for core query result compatibility)
-    pub fn from_lresults(results: Vec<LResult<U, E>>) -> Self {
+    pub fn from_lresults(results: Vec<LResult>) -> Self {
         let mut bindings = HashMap::new();
         for (i, result) in results.into_iter().enumerate() {
             bindings.insert(format!("_{}", i), result);
@@ -93,14 +92,11 @@ impl<U: User, E: Engine<U>> QueryResult<U, E> {
 }
 
 /// Execute a query against the environment with configuration
-pub fn execute_query<U: User, E: Engine<U>>(
-    environment: Rc<RefCell<Environment<U, E>>>,
+pub fn execute_query(
+    environment: Rc<RefCell<Environment>>,
     query: Goal,
     config: QueryConfig,
-) -> Result<Vec<QueryResult<U, E>>, InterpreterError>
-where
-    U::UserContext: Default,
-{
+) -> Result<Vec<QueryResult>, InterpreterError> {
     // Pre-populate the execution context with variables from the query
     let mut execution_context = ExecutionContext::new(environment);
     let query_vars = extract_variables_from_goal(&query);
@@ -128,14 +124,14 @@ where
         goals.push(reify(var_term.clone()).cast_into());
     }
 
-    let mut reified_goal = AnyGoal::<U, E>::succeed();
+    let mut reified_goal = AnyGoal::succeed();
     for goal in goals.into_iter().rev() {
         reified_goal = InferredConj::new(goal, reified_goal).cast_into();
     }
 
     // Create solver and initial state
-    let user_state = U::default();
-    let user_globals = U::UserContext::default();
+    let user_state = DefaultUser::default();
+    let user_globals = <DefaultUser as User>::UserContext::default();
     let mut solver = crate::solver::Solver::new(user_globals, false);
 
     // Set timeout if provided
@@ -354,7 +350,7 @@ fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<S
         Term::EnumVariant(enum_variant, _) => {
             // Extract variables from enum variant construction
             match &enum_variant.kind {
-                super::parser::ast::EnumVariantConstructionKind::Unit => {},
+                super::parser::ast::EnumVariantConstructionKind::Unit => {}
                 super::parser::ast::EnumVariantConstructionKind::Tuple(args) => {
                     for arg in args {
                         extract_variables_from_term(arg, vars);
@@ -420,18 +416,16 @@ pub fn parse_query(query_str: &str) -> Result<Goal, InterpreterError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::DefaultEngine;
-    use crate::user::DefaultUser;
 
     #[test]
     fn test_query_result_creation() {
-        let result: QueryResult<DefaultUser, DefaultEngine<DefaultUser>> = QueryResult::new();
+        let result: QueryResult = QueryResult::new();
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_query_result_binding() {
-        let mut result: QueryResult<DefaultUser, DefaultEngine<DefaultUser>> = QueryResult::new();
+        let mut result: QueryResult = QueryResult::new();
         let term = LTerm::from(42);
         let lresult = LResult(
             term.clone(),
@@ -448,10 +442,7 @@ mod tests {
         let query = parse_query("x == 42").unwrap();
         match query {
             Goal::Equality(left, right, _) => {
-                assert!(matches!(
-                    left,
-                    super::super::parser::ast::Term::Variable(_)
-                ));
+                assert!(matches!(left, super::super::parser::ast::Term::Variable(_)));
                 assert!(matches!(
                     right,
                     super::super::parser::ast::Term::Literal(..)

@@ -1,40 +1,28 @@
-use crate::engine::Engine;
+
 /// Less than or equal FD
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, SResult, State};
 use crate::stream::Stream;
-use crate::user::User;
+
 use std::rc::Rc;
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct LessThanOrEqualFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
+#[derive(Debug)]
+pub struct LessThanOrEqualFd {
+    u: LTerm,
+    v: LTerm,
 }
 
-impl<U, E> LessThanOrEqualFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+impl LessThanOrEqualFd {
+    pub fn new<G: AnyGoal>(u: LTerm, v: LTerm) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(LessThanOrEqualFd { u, v })))
     }
 }
 
-impl<U, E> Solve<U, E> for LessThanOrEqualFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl Solve for LessThanOrEqualFd
 {
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         match LessThanOrEqualFdConstraint::new(self.u.clone(), self.v.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -42,45 +30,32 @@ where
     }
 }
 
-pub fn ltefd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn ltefd<G>(u: LTerm, v: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     LessThanOrEqualFd::new(u, v)
 }
 
 // Finite Domain Constraints
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
-pub struct LessThanOrEqualFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
+#[derive(Debug, Clone)]
+pub struct LessThanOrEqualFdConstraint {
+    u: LTerm,
+    v: LTerm,
 }
 
-impl<U, E> LessThanOrEqualFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl LessThanOrEqualFdConstraint
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Rc<dyn Constraint<U, E>> {
+    pub fn new(u: LTerm, v: LTerm) -> Rc<dyn Constraint> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         Rc::new(LessThanOrEqualFdConstraint { u, v })
     }
 }
 
-impl<U, E> Constraint<U, E> for LessThanOrEqualFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl Constraint for LessThanOrEqualFdConstraint
 {
-    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
+    fn run(self: Rc<Self>, state: State) -> SResult {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
 
@@ -144,15 +119,12 @@ where
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U, E>> {
+    fn operands(&self) -> Vec<LTerm> {
         vec![self.u.clone(), self.v.clone()]
     }
 }
 
-impl<U, E> std::fmt::Display for LessThanOrEqualFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl std::fmt::Display for LessThanOrEqualFdConstraint
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")

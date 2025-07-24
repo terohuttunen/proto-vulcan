@@ -1,11 +1,7 @@
-use super::parser::ast::{
-    Literal, PredicateDefinition, StructDefinition, Term,
-};
+use super::parser::ast::{Literal, PredicateDefinition, StructDefinition, Term};
 use super::symbol_table::InternedSymbol;
-use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::user::User;
 use std::rc::Rc;
 
 /// Handle to a relation for higher-order predicates
@@ -30,7 +26,7 @@ impl PredicateHandle {
 
 // RuntimeValue is not derivable because of the `func` field in BuiltinRelation.
 // We must implement it manually to just clone the Rc.
-impl<U: User, E: Engine<U>> Clone for RuntimeValue<U, E> {
+impl Clone for RuntimeValue {
     fn clone(&self) -> Self {
         match self {
             RuntimeValue::Relation(rd) => RuntimeValue::Relation(rd.clone()),
@@ -48,7 +44,7 @@ impl<U: User, E: Engine<U>> Clone for RuntimeValue<U, E> {
 
 // RuntimeValue is not derivable because of the `func` field in BuiltinRelation.
 // We must implement Debug manually to handle the function pointer.
-impl<U: User, E: Engine<U>> std::fmt::Debug for RuntimeValue<U, E> {
+impl std::fmt::Debug for RuntimeValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RuntimeValue::Relation(rd) => f.debug_tuple("Relation").field(rd).finish(),
@@ -68,23 +64,23 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RuntimeValue<U, E> {
 }
 
 /// Runtime values that can be stored in the environment
-pub enum RuntimeValue<U: User, E: Engine<U>> {
+pub enum RuntimeValue {
     /// A predicate definition
     Relation(PredicateDefinition),
     /// A relation handle for higher-order predicates
     PredicateHandle(PredicateHandle),
     BuiltinRelation {
-        func: Rc<dyn Fn(Vec<LTerm<U, E>>) -> Goal<U, E>>,
+        func: Rc<dyn Fn(Vec<LTerm>) -> Goal>,
         arity: usize,
     },
     Struct(StructDefinition),
     /// Registry index for type definitions
     Type(usize),
     /// A runtime term/value
-    Term(LTerm<U, E>),
+    Term(LTerm),
 }
 
-impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
+impl RuntimeValue {
     /// Create a runtime value from an AST term
     pub fn from_ast_term(term: &Term) -> Result<Self, String> {
         match term {
@@ -137,7 +133,7 @@ impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
     }
 
     /// Convert AST literal to LTerm
-    fn literal_to_lterm(literal: &Literal) -> Result<LTerm<U, E>, String> {
+    fn literal_to_lterm(literal: &Literal) -> Result<LTerm, String> {
         match literal {
             Literal::Boolean(b) => Ok(LTerm::from(*b)),
             Literal::Number(n) => {
@@ -166,7 +162,7 @@ impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
     }
 
     /// Get the term if this is a term
-    pub fn as_term(&self) -> Option<&LTerm<U, E>> {
+    pub fn as_term(&self) -> Option<&LTerm> {
         match self {
             RuntimeValue::Term(term) => Some(term),
             _ => None,
@@ -177,11 +173,10 @@ impl<U: User, E: Engine<U>> RuntimeValue<U, E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::DefaultEngine;
-    use crate::interpreter::parser::ast::*;
-    use crate::user::DefaultUser;
 
-    type TestRuntimeValue = RuntimeValue<DefaultUser, DefaultEngine<DefaultUser>>;
+    use crate::interpreter::parser::ast::*;
+
+    type TestRuntimeValue = RuntimeValue;
 
     #[test]
     fn test_from_ast_literal_boolean() {

@@ -1,32 +1,27 @@
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
+use derivative::Derivative;
 use std::any::Any;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct Fresh<U, E, G>
+#[derivative(Debug)]
+pub struct Fresh<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
-    variables: Vec<LTerm<U, E>>,
+    variables: Vec<LTerm>,
     body: G,
 }
 
-impl<U, E, G> Fresh<U, E, G>
+impl<G> Fresh<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
-    pub fn new(variables: Vec<LTerm<U, E>>, body: G) -> InferredGoal<U, E, G> {
+    pub fn new(variables: Vec<LTerm>, body: G) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(Fresh { variables, body })))
     }
 
@@ -35,16 +30,14 @@ where
     }
 }
 
-impl<U, E, G> Solve<U, E> for Fresh<U, E, G>
+impl<G> Solve for Fresh<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        if let Some(bfs) = self.as_any().downcast_ref::<Fresh<U, E, Goal<U, E>>>() {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
+        if let Some(bfs) = self.as_any().downcast_ref::<Fresh<Goal>>() {
             Stream::pause(Box::new(state), bfs.body.clone())
-        } else if let Some(dfs) = self.as_any().downcast_ref::<Fresh<U, E, DFSGoal<U, E>>>() {
+        } else if let Some(dfs) = self.as_any().downcast_ref::<Fresh<DFSGoal>>() {
             Stream::pause_dfs(Box::new(state), dfs.body.clone())
         } else {
             unreachable!()

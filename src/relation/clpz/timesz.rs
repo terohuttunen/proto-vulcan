@@ -1,4 +1,3 @@
-use crate::engine::Engine;
 /// Constrains u * v = w
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
@@ -6,41 +5,23 @@ use crate::lvalue::LValue;
 use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, SResult, State};
 use crate::stream::Stream;
-use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct TimesZ<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
-    w: LTerm<U, E>,
+#[derive(Debug)]
+pub struct TimesZ {
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
 }
 
-impl<U, E> TimesZ<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new<G: AnyGoal<U, E>>(
-        u: LTerm<U, E>,
-        v: LTerm<U, E>,
-        w: LTerm<U, E>,
-    ) -> InferredGoal<U, E, G> {
+impl TimesZ {
+    pub fn new<G: AnyGoal>(u: LTerm, v: LTerm, w: LTerm) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(TimesZ { u, v, w })))
     }
 }
 
-impl<U, E> Solve<U, E> for TimesZ<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for TimesZ {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         match TimesZConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -48,33 +29,22 @@ where
     }
 }
 
-pub fn timesz<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn timesz<G>(u: LTerm, v: LTerm, w: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     TimesZ::new(u, v, w)
 }
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
-pub struct TimesZConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
-    w: LTerm<U, E>,
+#[derive(Debug, Clone)]
+pub struct TimesZConstraint {
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
 }
 
-impl<U, E> TimesZConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Rc<dyn Constraint<U, E>> {
+impl TimesZConstraint {
+    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Rc<dyn Constraint> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
@@ -82,12 +52,8 @@ where
     }
 }
 
-impl<U, E> Constraint<U, E> for TimesZConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn run(self: Rc<Self>, mut state: State<U, E>) -> SResult<U, E> {
+impl Constraint for TimesZConstraint {
+    fn run(self: Rc<Self>, mut state: State) -> SResult {
         let uwalk = state.smap_ref().walk(&self.u).clone();
         let vwalk = state.smap_ref().walk(&self.v).clone();
         let wwalk = state.smap_ref().walk(&self.w).clone();
@@ -151,16 +117,12 @@ where
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U, E>> {
+    fn operands(&self) -> Vec<LTerm> {
         vec![self.u.clone(), self.v.clone(), self.w.clone()]
     }
 }
 
-impl<U, E> std::fmt::Display for TimesZConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl std::fmt::Display for TimesZConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }

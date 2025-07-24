@@ -5,14 +5,12 @@
 use super::environment::Environment;
 use super::execution::ExecutionContext;
 use super::parser::ast::{PredicateDefinition, SearchStrategy};
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal};
 use crate::lterm::LTerm;
 use crate::operator::conj::Conj;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -24,16 +22,16 @@ use std::rc::Rc;
 /// the specific relation definition to execute, and the arguments (`LTerm`s)
 /// that were passed to the call.
 #[derive(Clone)]
-pub struct DeferredRelationCall<U: User, E: Engine<U>> {
-    pub environment: Rc<RefCell<Environment<U, E>>>,
+pub struct DeferredRelationCall {
+    pub environment: Rc<RefCell<Environment>>,
     pub rel_def: Rc<PredicateDefinition>,
-    pub call_args: Vec<LTerm<U, E>>,
+    pub call_args: Vec<LTerm>,
     /// The search strategy context from the calling site
     pub parent_search_strategy: SearchStrategy,
 }
 
 // Manual implementation of Debug to avoid issues with the recursive environment type.
-impl<U: User, E: Engine<U>> std::fmt::Debug for DeferredRelationCall<U, E> {
+impl std::fmt::Debug for DeferredRelationCall {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DeferredRelationCall")
             .field("rel_def", &self.rel_def)
@@ -42,11 +40,11 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for DeferredRelationCall<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> DeferredRelationCall<U, E> {
+impl DeferredRelationCall {
     pub fn new(
-        environment: Rc<RefCell<Environment<U, E>>>,
+        environment: Rc<RefCell<Environment>>,
         rel_def: Rc<PredicateDefinition>,
-        call_args: Vec<LTerm<U, E>>,
+        call_args: Vec<LTerm>,
         parent_search_strategy: SearchStrategy,
     ) -> Self {
         Self {
@@ -58,8 +56,8 @@ impl<U: User, E: Engine<U>> DeferredRelationCall<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> Solve<U, E> for DeferredRelationCall<U, E> {
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for DeferredRelationCall {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         let mut exec_context = ExecutionContext::new(self.environment.clone());
 
         // Set up the search strategy context

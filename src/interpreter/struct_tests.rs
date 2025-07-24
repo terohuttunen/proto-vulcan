@@ -8,7 +8,7 @@ use crate::{
     user::DefaultUser,
 };
 
-type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+type TestInterpreter = Interpreter;
 
 /// Test tuple struct construction and pattern matching
 #[cfg(test)]

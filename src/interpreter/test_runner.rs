@@ -94,10 +94,8 @@ use super::parser::{
     parse_str,
 };
 use super::{Interpreter, InterpreterError};
-use crate::engine::{DefaultEngine, Engine};
 use crate::goal::{Goal, GoalCast};
 use crate::lterm::{LTerm, LTermInner, LValue};
-use crate::user::{DefaultUser, User};
 use colored::*;
 use regex;
 use std::fs;
@@ -107,7 +105,7 @@ use std::rc::Rc;
 use std::time::Instant;
 use walkdir::WalkDir;
 
-type DefaultInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+type DefaultInterpreter = Interpreter;
 
 /// A single discovered test case.
 #[derive(Debug, Clone)]
@@ -432,22 +430,18 @@ impl TestRunner {
         );
     }
 
-    fn register_assertion_builtins<U, E>(&self, env: &mut Environment<U, E>)
-    where
-        U: User,
-        E: Engine<U>,
-    {
-        let assert_eq_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+    fn register_assertion_builtins(&self, env: &mut Environment) {
+        let assert_eq_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
             assert_eq(args[0].clone(), args[1].clone())
         });
         env.add_builtin_relation("assert_eq".to_string(), assert_eq_rel, 2);
 
-        let assert_neq_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+        let assert_neq_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
             assert_neq(args[0].clone(), args[1].clone())
         });
         env.add_builtin_relation("assert_neq".to_string(), assert_neq_rel, 2);
 
-        let assert_bound_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+        let assert_bound_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
             if args.len() != 1 {
                 crate::relation::fail().cast_into()
             } else {
@@ -456,7 +450,7 @@ impl TestRunner {
         });
         env.add_builtin_relation("assert_bound".to_string(), assert_bound_rel, 1);
 
-        let assert_unbound_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+        let assert_unbound_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
             if args.len() != 1 {
                 crate::relation::fail().cast_into()
             } else {
@@ -465,7 +459,7 @@ impl TestRunner {
         });
         env.add_builtin_relation("assert_unbound".to_string(), assert_unbound_rel, 1);
 
-        let assert_domain_size_rel = Rc::new(move |args: Vec<LTerm<U, E>>| -> Goal<U, E> {
+        let assert_domain_size_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
             if args.len() != 2 {
                 crate::relation::fail().cast_into()
             } else {
@@ -486,7 +480,7 @@ impl TestRunner {
     }
 
     /// Matches an LTerm against an AST Term, supporting wildcards.
-    fn matches_pattern<U: User, E: Engine<U>>(lterm: &LTerm<U, E>, term: &ast::Term) -> bool {
+    fn matches_pattern(lterm: &LTerm, term: &ast::Term) -> bool {
         match term {
             ast::Term::Wildcard(_) => true, // Wildcard matches anything
             ast::Term::Literal(literal, _) => Self::matches_literal(lterm, literal),
@@ -515,7 +509,7 @@ impl TestRunner {
     }
 
     /// Match an LTerm against a literal pattern.
-    fn matches_literal<U: User, E: Engine<U>>(lterm: &LTerm<U, E>, literal: &ast::Literal) -> bool {
+    fn matches_literal(lterm: &LTerm, literal: &ast::Literal) -> bool {
         match literal {
             ast::Literal::Boolean(expected) => {
                 lterm.is_bool() && lterm.get_bool() == Some(*expected)
@@ -547,10 +541,7 @@ impl TestRunner {
     }
 
     /// Match an LTerm against a list pattern structure.
-    fn matches_list_structure<U: User, E: Engine<U>>(
-        lterm: &LTerm<U, E>,
-        list_construction: &ast::ListConstruction,
-    ) -> bool {
+    fn matches_list_structure(lterm: &LTerm, list_construction: &ast::ListConstruction) -> bool {
         // The LTerm must be a list
         if !lterm.is_list() {
             return false;
@@ -562,7 +553,7 @@ impl TestRunner {
         }
 
         // Collect LTerm elements into a vector for easier comparison
-        let lterm_elements: Vec<&LTerm<U, E>> = lterm.iter().collect();
+        let lterm_elements: Vec<&LTerm> = lterm.iter().collect();
 
         // Check if we have enough elements for the pattern
         if lterm_elements.len() < list_construction.elements.len() {
@@ -583,7 +574,7 @@ impl TestRunner {
 
             if remaining_count == 0 {
                 // No remaining elements - tail should match empty list
-                let empty_list: LTerm<U, E> = LTerm::empty_list();
+                let empty_list: LTerm = LTerm::empty_list();
                 return Self::matches_pattern(&empty_list, tail_term);
             } else if remaining_count == 1 {
                 // Single remaining element - match directly
@@ -591,7 +582,7 @@ impl TestRunner {
                 return Self::matches_pattern(remaining_element, tail_term);
             } else {
                 // Multiple remaining elements - construct a list from them
-                let remaining_elements: Vec<LTerm<U, E>> = lterm_elements
+                let remaining_elements: Vec<LTerm> = lterm_elements
                     [list_construction.elements.len()..]
                     .iter()
                     .map(|&e| e.clone())
@@ -606,53 +597,60 @@ impl TestRunner {
     }
 
     /// Match an LTerm against an enum variant pattern.
-    fn matches_enum_variant<U: User, E: Engine<U>>(
-        lterm: &LTerm<U, E>,
-        enum_variant: &ast::EnumVariantConstruction,
-    ) -> bool {
-        use crate::lterm::LTermInner;
+    fn matches_enum_variant(lterm: &LTerm, enum_variant: &ast::EnumVariantConstruction) -> bool {
         use super::execution::{RegistryEnumVariant, VariantData};
-        
+        use crate::lterm::LTermInner;
+
         // Check if the LTerm is a compound object representing an enum variant
         if let LTermInner::Compound(compound_obj) = lterm.as_ref() {
-            if let Some(enum_var) = compound_obj.as_any().downcast_ref::<RegistryEnumVariant<U, E>>() {
+            if let Some(enum_var) = compound_obj.as_any().downcast_ref::<RegistryEnumVariant>() {
                 // Check variant name matches
                 if enum_var.variant_name != enum_variant.variant_name.to_string() {
                     return false;
                 }
-                
+
                 // For now, skip enum name verification since we'd need environment access
                 // TODO: Add environment context to enable full enum name verification
-                
+
                 // Match the construction kind
                 match (&enum_var.variant_data, &enum_variant.kind) {
                     // Both unit variants
                     (VariantData::Unit, ast::EnumVariantConstructionKind::Unit) => true,
-                    
+
                     // Both tuple variants - check arguments
-                    (VariantData::Tuple(lterm_args), ast::EnumVariantConstructionKind::Tuple(ast_args)) => {
+                    (
+                        VariantData::Tuple(lterm_args),
+                        ast::EnumVariantConstructionKind::Tuple(ast_args),
+                    ) => {
                         if lterm_args.len() != ast_args.len() {
                             return false;
                         }
-                        lterm_args.iter().zip(ast_args.iter()).all(|(lterm_arg, ast_arg)| {
-                            Self::matches_pattern(lterm_arg, ast_arg)
-                        })
+                        lterm_args
+                            .iter()
+                            .zip(ast_args.iter())
+                            .all(|(lterm_arg, ast_arg)| Self::matches_pattern(lterm_arg, ast_arg))
                     }
-                    
+
                     // Both named variants - check fields
-                    (VariantData::Named(lterm_fields), ast::EnumVariantConstructionKind::Named(ast_fields)) => {
+                    (
+                        VariantData::Named(lterm_fields),
+                        ast::EnumVariantConstructionKind::Named(ast_fields),
+                    ) => {
                         if lterm_fields.len() != ast_fields.len() {
                             return false;
                         }
-                        
+
                         // Check that all AST fields exist in LTerm fields and match
                         ast_fields.iter().all(|ast_field| {
-                            lterm_fields.get(&*ast_field.name)
-                                .map(|field_value| Self::matches_pattern(field_value, &ast_field.value))
+                            lterm_fields
+                                .get(&*ast_field.name)
+                                .map(|field_value| {
+                                    Self::matches_pattern(field_value, &ast_field.value)
+                                })
                                 .unwrap_or(false)
                         })
                     }
-                    
+
                     // Mismatched kinds
                     _ => false,
                 }
@@ -665,24 +663,25 @@ impl TestRunner {
     }
 
     /// Match an LTerm against a named struct pattern.
-    fn matches_named_struct<U: User, E: Engine<U>>(
-        lterm: &LTerm<U, E>,
-        named_struct: &ast::NamedStructConstruction,
-    ) -> bool {
-        use crate::lterm::LTermInner;
+    fn matches_named_struct(lterm: &LTerm, named_struct: &ast::NamedStructConstruction) -> bool {
         use super::execution::RegistryNamedStruct;
-        
+        use crate::lterm::LTermInner;
+
         // Check if the LTerm is a compound object representing a named struct
         if let LTermInner::Compound(compound_obj) = lterm.as_ref() {
-            if let Some(named_struct_obj) = compound_obj.as_any().downcast_ref::<RegistryNamedStruct<U, E>>() {
+            if let Some(named_struct_obj) =
+                compound_obj.as_any().downcast_ref::<RegistryNamedStruct>()
+            {
                 // Check field count matches
                 if named_struct_obj.fields.len() != named_struct.fields.len() {
                     return false;
                 }
-                
+
                 // Check that all AST fields exist in LTerm fields and match
                 named_struct.fields.iter().all(|ast_field| {
-                    named_struct_obj.fields.get(&*ast_field.name)
+                    named_struct_obj
+                        .fields
+                        .get(&*ast_field.name)
                         .map(|field_value| Self::matches_pattern(field_value, &ast_field.value))
                         .unwrap_or(false)
                 })
@@ -695,25 +694,26 @@ impl TestRunner {
     }
 
     /// Match an LTerm against a tuple struct pattern.
-    fn matches_tuple_struct<U: User, E: Engine<U>>(
-        lterm: &LTerm<U, E>,
-        tuple_struct: &ast::TupleStructConstruction,
-    ) -> bool {
-        use crate::lterm::LTermInner;
+    fn matches_tuple_struct(lterm: &LTerm, tuple_struct: &ast::TupleStructConstruction) -> bool {
         use super::execution::RegistryTupleStruct;
-        
+        use crate::lterm::LTermInner;
+
         // Check if the LTerm is a compound object representing a tuple struct
         if let LTermInner::Compound(compound_obj) = lterm.as_ref() {
-            if let Some(tuple_struct_obj) = compound_obj.as_any().downcast_ref::<RegistryTupleStruct<U, E>>() {
+            if let Some(tuple_struct_obj) =
+                compound_obj.as_any().downcast_ref::<RegistryTupleStruct>()
+            {
                 // Check argument count matches
                 if tuple_struct_obj.args.len() != tuple_struct.args.len() {
                     return false;
                 }
-                
+
                 // Check that all arguments match
-                tuple_struct_obj.args.iter().zip(tuple_struct.args.iter()).all(|(lterm_arg, ast_arg)| {
-                    Self::matches_pattern(lterm_arg, ast_arg)
-                })
+                tuple_struct_obj
+                    .args
+                    .iter()
+                    .zip(tuple_struct.args.iter())
+                    .all(|(lterm_arg, ast_arg)| Self::matches_pattern(lterm_arg, ast_arg))
             } else {
                 false
             }
@@ -859,15 +859,21 @@ impl TestRunner {
                         );
                     };
 
-                    let result_lterms: Vec<LTerm<_, _>> = results
+                    let result_lterms: Vec<LTerm> = results
                         .iter()
                         .filter_map(|r| r.bindings.get(query_variable).map(|res| res.0.clone()))
                         .collect();
 
                     // Apply semantic analysis to the expected term for consistent behavior
                     let mut expected_term_analyzed = expected.clone();
-                    if let Err(e) = super::semantic_analysis::analyze_term(&mut expected_term_analyzed, &interpreter.environment) {
-                        return TestResult::Error(format!("Failed to analyze expected term: {}", e));
+                    if let Err(e) = super::semantic_analysis::analyze_term(
+                        &mut expected_term_analyzed,
+                        &interpreter.environment,
+                    ) {
+                        return TestResult::Error(format!(
+                            "Failed to analyze expected term: {}",
+                            e
+                        ));
                     }
 
                     let expected_ast_list = match expected_term_analyzed {

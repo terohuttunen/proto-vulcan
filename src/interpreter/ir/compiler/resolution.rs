@@ -7,7 +7,7 @@ use super::*;
 use crate::interpreter::symbol_table::InternedSymbol;
 
 /// Import resolution methods for the IR compiler
-impl<U: User, E: Engine<U>> Compiler<U, E> {
+impl Compiler {
     /// Phase 2: Resolve imports using simplified fixpoint algorithm with global pending list
     pub(super) fn resolve_imports(&mut self, ir_program: &mut Program) -> Result<(), CompileError> {
         loop {

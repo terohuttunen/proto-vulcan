@@ -6,7 +6,7 @@
 use super::*;
 
 /// AST-to-IR compilation methods for the IR compiler
-impl<U: User, E: Engine<U>> Compiler<U, E> {
+impl Compiler {
     /// Phase 3: Compile bodies with full symbol resolution
     pub(super) fn compile_bodies(
         &mut self,
@@ -1020,9 +1020,7 @@ impl<U: User, E: Engine<U>> Compiler<U, E> {
         &self,
         expr: &crate::interpreter::metaprogramming::MetaExpression,
     ) -> Result<MetaExpression, CompileError> {
-        use crate::interpreter::metaprogramming::{
-            MetaBinaryOp as AstMetaBinaryOp, MetaExpression as AstMetaExpression,
-        };
+        use crate::interpreter::metaprogramming::MetaExpression as AstMetaExpression;
 
         match expr {
             AstMetaExpression::Variable(name, _span) => {

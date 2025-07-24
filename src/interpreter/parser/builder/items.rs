@@ -1,7 +1,6 @@
 use pest::iterators::Pair;
 use super::{AstBuilder, ParseError, ParseResult, Rule};
 use crate::interpreter::parser::ast::*;
-use crate::interpreter::symbol_table::InternedSymbol;
 
 impl<'a> AstBuilder<'a> {
     /// Extract the actual ident pair from a type_name rule, drilling down through the grammar hierarchy

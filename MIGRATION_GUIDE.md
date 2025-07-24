@@ -115,7 +115,7 @@ In the old macro-based system, `matche` was a common way to do pattern matching,
 
 ```rust
 // From src/relation/member1.rs
-pub fn member1<U, E, G>(x: LTerm<U, E>, l: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn member1<U, E, G>(x: LTerm<U, E>, l: LTerm<U, E>) -> InferredGoal<G>
 where
     U: User,
     E: Engine<U>,

@@ -4,8 +4,6 @@ use super::super::parser::ast::StructDefinition;
 use super::super::parser::ast::{QualifiedPath, Visibility};
 use super::super::runtime_value::RuntimeValue;
 use super::super::InterpreterError;
-use crate::engine::Engine;
-use crate::user::User;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -155,12 +153,12 @@ pub enum VisibilityReason {
 
 /// Collection of accessible symbols from a module
 #[derive(Debug)]
-pub struct AccessibleSymbols<U: User, E: Engine<U>> {
-    pub values: HashMap<String, RuntimeValue<U, E>>,
+pub struct AccessibleSymbols {
+    pub values: HashMap<String, RuntimeValue>,
     pub types: HashMap<String, StructDefinition>,
 }
 
-impl<U: User, E: Engine<U>> Clone for AccessibleSymbols<U, E> {
+impl Clone for AccessibleSymbols {
     fn clone(&self) -> Self {
         Self {
             values: self.values.clone(),
@@ -169,7 +167,7 @@ impl<U: User, E: Engine<U>> Clone for AccessibleSymbols<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> AccessibleSymbols<U, E> {
+impl AccessibleSymbols {
     pub fn new() -> Self {
         Self {
             values: HashMap::new(),
@@ -181,7 +179,7 @@ impl<U: User, E: Engine<U>> AccessibleSymbols<U, E> {
         self.values.is_empty() && self.types.is_empty()
     }
 
-    pub fn merge(&mut self, other: AccessibleSymbols<U, E>) {
+    pub fn merge(&mut self, other: AccessibleSymbols) {
         self.values.extend(other.values);
         self.types.extend(other.types);
     }
@@ -327,8 +325,8 @@ impl From<ImportError> for InterpreterError {
 
 /// Result of an import operation
 #[derive(Debug, Clone)]
-pub struct ImportResult<U: User, E: Engine<U>> {
-    pub imported_symbols: AccessibleSymbols<U, E>,
+pub struct ImportResult {
+    pub imported_symbols: AccessibleSymbols,
     pub conflicts: Vec<ImportConflict>,
     pub warnings: Vec<ImportWarning>,
     pub metrics: ImportMetrics,

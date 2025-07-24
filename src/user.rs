@@ -13,7 +13,6 @@
 //! defined state is not available in user defined unification, as `LTerm` is not parametrized
 //! by the user state type.
 
-use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use crate::state::constraint::Constraint;
@@ -31,46 +30,30 @@ pub trait User: Debug + Clone + Default + 'static {
     type UserContext: Debug;
 
     /// Process extension to substitution map.
-    fn process_extension<E: Engine<Self>>(
-        state: State<Self, E>,
-        _extension: &SMap<Self, E>,
-    ) -> SResult<Self, E> {
+    fn process_extension(state: State, _extension: &SMap) -> SResult {
         Ok(state)
     }
 
     // User unification.
-    fn unify<E: Engine<Self>>(
-        _state: State<Self, E>,
-        _extension: &mut SMap<Self, E>,
-        _uwalk: LTerm<Self, E>,
-        _vwalk: LTerm<Self, E>,
-    ) -> SResult<Self, E> {
+    fn unify(_state: State, _extension: &mut SMap, _uwalk: LTerm, _vwalk: LTerm) -> SResult {
         Err(())
     }
 
     /// Called before the constraint is added to the state
-    fn with_constraint<E: Engine<Self>>(
-        _state: &mut State<Self, E>,
-        _constraint: &Rc<dyn Constraint<Self, E>>,
-    ) {
-    }
+    fn with_constraint(_state: &mut State, _constraint: &Rc<dyn Constraint>) {}
 
     /// Called after the constraint has been removed from the state
-    fn take_constraint<E: Engine<Self>>(
-        _state: &mut State<Self, E>,
-        _constraint: &Rc<dyn Constraint<Self, E>>,
-    ) {
-    }
+    fn take_constraint(_state: &mut State, _constraint: &Rc<dyn Constraint>) {}
 
     /// Called in reification when constraints are finalized. For example finite domain
     /// constraints are converted to sequences of integers.
-    fn enforce_constraints<E: Engine<Self>>(_x: LTerm<Self, E>) -> Goal<Self, E> {
+    fn enforce_constraints(_x: LTerm) -> Goal {
         Goal::Succeed
     }
 
-    fn finalize<E: Engine<Self>>(_state: &mut State<Self, E>) {}
+    fn finalize(_state: &mut State) {}
 
-    fn reify<E: Engine<Self>>(_state: &mut State<Self, E>) {}
+    fn reify(_state: &mut State) {}
 }
 
 #[derive(Debug, Clone)]

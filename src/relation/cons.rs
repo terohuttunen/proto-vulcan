@@ -1,7 +1,7 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
-use crate::user::User;
+
 
 /// A relation such that the `out` parameter is equal to `rest` parameter appended to `first`
 /// parameter. The `first` parameter is the head of the list `out` and the `rest` is the tail.
@@ -19,15 +19,13 @@ use crate::user::User;
 /// }
 /// ```
 
-pub fn cons<U, E, G>(
-    first: LTerm<U, E>,
-    rest: LTerm<U, E>,
-    out: LTerm<U, E>,
-) -> InferredGoal<U, E, G>
+pub fn cons<G>(
+    first: LTerm,
+    rest: LTerm,
+    out: LTerm,
+) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     proto_vulcan!([first | rest] == out)
 }

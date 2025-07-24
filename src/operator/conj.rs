@@ -1,31 +1,20 @@
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, DFSGoal, Goal, InferredGoal};
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
-use crate::user::User;
 use crate::GoalCast;
 use std::any::Any;
-use std::marker::PhantomData;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct Conj<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub goal_1: Goal<U, E>,
-    pub goal_2: Goal<U, E>,
+#[derivative(Debug)]
+pub struct Conj {
+    pub goal_1: Goal,
+    pub goal_2: Goal,
 }
 
-impl<U, E> Conj<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Goal<U, E> {
+impl Conj {
+    pub fn new(goal_1: Goal, goal_2: Goal) -> Goal {
         if goal_1.is_succeed() && goal_2.is_succeed() {
             return Goal::succeed();
         }
@@ -36,11 +25,11 @@ where
         Goal::dynamic(Rc::new(Conj { goal_1, goal_2 }))
     }
 
-    pub fn new_raw(goal_1: Goal<U, E>, goal_2: Goal<U, E>) -> Conj<U, E> {
+    pub fn new_raw(goal_1: Goal, goal_2: Goal) -> Conj {
         Conj { goal_1, goal_2 }
     }
 
-    pub fn from_vec(mut v: Vec<Goal<U, E>>) -> Goal<U, E> {
+    pub fn from_vec(mut v: Vec<Goal>) -> Goal {
         let mut p = Goal::succeed();
         for g in v.drain(..).rev() {
             p = Conj::new(g, p);
@@ -48,7 +37,7 @@ where
         p
     }
 
-    pub fn from_array(goals: &[Goal<U, E>]) -> Goal<U, E> {
+    pub fn from_array(goals: &[Goal]) -> Goal {
         let mut p = Goal::succeed();
         for g in goals.to_vec().drain(..).rev() {
             p = Conj::new(g, p);
@@ -56,9 +45,9 @@ where
         p
     }
 
-    pub fn from_iter<I>(iter: I) -> Goal<U, E>
+    pub fn from_iter<I>(iter: I) -> Goal
     where
-        I: Iterator<Item = Goal<U, E>>,
+        I: Iterator<Item = Goal>,
     {
         let mut p = Goal::succeed();
         for g in iter {
@@ -69,7 +58,7 @@ where
 
     // The parameter is a list of conjunctions, and the resulting goal is a conjunction
     // of all the goals.
-    pub fn from_conjunctions(conjunctions: &[&[Goal<U, E>]]) -> Goal<U, E> {
+    pub fn from_conjunctions(conjunctions: &[&[Goal]]) -> Goal {
         let mut p = Goal::succeed();
         for g in conjunctions
             .iter()
@@ -82,12 +71,8 @@ where
     }
 }
 
-impl<U, E> Solve<U, E> for Conj<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for Conj {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         Stream::lazy_bind(
             LazyStream::pause(Box::new(state), self.goal_1.clone()),
             self.goal_2.clone(),
@@ -96,22 +81,14 @@ where
 }
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct DFSConj<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub goal_1: DFSGoal<U, E>,
-    pub goal_2: DFSGoal<U, E>,
+#[derivative(Debug)]
+pub struct DFSConj {
+    pub goal_1: DFSGoal,
+    pub goal_2: DFSGoal,
 }
 
-impl<U, E> DFSConj<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new(goal_1: DFSGoal<U, E>, goal_2: DFSGoal<U, E>) -> DFSGoal<U, E> {
+impl DFSConj {
+    pub fn new(goal_1: DFSGoal, goal_2: DFSGoal) -> DFSGoal {
         if goal_1.is_succeed() && goal_2.is_succeed() {
             return DFSGoal::succeed();
         }
@@ -122,11 +99,11 @@ where
         DFSGoal::dynamic(Rc::new(DFSConj { goal_1, goal_2 }))
     }
 
-    pub fn new_raw(goal_1: DFSGoal<U, E>, goal_2: DFSGoal<U, E>) -> DFSConj<U, E> {
+    pub fn new_raw(goal_1: DFSGoal, goal_2: DFSGoal) -> DFSConj {
         DFSConj { goal_1, goal_2 }
     }
 
-    pub fn from_vec(mut v: Vec<DFSGoal<U, E>>) -> DFSGoal<U, E> {
+    pub fn from_vec(mut v: Vec<DFSGoal>) -> DFSGoal {
         let mut p = DFSGoal::succeed();
         for g in v.drain(..).rev() {
             p = DFSConj::new(g, p);
@@ -134,7 +111,7 @@ where
         p
     }
 
-    pub fn from_array(goals: &[DFSGoal<U, E>]) -> DFSGoal<U, E> {
+    pub fn from_array(goals: &[DFSGoal]) -> DFSGoal {
         let mut p = DFSGoal::succeed();
         for g in goals.to_vec().drain(..).rev() {
             p = DFSConj::new(g, p);
@@ -142,9 +119,9 @@ where
         p
     }
 
-    pub fn from_iter<I>(iter: I) -> DFSGoal<U, E>
+    pub fn from_iter<I>(iter: I) -> DFSGoal
     where
-        I: Iterator<Item = DFSGoal<U, E>>,
+        I: Iterator<Item = DFSGoal>,
     {
         let mut p = DFSGoal::succeed();
         for g in iter {
@@ -155,7 +132,7 @@ where
 
     // The parameter is a list of conjunctions, and the resulting goal is a conjunction
     // of all the goals.
-    pub fn from_conjunctions(conjunctions: &[&[DFSGoal<U, E>]]) -> DFSGoal<U, E> {
+    pub fn from_conjunctions(conjunctions: &[&[DFSGoal]]) -> DFSGoal {
         let mut p = DFSGoal::succeed();
         for g in conjunctions
             .iter()
@@ -168,12 +145,8 @@ where
     }
 }
 
-impl<U, E> Solve<U, E> for DFSConj<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for DFSConj {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         Stream::lazy_bind_dfs(
             LazyStream::pause_dfs(Box::new(state), self.goal_1.clone()),
             self.goal_2.clone(),
@@ -182,26 +155,14 @@ where
 }
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct InferredConj<U, E, G>
-where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
-{
+#[derivative(Debug)]
+pub struct InferredConj<G: AnyGoal> {
     pub goal_1: G,
     pub goal_2: G,
-    _phantom: PhantomData<U>,
-    _phantom2: PhantomData<E>,
 }
 
-impl<U, E, G> InferredConj<U, E, G>
-where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
-{
-    pub fn new(goal_1: G, goal_2: G) -> InferredGoal<U, E, G> {
+impl<G: AnyGoal> InferredConj<G> {
+    pub fn new(goal_1: G, goal_2: G) -> InferredGoal<G> {
         if goal_1.is_succeed() && goal_2.is_succeed() {
             return InferredGoal::new(G::succeed());
         }
@@ -209,24 +170,14 @@ where
             return InferredGoal::new(G::fail());
         }
 
-        InferredGoal::new(G::dynamic(Rc::new(InferredConj {
-            goal_1,
-            goal_2,
-            _phantom: PhantomData,
-            _phantom2: PhantomData,
-        })))
+        InferredGoal::new(G::dynamic(Rc::new(InferredConj { goal_1, goal_2 })))
     }
 
-    pub fn new_raw(goal_1: G, goal_2: G) -> InferredConj<U, E, G> {
-        InferredConj {
-            goal_1,
-            goal_2,
-            _phantom: PhantomData,
-            _phantom2: PhantomData,
-        }
+    pub fn new_raw(goal_1: G, goal_2: G) -> InferredConj<G> {
+        InferredConj { goal_1, goal_2 }
     }
 
-    pub fn from_vec(mut v: Vec<G>) -> InferredGoal<U, E, G> {
+    pub fn from_vec(mut v: Vec<G>) -> InferredGoal<G> {
         let mut p = G::succeed();
         for g in v.drain(..).rev() {
             p = InferredConj::new(g, p).cast_into();
@@ -234,7 +185,7 @@ where
         InferredGoal::new(p)
     }
 
-    pub fn from_array(goals: &[G]) -> InferredGoal<U, E, G> {
+    pub fn from_array(goals: &[G]) -> InferredGoal<G> {
         let mut p = G::succeed();
         for g in goals.to_vec().drain(..).rev() {
             p = InferredConj::new(g, p).cast_into();
@@ -242,7 +193,7 @@ where
         InferredGoal::new(p)
     }
 
-    pub fn from_iter<I>(iter: I) -> InferredGoal<U, E, G>
+    pub fn from_iter<I>(iter: I) -> InferredGoal<G>
     where
         I: Iterator<Item = G>,
     {
@@ -255,7 +206,7 @@ where
 
     // The parameter is a list of conjunctions, and the resulting goal is a conjunction
     // of all the goals.
-    pub fn from_conjunctions(conjunctions: &[&[G]]) -> InferredGoal<U, E, G> {
+    pub fn from_conjunctions(conjunctions: &[&[G]]) -> InferredGoal<G> {
         let mut p = G::succeed();
         for g in conjunctions
             .iter()
@@ -272,25 +223,14 @@ where
     }
 }
 
-impl<U, E, G> Solve<U, E> for InferredConj<U, E, G>
-where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
-        if let Some(bfs) = self
-            .as_any()
-            .downcast_ref::<InferredConj<U, E, Goal<U, E>>>()
-        {
+impl<G: AnyGoal> Solve for InferredConj<G> {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
+        if let Some(bfs) = self.as_any().downcast_ref::<InferredConj<Goal>>() {
             Stream::lazy_bind(
                 LazyStream::pause(Box::new(state), bfs.goal_1.clone().cast_into()),
                 bfs.goal_2.clone().cast_into(),
             )
-        } else if let Some(dfs) = self
-            .as_any()
-            .downcast_ref::<InferredConj<U, E, DFSGoal<U, E>>>()
-        {
+        } else if let Some(dfs) = self.as_any().downcast_ref::<InferredConj<DFSGoal>>() {
             Stream::lazy_bind_dfs(
                 LazyStream::pause_dfs(Box::new(state), dfs.goal_1.clone().cast_into()),
                 dfs.goal_2.clone().cast_into(),

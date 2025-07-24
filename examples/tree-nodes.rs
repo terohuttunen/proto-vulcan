@@ -6,11 +6,7 @@ struct TreeNode(LTerm, TreeNode, TreeNode);
 
 // A relation between a tree and a list of its nodes in
 // unnamed form TreeNode(name, left, right)
-fn tree_nodes_unnamed<U: User, E: Engine<U>>(
-    node: TreeNode<U, E>,
-    d: LTerm<U, E>,
-    (list, rest): (LTerm<U, E>, LTerm<U, E>),
-) -> Goal<U, E> {
+fn tree_nodes_unnamed(node: TreeNode, d: LTerm, (list, rest): (LTerm, LTerm)) -> Goal {
     proto_vulcan_closure!(match node {
         [] => list == rest,
         TreeNode(name, left, right) => |ls0, ls1, ls2| {
@@ -31,11 +27,7 @@ struct NamedNode {
 
 // A relation between a tree and a list of its nodes in
 // named form TreeNode { name, left, right }
-fn tree_nodes_named<U: User, E: Engine<U>>(
-    node: NamedNode<U, E>,
-    d: LTerm<U, E>,
-    (list, rest): (LTerm<U, E>, LTerm<U, E>),
-) -> Goal<U, E> {
+fn tree_nodes_named(node: NamedNode, d: LTerm, (list, rest): (LTerm, LTerm)) -> Goal {
     proto_vulcan_closure!(match node {
         [] => list == rest,
         NamedNode { name, left, right } => |ls0, ls1, ls2| {
@@ -49,7 +41,7 @@ fn tree_nodes_named<U: User, E: Engine<U>>(
 
 // A relation between a tree and a list of its nodes in
 // untyped form [name, left, right]
-fn tree_nodes<U: User, E: Engine<U>>(node: LTerm<U, E>, d: LTerm<U, E>, (list, rest): (LTerm<U, E>, LTerm<U, E>)) -> Goal<U, E> {
+fn tree_nodes(node: LTerm, d: LTerm, (list, rest): (LTerm, LTerm)) -> Goal {
     proto_vulcan_closure!(match node {
         [] => list == rest,
         [name, left, right] => |ls0, ls1, ls2| {

@@ -1,41 +1,29 @@
 //! Constrain disequality in finite domains
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, FiniteDomain, SResult, State};
 use crate::stream::Stream;
-use crate::user::User;
+
 use std::rc::Rc;
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct DiseqFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
+#[derive(Debug)]
+pub struct DiseqFd {
+    u: LTerm,
+    v: LTerm,
 }
 
-impl<U, E> DiseqFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+impl DiseqFd {
+    pub fn new<G: AnyGoal>(u: LTerm, v: LTerm) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(DiseqFd { u, v })))
     }
 }
 
-impl<U, E> Solve<U, E> for DiseqFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl Solve for DiseqFd
 {
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         let u = self.u.clone();
         let v = self.v.clone();
         match DiseqFdConstraint::new(u, v).run(state) {
@@ -72,44 +60,31 @@ where
 ///     assert_eq!(expected.len(), 0);
 /// }
 /// ```
-pub fn diseqfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn diseqfd<G>(u: LTerm, v: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     DiseqFd::new(u, v)
 }
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct DiseqFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
+#[derive(Debug)]
+pub struct DiseqFdConstraint {
+    u: LTerm,
+    v: LTerm,
 }
 
-impl<U, E> DiseqFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl DiseqFdConstraint
 {
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Rc<dyn Constraint<U, E>> {
+    pub fn new(u: LTerm, v: LTerm) -> Rc<dyn Constraint> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         Rc::new(DiseqFdConstraint { u, v })
     }
 }
 
-impl<U, E> Constraint<U, E> for DiseqFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl Constraint for DiseqFdConstraint
 {
-    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
+    fn run(self: Rc<Self>, state: State) -> SResult {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
 
@@ -173,15 +148,12 @@ where
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U, E>> {
+    fn operands(&self) -> Vec<LTerm> {
         vec![self.u.clone(), self.v.clone()]
     }
 }
 
-impl<U, E> std::fmt::Display for DiseqFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl std::fmt::Display for DiseqFdConstraint
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")

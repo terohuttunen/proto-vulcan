@@ -6,14 +6,12 @@
 //! - x < y (comparison constraints)
 
 use super::{ConstraintDomain, DomainConstraints};
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::execution::ExecutionContext;
 use crate::interpreter::parser::ast::ConstraintBody;
 use crate::interpreter::InterpreterError;
 use crate::lterm::LTerm;
 use crate::operator::conj::Conj;
-use crate::user::User;
 use pest::Parser;
 use pest_derive::Parser;
 
@@ -29,12 +27,15 @@ pub struct ClpzTemplate {
 }
 
 impl super::DomainConstraintTemplate for ClpzTemplate {
-    fn execute(&self, execution_context: &mut super::super::execution::ExecutionContext<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>) 
-        -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
+    fn execute(
+        &self,
+        execution_context: &mut super::super::execution::ExecutionContext,
+    ) -> Result<crate::goal::Goal, InterpreterError> {
         // For now, fall back to the original parsing approach
         // TODO: Implement proper template-based execution
         let domain = ClpzDomain::new();
-        let parsed_constraints = domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+        let parsed_constraints =
+            domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
         parsed_constraints.convert_to_goals(execution_context)
     }
 }
@@ -47,22 +48,22 @@ pub struct ClpzIrTemplate {
 }
 
 impl super::IrDomainConstraintTemplate for ClpzIrTemplate {
-    fn execute(&self, execution_context: &mut super::super::runtime::context::ExecutionContext) 
-        -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
+    fn execute(
+        &self,
+        execution_context: &mut super::super::runtime::context::ExecutionContext,
+    ) -> Result<crate::goal::Goal, InterpreterError> {
         // Create a temporary bridge between IR ExecutionContext and regular ExecutionContext
         // This is a temporary implementation until we have full IR-native constraint compilation
         use super::super::execution::ExecutionContext as RegularExecutionContext;
-        use crate::user::DefaultUser;
-        use crate::engine::DefaultEngine;
-        
+
         // Create a temporary execution context for constraint compilation
-        let mut temp_execution_context = RegularExecutionContext::<DefaultUser, DefaultEngine<DefaultUser>>::new(
-            execution_context.environment().clone()
-        );
-        
+        let mut temp_execution_context =
+            RegularExecutionContext::new(execution_context.environment().clone());
+
         // For now, fall back to the original parsing approach with temporary context
         let domain = ClpzDomain::new();
-        let parsed_constraints = domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+        let parsed_constraints =
+            domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
         parsed_constraints.convert_to_goals(&mut temp_execution_context)
     }
 }
@@ -76,7 +77,7 @@ impl ClpzDomain {
     }
 }
 
-impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
+impl ConstraintDomain for ClpzDomain {
     fn name(&self) -> &str {
         "clpz"
     }
@@ -85,7 +86,7 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
         &self,
         body: &ConstraintBody,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<Box<dyn DomainConstraints<U, E>>, InterpreterError> {
+    ) -> Result<Box<dyn DomainConstraints>, InterpreterError> {
         let trimmed_content = body.raw_content.trim();
 
         let pairs = ClpzParser::parse(Rule::constraints, trimmed_content).map_err(|e| {
@@ -119,12 +120,13 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
 - Fresh: |x, y| { x + y == z }"#
     }
 
-    fn get_unbound_variables(&self, body: &ConstraintBody) -> Result<Vec<String>, InterpreterError> {
+    fn get_unbound_variables(
+        &self,
+        body: &ConstraintBody,
+    ) -> Result<Vec<String>, InterpreterError> {
         // For now, parse the constraint to extract variables using concrete types
         // TODO: Implement proper variable extraction without full parsing
-        use crate::user::DefaultUser;
-        use crate::engine::DefaultEngine;
-        let parsed_constraints: Box<dyn DomainConstraints<DefaultUser, DefaultEngine<DefaultUser>>> = 
+        let parsed_constraints: Box<dyn DomainConstraints> =
             self.parse_constraints(body, &super::super::parser::ast::Span::dummy())?;
         Ok(parsed_constraints.extract_variables())
     }
@@ -157,10 +159,10 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpzDomain {
 }
 
 impl ClpzDomain {
-    fn build_constraint<U: User, E: Engine<U>>(
+    fn build_constraint(
         pair: pest::iterators::Pair<Rule>,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpzConstraint, InterpreterError> {
         let constraint_pair = pair.into_inner().next().unwrap();
 
         match constraint_pair.as_rule() {
@@ -173,10 +175,10 @@ impl ClpzDomain {
         }
     }
 
-    fn build_fresh_constraint<U: User, E: Engine<U>>(
+    fn build_fresh_constraint(
         pair: pest::iterators::Pair<Rule>,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpzConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let mut vars = vec![];
         let mut constraints = vec![];
@@ -197,28 +199,19 @@ impl ClpzDomain {
             }
         }
 
-        Ok(ClpzConstraint::Fresh {
-            vars,
-            constraints,
-            _phantom: std::marker::PhantomData,
-        })
+        Ok(ClpzConstraint::Fresh { vars, constraints })
     }
 
-    fn build_arith_constraint<U: User, E: Engine<U>>(
+    fn build_arith_constraint(
         pair: pest::iterators::Pair<Rule>,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<ClpzConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpzConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let left = Self::build_arith_expr(inner.next().unwrap(), source_span);
         let op = Self::build_comp_op(inner.next().unwrap());
         let right = Self::build_arith_expr(inner.next().unwrap(), source_span);
 
-        Ok(ClpzConstraint::Expression {
-            left,
-            op,
-            right,
-            _phantom: std::marker::PhantomData,
-        })
+        Ok(ClpzConstraint::Expression { left, op, right })
     }
 
     fn build_arith_expr(
@@ -339,16 +332,16 @@ impl ClpzDomain {
 }
 
 /// Parsed CLPZ constraints
-struct ClpzConstraints<U: User, E: Engine<U>> {
-    constraints: Vec<ClpzConstraint<U, E>>,
+struct ClpzConstraints {
+    constraints: Vec<ClpzConstraint>,
     source_span: super::super::parser::ast::Span,
 }
 
-impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpzConstraints<U, E> {
+impl DomainConstraints for ClpzConstraints {
     fn convert_to_goals(
         &self,
-        execution_context: &mut ExecutionContext<U, E>,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+        execution_context: &mut ExecutionContext,
+    ) -> Result<Goal, InterpreterError> {
         let goals: Result<Vec<_>, _> = self
             .constraints
             .iter()
@@ -379,17 +372,15 @@ impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpzConstraints<U, E> {
 
 // Data model for CLPZ constraints
 #[derive(Debug, Clone)]
-pub enum ClpzConstraint<U: User, E: Engine<U>> {
+pub enum ClpzConstraint {
     Expression {
         left: ArithExpr,
         op: CompOp,
         right: ArithExpr,
-        _phantom: std::marker::PhantomData<(U, E)>,
     },
     Fresh {
         vars: Vec<String>,
-        constraints: Vec<ClpzConstraint<U, E>>,
-        _phantom: std::marker::PhantomData<(U, E)>,
+        constraints: Vec<ClpzConstraint>,
     },
 }
 
@@ -423,23 +414,19 @@ pub enum CompOp {
     GreaterEqual,
 }
 
-impl<U: User, E: Engine<U>> ClpzConstraint<U, E> {
+impl ClpzConstraint {
     fn convert_to_goal(
         &self,
-        execution_context: &mut ExecutionContext<U, E>,
+        execution_context: &mut ExecutionContext,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         match self {
-            ClpzConstraint::Expression {
-                left, op, right, ..
-            } => {
+            ClpzConstraint::Expression { left, op, right } => {
                 let left_term = eval_arith_expr(left, execution_context)?;
                 let right_term = eval_arith_expr(right, execution_context)?;
                 build_comparison_goal(left_term, *op, right_term)
             }
-            ClpzConstraint::Fresh {
-                vars, constraints, ..
-            } => {
+            ClpzConstraint::Fresh { vars, constraints } => {
                 execution_context.push_scope();
                 for var in vars {
                     let fresh_var = execution_context.create_fresh_var();
@@ -488,7 +475,6 @@ impl<U: User, E: Engine<U>> ClpzConstraint<U, E> {
             ClpzConstraint::Fresh {
                 vars: _,
                 constraints,
-                ..
             } => {
                 for c in constraints {
                     vars.extend(c.extract_variables());
@@ -500,10 +486,10 @@ impl<U: User, E: Engine<U>> ClpzConstraint<U, E> {
 }
 
 /// Evaluates an arithmetic expression using CLPZ relations
-fn eval_arith_expr<U: User, E: Engine<U>>(
+fn eval_arith_expr(
     expr: &ArithExpr,
-    execution_context: &mut ExecutionContext<U, E>,
-) -> Result<LTerm<U, E>, InterpreterError> {
+    execution_context: &mut ExecutionContext,
+) -> Result<LTerm, InterpreterError> {
     match expr {
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
         ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
@@ -588,11 +574,7 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
     }
 }
 
-fn build_comparison_goal<U: User, E: Engine<U>>(
-    left: LTerm<U, E>,
-    op: CompOp,
-    right: LTerm<U, E>,
-) -> Result<Goal<U, E>, InterpreterError> {
+fn build_comparison_goal(left: LTerm, op: CompOp, right: LTerm) -> Result<Goal, InterpreterError> {
     match op {
         CompOp::Equal => {
             use crate::relation::eq::eq;

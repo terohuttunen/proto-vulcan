@@ -5,8 +5,6 @@ use super::super::parser::ast::StructDefinition;
 use super::super::parser::ast::{QualifiedPath, Visibility};
 use super::super::runtime_value::RuntimeValue;
 use super::types::*;
-use crate::engine::Engine;
-use crate::user::User;
 use std::collections::HashMap;
 
 /// Core visibility checker that determines symbol accessibility based on context
@@ -83,11 +81,11 @@ impl VisibilityChecker {
     }
 
     /// Get all accessible symbols from a module based on import context
-    pub fn get_accessible_symbols<U: User, E: Engine<U>>(
+    pub fn get_accessible_symbols(
         &self,
-        module_info: &ModuleInfo<U, E>,
+        module_info: &ModuleInfo,
         context: &ImportContext,
-    ) -> AccessibleSymbols<U, E> {
+    ) -> AccessibleSymbols {
         let mut accessible = AccessibleSymbols::new();
 
         // Check public symbols - these follow standard visibility rules
@@ -126,12 +124,12 @@ impl VisibilityChecker {
     }
 
     /// Check accessibility of a specific symbol by name
-    pub fn check_symbol_accessibility<U: User, E: Engine<U>>(
+    pub fn check_symbol_accessibility(
         &self,
         symbol_name: &str,
-        module_info: &ModuleInfo<U, E>,
+        module_info: &ModuleInfo,
         context: &ImportContext,
-    ) -> Option<SymbolAccessibility<U, E>> {
+    ) -> Option<SymbolAccessibility> {
         // Check in public symbols first
         if let Some(value) = module_info.public_symbols.get(symbol_name) {
             if let VisibilityResult::Accessible =
@@ -182,11 +180,15 @@ impl VisibilityChecker {
             }
             QualifiedPath::Absolute(segments) => {
                 // Absolute paths start from crate root
-                Ok(ModulePath::new(segments.iter().map(|s| s.to_string()).collect()))
+                Ok(ModulePath::new(
+                    segments.iter().map(|s| s.to_string()).collect(),
+                ))
             }
             QualifiedPath::Global(segments) => {
                 // Global paths start from global namespace
-                Ok(ModulePath::new(segments.iter().map(|s| s.to_string()).collect()))
+                Ok(ModulePath::new(
+                    segments.iter().map(|s| s.to_string()).collect(),
+                ))
             }
             QualifiedPath::Super(levels, segments) => {
                 // Super paths go up the module hierarchy
@@ -200,7 +202,9 @@ impl VisibilityChecker {
                                 reason: "Cannot go beyond crate root with super::".to_string(),
                             })?;
                 }
-                current_module.segments.extend(segments.iter().map(|s| s.to_string()));
+                current_module
+                    .segments
+                    .extend(segments.iter().map(|s| s.to_string()));
                 Ok(current_module)
             }
             QualifiedPath::Self_(segments) => {
@@ -223,8 +227,8 @@ impl VisibilityChecker {
 
 /// Type of accessible symbol found
 #[derive(Debug, Clone)]
-pub enum SymbolAccessibility<U: User, E: Engine<U>> {
-    Value(RuntimeValue<U, E>),
+pub enum SymbolAccessibility {
+    Value(RuntimeValue),
     Type(StructDefinition),
 }
 

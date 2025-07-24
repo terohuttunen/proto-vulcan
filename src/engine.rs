@@ -1,14 +1,10 @@
 use crate::solver::Solver;
 use crate::stream::{Lazy, Stream, StreamEngine};
-use crate::user::User;
 
-pub type DefaultEngine<U> = StreamEngine<U>;
+pub type DefaultEngine = StreamEngine;
 
-pub trait Engine<U>: Sized + 'static
-where
-    U: User,
-{
+pub trait Engine: Sized + 'static {
     fn new() -> Self;
 
-    fn step<'a>(&'a self, solver: &'a Solver<U, Self>, lazy: Lazy<U, Self>) -> Stream<U, Self>;
+    fn step<'a>(&'a self, solver: &'a Solver, lazy: Lazy) -> Stream;
 }

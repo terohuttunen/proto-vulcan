@@ -4,10 +4,10 @@
 //! arithmetic constraints, distinct constraints, and complex problems.
 
 use super::super::*;
-use crate::engine::DefaultEngine;
-use crate::user::DefaultUser;
 
-type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+
+
+type TestInterpreter = Interpreter;
 
 #[test]
 fn test_constraint_block_basic_domain() {

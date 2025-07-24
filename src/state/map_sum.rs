@@ -1,21 +1,16 @@
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, DFSGoal, Goal};
 use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::{LazyStream, Stream, StreamIterator};
-use crate::user::User;
-use std::marker::PhantomData;
 
-pub fn map_sum<U, E, F, T>(
-    solver: &Solver<U, E>,
-    state: State<U, E>,
+pub fn map_sum<F, T>(
+    solver: &Solver,
+    state: State,
     mut f: F,
     iter: impl Iterator<Item = T>,
-) -> Stream<U, E>
+) -> Stream
 where
-    U: User,
-    E: Engine<U>,
-    F: FnMut(T) -> Goal<U, E>,
+    F: FnMut(T) -> Goal,
 {
     let mut iter = iter.peekable();
     let mut stream = Stream::empty();
@@ -40,58 +35,43 @@ where
     stream
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = "U: User"))]
-pub struct MapSumIterator<U, E, G, F, T, I>
+#[derive(Clone)]
+pub struct MapSumIterator<G, F, T, I>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
     F: Fn(T) -> G + Clone + 'static,
-    T: 'static,
+    T: Clone + 'static,
     I: Iterator<Item = T> + Clone,
 {
-    state: State<U, E>,
+    state: State,
     f: F,
     iter: I,
-    _phantom: PhantomData<U>,
-    _phantom2: PhantomData<E>,
 }
 
-impl<U, E, G, F, T, I> MapSumIterator<U, E, G, F, T, I>
+impl<G, F, T, I> MapSumIterator<G, F, T, I>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
     F: Fn(T) -> G + Clone + 'static,
-    T: 'static,
+    T: Clone + 'static,
     I: Iterator<Item = T> + Clone,
 {
-    pub fn new(state: State<U, E>, f: F, iter: I) -> MapSumIterator<U, E, G, F, T, I> {
-        MapSumIterator {
-            state,
-            f,
-            iter,
-            _phantom: PhantomData,
-            _phantom2: PhantomData,
-        }
+    pub fn new(state: State, f: F, iter: I) -> MapSumIterator<G, F, T, I> {
+        MapSumIterator { state, f, iter }
     }
 }
 
-impl<U, E, G, F, T, I> StreamIterator<U, E> for MapSumIterator<U, E, G, F, T, I>
+impl<G, F, T, I> StreamIterator for MapSumIterator<G, F, T, I>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
     F: Fn(T) -> G + Clone + 'static,
-    T: 'static,
+    T: Clone + 'static,
     I: Iterator<Item = T> + Clone + 'static,
 {
-    fn clone_box(&self) -> Box<dyn StreamIterator<U, E>> {
-        Box::new(self.clone())
+    fn clone_box(&self) -> Box<dyn StreamIterator> {
+        Box::new((*self).clone())
     }
 
-    fn next(&mut self, solver: &Solver<U, E>) -> Option<Stream<U, E>> {
+    fn next(&mut self, solver: &Solver) -> Option<Stream> {
         match self.iter.next() {
             Some(t) => {
                 let stream = (self.f)(t).solve(solver, self.state.clone());
@@ -102,12 +82,10 @@ where
     }
 }
 
-pub fn map_sum_iter<U, E, F, T, I>(state: State<U, E>, f: F, iter: I) -> Stream<U, E>
+pub fn map_sum_iter<F, T, I>(state: State, f: F, iter: I) -> Stream
 where
-    U: User,
-    E: Engine<U>,
-    F: Fn(T) -> DFSGoal<U, E> + Clone + 'static,
-    T: 'static,
+    F: Fn(T) -> DFSGoal + Clone + 'static,
+    T: Clone + 'static,
     I: Iterator<Item = T> + Clone + 'static,
 {
     Stream::iterator(Box::new(MapSumIterator::new(state, f, iter)))

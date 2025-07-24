@@ -3,7 +3,7 @@
 //! Tests for the CLP(Tree) disequality constraint implementation,
 //! covering constraint subsumption and various disequality scenarios.
 
-use crate::engine::DefaultEngine;
+
 use crate::prelude::*;
 use crate::relation::diseq::DisequalityConstraint;
 use crate::state::SMap;
@@ -23,8 +23,8 @@ fn test_subsumes_1() {
     smap.extend(x.clone(), five.clone());
     let c1 = DisequalityConstraint::new(smap);
     match (
-        c0.downcast_ref::<DisequalityConstraint<DefaultUser, DefaultEngine<DefaultUser>>>(),
-        c1.downcast_ref::<DisequalityConstraint<DefaultUser, DefaultEngine<DefaultUser>>>(),
+        c0.downcast_ref::<DisequalityConstraint>(),
+        c1.downcast_ref::<DisequalityConstraint>(),
     ) {
         (Some(t0), Some(t1)) => {
             assert!(t1.subsumes(&*t0))

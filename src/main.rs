@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
-use proto_vulcan::engine::DefaultEngine;
 use proto_vulcan::interpreter::ir::compiler::{CompilationOptions, CompileWarning};
 use proto_vulcan::interpreter::parser::parse_str;
 use proto_vulcan::interpreter::query::QueryResult;
@@ -11,11 +10,10 @@ use proto_vulcan::interpreter::{
     trace::{TraceConfig, TraceLevel},
     Interpreter, InterpreterError,
 };
-use proto_vulcan::user::DefaultUser;
 use std::env;
 use std::path::PathBuf;
 
-type DefaultInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+type DefaultInterpreter = Interpreter;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum ColorChoice {
@@ -91,15 +89,15 @@ struct Cli {
     /// Timeout for query execution in seconds (0 = no timeout)
     #[arg(long, value_name = "SECONDS", default_value = "0")]
     timeout: u64,
-    
+
     /// Treat warnings as errors (strict mode)
     #[arg(long)]
     strict: bool,
-    
+
     /// Enable/disable shadowing warnings
     #[arg(long, default_value = "true")]
     warn_shadowing: bool,
-    
+
     /// Enable/disable unused import warnings
     #[arg(long, default_value = "true")]
     warn_unused_imports: bool,
@@ -126,15 +124,15 @@ enum Commands {
         /// Show the parsed AST structure
         #[arg(long, help = "Display the parsed abstract syntax tree")]
         show_ast: bool,
-        
+
         /// Treat warnings as errors (strict mode)
         #[arg(long)]
         strict: bool,
-        
+
         /// Enable/disable shadowing warnings
         #[arg(long, default_value = "true")]
         warn_shadowing: bool,
-        
+
         /// Enable/disable unused import warnings
         #[arg(long, default_value = "true")]
         warn_unused_imports: bool,
@@ -201,14 +199,20 @@ fn main() {
             cli.trace_level,
             cli.timeout,
         ),
-        Some(Commands::Check { file, show_ast, strict, warn_shadowing, warn_unused_imports }) => {
-                let options = CompilationOptions {
-                    strict_mode: *strict,
-                    warn_shadowing: *warn_shadowing,
-                    warn_unused_imports: *warn_unused_imports,
-                };
-                parse_file(file.clone(), *show_ast, options)
-            },
+        Some(Commands::Check {
+            file,
+            show_ast,
+            strict,
+            warn_shadowing,
+            warn_unused_imports,
+        }) => {
+            let options = CompilationOptions {
+                strict_mode: *strict,
+                warn_shadowing: *warn_shadowing,
+                warn_unused_imports: *warn_unused_imports,
+            };
+            parse_file(file.clone(), *show_ast, options)
+        }
         Some(Commands::Test {
             test_name,
             filter,
@@ -272,9 +276,13 @@ fn setup_colors(choice: ColorChoice) {
     }
 }
 
-fn parse_file(path: PathBuf, show_ast: bool, options: CompilationOptions) -> Result<(), Box<dyn std::error::Error>> {
+fn parse_file(
+    path: PathBuf,
+    show_ast: bool,
+    options: CompilationOptions,
+) -> Result<(), Box<dyn std::error::Error>> {
     use proto_vulcan::interpreter::ir::compiler::Compiler;
-    
+
     let file_contents = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
 
@@ -285,13 +293,13 @@ fn parse_file(path: PathBuf, show_ast: bool, options: CompilationOptions) -> Res
                 println!("\nParsed AST:");
                 println!("{:#?}", program);
             }
-            
+
             // Now perform IR compilation with validation
-            let mut compiler: Compiler<DefaultUser, DefaultEngine<DefaultUser>> = Compiler::with_options(options);
+            let mut compiler: Compiler = Compiler::with_options(options);
             match compiler.compile_from_ast(program) {
                 Ok(_ir_program) => {
                     println!("✓ IR compilation passed for '{}'", path.display());
-                    
+
                     // Display warnings if any
                     let warnings = compiler.get_warnings();
                     if !warnings.is_empty() {
@@ -460,11 +468,7 @@ fn run_tests() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Print results without query header (for trace mode)
-fn print_results_without_query(
-    results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>],
-    format: OutputFormat,
-    was_limited: bool,
-) {
+fn print_results_without_query(results: &[QueryResult], format: OutputFormat, was_limited: bool) {
     match format {
         OutputFormat::Auto => {
             // Choose formatting style based on result complexity
@@ -505,7 +509,7 @@ fn print_results_without_query(
 
 /// Pretty print query results with mathematical formatting and where-clauses
 fn print_query_results(
-    results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>],
+    results: &[QueryResult],
     format: OutputFormat,
     was_limited: bool,
     query: &str,
@@ -553,7 +557,7 @@ fn print_query_results(
 }
 
 /// Print multiple results with clear numbering
-fn print_numbered_results(results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>]) {
+fn print_numbered_results(results: &[QueryResult]) {
     println!("{}", "Solutions:".bright_blue().bold());
     for (i, result) in results.iter().enumerate() {
         print!("  {}: ", format!("{}", i + 1).bright_yellow().bold());
@@ -576,7 +580,7 @@ fn print_numbered_results(results: &[QueryResult<DefaultUser, DefaultEngine<Defa
 }
 
 /// Print many results in compact tabular format
-fn print_compact_results(results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>]) {
+fn print_compact_results(results: &[QueryResult]) {
     if results.is_empty() {
         return;
     }
@@ -604,10 +608,7 @@ fn print_compact_results(results: &[QueryResult<DefaultUser, DefaultEngine<Defau
 }
 
 /// Print results in table format (for uniform, simple results)
-fn print_table_format(
-    results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>],
-    var_names: &[String],
-) {
+fn print_table_format(results: &[QueryResult], var_names: &[String]) {
     println!(
         "{} ({} {})",
         "Solutions".bright_blue().bold(),
@@ -665,11 +666,7 @@ fn print_table_format(
 }
 
 /// Print results in JSON format for programmatic consumption
-fn print_json_results(
-    results: &[QueryResult<DefaultUser, DefaultEngine<DefaultUser>>],
-    was_limited: bool,
-    query: &str,
-) {
+fn print_json_results(results: &[QueryResult], was_limited: bool, query: &str) {
     use serde_json::{json, Map, Value};
 
     let mut solutions = Vec::new();

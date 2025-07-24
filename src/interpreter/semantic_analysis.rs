@@ -1,27 +1,24 @@
 /// Semantic analysis pass that resolves ambiguous AST nodes
-/// 
+///
 /// This module performs semantic disambiguation by transforming ambiguous
 /// TupleStruct nodes that are actually enum variants into EnumVariant nodes.
 /// This is done using type registry information to determine if a qualified
 /// name refers to an enum variant.
-
 use super::environment::{Environment, TypeDefinition};
-use super::runtime_value::RuntimeValue;
 use super::parser::ast::*;
+use super::runtime_value::RuntimeValue;
 use super::symbol_table::InternedSymbol;
 use super::InterpreterError;
-use crate::engine::Engine;
-use crate::user::User;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub struct SemanticAnalyzer<'a, U: User, E: Engine<U>> {
-    environment: Rc<RefCell<Environment<U, E>>>,
+pub struct SemanticAnalyzer<'a> {
+    environment: Rc<RefCell<Environment>>,
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
-    pub fn new(environment: Rc<RefCell<Environment<U, E>>>) -> Self {
+impl<'a> SemanticAnalyzer<'a> {
+    pub fn new(environment: Rc<RefCell<Environment>>) -> Self {
         Self {
             environment,
             _phantom: std::marker::PhantomData,
@@ -40,7 +37,12 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
     fn analyze_item(&mut self, item: &mut Item) -> Result<(), InterpreterError> {
         match item {
             Item::Predicate(relation) => self.analyze_relation(relation),
-            Item::Enum(_) | Item::Struct(_) | Item::Module(_) | Item::Use(_) | Item::ModuleDeclaration(_) | Item::Impl(_) => {
+            Item::Enum(_)
+            | Item::Struct(_)
+            | Item::Module(_)
+            | Item::Use(_)
+            | Item::ModuleDeclaration(_)
+            | Item::Impl(_) => {
                 // Type definitions and module items don't need term disambiguation
                 Ok(())
             }
@@ -48,12 +50,15 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
     }
 
     /// Analyze a relation definition  
-    fn analyze_relation(&mut self, relation: &mut PredicateDefinition) -> Result<(), InterpreterError> {
+    fn analyze_relation(
+        &mut self,
+        relation: &mut PredicateDefinition,
+    ) -> Result<(), InterpreterError> {
         // Analyze attributes first (this handles test expectations)
         for attribute in &mut relation.attributes {
             self.analyze_attribute(attribute)?;
         }
-        
+
         // Then analyze the relation body
         for goal in &mut relation.body {
             self.analyze_goal(goal)?;
@@ -179,7 +184,9 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                 }
 
                 // Check if this NamedStruct is actually an enum variant
-                if let Some(enum_variant) = self.try_disambiguate_named_struct_as_enum_variant(named_struct)? {
+                if let Some(enum_variant) =
+                    self.try_disambiguate_named_struct_as_enum_variant(named_struct)?
+                {
                     // Transform this NamedStruct into an EnumVariant
                     *term = Term::EnumVariant(enum_variant, span.clone());
                 }
@@ -215,9 +222,7 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                 }
                 Ok(())
             }
-            Term::Parenthesized(inner, _) => {
-                self.analyze_term(inner)
-            }
+            Term::Parenthesized(inner, _) => self.analyze_term(inner),
             Term::Interpolation(_, _) => {
                 // Meta interpolations don't typically contain enum variants
                 Ok(())
@@ -249,7 +254,9 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                 }
 
                 // Check if this NamedStruct pattern is actually an enum variant pattern
-                if let Some(enum_variant_pattern) = self.try_disambiguate_named_struct_pattern_as_enum_variant(named_struct_pattern)? {
+                if let Some(enum_variant_pattern) = self
+                    .try_disambiguate_named_struct_pattern_as_enum_variant(named_struct_pattern)?
+                {
                     // Transform this NamedStruct pattern into an EnumVariant pattern
                     *pattern = Pattern::EnumVariant(enum_variant_pattern);
                 }
@@ -262,7 +269,9 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                 }
 
                 // Check if this TupleStruct pattern is actually an enum variant pattern
-                if let Some(enum_variant_pattern) = self.try_disambiguate_tuple_struct_pattern_as_enum_variant(tuple_struct_pattern)? {
+                if let Some(enum_variant_pattern) = self
+                    .try_disambiguate_tuple_struct_pattern_as_enum_variant(tuple_struct_pattern)?
+                {
                     // Transform this TupleStruct pattern into an EnumVariant pattern
                     *pattern = Pattern::EnumVariant(enum_variant_pattern);
                 }
@@ -298,7 +307,7 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
         if let Some((enum_name, variant_name)) = tuple_struct.name.to_string().rsplit_once("::") {
             // Try to resolve the enum type
             let env = self.environment.borrow();
-            
+
             // Try to lookup the enum type by name using the same approach as execution
             // Drop the borrow before calling resolve_type_to_index to avoid borrow conflict
             drop(env);
@@ -307,27 +316,32 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                 if let Some(type_def) = env.get_type_by_index(type_index) {
                     if let TypeDefinition::Enum(enum_def) = type_def {
                         // Check if this variant exists in the enum
-                        if let Some(variant_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                        if let Some(variant_def) =
+                            enum_def.variants.iter().find(|v| v.name == variant_name)
+                        {
                             // Determine the correct variant construction kind
-                            let construction_kind = match (&variant_def.kind, tuple_struct.args.len()) {
-                                // Unit variant with no args
-                                (VariantKind::Unit, 0) => EnumVariantConstructionKind::Unit,
-                                
-                                // Tuple variant with args
-                                (VariantKind::Tuple(_), _) => {
-                                    EnumVariantConstructionKind::Tuple(tuple_struct.args.clone())
-                                }
-                                
-                                // Named variant - this is more complex, we'd need to check field structure
-                                (VariantKind::Named(_), 0) => {
-                                    // For now, assume unit if no args provided to named variant
-                                    // This could be improved to handle named construction syntax
-                                    return Ok(None);
-                                }
-                                
-                                // Mismatch between variant definition and usage
-                                _ => return Ok(None),
-                            };
+                            let construction_kind =
+                                match (&variant_def.kind, tuple_struct.args.len()) {
+                                    // Unit variant with no args
+                                    (VariantKind::Unit, 0) => EnumVariantConstructionKind::Unit,
+
+                                    // Tuple variant with args
+                                    (VariantKind::Tuple(_), _) => {
+                                        EnumVariantConstructionKind::Tuple(
+                                            tuple_struct.args.clone(),
+                                        )
+                                    }
+
+                                    // Named variant - this is more complex, we'd need to check field structure
+                                    (VariantKind::Named(_), 0) => {
+                                        // For now, assume unit if no args provided to named variant
+                                        // This could be improved to handle named construction syntax
+                                        return Ok(None);
+                                    }
+
+                                    // Mismatch between variant definition and usage
+                                    _ => return Ok(None),
+                                };
 
                             return Ok(Some(EnumVariantConstruction {
                                 enum_name: InternedSymbol::from_text(enum_name),
@@ -353,7 +367,7 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
         if let Some((enum_name, variant_name)) = named_struct.name.rsplit_once("::") {
             // Try to resolve the enum type
             let env = self.environment.borrow();
-            
+
             // Try to lookup the enum type by name using the same approach as execution
             // Drop the borrow before calling resolve_type_to_index to avoid borrow conflict
             drop(env);
@@ -362,15 +376,19 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                 if let Some(type_def) = env.get_type_by_index(type_index) {
                     if let TypeDefinition::Enum(enum_def) = type_def {
                         // Check if this variant exists in the enum and is a named variant
-                        if let Some(variant_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                        if let Some(variant_def) =
+                            enum_def.variants.iter().find(|v| v.name == variant_name)
+                        {
                             if let VariantKind::Named(_) = &variant_def.kind {
                                 // Convert NamedStruct fields to EnumVariant named fields
-                                let named_fields = named_struct.fields.iter().map(|field| {
-                                    FieldInitializer {
+                                let named_fields = named_struct
+                                    .fields
+                                    .iter()
+                                    .map(|field| FieldInitializer {
                                         name: field.name.clone(),
                                         value: field.value.clone(),
-                                    }
-                                }).collect();
+                                    })
+                                    .collect();
 
                                 return Ok(Some(EnumVariantConstruction {
                                     enum_name: InternedSymbol::from_text(enum_name),
@@ -397,7 +415,7 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
         if let Some((enum_name, variant_name)) = named_struct_pattern.name.rsplit_once("::") {
             // Try to resolve the enum type
             let env = self.environment.borrow();
-            
+
             // Drop the borrow before calling resolve_type_to_index to avoid borrow conflict
             drop(env);
             if let Ok(type_index) = self.resolve_type_to_index(enum_name) {
@@ -405,7 +423,9 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                 if let Some(type_def) = env.get_type_by_index(type_index) {
                     if let TypeDefinition::Enum(enum_def) = type_def {
                         // Check if this variant exists in the enum and is a named variant
-                        if let Some(variant_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                        if let Some(variant_def) =
+                            enum_def.variants.iter().find(|v| v.name == variant_name)
+                        {
                             if let VariantKind::Named(_) = &variant_def.kind {
                                 // Convert NamedStruct pattern fields to EnumVariant pattern named fields
                                 let named_field_patterns = named_struct_pattern.fields.clone();
@@ -435,7 +455,7 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
         if let Some((enum_name, variant_name)) = tuple_struct_pattern.name.rsplit_once("::") {
             // Try to resolve the enum type
             let env = self.environment.borrow();
-            
+
             // Drop the borrow before calling resolve_type_to_index to avoid borrow conflict
             drop(env);
             if let Ok(type_index) = self.resolve_type_to_index(enum_name) {
@@ -443,26 +463,29 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
                 if let Some(type_def) = env.get_type_by_index(type_index) {
                     if let TypeDefinition::Enum(enum_def) = type_def {
                         // Check if this variant exists in the enum
-                        if let Some(variant_def) = enum_def.variants.iter().find(|v| v.name == variant_name) {
+                        if let Some(variant_def) =
+                            enum_def.variants.iter().find(|v| v.name == variant_name)
+                        {
                             // Determine the correct variant pattern kind
-                            let pattern_kind = match (&variant_def.kind, tuple_struct_pattern.args.len()) {
-                                // Unit variant with no args
-                                (VariantKind::Unit, 0) => EnumVariantPatternKind::Unit,
-                                
-                                // Tuple variant with args
-                                (VariantKind::Tuple(_), _) => {
-                                    EnumVariantPatternKind::Tuple(tuple_struct_pattern.args.clone())
-                                }
-                                
-                                // Named variant - shouldn't use tuple syntax, but handle gracefully
-                                (VariantKind::Named(_), 0) => {
-                                    // For now, return None since named variants should use named syntax
-                                    return Ok(None);
-                                }
-                                
-                                // Mismatch between variant definition and usage
-                                _ => return Ok(None),
-                            };
+                            let pattern_kind =
+                                match (&variant_def.kind, tuple_struct_pattern.args.len()) {
+                                    // Unit variant with no args
+                                    (VariantKind::Unit, 0) => EnumVariantPatternKind::Unit,
+
+                                    // Tuple variant with args
+                                    (VariantKind::Tuple(_), _) => EnumVariantPatternKind::Tuple(
+                                        tuple_struct_pattern.args.clone(),
+                                    ),
+
+                                    // Named variant - shouldn't use tuple syntax, but handle gracefully
+                                    (VariantKind::Named(_), 0) => {
+                                        // For now, return None since named variants should use named syntax
+                                        return Ok(None);
+                                    }
+
+                                    // Mismatch between variant definition and usage
+                                    _ => return Ok(None),
+                                };
 
                             return Ok(Some(EnumVariantPattern {
                                 enum_name: InternedSymbol::from_text(enum_name),
@@ -482,10 +505,13 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
     fn resolve_type_to_index<S: AsRef<str>>(&self, name: S) -> Result<usize, InterpreterError> {
         // Look up the type name as a symbol
         let name_str = name.as_ref();
-        let runtime_value = self.environment.borrow().lookup(name_str)
+        let runtime_value = self
+            .environment
+            .borrow()
+            .lookup(name_str)
             .ok_or_else(|| InterpreterError::UnknownType(name_str.to_string()))?
             .clone();
-        
+
         match runtime_value {
             RuntimeValue::Type(index) => Ok(index),
             _ => Err(InterpreterError::NotAType(name_str.to_string())),
@@ -494,27 +520,27 @@ impl<'a, U: User, E: Engine<U>> SemanticAnalyzer<'a, U, E> {
 }
 
 /// Public function to perform semantic analysis on a program
-pub fn analyze_program<U: User, E: Engine<U>>(
+pub fn analyze_program(
     program: &mut Program,
-    environment: Rc<RefCell<Environment<U, E>>>,
+    environment: Rc<RefCell<Environment>>,
 ) -> Result<(), InterpreterError> {
     let mut analyzer = SemanticAnalyzer::new(environment);
     analyzer.analyze_program(program)
 }
 
 /// Public function to perform semantic analysis on a single term
-pub fn analyze_term<U: User, E: Engine<U>>(
+pub fn analyze_term(
     term: &mut Term,
-    environment: &Rc<RefCell<Environment<U, E>>>,
+    environment: &Rc<RefCell<Environment>>,
 ) -> Result<(), InterpreterError> {
     let mut analyzer = SemanticAnalyzer::new(environment.clone());
     analyzer.analyze_term(term)
 }
 
 /// Public function to perform semantic analysis on a query goal
-pub fn analyze_goal<U: User, E: Engine<U>>(
+pub fn analyze_goal(
     goal: &mut Goal,
-    environment: &Rc<RefCell<Environment<U, E>>>,
+    environment: &Rc<RefCell<Environment>>,
 ) -> Result<(), InterpreterError> {
     let mut analyzer = SemanticAnalyzer::new(environment.clone());
     analyzer.analyze_goal(goal)

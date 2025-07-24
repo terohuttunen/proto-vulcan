@@ -3,45 +3,38 @@
 //! For projecting variables there is a built-in operator `project |x, y, z| { <body> }`, where
 //! variables already declared earlier, can be projected within the operator body as specified
 //! by the projection list `|x, y, z|`.
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
+use derivative::Derivative;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct Project<U, E, G>
+#[derivative(Debug)]
+pub struct Project<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
-    variables: Vec<LTerm<U, E>>,
+    variables: Vec<LTerm>,
     body: G,
 }
 
-impl<U, E, G> Project<U, E, G>
+impl<G> Project<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
-    pub fn new(variables: Vec<LTerm<U, E>>, body: G) -> InferredGoal<U, E, G> {
+    pub fn new(variables: Vec<LTerm>, body: G) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(Project { variables, body })))
     }
 }
 
-impl<U, E, G> Solve<U, E> for Project<U, E, G>
+impl<G> Solve for Project<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         // Walk* each projected variable with the current substitution
         for v in self.variables.iter() {
             v.project(|x| state.smap_ref().walk_star(x));
@@ -53,34 +46,30 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::Engine;
     use crate::lterm::LTermInner;
     use crate::prelude::*;
     use crate::solver::{Solve, Solver};
+    use derivative::Derivative;
     use std::rc::Rc;
 
     #[derive(Derivative)]
-    #[derivative(Debug(bound = "U: User"))]
-    pub struct SqEq<U: User, E: Engine<U>> {
-        u: LTerm<U, E>,
-        v: LTerm<U, E>,
+    #[derivative(Debug)]
+    pub struct SqEq {
+        u: LTerm,
+        v: LTerm,
     }
 
-    impl<U: User, E: Engine<U>> SqEq<U, E> {
-        pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E> {
+    impl SqEq {
+        pub fn new(u: LTerm, v: LTerm) -> Goal {
             Goal::dynamic(Rc::new(SqEq { u, v }))
         }
     }
 
-    impl<U, E> Solve<U, E> for SqEq<U, E>
-    where
-        U: User,
-        E: Engine<U>,
-    {
-        fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+    impl Solve for SqEq {
+        fn solve(&self, solver: &Solver, state: State) -> Stream {
             let u = self.u.clone();
             let v = self.v.clone();
-            let g: Goal<U, E> = proto_vulcan!(fngoal move |_solver, state| {
+            let g: Goal = proto_vulcan!(fngoal move |_solver, state| {
                 match u.as_ref() {
                     // sqeq is non-relational operator and requires `u` to be associated with
                     // integer value to succeed.
@@ -95,11 +84,7 @@ mod tests {
         }
     }
 
-    fn sqeq<U, E>(u: LTerm<U, E>, v: LTerm<U, E>) -> Goal<U, E>
-    where
-        U: User,
-        E: Engine<U>,
-    {
+    fn sqeq(u: LTerm, v: LTerm) -> Goal {
         SqEq::new(u, v)
     }
 

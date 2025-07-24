@@ -4,11 +4,11 @@
 //! including integration between parser, interpreter, and execution context.
 
 use super::super::*;
-use crate::engine::DefaultEngine;
-use crate::user::DefaultUser;
+
+
 use crate::interpreter::symbol_table::InternedSymbol;
 
-type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+type TestInterpreter = Interpreter;
 
 #[test]
 fn test_end_to_end_parser_to_interpreter() {

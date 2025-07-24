@@ -1,4 +1,3 @@
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal};
 use crate::operator::conde::conde;
 use crate::operator::conj::Conj;
@@ -6,36 +5,23 @@ use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
 use crate::GoalCast;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct Anyo<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    g: Goal<U, E>,
+#[derivative(Debug)]
+pub struct Anyo {
+    g: Goal,
 }
 
-impl<U, E> Anyo<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new(g: Goal<U, E>) -> Goal<U, E> {
+impl Anyo {
+    pub fn new(g: Goal) -> Goal {
         Goal::dynamic(Rc::new(Anyo { g }))
     }
 }
 
-impl<U, E> Solve<U, E> for Anyo<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for Anyo {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         let g = self.g.clone();
         let g2 = self.g.clone();
         let goal = proto_vulcan!(
@@ -77,11 +63,7 @@ where
 ///     assert_eq!(iter.next().unwrap().q, 3);
 /// }
 /// ```
-pub fn anyo<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn anyo(param: OperatorParam<Goal>) -> Goal {
     Anyo::new(GoalCast::cast_into(Conj::from_conjunctions(param.body)))
 }
 

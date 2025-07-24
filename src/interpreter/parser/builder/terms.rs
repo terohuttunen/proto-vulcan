@@ -1,6 +1,5 @@
 use super::{AstBuilder, ParseError, ParseResult, Rule};
 use crate::interpreter::parser::{ast::*, meta_parser};
-use crate::interpreter::symbol_table::InternedSymbol;
 use pest::iterators::Pair;
 
 impl<'a> AstBuilder<'a> {

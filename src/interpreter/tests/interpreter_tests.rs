@@ -3,12 +3,12 @@
 //! Tests core interpreter creation, program loading, and basic functionality.
 
 use super::super::*;
-use crate::engine::DefaultEngine;
-use crate::user::DefaultUser;
+
+
 use crate::interpreter::symbol_table::InternedSymbol;
 use parser::ast::*;
 
-type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+type TestInterpreter = Interpreter;
 
 #[test]
 fn test_interpreter_creation() {
@@ -155,7 +155,7 @@ fn test_comprehensive_program_loading() {
 fn test_runtime_value_conversion() {
     // Test that we can convert various AST terms to runtime values
     use super::super::runtime_value::RuntimeValue;
-    type TestRuntimeValue = RuntimeValue<DefaultUser, DefaultEngine<DefaultUser>>;
+    type TestRuntimeValue = RuntimeValue;
 
     // Test boolean literal
     let bool_term = Term::Literal(Literal::Boolean(true), Default::default());

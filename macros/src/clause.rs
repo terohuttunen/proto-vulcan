@@ -22,9 +22,9 @@ pub enum Clause {
     // x != y
     Diseq(Diseq),
     // true
-    Succeed(syn::LitBool),
+    Succeed,
     // false
-    Fail(syn::LitBool),
+    Fail,
     // [ ]
     Conjunction(Conjunction),
     // $relation (param1, param2, ...)
@@ -81,9 +81,9 @@ impl Parse for Clause {
         } else if input.peek(syn::LitBool) {
             let b: syn::LitBool = input.parse()?;
             if b.value {
-                Ok(Clause::Succeed(b))
+                Ok(Clause::Succeed)
             } else {
-                Ok(Clause::Fail(b))
+                Ok(Clause::Fail)
             }
         } else if input.peek(Bracket) {
             let conjunction: Conjunction = input.parse()?;
@@ -126,11 +126,11 @@ impl ToTokens for Clause {
             Clause::Diseq(diseq) => {
                 diseq.to_tokens(tokens);
             }
-            Clause::Succeed(_) => {
+            Clause::Succeed => {
                 let output = quote! { ::proto_vulcan::relation::succeed() };
                 output.to_tokens(tokens);
             }
-            Clause::Fail(_) => {
+            Clause::Fail => {
                 let output = quote! { ::proto_vulcan::relation::fail() };
                 output.to_tokens(tokens);
             }
@@ -199,11 +199,11 @@ impl ToTokens for ClauseInOperator {
                 let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(#diseq) ] };
                 output.to_tokens(tokens);
             }
-            Clause::Succeed(_) => {
+            Clause::Succeed => {
                 let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::succeed()) ] };
                 output.to_tokens(tokens);
             }
-            Clause::Fail(_) => {
+            Clause::Fail => {
                 let output = quote! { &[ ::proto_vulcan::GoalCast::cast_into(::proto_vulcan::relation::fail()) ] };
                 output.to_tokens(tokens);
             }

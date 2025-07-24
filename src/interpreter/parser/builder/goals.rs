@@ -1,7 +1,6 @@
 use pest::iterators::Pair;
 use super::{AstBuilder, ParseError, ParseResult, Rule};
 use crate::interpreter::parser::ast::*;
-use crate::interpreter::symbol_table::InternedSymbol;
 
 impl<'a> AstBuilder<'a> {
     pub fn build_goal_body(&mut self, pair: Pair<Rule>) -> ParseResult<GoalBody> {

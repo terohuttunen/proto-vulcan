@@ -1,4 +1,3 @@
-use crate::engine::Engine;
 /// Conditional ?
 ///
 /// Returns stream from first clause [x0 AND x1 AND ...] whose first (a0, b0, ...) goal succeeds.
@@ -12,33 +11,24 @@ use crate::operator::OperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
 use crate::GoalCast;
 use std::rc::Rc;
 
 #[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct Condu<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+#[derivative(Debug)]
+pub struct Condu {
     // First goal of this condu clause
-    first: Goal<U, E>,
+    first: Goal,
 
     // Rest of the goals of this condu clause
-    rest: Goal<U, E>,
+    rest: Goal,
 
     // Next condu clause
-    next: Goal<U, E>,
+    next: Goal,
 }
 
-impl<U, E> Condu<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn from_conjunctions(body: &[&[Goal<U, E>]]) -> Goal<U, E> {
+impl Condu {
+    pub fn from_conjunctions(body: &[&[Goal]]) -> Goal {
         let mut next = Goal::Fail;
         for clause in body.to_vec().drain(..).rev() {
             let mut clause = clause.to_vec();
@@ -52,12 +42,8 @@ where
     }
 }
 
-impl<U, E> Solve<U, E> for Condu<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for Condu {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         let mut stream = solver.start(&self.first, state.clone());
 
         // Take only first item from the stream of first goal by truncating the stream
@@ -69,11 +55,7 @@ where
 }
 
 /// Committed choice operator.
-pub fn condu<U, E>(param: OperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn condu(param: OperatorParam<Goal>) -> Goal {
     Condu::from_conjunctions(param.body)
 }
 

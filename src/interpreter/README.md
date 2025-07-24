@@ -104,7 +104,7 @@ use proto_vulcan::interpreter::Interpreter;
 use proto_vulcan::engine::DefaultEngine;
 use proto_vulcan::user::DefaultUser;
 
-type MyInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+type MyInterpreter = Interpreter;
 
 let mut interpreter = MyInterpreter::new();
 

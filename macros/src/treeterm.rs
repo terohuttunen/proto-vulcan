@@ -69,7 +69,7 @@ impl ToTokens for InnerTreeTerm {
             TreeTerm::Field(field_access) => {
                 let field = &field_access.field;
                 let output =
-                    quote! { ::proto_vulcan::Upcast::<_, _, LTerm<_, _>>::to_super(&#field) };
+                    quote! { ::proto_vulcan::Upcast::<LTerm>::to_super(&#field) };
                 output.to_tokens(tokens);
             }
             TreeTerm::Any(_) => {

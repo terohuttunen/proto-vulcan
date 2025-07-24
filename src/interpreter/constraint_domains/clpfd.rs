@@ -7,7 +7,6 @@
 //! - distinct [x, y, z] (global constraints)
 
 use super::{ConstraintDomain, DomainConstraints};
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::execution::ExecutionContext;
 use crate::interpreter::parser::ast::ConstraintBody;
@@ -15,7 +14,6 @@ use crate::interpreter::parser::meta_parser;
 use crate::interpreter::InterpreterError;
 use crate::lterm::LTerm;
 use crate::operator::conj::Conj;
-use crate::user::User;
 use pest::Parser;
 use pest_derive::Parser;
 
@@ -38,33 +36,37 @@ pub struct ClpfdIrTemplate {
 }
 
 impl super::DomainConstraintTemplate for ClpfdTemplate {
-    fn execute(&self, execution_context: &mut super::super::execution::ExecutionContext<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>) 
-        -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
+    fn execute(
+        &self,
+        execution_context: &mut super::super::execution::ExecutionContext,
+    ) -> Result<crate::goal::Goal, InterpreterError> {
         // For now, fall back to the original parsing approach
         // TODO: Implement proper template-based execution
         let domain = ClpfdDomain::new();
-        let parsed_constraints = domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+        let parsed_constraints =
+            domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
         parsed_constraints.convert_to_goals(execution_context)
     }
 }
 
 impl super::IrDomainConstraintTemplate for ClpfdIrTemplate {
-    fn execute(&self, execution_context: &mut super::super::runtime::context::ExecutionContext) 
-        -> Result<crate::goal::Goal<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>, InterpreterError> {
+    fn execute(
+        &self,
+        execution_context: &mut super::super::runtime::context::ExecutionContext,
+    ) -> Result<crate::goal::Goal, InterpreterError> {
         // For now, fall back to the original parsing approach adapted for IR
         // TODO: Implement proper IR template-based execution
         let domain = ClpfdDomain::new();
-        let parsed_constraints = domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
-        
+        let parsed_constraints =
+            domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+
         // Create a temporary execution context for the constraint execution
         // Since we need to bridge IR and execution contexts
         let temp_environment = std::rc::Rc::new(std::cell::RefCell::new(
-            super::super::environment::Environment::<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>::new()
+            super::super::environment::Environment::new(),
         ));
-        let mut temp_context = super::super::execution::ExecutionContext::<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>::new(
-            temp_environment
-        );
-        
+        let mut temp_context = super::super::execution::ExecutionContext::new(temp_environment);
+
         parsed_constraints.convert_to_goals(&mut temp_context)
     }
 }
@@ -78,7 +80,7 @@ impl ClpfdDomain {
     }
 }
 
-impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
+impl ConstraintDomain for ClpfdDomain {
     fn name(&self) -> &str {
         "clpfd"
     }
@@ -87,7 +89,7 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
         &self,
         body: &ConstraintBody,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<Box<dyn DomainConstraints<U, E>>, InterpreterError> {
+    ) -> Result<Box<dyn DomainConstraints>, InterpreterError> {
         // Trim the content to remove leading/trailing whitespace that might interfere
         let trimmed_content = body.raw_content.trim();
 
@@ -125,12 +127,13 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
 - Fresh: |x, y| { x < y, x in 1..10 }"#
     }
 
-    fn get_unbound_variables(&self, body: &ConstraintBody) -> Result<Vec<String>, InterpreterError> {
+    fn get_unbound_variables(
+        &self,
+        body: &ConstraintBody,
+    ) -> Result<Vec<String>, InterpreterError> {
         // For now, parse the constraint to extract variables using concrete types
         // TODO: Implement proper variable extraction without full parsing
-        use crate::user::DefaultUser;
-        use crate::engine::DefaultEngine;
-        let parsed_constraints: Box<dyn DomainConstraints<DefaultUser, DefaultEngine<DefaultUser>>> = 
+        let parsed_constraints: Box<dyn DomainConstraints> =
             self.parse_constraints(body, &super::super::parser::ast::Span::dummy())?;
         Ok(parsed_constraints.extract_variables())
     }
@@ -163,10 +166,10 @@ impl<U: User, E: Engine<U>> ConstraintDomain<U, E> for ClpfdDomain {
 }
 
 impl ClpfdDomain {
-    fn parse_individual_constraint<U: User, E: Engine<U>>(
+    fn parse_individual_constraint(
         &self,
         content: &str,
-    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpfdConstraint, InterpreterError> {
         let pairs = ClpfdParser::parse(Rule::constraint, content.trim()).map_err(|e| {
             InterpreterError::InvalidConstraintSyntax {
                 domain: "clpfd".to_string(),
@@ -188,10 +191,10 @@ impl ClpfdDomain {
 
     // -- AST Builder Functions --
 
-    fn build_constraint<U: User, E: Engine<U>>(
+    fn build_constraint(
         pair: pest::iterators::Pair<Rule>,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpfdConstraint, InterpreterError> {
         let inner_pair = pair.into_inner().next().unwrap();
         match inner_pair.as_rule() {
             Rule::fresh_constraint => Self::build_fresh_constraint(inner_pair, source_span),
@@ -206,10 +209,10 @@ impl ClpfdDomain {
         }
     }
 
-    fn build_fresh_constraint<U: User, E: Engine<U>>(
+    fn build_fresh_constraint(
         pair: pest::iterators::Pair<Rule>,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let mut vars = vec![];
         let mut constraints = vec![];
@@ -231,17 +234,13 @@ impl ClpfdDomain {
             }
         }
 
-        Ok(ClpfdConstraint::Fresh {
-            vars,
-            constraints,
-            _phantom: std::marker::PhantomData,
-        })
+        Ok(ClpfdConstraint::Fresh { vars, constraints })
     }
 
-    fn build_domain_constraint<U: User, E: Engine<U>>(
+    fn build_domain_constraint(
         pair: pest::iterators::Pair<Rule>,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let var_pair = inner.next().unwrap();
         let variable = match var_pair.as_rule() {
@@ -260,14 +259,13 @@ impl ClpfdDomain {
         Ok(ClpfdConstraint::Domain {
             variable,
             domain_spec,
-            _phantom: std::marker::PhantomData,
         })
     }
 
-    fn build_list_domain_constraint<U: User, E: Engine<U>>(
+    fn build_list_domain_constraint(
         pair: pest::iterators::Pair<Rule>,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let var_list_pair = inner.next().unwrap(); // var_list
         let variables = var_list_pair
@@ -281,7 +279,6 @@ impl ClpfdDomain {
         Ok(ClpfdConstraint::ListDomain {
             variables,
             domain_spec,
-            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -408,9 +405,9 @@ impl ClpfdDomain {
         }
     }
 
-    fn build_distinct_constraint<U: User, E: Engine<U>>(
+    fn build_distinct_constraint(
         pair: pest::iterators::Pair<Rule>,
-    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
 
         // The grammar now excludes the keyword with _{ "distinct" }, so var_list is first
@@ -424,13 +421,12 @@ impl ClpfdDomain {
         Ok(ClpfdConstraint::Global {
             name: "distinct".to_string(),
             args,
-            _phantom: std::marker::PhantomData,
         })
     }
 
-    fn build_alldiff_constraint<U: User, E: Engine<U>>(
+    fn build_alldiff_constraint(
         pair: pest::iterators::Pair<Rule>,
-    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
 
         // The grammar now excludes the keyword with _alldiff_kw, so var_or_const_list is first
@@ -444,25 +440,19 @@ impl ClpfdDomain {
         Ok(ClpfdConstraint::Global {
             name: "alldiff".to_string(),
             args,
-            _phantom: std::marker::PhantomData,
         })
     }
 
-    fn build_arith_constraint<U: User, E: Engine<U>>(
+    fn build_arith_constraint(
         pair: pest::iterators::Pair<Rule>,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<ClpfdConstraint<U, E>, InterpreterError> {
+    ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let left = Self::build_arith_expr(inner.next().unwrap(), source_span);
         let op = Self::build_comp_op(inner.next().unwrap());
         let right = Self::build_arith_expr(inner.next().unwrap(), source_span);
 
-        Ok(ClpfdConstraint::Expression {
-            left,
-            op,
-            right,
-            _phantom: std::marker::PhantomData,
-        })
+        Ok(ClpfdConstraint::Expression { left, op, right })
     }
 
     // This function uses the Pratt parser technique to handle operator precedence.
@@ -583,16 +573,16 @@ impl ClpfdDomain {
 }
 
 /// Parsed CLPFD constraints
-struct ClpfdConstraints<U: User, E: Engine<U>> {
-    constraints: Vec<ClpfdConstraint<U, E>>,
+struct ClpfdConstraints {
+    constraints: Vec<ClpfdConstraint>,
     source_span: super::super::parser::ast::Span,
 }
 
-impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpfdConstraints<U, E> {
+impl DomainConstraints for ClpfdConstraints {
     fn convert_to_goals(
         &self,
-        execution_context: &mut ExecutionContext<U, E>,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+        execution_context: &mut ExecutionContext,
+    ) -> Result<Goal, InterpreterError> {
         let goals: Result<Vec<_>, _> = self
             .constraints
             .iter()
@@ -624,32 +614,27 @@ impl<U: User, E: Engine<U>> DomainConstraints<U, E> for ClpfdConstraints<U, E> {
 
 // Data model for CLPFD constraints
 #[derive(Debug, Clone)]
-pub enum ClpfdConstraint<U: User, E: Engine<U>> {
+pub enum ClpfdConstraint {
     Domain {
         variable: String,
         domain_spec: DomainSpec,
-        _phantom: std::marker::PhantomData<(U, E)>,
     },
     ListDomain {
         variables: Vec<String>,
         domain_spec: DomainSpec,
-        _phantom: std::marker::PhantomData<(U, E)>,
     },
     Expression {
         left: ArithExpr,
         op: CompOp,
         right: ArithExpr,
-        _phantom: std::marker::PhantomData<(U, E)>,
     },
     Global {
         name: String,
         args: Vec<String>,
-        _phantom: std::marker::PhantomData<(U, E)>,
     },
     Fresh {
         vars: Vec<String>,
-        constraints: Vec<ClpfdConstraint<U, E>>,
-        _phantom: std::marker::PhantomData<(U, E)>,
+        constraints: Vec<ClpfdConstraint>,
     },
 }
 
@@ -697,19 +682,18 @@ pub enum CompOp {
     GreaterEqual,
 }
 
-impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
+impl ClpfdConstraint {
     /// Converts a single constraint into a goal.
     /// This will require accessing the execution context to resolve variables.
     fn convert_to_goal(
         &self,
-        execution_context: &mut ExecutionContext<U, E>,
+        execution_context: &mut ExecutionContext,
         source_span: &super::super::parser::ast::Span,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         match self {
             ClpfdConstraint::Domain {
                 variable,
                 domain_spec,
-                ..
             } => {
                 let var_term = if variable.starts_with('{') && variable.ends_with('}') {
                     // This is an interpolated variable stored as "{content}"
@@ -773,7 +757,6 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
             ClpfdConstraint::ListDomain {
                 variables,
                 domain_spec,
-                ..
             } => {
                 // Convert variable names to LTerms
                 let var_terms: Result<Vec<_>, _> = variables
@@ -818,9 +801,7 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                     }
                 }
             }
-            ClpfdConstraint::Expression {
-                left, op, right, ..
-            } => {
+            ClpfdConstraint::Expression { left, op, right } => {
                 // Check for arithmetic equality patterns that should use specialized CLPFD constraints
                 if *op == CompOp::Equal {
                     // Try to detect patterns like: arith_expr == value or value == arith_expr
@@ -841,7 +822,7 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                 let right_term = eval_arith_expr(right, execution_context)?;
                 build_comparison_goal(left_term, *op, right_term)
             }
-            ClpfdConstraint::Global { name, args, .. } => {
+            ClpfdConstraint::Global { name, args } => {
                 // Handle both variables and constants in the arguments
                 let var_terms: Result<Vec<_>, _> = args
                     .iter()
@@ -878,9 +859,7 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
                     _ => Err(InterpreterError::UnknownGlobalConstraint(name.clone())),
                 }
             }
-            ClpfdConstraint::Fresh {
-                vars, constraints, ..
-            } => {
+            ClpfdConstraint::Fresh { vars, constraints } => {
                 // Create a new scope for the fresh variables
                 execution_context.push_scope();
                 for var in vars {
@@ -953,10 +932,10 @@ impl<U: User, E: Engine<U>> ClpfdConstraint<U, E> {
 }
 
 /// Evaluates an arithmetic expression, creating temporary variables for intermediate results.
-fn eval_arith_expr<U: User, E: Engine<U>>(
+fn eval_arith_expr(
     expr: &ArithExpr,
-    execution_context: &mut ExecutionContext<U, E>,
-) -> Result<LTerm<U, E>, InterpreterError> {
+    execution_context: &mut ExecutionContext,
+) -> Result<LTerm, InterpreterError> {
     match expr {
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
         ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
@@ -1042,9 +1021,9 @@ fn eval_arith_expr<U: User, E: Engine<U>>(
     }
 }
 
-fn eval_domain_bound<U: User, E: Engine<U>>(
+fn eval_domain_bound(
     bound: &DomainBound,
-    execution_context: &mut ExecutionContext<U, E>,
+    execution_context: &mut ExecutionContext,
     source_span: &super::super::parser::ast::Span,
 ) -> Result<isize, InterpreterError> {
     match bound {
@@ -1117,11 +1096,7 @@ fn eval_domain_bound<U: User, E: Engine<U>>(
     }
 }
 
-fn build_comparison_goal<U: User, E: Engine<U>>(
-    left: LTerm<U, E>,
-    op: CompOp,
-    right: LTerm<U, E>,
-) -> Result<Goal<U, E>, InterpreterError> {
+fn build_comparison_goal(left: LTerm, op: CompOp, right: LTerm) -> Result<Goal, InterpreterError> {
     match op {
         CompOp::Equal => {
             // Check if this is an arithmetic equality that should use specialized CLPFD constraints
@@ -1156,11 +1131,11 @@ fn build_comparison_goal<U: User, E: Engine<U>>(
     }
 }
 
-fn try_build_arithmetic_constraint<U: User, E: Engine<U>>(
+fn try_build_arithmetic_constraint(
     left: &ArithExpr,
     right: &ArithExpr,
-    execution_context: &mut ExecutionContext<U, E>,
-) -> Result<Option<Goal<U, E>>, InterpreterError> {
+    execution_context: &mut ExecutionContext,
+) -> Result<Option<Goal>, InterpreterError> {
     // Detect patterns like: x * y == 6, x + y == z, etc.
     // Left side should be arithmetic expression, right side should be simple value or variable
 

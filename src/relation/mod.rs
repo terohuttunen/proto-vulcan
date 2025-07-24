@@ -9,7 +9,7 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::prelude::*;
 //!
-//! pub fn emptyo<U: User, E: Engine<U>>(s: LTerm<U, E>) -> Goal<U, E> {
+//! pub fn emptyo(s: LTerm) -> Goal {
 //!     proto_vulcan!([] == s)
 //! }
 //! # fn main() {}
@@ -23,7 +23,7 @@
 //! extern crate proto_vulcan;
 //! use proto_vulcan::prelude::*;
 //!
-//! pub fn append<U: User, E: Engine<U>>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> Goal<U, E> {
+//! pub fn append(l: LTerm, s: LTerm, ls: LTerm) -> Goal {
 //!     proto_vulcan_closure!(
 //!        match [l, s, ls] {
 //!            [[], x, x] => ,

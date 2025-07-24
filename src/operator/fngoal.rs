@@ -7,11 +7,11 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! fn example<U: User, E: Engine<U>>() -> Goal<U, E> {
+//! fn example() -> Goal {
 //!     proto_vulcan!(
 //!         fngoal |engine, state| {
 //!             // There could be more Rust here modifying the `state`
-//!             let g: Goal<U, E> = proto_vulcan!(true);
+//!             let g: Goal = proto_vulcan!(true);
 //!             g.solve(engine, state)
 //!         }
 //!     )
@@ -20,61 +20,39 @@
 //! ```
 //! See more complex example in `reification.rs` of Proto-vulcan itself.
 //!
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::operator::FnOperatorParam;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
 use std::fmt;
 use std::rc::Rc;
 
-pub struct FnGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    f: Box<dyn Fn(&Solver<U, E>, State<U, E>) -> Stream<U, E>>,
+pub struct FnGoal {
+    f: Box<dyn Fn(&Solver, State) -> Stream>,
 }
 
-impl<U, E> FnGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new<G: AnyGoal<U, E>>(
-        f: Box<dyn Fn(&Solver<U, E>, State<U, E>) -> Stream<U, E>>,
-    ) -> InferredGoal<U, E, G> {
+impl FnGoal {
+    pub fn new<G: AnyGoal>(f: Box<dyn Fn(&Solver, State) -> Stream>) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(FnGoal { f })))
     }
 }
 
-impl<U, E> Solve<U, E> for FnGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for FnGoal {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         (*self.f)(solver, state)
     }
 }
 
-impl<U, E> fmt::Debug for FnGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl fmt::Debug for FnGoal {
     fn fmt(&self, fm: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(fm, "FnGoal()")
     }
 }
 
-pub fn fngoal<U, E, G>(param: FnOperatorParam<U, E>) -> InferredGoal<U, E, G>
+pub fn fngoal<G>(param: FnOperatorParam) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     FnGoal::new(param.f)
 }

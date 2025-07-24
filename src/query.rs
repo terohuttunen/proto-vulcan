@@ -1,48 +1,42 @@
-use crate::engine::{DefaultEngine, Engine};
+
 use crate::goal::Goal;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
 use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::{DefaultUser, User};
+use crate::user::DefaultUser;
+
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-pub trait QueryResult<U = DefaultUser, E = DefaultEngine<U>>
-where
-    U: User,
-    E: Engine<U>,
+pub trait QueryResult
 {
-    fn from_vec(v: Vec<LResult<U, E>>) -> Self;
+    fn from_vec(v: Vec<LResult>) -> Self;
 }
 
-pub struct ResultIterator<R, U = DefaultUser, E = DefaultEngine<U>>
+pub struct ResultIterator<R>
 where
-    R: QueryResult<U, E>,
-    U: User,
-    E: Engine<U>,
+    R: QueryResult,
 {
-    solver: Solver<U, E>,
-    variables: Vec<LTerm<U, E>>,
-    stream: Stream<U, E>,
+    solver: Solver,
+    variables: Vec<LTerm>,
+    stream: Stream,
     _phantom: PhantomData<R>,
 }
 
 #[doc(hidden)]
-impl<R, U, E> ResultIterator<R, U, E>
+impl<R> ResultIterator<R>
 where
-    R: QueryResult<U, E>,
-    U: User,
-    E: Engine<U>,
+    R: QueryResult,
 {
     pub fn new(
-        solver: Solver<U, E>,
-        variables: Vec<LTerm<U, E>>,
-        goal: Goal<U, E>,
-        initial_state: State<U, E>,
-    ) -> ResultIterator<R, U, E> {
+        solver: Solver,
+        variables: Vec<LTerm>,
+        goal: Goal,
+        initial_state: State,
+    ) -> ResultIterator<R> {
         let stream = solver.start(&goal, initial_state);
         ResultIterator {
             solver,
@@ -54,11 +48,9 @@ where
 }
 
 #[doc(hidden)]
-impl<R, U, E> Iterator for ResultIterator<R, U, E>
+impl<R> Iterator for ResultIterator<R>
 where
-    R: QueryResult<U, E>,
-    U: User,
-    E: Engine<U>,
+    R: QueryResult,
 {
     type Item = R;
 
@@ -74,7 +66,7 @@ where
                     .variables
                     .iter()
                     .map(|v| {
-                        LResult::<U, E>(state.smap_ref().walk_star(v), Rc::clone(&reified_cstore))
+                        LResult(state.smap_ref().walk_star(v), Rc::clone(&reified_cstore))
                     })
                     .collect();
 
@@ -89,46 +81,39 @@ where
 
 /* ResultIterator is fused because uncons() will always keep returning None on empty stream */
 #[doc(hidden)]
-impl<R, U, E> FusedIterator for ResultIterator<R, U, E>
+impl<R> FusedIterator for ResultIterator<R>
 where
-    R: QueryResult<U, E>,
-    U: User,
-    E: Engine<U>,
+    R: QueryResult,
 {
 }
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct Query<R, U = DefaultUser, E = DefaultEngine<U>>
+pub struct Query<R>
 where
-    R: QueryResult<U, E>,
-    U: User,
-    E: Engine<U>,
+    R: QueryResult,
 {
-    variables: Vec<LTerm<U, E>>,
-    goal: Goal<U, E>,
+    variables: Vec<LTerm>,
+    goal: Goal,
     _phantom: std::marker::PhantomData<R>,
 }
 
-impl<R, E> Query<R, DefaultUser, E>
+impl<R> Query<R>
 where
-    R: QueryResult<DefaultUser, E>,
-    E: Engine<DefaultUser>,
+    R: QueryResult,
 {
-    pub fn run(&self) -> ResultIterator<R, DefaultUser, E> {
+    pub fn run(&self) -> ResultIterator<R> {
         let user_state = DefaultUser::new();
         let user_globals = ();
         self.run_with_user(user_state, user_globals)
     }
 }
 
-impl<R, U, E> Query<R, U, E>
+impl<R> Query<R>
 where
-    R: QueryResult<U, E>,
-    U: User,
-    E: Engine<U>,
+    R: QueryResult,
 {
-    pub fn new(variables: Vec<LTerm<U, E>>, goal: Goal<U, E>) -> Query<R, U, E> {
+    pub fn new(variables: Vec<LTerm>, goal: Goal) -> Query<R> {
         Query {
             variables,
             goal,
@@ -138,9 +123,9 @@ where
 
     pub fn run_with_user(
         &self,
-        user_state: U,
-        user_globals: U::UserContext,
-    ) -> ResultIterator<R, U, E> {
+        user_state: DefaultUser,
+        user_globals: <DefaultUser as crate::user::User>::UserContext,
+    ) -> ResultIterator<R> {
         let initial_state = State::new(user_state);
         let user_globals = user_globals;
         let solver = Solver::new(user_globals, false);

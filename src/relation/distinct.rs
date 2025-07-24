@@ -1,14 +1,12 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
-use crate::user::User;
+
 
 /// A relation which guarantees that all elements of `l` are distinct from each other.
-pub fn distinct<U, E, G>(l: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn distinct<G>(l: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     proto_vulcan_closure!(
         match l {

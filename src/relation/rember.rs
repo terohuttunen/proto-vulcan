@@ -1,7 +1,7 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
-use crate::user::User;
+
 
 /// A relation where `out` is equal to `ls` with first occurrence of `x` removed.
 ///
@@ -17,11 +17,9 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 3, 2, 4]));
 /// }
 /// ```
-pub fn rember<U, E, G>(x: LTerm<U, E>, ls: LTerm<U, E>, out: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn rember<G>(x: LTerm, ls: LTerm, out: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     proto_vulcan_closure!(
         match [ls, out] {

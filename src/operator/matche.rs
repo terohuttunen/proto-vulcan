@@ -5,7 +5,7 @@
 //! ```rust
 //! # extern crate proto_vulcan;
 //! # use proto_vulcan::prelude::*;
-//! pub fn membero<U: User, E: Engine<U>>(x: LTerm<U, E>, l: LTerm<U, E>) -> Goal<U, E> {
+//! pub fn membero(x: LTerm, l: LTerm) -> Goal {
 //!     proto_vulcan_closure!(match l {
 //!         [head | _] => head == x,
 //!         [_ | rest] => membero(x, rest),
@@ -15,16 +15,10 @@
 //! ```
 //!
 
-use crate::engine::Engine;
 use crate::goal::{Goal, GoalCast};
 use crate::operator::conde::Conde;
 use crate::operator::PatternMatchOperatorParam;
-use crate::user::User;
 
-pub fn matche<U, E>(param: PatternMatchOperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn matche(param: PatternMatchOperatorParam<Goal>) -> Goal {
     Conde::from_conjunctions(param.arms).cast_into()
 }

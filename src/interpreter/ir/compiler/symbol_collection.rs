@@ -175,7 +175,7 @@ impl ModuleSymbolMap {
 }
 
 /// Symbol collection methods for the IR compiler
-impl<U: User, E: Engine<U>> Compiler<U, E> {
+impl Compiler {
     /// Phase 1: Collect all symbols and use clauses
     pub(super) fn collect_symbols_and_use_clauses(
         &mut self,

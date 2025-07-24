@@ -2,45 +2,27 @@ use crate::engine::Engine;
 use crate::goal::{AnyGoal, DFSGoal, Goal};
 use crate::solver::Solver;
 use crate::state::State;
-use crate::user::User;
-use std::marker::PhantomData;
 
-pub enum StreamCursor<'a, U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    Stream(usize, &'a Stream<U, E>),
-    LazyStream(usize, &'a LazyStream<U, E>),
+pub enum StreamCursor<'a> {
+    Stream(usize, &'a Stream),
+    LazyStream(usize, &'a LazyStream),
     End,
 }
 
-pub enum StreamWalkStep<'a, U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    State(&'a State<U, E>),
-    LazyStream(&'a LazyStream<U, E>),
-    Backtrack(&'a LazyStream<U, E>),
+pub enum StreamWalkStep<'a> {
+    State(&'a State),
+    LazyStream(&'a LazyStream),
+    Backtrack(&'a LazyStream),
 }
 
 // Depth-first walk of the stream.
-pub struct StreamWalker<'a, U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    next_pos: StreamCursor<'a, U, E>,
-    deferred_stack: Vec<(usize, &'a LazyStream<U, E>)>,
+pub struct StreamWalker<'a> {
+    next_pos: StreamCursor<'a>,
+    deferred_stack: Vec<(usize, &'a LazyStream)>,
 }
 
-impl<'a, U, E> StreamWalker<'a, U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new(stream: &'a Stream<U, E>) -> StreamWalker<'a, U, E> {
+impl<'a> StreamWalker<'a> {
+    pub fn new(stream: &'a Stream) -> StreamWalker<'a> {
         let deferred_stack = Vec::new();
         let next_pos = StreamCursor::Stream(0, stream);
         StreamWalker {
@@ -49,7 +31,7 @@ where
         }
     }
 
-    fn backtrack(&mut self) -> Option<(usize, StreamWalkStep<'a, U, E>)> {
+    fn backtrack(&mut self) -> Option<(usize, StreamWalkStep<'a>)> {
         match self.deferred_stack.pop() {
             Some((depth, lazy_stream)) => {
                 match &*lazy_stream.0 {
@@ -68,8 +50,8 @@ where
     fn downstream(
         &mut self,
         depth: usize,
-        stream: &'a Stream<U, E>,
-    ) -> Option<(usize, StreamWalkStep<'a, U, E>)> {
+        stream: &'a Stream,
+    ) -> Option<(usize, StreamWalkStep<'a>)> {
         let step = match stream {
             Stream::Empty => {
                 return self.backtrack();
@@ -98,8 +80,8 @@ where
     fn branch(
         &mut self,
         depth: usize,
-        lazy_stream: &'a LazyStream<U, E>,
-    ) -> Option<(usize, StreamWalkStep<'a, U, E>)> {
+        lazy_stream: &'a LazyStream,
+    ) -> Option<(usize, StreamWalkStep<'a>)> {
         match &*lazy_stream.0 {
             Lazy::Bind(bound_stream, _goal) => {
                 self.deferred_stack.push((depth, lazy_stream));
@@ -134,7 +116,7 @@ where
         Some((depth, StreamWalkStep::LazyStream(lazy_stream)))
     }
 
-    pub fn next(&mut self) -> Option<(usize, StreamWalkStep<'a, U, E>)> {
+    pub fn next(&mut self) -> Option<(usize, StreamWalkStep<'a>)> {
         match self.next_pos {
             StreamCursor::Stream(depth, s) => self.downstream(depth, s),
             StreamCursor::LazyStream(depth, l) => self.branch(depth, l),
@@ -143,98 +125,83 @@ where
     }
 }
 
-pub trait StreamIterator<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn clone_box(&self) -> Box<dyn StreamIterator<U, E>>;
+pub trait StreamIterator {
+    fn clone_box(&self) -> Box<dyn StreamIterator>;
 
-    fn next(&mut self, solver: &Solver<U, E>) -> Option<Stream<U, E>>;
+    fn next(&mut self, solver: &Solver) -> Option<Stream>;
 }
 
-impl<U, E> Clone for Box<dyn StreamIterator<U, E>>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl Clone for Box<dyn StreamIterator> {
     fn clone(&self) -> Self {
         self.clone_box()
     }
 }
 
-impl<U, E> std::fmt::Debug for Box<dyn StreamIterator<U, E>>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl std::fmt::Debug for Box<dyn StreamIterator> {
     fn fmt(&self, fm: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fm, "StreamIterator(...)")
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = "U: User"), Debug(bound = "U: User"))]
-pub enum Lazy<U: User, E: Engine<U>> {
-    Bind(LazyStream<U, E>, Goal<U, E>),
-    MPlus(LazyStream<U, E>, LazyStream<U, E>),
-    Pause(Box<State<U, E>>, Goal<U, E>),
-    BindDFS(LazyStream<U, E>, DFSGoal<U, E>),
-    MPlusDFS(LazyStream<U, E>, LazyStream<U, E>),
-    PauseDFS(Box<State<U, E>>, DFSGoal<U, E>),
-    Delay(Stream<U, E>),
-    Iterator(Box<dyn StreamIterator<U, E>>),
+#[derive(Clone, Debug)]
+pub enum Lazy {
+    Bind(LazyStream, Goal),
+    MPlus(LazyStream, LazyStream),
+    Pause(Box<State>, Goal),
+    BindDFS(LazyStream, DFSGoal),
+    MPlusDFS(LazyStream, LazyStream),
+    PauseDFS(Box<State>, DFSGoal),
+    Delay(Stream),
+    Iterator(Box<dyn StreamIterator>),
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = "U: User"), Debug(bound = "U: User"))]
-pub struct LazyStream<U: User, E: Engine<U>>(pub Box<Lazy<U, E>>);
+#[derive(Clone, Debug)]
+pub struct LazyStream(pub Box<Lazy>);
 
-impl<U: User, E: Engine<U>> LazyStream<U, E> {
-    pub fn bind(ls: LazyStream<U, E>, goal: Goal<U, E>) -> LazyStream<U, E> {
+impl LazyStream {
+    pub fn bind(ls: LazyStream, goal: Goal) -> LazyStream {
         LazyStream(Box::new(Lazy::Bind(ls, goal)))
     }
 
-    pub fn mplus(ls1: LazyStream<U, E>, ls2: LazyStream<U, E>) -> LazyStream<U, E> {
+    pub fn mplus(ls1: LazyStream, ls2: LazyStream) -> LazyStream {
         LazyStream(Box::new(Lazy::MPlus(ls1, ls2)))
     }
 
-    pub fn pause(state: Box<State<U, E>>, goal: Goal<U, E>) -> LazyStream<U, E> {
+    pub fn pause(state: Box<State>, goal: Goal) -> LazyStream {
         LazyStream(Box::new(Lazy::Pause(state, goal)))
     }
 
-    pub fn bind_dfs(ls: LazyStream<U, E>, goal: DFSGoal<U, E>) -> LazyStream<U, E> {
+    pub fn bind_dfs(ls: LazyStream, goal: DFSGoal) -> LazyStream {
         LazyStream(Box::new(Lazy::BindDFS(ls, goal)))
     }
 
-    pub fn mplus_dfs(ls1: LazyStream<U, E>, ls2: LazyStream<U, E>) -> LazyStream<U, E> {
+    pub fn mplus_dfs(ls1: LazyStream, ls2: LazyStream) -> LazyStream {
         LazyStream(Box::new(Lazy::MPlusDFS(ls1, ls2)))
     }
 
-    pub fn pause_dfs(state: Box<State<U, E>>, goal: DFSGoal<U, E>) -> LazyStream<U, E> {
+    pub fn pause_dfs(state: Box<State>, goal: DFSGoal) -> LazyStream {
         LazyStream(Box::new(Lazy::PauseDFS(state, goal)))
     }
 
-    pub fn delay(stream: Stream<U, E>) -> LazyStream<U, E> {
+    pub fn delay(stream: Stream) -> LazyStream {
         LazyStream(Box::new(Lazy::Delay(stream)))
     }
 
-    pub fn iterator(iter: Box<dyn StreamIterator<U, E>>) -> LazyStream<U, E> {
+    pub fn iterator(iter: Box<dyn StreamIterator>) -> LazyStream {
         LazyStream(Box::new(Lazy::Iterator(iter)))
     }
 }
 
-#[derive(Derivative)]
-#[derivative(Clone(bound = "U: User"), Debug(bound = "U: User"))]
-pub enum Stream<U: User, E: Engine<U>> {
+#[derive(Clone, Debug)]
+pub enum Stream {
     Empty,
-    Unit(Box<State<U, E>>),
-    Lazy(LazyStream<U, E>),
-    Cons(Box<State<U, E>>, LazyStream<U, E>),
+    Unit(Box<State>),
+    Lazy(LazyStream),
+    Cons(Box<State>, LazyStream),
     Error(String),
 }
 
-impl<U: User, E: Engine<U>> Stream<U, E> {
+impl Stream {
     pub fn is_empty(&self) -> bool {
         match self {
             Stream::Empty => true,
@@ -242,27 +209,27 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn unit(u: Box<State<U, E>>) -> Stream<U, E> {
+    pub fn unit(u: Box<State>) -> Stream {
         Stream::Unit(u)
     }
 
-    pub fn empty() -> Stream<U, E> {
+    pub fn empty() -> Stream {
         Stream::Empty
     }
 
-    pub fn error(msg: String) -> Stream<U, E> {
+    pub fn error(msg: String) -> Stream {
         Stream::Error(msg)
     }
 
-    pub fn cons(a: Box<State<U, E>>, lazy: LazyStream<U, E>) -> Stream<U, E> {
+    pub fn cons(a: Box<State>, lazy: LazyStream) -> Stream {
         Stream::Cons(a, lazy)
     }
 
-    pub fn lazy(lazy: LazyStream<U, E>) -> Stream<U, E> {
+    pub fn lazy(lazy: LazyStream) -> Stream {
         Stream::Lazy(lazy)
     }
 
-    pub fn mplus(stream: Stream<U, E>, lazy: LazyStream<U, E>) -> Stream<U, E> {
+    pub fn mplus(stream: Stream, lazy: LazyStream) -> Stream {
         match stream {
             Stream::Empty => Stream::lazy(lazy),
             Stream::Lazy(lazy_hat) => Stream::lazy_mplus(lazy, lazy_hat),
@@ -272,7 +239,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn bind(stream: Stream<U, E>, goal: Goal<U, E>) -> Stream<U, E> {
+    pub fn bind(stream: Stream, goal: Goal) -> Stream {
         if goal.is_succeed() {
             stream
         } else if goal.is_fail() {
@@ -291,15 +258,15 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn lazy_mplus(lazy: LazyStream<U, E>, lazy_hat: LazyStream<U, E>) -> Stream<U, E> {
+    pub fn lazy_mplus(lazy: LazyStream, lazy_hat: LazyStream) -> Stream {
         Stream::Lazy(LazyStream::mplus(lazy, lazy_hat))
     }
 
-    pub fn pause(state: Box<State<U, E>>, goal: Goal<U, E>) -> Stream<U, E> {
+    pub fn pause(state: Box<State>, goal: Goal) -> Stream {
         Stream::Lazy(LazyStream::pause(state, goal))
     }
 
-    pub fn mplus_dfs(stream: Stream<U, E>, lazy: LazyStream<U, E>) -> Stream<U, E> {
+    pub fn mplus_dfs(stream: Stream, lazy: LazyStream) -> Stream {
         match stream {
             Stream::Empty => Stream::lazy(lazy),
             Stream::Lazy(lazy_hat) => Stream::lazy_mplus_dfs(lazy_hat, lazy),
@@ -311,7 +278,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn bind_dfs(stream: Stream<U, E>, goal: DFSGoal<U, E>) -> Stream<U, E> {
+    pub fn bind_dfs(stream: Stream, goal: DFSGoal) -> Stream {
         if goal.is_succeed() {
             stream
         } else if goal.is_fail() {
@@ -330,7 +297,7 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn lazy_bind(lazy: LazyStream<U, E>, goal: Goal<U, E>) -> Stream<U, E> {
+    pub fn lazy_bind(lazy: LazyStream, goal: Goal) -> Stream {
         if goal.is_succeed() {
             Stream::lazy(lazy)
         } else if goal.is_fail() {
@@ -340,11 +307,11 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn lazy_mplus_dfs(lazy: LazyStream<U, E>, lazy_hat: LazyStream<U, E>) -> Stream<U, E> {
+    pub fn lazy_mplus_dfs(lazy: LazyStream, lazy_hat: LazyStream) -> Stream {
         Stream::Lazy(LazyStream::mplus_dfs(lazy, lazy_hat))
     }
 
-    pub fn lazy_bind_dfs(lazy: LazyStream<U, E>, goal: DFSGoal<U, E>) -> Stream<U, E> {
+    pub fn lazy_bind_dfs(lazy: LazyStream, goal: DFSGoal) -> Stream {
         if goal.is_succeed() {
             Stream::lazy(lazy)
         } else if goal.is_fail() {
@@ -354,15 +321,15 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn pause_dfs(state: Box<State<U, E>>, goal: DFSGoal<U, E>) -> Stream<U, E> {
+    pub fn pause_dfs(state: Box<State>, goal: DFSGoal) -> Stream {
         Stream::Lazy(LazyStream::pause_dfs(state, goal))
     }
 
-    pub fn delay(stream: Stream<U, E>) -> Stream<U, E> {
+    pub fn delay(stream: Stream) -> Stream {
         Stream::Lazy(LazyStream::delay(stream))
     }
 
-    pub fn iterator(iter: Box<dyn StreamIterator<U, E>>) -> Stream<U, E> {
+    pub fn iterator(iter: Box<dyn StreamIterator>) -> Stream {
         Stream::Lazy(LazyStream::iterator(iter))
     }
 
@@ -373,34 +340,30 @@ impl<U: User, E: Engine<U>> Stream<U, E> {
         }
     }
 
-    pub fn head(&self) -> Option<&Box<State<U, E>>> {
+    pub fn head(&self) -> Option<&Box<State>> {
         match self {
             Stream::Unit(a) | Stream::Cons(a, _) => Some(a),
             _ => None,
         }
     }
 
-    pub fn walk<'a>(&'a self) -> StreamWalker<'a, U, E> {
+    pub fn walk<'a>(&'a self) -> StreamWalker<'a> {
         StreamWalker::new(self)
     }
 }
 
 #[derive(Debug)]
-pub struct StreamEngine<U: User> {
-    _phantom: PhantomData<U>,
+pub struct StreamEngine {
 }
 
-impl<U> Engine<U> for StreamEngine<U>
-where
-    U: User,
+impl Engine for StreamEngine
 {
     fn new() -> Self {
         StreamEngine {
-            _phantom: PhantomData,
         }
     }
 
-    fn step(&self, solver: &Solver<U, Self>, lazy: Lazy<U, Self>) -> Stream<U, Self> {
+    fn step(&self, solver: &Solver, lazy: Lazy) -> Stream {
         match lazy {
             Lazy::MPlus(s1, s2) => {
                 let stream = self.step(solver, *s1.0);

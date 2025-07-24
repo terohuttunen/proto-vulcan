@@ -1,4 +1,3 @@
-use crate::engine::Engine;
 /// Constrains u - v = w finite domains
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
@@ -6,41 +5,23 @@ use crate::lvalue::LValue;
 use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, FiniteDomain, SResult, State};
 use crate::stream::Stream;
-use crate::user::User;
 use std::rc::Rc;
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct MinusFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
-    w: LTerm<U, E>,
+#[derive(Debug)]
+pub struct MinusFd {
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
 }
 
-impl<U, E> MinusFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new<G: AnyGoal<U, E>>(
-        u: LTerm<U, E>,
-        v: LTerm<U, E>,
-        w: LTerm<U, E>,
-    ) -> InferredGoal<U, E, G> {
+impl MinusFd {
+    pub fn new<G: AnyGoal>(u: LTerm, v: LTerm, w: LTerm) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(MinusFd { u, v, w })))
     }
 }
 
-impl<U, E> Solve<U, E> for MinusFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for MinusFd {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         match MinusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -48,33 +29,22 @@ where
     }
 }
 
-pub fn minusfd<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn minusfd<G>(u: LTerm, v: LTerm, w: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     MinusFd::new(u, v, w)
 }
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct MinusFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
-    w: LTerm<U, E>,
+#[derive(Debug, Clone)]
+pub struct MinusFdConstraint {
+    u: LTerm,
+    v: LTerm,
+    w: LTerm,
 }
 
-impl<U, E> MinusFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>, w: LTerm<U, E>) -> Rc<dyn Constraint<U, E>> {
+impl MinusFdConstraint {
+    pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Rc<dyn Constraint> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
         assert!(w.is_var() || w.is_number());
@@ -82,12 +52,8 @@ where
     }
 }
 
-impl<U, E> Constraint<U, E> for MinusFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
+impl Constraint for MinusFdConstraint {
+    fn run(self: Rc<Self>, state: State) -> SResult {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
 
@@ -183,16 +149,12 @@ where
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U, E>> {
+    fn operands(&self) -> Vec<LTerm> {
         vec![self.u.clone(), self.v.clone(), self.w.clone()]
     }
 }
 
-impl<U, E> std::fmt::Display for MinusFdConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl std::fmt::Display for MinusFdConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }

@@ -22,42 +22,32 @@
 //! y: _.4  where  { _.4 != 1 }
 //! ```
 //!
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::solver::{Solve, Solver};
 use crate::state::{unify_rec, Constraint, SMap, SResult, State};
 use crate::stream::Stream;
-use crate::user::User;
+
 use std::rc::Rc;
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct Diseq<U, E>
-where
-    U: User,
-    E: Engine<U>,
+#[derive(Debug)]
+pub struct Diseq
 {
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
+    u: LTerm,
+    v: LTerm,
 }
 
-impl<U, E> Diseq<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl Diseq
 {
-    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+    pub fn new<G: AnyGoal>(u: LTerm, v: LTerm) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(Diseq { u, v })))
     }
 }
 
-impl<U, E> Solve<U, E> for Diseq<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl Solve for Diseq
 {
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         // Return state where u and v are unified under s, or None if unification is not possible
         match state.disunify(&self.u, &self.v) {
             Ok(state) => Stream::unit(Box::new(state)),
@@ -89,26 +79,20 @@ where
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn diseq<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn diseq<G>(u: LTerm, v: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     Diseq::new(u, v)
 }
 
 // Disequality constraint
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"), Clone(bound = "U: User"))]
-pub struct DisequalityConstraint<U: User, E: Engine<U>>(SMap<U, E>);
+#[derive(Debug)]
+pub struct DisequalityConstraint(SMap);
 
-impl<U, E> DisequalityConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl DisequalityConstraint
 {
-    pub fn new(smap: SMap<U, E>) -> Rc<dyn Constraint<U, E>> {
+    pub fn new(smap: SMap) -> Rc<dyn Constraint> {
         Rc::new(DisequalityConstraint(smap))
     }
 
@@ -116,7 +100,7 @@ where
     ///
     /// A constraint is subsumed by another constraint if unifying the constraint in the
     /// substitution of the another constraint does not extend the constraint.
-    pub fn subsumes(&self, other: &dyn Constraint<U, E>) -> bool {
+    pub fn subsumes(&self, other: &dyn Constraint) -> bool {
         match other.downcast_ref::<Self>() {
             Some(other) => {
                 let mut extension = SMap::new();
@@ -134,11 +118,11 @@ where
         }
     }
 
-    pub fn smap_ref(&self) -> &SMap<U, E> {
+    pub fn smap_ref(&self) -> &SMap {
         &self.0
     }
 
-    pub fn walk_star(&self, smap: &SMap<U, E>) -> SMap<U, E> {
+    pub fn walk_star(&self, smap: &SMap) -> SMap {
         let mut n = SMap::new();
         for (k, v) in self.smap_ref().iter() {
             let kwalk = smap.walk_star(k);
@@ -150,12 +134,8 @@ where
     }
 }
 
-impl<U, E> Constraint<U, E> for DisequalityConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
+impl Constraint for DisequalityConstraint {
+    fn run(self: Rc<Self>, state: State) -> SResult {
         let mut extension = SMap::new();
         let mut test_state = state.clone();
         for (u, v) in self.0.iter() {
@@ -173,15 +153,12 @@ where
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U, E>> {
+    fn operands(&self) -> Vec<LTerm> {
         self.0.operands()
     }
 }
 
-impl<U, E> std::fmt::Display for DisequalityConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl std::fmt::Display for DisequalityConstraint
 {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for (u, v) in self.0.iter() {

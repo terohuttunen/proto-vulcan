@@ -1,4 +1,3 @@
-use crate::engine::Engine;
 use crate::stream::{Lazy, StreamWalkStep};
 use crate::user::User;
 use std::marker::PhantomData;

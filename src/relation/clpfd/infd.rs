@@ -1,18 +1,16 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, GoalCast, InferredGoal};
 use crate::lterm::LTerm;
 use crate::operator::conj::InferredConj;
 use crate::relation::clpfd::domfd::DomFd;
 use crate::state::FiniteDomain;
-use crate::user::User;
+
 use std::ops::RangeInclusive;
 
 /// Associates the same domain to multiple variables
-pub fn infd<U, E, G>(u: LTerm<U, E>, domain: &[isize]) -> InferredGoal<U, E, G>
+pub fn infd<G>(u: LTerm, domain: &[isize]) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     if u.is_list() {
         let goals = u
@@ -25,11 +23,9 @@ where
     }
 }
 
-pub fn infdrange<U, E, G>(u: LTerm<U, E>, domain: &RangeInclusive<isize>) -> InferredGoal<U, E, G>
+pub fn infdrange<G>(u: LTerm, domain: &RangeInclusive<isize>) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     if u.is_list() {
         let goals = u

@@ -1,7 +1,7 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
-use crate::user::User;
+
 
 /// A relation that succeeds for each occurrence of `x` in list `l`.
 ///
@@ -21,11 +21,9 @@ use crate::user::User;
 ///     assert!(iter.next().is_none());
 /// }
 /// ```
-pub fn member<U, E, G>(x: LTerm<U, E>, l: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn member<G>(x: LTerm, l: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     proto_vulcan_closure!(match l {
         [head | _] => head == x,

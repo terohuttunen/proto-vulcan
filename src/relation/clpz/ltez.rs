@@ -1,4 +1,3 @@
-use crate::engine::Engine;
 /// Constrains u <= v for integers
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
@@ -6,39 +5,24 @@ use crate::lvalue::LValue;
 use crate::solver::{Solve, Solver};
 use crate::state::{Constraint, SResult, State};
 use crate::stream::Stream;
-use crate::user::User;
-use derivative::Derivative;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
 /// CLPZ Less-than-or-equal constraint: u <= v for integers
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct LessEqualZConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
+#[derive(Debug, Clone)]
+pub struct LessEqualZConstraint {
+    u: LTerm,
+    v: LTerm,
 }
 
-impl<U, E> LessEqualZConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new(u: LTerm<U, E>, v: LTerm<U, E>) -> Rc<Self> {
+impl LessEqualZConstraint {
+    pub fn new(u: LTerm, v: LTerm) -> Rc<Self> {
         Rc::new(LessEqualZConstraint { u, v })
     }
 }
 
-impl<U, E> Constraint<U, E> for LessEqualZConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn run(self: Rc<Self>, state: State<U, E>) -> SResult<U, E> {
+impl Constraint for LessEqualZConstraint {
+    fn run(self: Rc<Self>, state: State) -> SResult {
         // Walk the terms to get their current values
         let u_walk = state.smap_ref().walk(&self.u).clone();
         let v_walk = state.smap_ref().walk(&self.v).clone();
@@ -71,49 +55,32 @@ where
         }
     }
 
-    fn operands(&self) -> Vec<LTerm<U, E>> {
+    fn operands(&self) -> Vec<LTerm> {
         vec![self.u.clone(), self.v.clone()]
     }
 }
 
-impl<U, E> Display for LessEqualZConstraint<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl Display for LessEqualZConstraint {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} <= {}", self.u, self.v)
     }
 }
 
 /// CLPZ Less-than-or-equal goal (the relation interface)
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct LessEqualZ<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    u: LTerm<U, E>,
-    v: LTerm<U, E>,
+#[derive(Debug)]
+pub struct LessEqualZ {
+    u: LTerm,
+    v: LTerm,
 }
 
-impl<U, E> LessEqualZ<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new<G: AnyGoal<U, E>>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G> {
+impl LessEqualZ {
+    pub fn new<G: AnyGoal>(u: LTerm, v: LTerm) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(LessEqualZ { u, v })))
     }
 }
 
-impl<U, E> Solve<U, E> for LessEqualZ<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for LessEqualZ {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         match LessEqualZConstraint::new(self.u.clone(), self.v.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
             Err(_) => Stream::empty(),
@@ -122,11 +89,9 @@ where
 }
 
 /// Public interface function for less-than-or-equal constraint
-pub fn ltez<U, E, G>(u: LTerm<U, E>, v: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn ltez<G>(u: LTerm, v: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     LessEqualZ::new(u, v)
 }

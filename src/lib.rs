@@ -31,36 +31,27 @@ pub mod state;
 pub mod stream;
 pub mod user;
 
-use engine::Engine;
 use std::borrow::Borrow;
-use user::User;
 
-pub trait Upcast<U, E, SuperType>
+pub trait Upcast<SuperType>
 where
-    U: User,
-    E: Engine<U>,
-    SuperType: CompoundObject<U, E>,
+    SuperType: CompoundObject,
 {
     fn to_super<K: Borrow<Self>>(k: &K) -> SuperType;
 
     fn into_super(self) -> SuperType;
 }
 
-pub trait Downcast<U, E>
+pub trait Downcast
 where
-    U: User,
-    E: Engine<U>,
-    Self: CompoundObject<U, E>,
+    Self: CompoundObject,
 {
-    type SubType: CompoundObject<U, E>;
+    type SubType: CompoundObject;
 
     fn into_sub(self) -> Self::SubType;
 }
 
-pub trait GoalCast<U, E, SuperGoal>
-where
-    U: User,
-    E: Engine<U>,
+pub trait GoalCast<SuperGoal>
 {
     fn cast_into(self) -> SuperGoal;
 }

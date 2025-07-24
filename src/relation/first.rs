@@ -1,15 +1,13 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::relation::cons;
-use crate::user::User;
+
 
 /// A relation such that the `first` is the first element of `list`.
-pub fn first<U, E, G>(list: LTerm<U, E>, first: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn first<G>(list: LTerm, first: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     proto_vulcan!(|rest| { cons(first, rest, list) })
 }

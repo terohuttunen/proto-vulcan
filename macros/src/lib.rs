@@ -116,24 +116,23 @@ fn make_compound_modifications_to_path(path: &mut syn::Path) -> std::result::Res
                     }
                 }
 
-                return Ok(());
+                Ok(())
             }
             syn::PathArguments::None => {
-                last_segment.arguments =
-                    syn::PathArguments::AngleBracketed(syn::parse_quote! {<U, E>});
+                // Leave None arguments as they are - don't add empty generic brackets
+                Ok(())
             }
             _ => {
-                return Err(Error::new(
+                Err(Error::new(
                     last_segment.arguments.span(),
                     "Invalid type argument",
-                ));
+                ))
             }
         },
         None => {
-            return Err(Error::new(path.span(), "Invalid type argument"));
+            Err(Error::new(path.span(), "Invalid type argument"))
         }
     }
-    Ok(())
 }
 
 fn make_compound_modifications_to_type(ty: &mut syn::Type) -> std::result::Result<(), Error> {
@@ -151,10 +150,7 @@ fn make_compound_modifications_to_type(ty: &mut syn::Type) -> std::result::Resul
 fn make_compound_modifications_to_itemstruct(
     itemstruct: &mut syn::ItemStruct,
 ) -> std::result::Result<(), Error> {
-    if itemstruct.generics.params.is_empty() {
-        let new_generics: syn::Generics = syn::parse_quote! {<U: ::proto_vulcan::user::User, E: ::proto_vulcan::engine::Engine<U>>};
-        itemstruct.generics = new_generics;
-    }
+    // Don't modify generics - leave them as they are
     for field in itemstruct.fields.iter_mut() {
         field.vis = syn::Visibility::Public(syn::VisPublic {
             pub_token: syn::parse_quote!(pub),
@@ -173,7 +169,7 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
     let struct_name = itemstruct.ident.clone();
     let inner_ident = &inner.ident;
     let mod_name = quote::format_ident!("{}_compound", struct_name);
-    let (impl_generics, type_generics, where_clause) = itemstruct.generics.split_for_impl();
+    let (_impl_generics, _type_generics, _where_clause) = itemstruct.generics.split_for_impl();
 
     let field_indices: Vec<syn::Index> = itemstruct
         .fields
@@ -189,50 +185,50 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
             #[derive(Eq)]
             #inner
 
-            impl #impl_generics ::std::clone::Clone for #inner_ident #type_generics #where_clause {
-                fn clone(&self) -> #inner_ident #type_generics {
+            impl  ::std::clone::Clone for #inner_ident  {
+                fn clone(&self) -> #inner_ident {
                     #inner_ident(#( ::std::clone::Clone::clone(&self.#field_indices) ),* )
                 }
             }
 
-            impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #inner_ident #type_generics #where_clause {
+            impl  ::proto_vulcan::compound::CompoundObject for #inner_ident  {
                 fn type_name(&self) -> String {
                     stringify!(#struct_name).to_string()
                 }
 
-                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
-                    Box::new(vec![#(&self.#field_indices as &dyn ::proto_vulcan::compound::CompoundObject #type_generics),*].into_iter())
+                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject> + 'a> {
+                    Box::new(vec![#(&self.#field_indices as &dyn ::proto_vulcan::compound::CompoundObject),*].into_iter())
                 }
             }
 
-            impl #impl_generics ::proto_vulcan::compound::CompoundWalkStar #type_generics for #inner_ident #type_generics #where_clause {
-                fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap #type_generics) -> Self {
+            impl  ::proto_vulcan::compound::CompoundWalkStar  for #inner_ident  {
+                fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap ) -> Self {
                     #inner_ident(#(self.#field_indices.compound_walk_star(smap)),*)
                 }
             }
 
-            impl #impl_generics Into<#struct_name #type_generics> for #inner_ident #type_generics #where_clause {
-                fn into(self) -> #struct_name #type_generics {
+            impl  Into<#struct_name> for #inner_ident  {
+                fn into(self) -> #struct_name {
                     #struct_name {
-                        inner: Into::<LTerm #type_generics>::into(self),
+                        inner: Into::<LTerm>::into(self),
                     }
                 }
             }
 
-            impl #impl_generics Into<::proto_vulcan::lterm::LTerm #type_generics> for #inner_ident #type_generics #where_clause {
-                fn into(self) -> ::proto_vulcan::lterm::LTerm #type_generics {
-                    ::proto_vulcan::lterm::LTerm::from(::std::rc::Rc::new(self) as ::std::rc::Rc<dyn ::proto_vulcan::compound::CompoundObject #type_generics>)
+            impl  Into<::proto_vulcan::lterm::LTerm> for #inner_ident  {
+                fn into(self) -> ::proto_vulcan::lterm::LTerm {
+                    ::proto_vulcan::lterm::LTerm::from(::std::rc::Rc::new(self) as ::std::rc::Rc<dyn ::proto_vulcan::compound::CompoundObject>)
                 }
             }
 
-            impl #impl_generics ::proto_vulcan::Downcast #type_generics for #inner_ident #type_generics #where_clause {
-                type SubType = #struct_name #type_generics;
+            impl  ::proto_vulcan::Downcast  for #inner_ident  {
+                type SubType = #struct_name;
                 fn into_sub(self) -> Self::SubType {
                     self.into()
                 }
             }
 
-            impl #impl_generics ::core::fmt::Debug for #inner_ident #type_generics #where_clause {
+            impl  ::core::fmt::Debug for #inner_ident  {
                 fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
                     let debug_trait_builder = &mut ::core::fmt::Formatter::debug_tuple(f, stringify!(#struct_name));
                     #( let _ = ::core::fmt::DebugTuple::field(debug_trait_builder, &self.#field_indices); )*
@@ -240,13 +236,13 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
                 }
             }
 
-            impl #impl_generics ::std::hash::Hash for #inner_ident #type_generics #where_clause {
+            impl  ::std::hash::Hash for #inner_ident  {
                 fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
                     #( ::std::hash::Hash::hash(&self.#field_indices, state); )*
                 }
             }
 
-            impl #impl_generics ::std::cmp::PartialEq for #inner_ident #type_generics #where_clause {
+            impl  ::std::cmp::PartialEq for #inner_ident  {
                 fn eq(&self, other: &Self) -> bool {
                     #( ::std::cmp::PartialEq::eq(&self.#field_indices, &other.#field_indices) &&)* true
                 }
@@ -254,73 +250,73 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
         }
 
         #[derive(Eq)]
-        #vis struct #struct_name #impl_generics {
-            inner: LTerm #type_generics,
+        #vis struct #struct_name  {
+            inner: LTerm,
         }
 
-        impl #impl_generics ::std::clone::Clone for #struct_name #type_generics #where_clause {
-            fn clone(&self) -> #struct_name #type_generics {
+        impl  ::std::clone::Clone for #struct_name  {
+            fn clone(&self) -> #struct_name {
                 #struct_name {
                     inner: ::std::clone::Clone::clone(&self.inner),
                 }
             }
         }
 
-        impl #impl_generics ::std::fmt::Debug for #struct_name #type_generics #where_clause {
+        impl  ::std::fmt::Debug for #struct_name  {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 self.inner.fmt(f)
             }
         }
 
-        impl #impl_generics ::std::hash::Hash for #struct_name #type_generics #where_clause {
+        impl  ::std::hash::Hash for #struct_name  {
             fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
                 ::std::hash::Hash::hash(&self.inner, state);
             }
         }
 
-        impl #impl_generics ::std::cmp::PartialEq for #struct_name #type_generics #where_clause {
+        impl  ::std::cmp::PartialEq for #struct_name  {
             fn eq(&self, other: &Self) -> bool {
                 ::std::cmp::PartialEq::eq(&self.inner, &other.inner)
             }
         }
 
         #[automatically_derived]
-        impl #impl_generics ::proto_vulcan::compound::CompoundTerm #type_generics for #struct_name #type_generics #where_clause {
-            fn new_var(name: &'static str) -> #struct_name #type_generics {
+        impl  ::proto_vulcan::compound::CompoundTerm  for #struct_name  {
+            fn new_var(name: &'static str) -> #struct_name {
                 #struct_name {
                     inner: LTerm::var(name),
                 }
             }
 
-            fn new_wildcard() -> #struct_name #type_generics {
+            fn new_wildcard() -> #struct_name {
                 #struct_name {
                     inner: LTerm::any(),
                 }
             }
 
-            fn new_none() -> #struct_name #type_generics {
+            fn new_none() -> #struct_name {
                 #struct_name {
                     inner: LTerm::empty_list(),
                 }
             }
         }
 
-        impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #struct_name #type_generics #where_clause {
+        impl  ::proto_vulcan::compound::CompoundObject for #struct_name  {
             fn type_name(&self) -> String {
                 stringify!(#struct_name).to_string()
             }
 
-            fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
+            fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject> + 'a> {
                 self.inner.children()
             }
 
-            fn as_term(&self) -> Option<&LTerm<U, E>> {
+            fn as_term(&self) -> Option<&LTerm> {
                 Some(&self.inner)
             }
         }
 
-        impl #impl_generics ::proto_vulcan::compound::CompoundWalkStar #type_generics for #struct_name #type_generics #where_clause {
-            fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap #type_generics) -> Self {
+        impl  ::proto_vulcan::compound::CompoundWalkStar  for #struct_name  {
+            fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap ) -> Self {
                 #struct_name {
                     inner: self.inner.compound_walk_star(smap),
                 }
@@ -328,25 +324,25 @@ fn make_compound_unnamed_struct(itemstruct: syn::ItemStruct) -> TokenStream {
         }
 
         #[automatically_derived]
-        impl #impl_generics Into<::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
-            fn into(self) -> LTerm #type_generics {
+        impl  Into<::proto_vulcan::lterm::LTerm> for #struct_name  {
+            fn into(self) -> LTerm {
                 self.inner
             }
         }
 
-        impl #impl_generics ::proto_vulcan::Upcast<U, E, ::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
+        impl  ::proto_vulcan::Upcast<::proto_vulcan::lterm::LTerm> for #struct_name  {
             #[inline]
-            fn to_super<K: ::std::borrow::Borrow<Self>>(k: &K) -> ::proto_vulcan::lterm::LTerm #type_generics {
+            fn to_super<K: ::std::borrow::Borrow<Self>>(k: &K) -> ::proto_vulcan::lterm::LTerm {
                 Into::into(::std::clone::Clone::clone(k.borrow()))
             }
 
             #[inline]
-            fn into_super(self) -> ::proto_vulcan::lterm::LTerm #type_generics {
+            fn into_super(self) -> ::proto_vulcan::lterm::LTerm {
                 Into::into(self)
             }
         }
 
-        impl #impl_generics ::proto_vulcan::Downcast #type_generics for #struct_name #type_generics #where_clause {
+        impl  ::proto_vulcan::Downcast  for #struct_name  {
             type SubType = Self;
             fn into_sub(self) -> Self::SubType {
                 self.into()
@@ -364,7 +360,7 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
     let struct_name = itemstruct.ident.clone();
     let inner_ident = &inner.ident;
     let mod_name = quote::format_ident!("{}_compound", struct_name);
-    let (impl_generics, type_generics, where_clause) = itemstruct.generics.split_for_impl();
+    let (_impl_generics, _type_generics, _where_clause) = itemstruct.generics.split_for_impl();
 
     let field_names: Vec<syn::Ident> = itemstruct
         .fields
@@ -379,52 +375,52 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
             #[derive(Eq)]
             #inner
 
-            impl #impl_generics ::std::clone::Clone for #inner_ident #type_generics #where_clause {
-                fn clone(&self) -> #inner_ident #type_generics {
+            impl  ::std::clone::Clone for #inner_ident  {
+                fn clone(&self) -> #inner_ident {
                     #inner_ident {
                         #( #field_names: ::std::clone::Clone::clone(&self.#field_names) ),*
                     }
                 }
             }
 
-            impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #inner_ident #type_generics #where_clause {
+            impl  ::proto_vulcan::compound::CompoundObject for #inner_ident  {
                 fn type_name(&self) -> String {
                     stringify!(#struct_name).to_string()
                 }
 
-                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
-                    Box::new(vec![#(&self.#field_names as &dyn ::proto_vulcan::compound::CompoundObject #type_generics),*].into_iter())
+                fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject> + 'a> {
+                    Box::new(vec![#(&self.#field_names as &dyn ::proto_vulcan::compound::CompoundObject),*].into_iter())
                 }
             }
 
-            impl #impl_generics ::proto_vulcan::compound::CompoundWalkStar #type_generics for #inner_ident #type_generics #where_clause {
-                fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap #type_generics) -> Self {
+            impl  ::proto_vulcan::compound::CompoundWalkStar  for #inner_ident  {
+                fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap ) -> Self {
                     #inner_ident { #( #field_names: self.#field_names.compound_walk_star(smap)),* }
                 }
             }
 
-            impl #impl_generics Into<#struct_name #type_generics> for #inner_ident #type_generics #where_clause {
-                fn into(self) -> #struct_name #type_generics {
+            impl  Into<#struct_name> for #inner_ident  {
+                fn into(self) -> #struct_name {
                     #struct_name {
-                        inner: Into::<LTerm #type_generics>::into(self),
+                        inner: Into::<LTerm>::into(self),
                     }
                 }
             }
 
-            impl #impl_generics Into<::proto_vulcan::lterm::LTerm #type_generics> for #inner_ident #type_generics #where_clause {
-                fn into(self) -> ::proto_vulcan::lterm::LTerm #type_generics {
-                    ::proto_vulcan::lterm::LTerm::from(::std::rc::Rc::new(self) as ::std::rc::Rc<dyn ::proto_vulcan::compound::CompoundObject #type_generics>)
+            impl  Into<::proto_vulcan::lterm::LTerm> for #inner_ident  {
+                fn into(self) -> ::proto_vulcan::lterm::LTerm {
+                    ::proto_vulcan::lterm::LTerm::from(::std::rc::Rc::new(self) as ::std::rc::Rc<dyn ::proto_vulcan::compound::CompoundObject>)
                 }
             }
 
-            impl #impl_generics ::proto_vulcan::Downcast #type_generics for #inner_ident #type_generics #where_clause {
-                type SubType = #struct_name #type_generics;
+            impl  ::proto_vulcan::Downcast  for #inner_ident  {
+                type SubType = #struct_name;
                 fn into_sub(self) -> Self::SubType {
                     self.into()
                 }
             }
 
-            impl #impl_generics ::core::fmt::Debug for #inner_ident #type_generics #where_clause {
+            impl  ::core::fmt::Debug for #inner_ident  {
                 fn fmt(&self, f: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
                     let debug_trait_builder = &mut ::core::fmt::Formatter::debug_struct(f, stringify!(#struct_name));
                     #(
@@ -438,13 +434,13 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
                 }
             }
 
-            impl #impl_generics ::std::hash::Hash for #inner_ident #type_generics #where_clause {
+            impl  ::std::hash::Hash for #inner_ident  {
                 fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
                     #( ::std::hash::Hash::hash(&self.#field_names, state); )*
                 }
             }
 
-            impl #impl_generics ::std::cmp::PartialEq for #inner_ident #type_generics #where_clause {
+            impl  ::std::cmp::PartialEq for #inner_ident  {
                 fn eq(&self, other: &Self) -> bool {
                     #( ::std::cmp::PartialEq::eq(&self.#field_names, &other.#field_names) &&)* true
                 }
@@ -452,73 +448,73 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
         }
 
         #[derive(Eq)]
-        #vis struct #struct_name #impl_generics {
-            inner: LTerm #type_generics,
+        #vis struct #struct_name  {
+            inner: LTerm,
         }
 
-        impl #impl_generics ::std::clone::Clone for #struct_name #type_generics #where_clause {
-            fn clone(&self) -> #struct_name #type_generics {
+        impl  ::std::clone::Clone for #struct_name  {
+            fn clone(&self) -> #struct_name {
                 #struct_name {
                     inner: ::std::clone::Clone::clone(&self.inner),
                 }
             }
         }
 
-        impl #impl_generics ::std::fmt::Debug for #struct_name #type_generics #where_clause {
+        impl  ::std::fmt::Debug for #struct_name  {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 self.inner.fmt(f)
             }
         }
 
-        impl #impl_generics ::std::hash::Hash for #struct_name #type_generics #where_clause {
+        impl  ::std::hash::Hash for #struct_name  {
             fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
                 ::std::hash::Hash::hash(&self.inner, state);
             }
         }
 
-        impl #impl_generics ::std::cmp::PartialEq for #struct_name #type_generics #where_clause {
+        impl  ::std::cmp::PartialEq for #struct_name  {
             fn eq(&self, other: &Self) -> bool {
                 ::std::cmp::PartialEq::eq(&self.inner, &other.inner)
             }
         }
 
         #[automatically_derived]
-        impl #impl_generics ::proto_vulcan::compound::CompoundTerm #type_generics for #struct_name #type_generics #where_clause {
-            fn new_var(name: &'static str) -> #struct_name #type_generics {
+        impl  ::proto_vulcan::compound::CompoundTerm  for #struct_name  {
+            fn new_var(name: &'static str) -> #struct_name {
                 #struct_name {
                     inner: LTerm::var(name),
                 }
             }
 
-            fn new_wildcard() -> #struct_name #type_generics {
+            fn new_wildcard() -> #struct_name {
                 #struct_name {
                     inner: LTerm::any(),
                 }
             }
 
-            fn new_none() -> #struct_name #type_generics {
+            fn new_none() -> #struct_name {
                 #struct_name {
                     inner: LTerm::empty_list(),
                 }
             }
         }
 
-        impl #impl_generics ::proto_vulcan::compound::CompoundObject #type_generics for #struct_name #type_generics #where_clause {
+        impl  ::proto_vulcan::compound::CompoundObject for #struct_name  {
             fn type_name(&self) -> String {
                 stringify!(#struct_name).to_string()
             }
 
-            fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject #type_generics> + 'a> {
+            fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn ::proto_vulcan::compound::CompoundObject> + 'a> {
                 self.inner.children()
             }
 
-            fn as_term(&self) -> Option<&LTerm #type_generics> {
+            fn as_term(&self) -> Option<&LTerm> {
                 Some(&self.inner)
             }
         }
 
-        impl #impl_generics ::proto_vulcan::compound::CompoundWalkStar #type_generics for #struct_name #type_generics #where_clause {
-            fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap #type_generics) -> Self {
+        impl  ::proto_vulcan::compound::CompoundWalkStar  for #struct_name  {
+            fn compound_walk_star(&self, smap: &::proto_vulcan::state::SMap ) -> Self {
                 #struct_name {
                     inner: self.inner.compound_walk_star(smap),
                 }
@@ -526,25 +522,25 @@ fn make_compound_named_struct(itemstruct: syn::ItemStruct) -> TokenStream {
         }
 
         #[automatically_derived]
-        impl #impl_generics Into<::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
-            fn into(self) -> LTerm #type_generics {
+        impl  Into<::proto_vulcan::lterm::LTerm> for #struct_name  {
+            fn into(self) -> LTerm {
                 self.inner
             }
         }
 
-        impl #impl_generics ::proto_vulcan::Upcast<U, E, ::proto_vulcan::lterm::LTerm #type_generics> for #struct_name #type_generics #where_clause {
+        impl  ::proto_vulcan::Upcast<::proto_vulcan::lterm::LTerm> for #struct_name  {
             #[inline]
-            fn to_super<K: ::std::borrow::Borrow<Self>>(k: &K) -> ::proto_vulcan::lterm::LTerm #type_generics {
+            fn to_super<K: ::std::borrow::Borrow<Self>>(k: &K) -> ::proto_vulcan::lterm::LTerm {
                 Into::into(::std::clone::Clone::clone(k.borrow()))
             }
 
             #[inline]
-            fn into_super(self) -> ::proto_vulcan::lterm::LTerm #type_generics {
+            fn into_super(self) -> ::proto_vulcan::lterm::LTerm {
                 Into::into(self)
             }
         }
 
-        impl #impl_generics ::proto_vulcan::Downcast #type_generics for #struct_name #type_generics #where_clause {
+        impl  ::proto_vulcan::Downcast  for #struct_name  {
             type SubType = Self;
             fn into_sub(self) -> Self::SubType {
                 self.into()

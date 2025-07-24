@@ -3,13 +3,11 @@ use super::parser::ast::{
     EnumDefinition, Item, ModuleDeclaration, PredicateDefinition, Program, QualifiedName,
     QualifiedPath, RelationName, StructDefinition, UsePath, UseStatement, Visibility,
 };
-use super::symbol_table::InternedSymbol;
 use super::runtime_value::{PredicateHandle, RuntimeValue};
+use super::symbol_table::InternedSymbol;
 use super::InterpreterError;
-use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
-use crate::user::User;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -24,15 +22,15 @@ pub enum TypeDefinition {
 
 /// Information about a loaded module
 #[derive(Debug, Clone)]
-pub struct ModuleInfo<U: User, E: Engine<U>> {
+pub struct ModuleInfo {
     pub path: PathBuf,
-    pub public_symbols: HashMap<String, RuntimeValue<U, E>>,
-    pub private_symbols: HashMap<String, RuntimeValue<U, E>>,
+    pub public_symbols: HashMap<String, RuntimeValue>,
+    pub private_symbols: HashMap<String, RuntimeValue>,
     pub public_types: HashMap<String, StructDefinition>,
     pub private_types: HashMap<String, StructDefinition>,
 }
 
-impl<U: User, E: Engine<U>> ModuleInfo<U, E> {
+impl ModuleInfo {
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
@@ -45,11 +43,11 @@ impl<U: User, E: Engine<U>> ModuleInfo<U, E> {
 }
 
 /// Environment manages symbol tables, scopes, and program state
-pub struct Environment<U: User, E: Engine<U>> {
+pub struct Environment {
     /// Global symbol table
-    globals: HashMap<String, RuntimeValue<U, E>>,
+    globals: HashMap<String, RuntimeValue>,
     /// Module scopes
-    modules: HashMap<String, HashMap<String, RuntimeValue<U, E>>>,
+    modules: HashMap<String, HashMap<String, RuntimeValue>>,
     /// Current scope stack
     scope_stack: Vec<String>,
     /// The base path for resolving modules.
@@ -57,18 +55,18 @@ pub struct Environment<U: User, E: Engine<U>> {
     /// Module search paths
     search_paths: Vec<PathBuf>,
     /// Loaded module information
-    loaded_modules: HashMap<String, ModuleInfo<U, E>>,
+    loaded_modules: HashMap<String, ModuleInfo>,
     /// Modules currently being loaded (to detect circular dependencies)
     loading_modules: HashSet<String>,
     /// Relation registry for higher-order predicates (indexed by order of registration)
-    relation_registry: Vec<RuntimeValue<U, E>>,
+    relation_registry: Vec<RuntimeValue>,
     /// Enhanced import resolver for comprehensive glob imports
-    import_resolver: ImportResolver<U, E>,
+    import_resolver: ImportResolver,
     /// Type registry for struct and enum definitions (indexed by registration order)
     type_registry: Vec<TypeDefinition>,
 }
 
-impl<U: User, E: Engine<U>> Environment<U, E> {
+impl Environment {
     /// Create a new environment
     pub fn new() -> Self {
         Self {
@@ -99,7 +97,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     pub fn add_builtin_relation(
         &mut self,
         name: String,
-        func: Rc<dyn Fn(Vec<LTerm<U, E>>) -> Goal<U, E>>,
+        func: Rc<dyn Fn(Vec<LTerm>) -> Goal>,
         arity: usize,
     ) {
         let value = RuntimeValue::BuiltinRelation { func, arity };
@@ -368,7 +366,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
                     // Register in type registry
                     let type_index = self.register_type(TypeDefinition::Struct(struct_def.clone()));
-                    
+
                     // Store as RuntimeValue::Type
                     let value = RuntimeValue::Type(type_index);
 
@@ -383,7 +381,6 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                             .insert(name.to_string(), struct_def.clone());
                         module_info.private_symbols.insert(name.to_string(), value);
                     }
-
                 }
                 Item::Enum(enum_def) => {
                     let name = enum_def.name.clone();
@@ -391,7 +388,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
                     // Register in type registry
                     let type_index = self.register_type(TypeDefinition::Enum(enum_def.clone()));
-                    
+
                     // Store as RuntimeValue::Type
                     let value = RuntimeValue::Type(type_index);
 
@@ -400,7 +397,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                     } else {
                         module_info.private_symbols.insert(name.to_string(), value);
                     }
-                    
+
                     // Note: Enums are not stored in public_types/private_types since those are
                     // specifically for StructDefinition. The enum is accessible via the type registry.
                 }
@@ -460,7 +457,10 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Load a relation definition
-    pub fn load_predicate(&mut self, predicate: PredicateDefinition) -> Result<(), InterpreterError> {
+    pub fn load_predicate(
+        &mut self,
+        predicate: PredicateDefinition,
+    ) -> Result<(), InterpreterError> {
         let name = predicate.name.to_string();
         let value = RuntimeValue::Relation(predicate);
 
@@ -494,7 +494,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Bind a general runtime value (for parameters and local bindings)
-    pub fn bind(&mut self, name: String, value: RuntimeValue<U, E>) {
+    pub fn bind(&mut self, name: String, value: RuntimeValue) {
         if self.scope_stack.last() == Some(&"global".to_string()) {
             self.globals.insert(name, value);
         } else {
@@ -539,33 +539,33 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 
     /// Register a relation in the registry and return its index
     /// This captures the resolved relation with its scope context
-    pub fn register_relation(&mut self, relation: RuntimeValue<U, E>) -> usize {
+    pub fn register_relation(&mut self, relation: RuntimeValue) -> usize {
         let index = self.relation_registry.len();
         self.relation_registry.push(relation);
         index
     }
 
     /// Get a relation from the registry by index
-    pub fn get_relation_by_index(&self, index: usize) -> Option<&RuntimeValue<U, E>> {
+    pub fn get_relation_by_index(&self, index: usize) -> Option<&RuntimeValue> {
         self.relation_registry.get(index)
     }
-    
+
     /// Register a type definition and return its index
     pub fn register_type(&mut self, type_def: TypeDefinition) -> usize {
         let index = self.type_registry.len();
         self.type_registry.push(type_def);
         index
     }
-    
+
     /// Get a type definition by registry index
     pub fn get_type_by_index(&self, index: usize) -> Option<&TypeDefinition> {
         self.type_registry.get(index)
     }
-    
+
     /// Get all struct definitions as a HashMap (for import system compatibility)
     pub fn get_all_structs(&self) -> HashMap<String, StructDefinition> {
         let mut structs = HashMap::new();
-        
+
         // Collect structs from globals
         for (name, value) in &self.globals {
             if let RuntimeValue::Type(index) = value {
@@ -574,31 +574,32 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
                 }
             }
         }
-        
+
         // Collect structs from all modules
         for module_scope in self.modules.values() {
             for (name, value) in module_scope {
                 if let RuntimeValue::Type(index) = value {
-                    if let Some(TypeDefinition::Struct(struct_def)) = self.get_type_by_index(*index) {
+                    if let Some(TypeDefinition::Struct(struct_def)) = self.get_type_by_index(*index)
+                    {
                         structs.insert(name.clone(), struct_def.clone());
                     }
                 }
             }
         }
-        
+
         structs
     }
 
     /// Load a struct definition
     pub fn load_struct(&mut self, struct_def: StructDefinition) -> Result<(), InterpreterError> {
         let name = struct_def.name.to_string();
-        
+
         // Register in type registry
         let type_index = self.register_type(TypeDefinition::Struct(struct_def));
-        
+
         // Store as RuntimeValue::Type
         let value = RuntimeValue::Type(type_index);
-        
+
         // Store in appropriate scope
         if self.scope_stack.last() == Some(&"global".to_string()) {
             self.globals.insert(name, value);
@@ -615,13 +616,13 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     /// Load an enum definition
     pub fn load_enum(&mut self, enum_def: EnumDefinition) -> Result<(), InterpreterError> {
         let name = enum_def.name.to_string();
-        
+
         // Register in type registry
         let type_index = self.register_type(TypeDefinition::Enum(enum_def));
-        
+
         // Store as RuntimeValue::Type
         let value = RuntimeValue::Type(type_index);
-        
+
         // Store in appropriate scope
         if self.scope_stack.last() == Some(&"global".to_string()) {
             self.globals.insert(name, value);
@@ -686,7 +687,10 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Handle simple imports like "use std::list"
-    fn import_simple<S: AsRef<str> + Into<InternedSymbol>>(&mut self, path_segments: Vec<S>) -> Result<(), InterpreterError> {
+    fn import_simple<S: AsRef<str> + Into<InternedSymbol>>(
+        &mut self,
+        path_segments: Vec<S>,
+    ) -> Result<(), InterpreterError> {
         if path_segments.is_empty() {
             return Ok(());
         }
@@ -694,8 +698,15 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         // No special handling for std library - treat it like any other module
 
         // Regular module loading
-        let module_name = path_segments.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join("::");
-        let path_strings: Vec<String> = path_segments.iter().map(|s| s.as_ref().to_string()).collect();
+        let module_name = path_segments
+            .iter()
+            .map(|s| s.as_ref())
+            .collect::<Vec<_>>()
+            .join("::");
+        let path_strings: Vec<String> = path_segments
+            .iter()
+            .map(|s| s.as_ref().to_string())
+            .collect();
         let module_path = self.resolve_module_path(&path_strings)?;
         self.load_module_from_path(&module_path, &module_name)?;
 
@@ -707,27 +718,34 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Handle glob imports like "use std::*"
-    fn import_glob<S: AsRef<str> + Into<InternedSymbol>>(&mut self, path_segments: Vec<S>) -> Result<(), InterpreterError> {
+    fn import_glob<S: AsRef<str> + Into<InternedSymbol>>(
+        &mut self,
+        path_segments: Vec<S>,
+    ) -> Result<(), InterpreterError> {
         if path_segments.is_empty() {
             return Ok(());
         }
 
         // First, ensure the module is loaded for import resolution
-        let module_name = path_segments.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join("::");
+        let module_name = path_segments
+            .iter()
+            .map(|s| s.as_ref())
+            .collect::<Vec<_>>()
+            .join("::");
 
         // Only load if not already loaded
         if !self.loaded_modules.contains_key(&module_name) {
-            let path_strings: Vec<String> = path_segments.iter().map(|s| s.as_ref().to_string()).collect();
+            let path_strings: Vec<String> = path_segments
+                .iter()
+                .map(|s| s.as_ref().to_string())
+                .collect();
             let module_path = self.resolve_module_path(&path_strings)?;
             self.load_module_from_path(&module_path, &module_name)?;
         }
 
         // Then use the enhanced import system to handle glob imports with visibility checking
-        let target_path = QualifiedPath::Absolute(
-            path_segments.into_iter()
-                .map(|s| s.into())
-                .collect()
-        );
+        let target_path =
+            QualifiedPath::Absolute(path_segments.into_iter().map(|s| s.into()).collect());
         let importing_path = ModulePath::from_string(self.current_scope());
 
         let all_structs = self.get_all_structs();
@@ -751,7 +769,11 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Handle selective imports like "use std::{member, append}"
-    fn import_selective<S: AsRef<str> + Into<InternedSymbol>, T: AsRef<str> + Into<InternedSymbol>, V: AsRef<str> + Into<InternedSymbol>>(
+    fn import_selective<
+        S: AsRef<str> + Into<InternedSymbol>,
+        T: AsRef<str> + Into<InternedSymbol>,
+        V: AsRef<str> + Into<InternedSymbol>,
+    >(
         &mut self,
         path_segments: Vec<S>,
         imports: Vec<(T, Option<V>)>,
@@ -761,25 +783,30 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         }
 
         // First, ensure the module is loaded for import resolution
-        let module_name = path_segments.iter().map(|s| s.as_ref()).collect::<Vec<_>>().join("::");
+        let module_name = path_segments
+            .iter()
+            .map(|s| s.as_ref())
+            .collect::<Vec<_>>()
+            .join("::");
 
         // Only load if not already loaded
         if !self.loaded_modules.contains_key(&module_name) {
-            let path_strings: Vec<String> = path_segments.iter().map(|s| s.as_ref().to_string()).collect();
+            let path_strings: Vec<String> = path_segments
+                .iter()
+                .map(|s| s.as_ref().to_string())
+                .collect();
             let module_path = self.resolve_module_path(&path_strings)?;
             self.load_module_from_path(&module_path, &module_name)?;
         }
 
         // Then use the enhanced import system to handle selective imports with visibility checking
-        let target_path = QualifiedPath::Absolute(
-            path_segments.into_iter()
-                .map(|s| s.into())
-                .collect()
-        );
+        let target_path =
+            QualifiedPath::Absolute(path_segments.into_iter().map(|s| s.into()).collect());
         let importing_path = ModulePath::from_string(self.current_scope());
 
         // Convert imports to the expected format - preserve location information where possible
-        let import_strings: Vec<(String, Option<String>)> = imports.into_iter()
+        let import_strings: Vec<(String, Option<String>)> = imports
+            .into_iter()
             .map(|(name, alias)| {
                 let name_symbol: InternedSymbol = name.into();
                 let alias_symbol: Option<InternedSymbol> = alias.map(|a| a.into());
@@ -848,7 +875,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         &mut self,
         target_path: &QualifiedPath,
         importing_module_name: Option<String>,
-    ) -> Result<ImportResult<U, E>, InterpreterError> {
+    ) -> Result<ImportResult, InterpreterError> {
         let importing_module = importing_module_name
             .as_deref()
             .unwrap_or(self.current_scope())
@@ -881,7 +908,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         target_path: &QualifiedPath,
         requested_symbols: &[(String, Option<String>)],
         importing_module_name: Option<String>,
-    ) -> Result<ImportResult<U, E>, InterpreterError> {
+    ) -> Result<ImportResult, InterpreterError> {
         let importing_module = importing_module_name
             .as_deref()
             .unwrap_or(self.current_scope())
@@ -910,7 +937,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Apply an import result to the environment
-    fn apply_import_result(&mut self, result: &ImportResult<U, E>) -> Result<(), InterpreterError> {
+    fn apply_import_result(&mut self, result: &ImportResult) -> Result<(), InterpreterError> {
         // Import values into global namespace
         for (name, value) in &result.imported_symbols.values {
             self.globals.insert(name.clone(), value.clone());
@@ -937,7 +964,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         &self,
         module_path: &str,
         _importing_context: Option<&str>,
-    ) -> Result<super::import::AccessibleSymbols<U, E>, InterpreterError> {
+    ) -> Result<super::import::AccessibleSymbols, InterpreterError> {
         // For now, return empty accessible symbols until we expose the visibility checker properly
         // TODO: Add a public method to ImportResolver to get accessible symbols
         Ok(super::import::AccessibleSymbols::new())
@@ -949,7 +976,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Look up a symbol in the current scope
-    pub fn lookup(&self, name: &str) -> Option<&RuntimeValue<U, E>> {
+    pub fn lookup(&self, name: &str) -> Option<&RuntimeValue> {
         // Check if this is a qualified name (e.g., "std::list::member")
         if name.contains("::") {
             return self.lookup_qualified(name);
@@ -993,7 +1020,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Look up a qualified symbol name like "std::list::member"
-    fn lookup_qualified(&self, qualified_name: &str) -> Option<&RuntimeValue<U, E>> {
+    fn lookup_qualified(&self, qualified_name: &str) -> Option<&RuntimeValue> {
         let parts: Vec<&str> = qualified_name.split("::").collect();
         if parts.len() < 2 {
             return None;
@@ -1029,7 +1056,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     pub fn get_struct(&self, name: &str) -> Option<&StructDefinition> {
         // Look up the type name as a symbol to get its registry index
         let runtime_value = self.lookup(name)?;
-        
+
         match runtime_value {
             RuntimeValue::Type(index) => {
                 // Get the type definition from the registry
@@ -1043,7 +1070,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Create a fresh variable
-    pub fn fresh_var(&self, name: &'static str) -> LTerm<U, E> {
+    pub fn fresh_var(&self, name: &'static str) -> LTerm {
         LTerm::var(name)
     }
 
@@ -1119,7 +1146,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     pub fn lookup_qualified_name(
         &self,
         qualified_name: &QualifiedName,
-    ) -> Result<Option<&RuntimeValue<U, E>>, InterpreterError> {
+    ) -> Result<Option<&RuntimeValue>, InterpreterError> {
         let module_path = self.resolve_qualified_path(&qualified_name.path)?;
         Ok(self.lookup_symbol_in_module(&qualified_name.name, &module_path))
     }
@@ -1129,7 +1156,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         &self,
         symbol_name: &str,
         module_path: &str,
-    ) -> Option<&RuntimeValue<U, E>> {
+    ) -> Option<&RuntimeValue> {
         // Check loaded modules first (new system)
         if let Some(module_info) = self.loaded_modules.get(module_path) {
             // Check public symbols first
@@ -1162,7 +1189,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     pub fn lookup_relation(
         &self,
         relation_name: &RelationName,
-    ) -> Result<Option<&RuntimeValue<U, E>>, InterpreterError> {
+    ) -> Result<Option<&RuntimeValue>, InterpreterError> {
         match relation_name {
             RelationName::Simple(name) => Ok(self.lookup(name)),
             RelationName::Qualified(qualified) => self.lookup_qualified_name(qualified),
@@ -1170,7 +1197,7 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
     }
 
     /// Get all relations in the current environment
-    pub fn relations(&self) -> HashMap<String, &RuntimeValue<U, E>> {
+    pub fn relations(&self) -> HashMap<String, &RuntimeValue> {
         let mut relations = HashMap::new();
 
         // Add global relations
@@ -1198,9 +1225,8 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
         relations
     }
 
-
     /// Get all variables in the current scope (placeholder implementation)
-    pub fn variables(&self) -> HashMap<String, &RuntimeValue<U, E>> {
+    pub fn variables(&self) -> HashMap<String, &RuntimeValue> {
         let mut variables = HashMap::new();
 
         // Add global variables (non-relations)
@@ -1220,11 +1246,10 @@ impl<U: User, E: Engine<U>> Environment<U, E> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::DefaultEngine;
-    use crate::interpreter::parser::ast::*;
-    use crate::user::DefaultUser;
 
-    type TestEnv = Environment<DefaultUser, DefaultEngine<DefaultUser>>;
+    use crate::interpreter::parser::ast::*;
+
+    type TestEnv = Environment;
 
     #[test]
     fn test_new_environment() {
@@ -1324,7 +1349,7 @@ mod tests {
     #[test]
     fn test_fresh_var() {
         let env = TestEnv::new();
-        let var: LTerm<DefaultUser, DefaultEngine<DefaultUser>> = env.fresh_var("x");
+        let var: LTerm = env.fresh_var("x");
         assert!(var.is_var());
     }
 }
@@ -1332,13 +1357,12 @@ mod tests {
 #[cfg(test)]
 mod qualified_path_resolution_tests {
     use super::*;
-    use crate::engine::DefaultEngine;
+
     use crate::interpreter::parser::ast::{
         PredicateDefinition, PredicateKind, QualifiedName, QualifiedPath, RelationName,
     };
-    use crate::user::DefaultUser;
 
-    fn create_test_environment() -> Environment<DefaultUser, DefaultEngine<DefaultUser>> {
+    fn create_test_environment() -> Environment {
         let mut env = Environment::new();
 
         // Add some test modules to simulate a module hierarchy
@@ -1384,7 +1408,10 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_resolve_absolute_path() {
         let env = create_test_environment();
-        let path = QualifiedPath::Absolute(vec!["solver".to_string().into(), "constraint".to_string().into()]);
+        let path = QualifiedPath::Absolute(vec![
+            "solver".to_string().into(),
+            "constraint".to_string().into(),
+        ]);
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "solver::constraint");
     }
@@ -1427,7 +1454,8 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_resolve_global_path() {
         let env = create_test_environment();
-        let path = QualifiedPath::Global(vec!["root".to_string().into(), "module".to_string().into()]);
+        let path =
+            QualifiedPath::Global(vec!["root".to_string().into(), "module".to_string().into()]);
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "root::module");
     }
@@ -1435,8 +1463,10 @@ mod qualified_path_resolution_tests {
     #[test]
     fn test_resolve_external_path() {
         let env = create_test_environment();
-        let path =
-            QualifiedPath::External("external_crate".to_string().into(), vec!["module".to_string().into()]);
+        let path = QualifiedPath::External(
+            "external_crate".to_string().into(),
+            vec!["module".to_string().into()],
+        );
         let result = env.resolve_qualified_path(&path).unwrap();
         assert_eq!(result, "external_crate::module");
     }
@@ -1476,7 +1506,10 @@ mod qualified_path_resolution_tests {
     fn test_lookup_nonexistent_qualified_name() {
         let env = create_test_environment();
         let qualified_name = QualifiedName::new(
-            QualifiedPath::External("std".to_string().into(), vec!["nonexistent".to_string().into()]),
+            QualifiedPath::External(
+                "std".to_string().into(),
+                vec!["nonexistent".to_string().into()],
+            ),
             "missing".to_string().into(),
         );
         let result = env.lookup_qualified_name(&qualified_name).unwrap();
@@ -1501,9 +1534,7 @@ mod module_file_resolution_tests {
     use std::path::PathBuf;
     use tempfile::TempDir;
 
-    fn create_test_environment(
-    ) -> Environment<crate::user::DefaultUser, crate::engine::DefaultEngine<crate::user::DefaultUser>>
-    {
+    fn create_test_environment() -> Environment {
         Environment::new()
     }
 

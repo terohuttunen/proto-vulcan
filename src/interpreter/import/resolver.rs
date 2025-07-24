@@ -9,33 +9,31 @@ use super::dependency::DependencyTracker;
 use super::registry::SymbolRegistry;
 use super::types::*;
 use super::visibility::{SymbolAccessibility, VisibilityChecker};
-use crate::engine::Engine;
-use crate::user::User;
 use std::collections::HashMap;
 use std::time::Instant;
 
 /// Main import resolver that orchestrates the three-phase import process
-pub struct ImportResolver<U: User, E: Engine<U>> {
+pub struct ImportResolver {
     /// Visibility checker for context-aware symbol access control
     visibility_checker: VisibilityChecker,
 
     /// Symbol collector for efficient symbol gathering
-    symbol_collector: SymbolCollector<U, E>,
+    symbol_collector: SymbolCollector,
 
     /// Conflict resolver for intelligent namespace management
-    conflict_resolver: ConflictResolver<U, E>,
+    conflict_resolver: ConflictResolver,
 
     /// Import cache for performance optimization
-    import_cache: ImportCache<U, E>,
+    import_cache: ImportCache,
 
     /// Dependency tracker for cycle detection
     dependency_tracker: DependencyTracker,
 
     /// Symbol registry for memory-efficient symbol management
-    symbol_registry: SymbolRegistry<U, E>,
+    symbol_registry: SymbolRegistry,
 }
 
-impl<U: User, E: Engine<U>> ImportResolver<U, E> {
+impl ImportResolver {
     pub fn new() -> Self {
         Self {
             visibility_checker: VisibilityChecker::new(),
@@ -62,10 +60,10 @@ impl<U: User, E: Engine<U>> ImportResolver<U, E> {
         &mut self,
         target_path: &QualifiedPath,
         importing_module: ModulePath,
-        loaded_modules: &HashMap<String, ModuleInfo<U, E>>,
-        existing_globals: &HashMap<String, RuntimeValue<U, E>>,
+        loaded_modules: &HashMap<String, ModuleInfo>,
+        existing_globals: &HashMap<String, RuntimeValue>,
         existing_types: &HashMap<String, StructDefinition>,
-    ) -> Result<ImportResult<U, E>, ImportError> {
+    ) -> Result<ImportResult, ImportError> {
         let start_time = Instant::now();
 
         // Phase 1: Discovery - Resolve target module and validate path
@@ -159,10 +157,10 @@ impl<U: User, E: Engine<U>> ImportResolver<U, E> {
         target_path: &QualifiedPath,
         requested_symbols: &[(String, Option<String>)], // (name, alias)
         importing_module: ModulePath,
-        loaded_modules: &HashMap<String, ModuleInfo<U, E>>,
-        existing_globals: &HashMap<String, RuntimeValue<U, E>>,
+        loaded_modules: &HashMap<String, ModuleInfo>,
+        existing_globals: &HashMap<String, RuntimeValue>,
         existing_types: &HashMap<String, StructDefinition>,
-    ) -> Result<ImportResult<U, E>, ImportError> {
+    ) -> Result<ImportResult, ImportError> {
         let start_time = Instant::now();
 
         // Resolve target module
@@ -279,30 +277,28 @@ impl<U: User, E: Engine<U>> ImportResolver<U, E> {
 }
 
 /// Symbol collector for gathering symbols based on visibility rules
-struct SymbolCollector<U: User, E: Engine<U>> {
+struct SymbolCollector {
     /// Cache for symbol collection results
-    collection_cache: HashMap<(ModulePath, ModulePath), AccessibleSymbols<U, E>>,
+    collection_cache: HashMap<(ModulePath, ModulePath), AccessibleSymbols>,
     /// Statistics for collection operations
     collection_stats: SymbolCollectionStats,
-    _phantom: std::marker::PhantomData<(U, E)>,
 }
 
-impl<U: User, E: Engine<U>> SymbolCollector<U, E> {
+impl SymbolCollector {
     fn new() -> Self {
         Self {
             collection_cache: HashMap::new(),
             collection_stats: SymbolCollectionStats::default(),
-            _phantom: std::marker::PhantomData,
         }
     }
 
     /// Collect accessible symbols from a module with enhanced metadata and filtering
     fn collect_accessible_symbols(
         &mut self,
-        module_info: &ModuleInfo<U, E>,
+        module_info: &ModuleInfo,
         context: &ImportContext,
         visibility_checker: &VisibilityChecker,
-    ) -> Result<AccessibleSymbols<U, E>, ImportError> {
+    ) -> Result<AccessibleSymbols, ImportError> {
         let start_time = std::time::Instant::now();
 
         // Check cache first
@@ -342,7 +338,7 @@ impl<U: User, E: Engine<U>> SymbolCollector<U, E> {
     /// Apply advanced filtering rules beyond basic visibility
     fn apply_advanced_filtering(
         &self,
-        symbols: &mut AccessibleSymbols<U, E>,
+        symbols: &mut AccessibleSymbols,
         context: &ImportContext,
     ) -> Result<(), ImportError> {
         // Filter out symbols that shouldn't be imported
@@ -400,8 +396,8 @@ impl<U: User, E: Engine<U>> SymbolCollector<U, E> {
     /// Enhance symbols with additional metadata and analysis
     fn enhance_symbol_metadata(
         &self,
-        symbols: &mut AccessibleSymbols<U, E>,
-        _module_info: &ModuleInfo<U, E>,
+        symbols: &mut AccessibleSymbols,
+        _module_info: &ModuleInfo,
         _context: &ImportContext,
     ) -> Result<(), ImportError> {
         // For now, symbols are already enhanced through the visibility checker
@@ -466,17 +462,16 @@ impl Clone for SymbolCollectionStats {
 }
 
 /// Conflict resolver for intelligent namespace management
-struct ConflictResolver<U: User, E: Engine<U>> {
+struct ConflictResolver {
     strategy: ConflictResolutionStrategy,
-    existing_symbols: HashMap<String, SymbolOrigin<U, E>>,
+    existing_symbols: HashMap<String, SymbolOrigin>,
     existing_types: HashMap<String, TypeOrigin>,
-    _phantom: std::marker::PhantomData<(U, E)>,
 }
 
 /// Origin information for tracking symbol sources
 #[derive(Debug, Clone)]
-struct SymbolOrigin<U: User, E: Engine<U>> {
-    value: RuntimeValue<U, E>,
+struct SymbolOrigin {
+    value: RuntimeValue,
     module: ModulePath,
     is_qualified: bool,
 }
@@ -489,13 +484,12 @@ struct TypeOrigin {
     is_qualified: bool,
 }
 
-impl<U: User, E: Engine<U>> ConflictResolver<U, E> {
+impl ConflictResolver {
     fn new(strategy: ConflictResolutionStrategy) -> Self {
         Self {
             strategy,
             existing_symbols: HashMap::new(),
             existing_types: HashMap::new(),
-            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -506,7 +500,7 @@ impl<U: User, E: Engine<U>> ConflictResolver<U, E> {
     /// Register existing symbols from the environment to detect conflicts
     fn register_existing_symbols(
         &mut self,
-        globals: &HashMap<String, RuntimeValue<U, E>>,
+        globals: &HashMap<String, RuntimeValue>,
         types: &HashMap<String, StructDefinition>,
     ) {
         // Register existing global symbols
@@ -536,9 +530,9 @@ impl<U: User, E: Engine<U>> ConflictResolver<U, E> {
 
     fn resolve_conflicts(
         &mut self,
-        incoming_symbols: AccessibleSymbols<U, E>,
+        incoming_symbols: AccessibleSymbols,
         context: &ImportContext,
-    ) -> Result<ConflictResult<U, E>, ImportError> {
+    ) -> Result<ConflictResult, ImportError> {
         let mut resolved_symbols = AccessibleSymbols::new();
         let mut conflicts = Vec::new();
         let mut warnings = Vec::new();
@@ -667,9 +661,9 @@ impl<U: User, E: Engine<U>> ConflictResolver<U, E> {
     fn resolve_value_conflict(
         &self,
         name: &str,
-        incoming_value: RuntimeValue<U, E>,
+        incoming_value: RuntimeValue,
         importing_module: &ModulePath,
-    ) -> ConflictDecision<RuntimeValue<U, E>> {
+    ) -> ConflictDecision<RuntimeValue> {
         if let Some(existing_origin) = self.existing_symbols.get(name) {
             // Found a conflict with existing symbol
             match self.strategy {
@@ -751,7 +745,7 @@ impl<U: User, E: Engine<U>> ConflictResolver<U, E> {
     fn detect_cross_category_conflicts(
         &self,
         conflicts: &mut Vec<ImportConflict>,
-        resolved_symbols: &AccessibleSymbols<U, E>,
+        resolved_symbols: &AccessibleSymbols,
         importing_module: &ModulePath,
     ) {
         // Check if any resolved values conflict with existing types
@@ -824,20 +818,20 @@ pub struct ConflictResolverStats {
 }
 
 /// Result of conflict resolution
-struct ConflictResult<U: User, E: Engine<U>> {
-    resolved_symbols: AccessibleSymbols<U, E>,
+struct ConflictResult {
+    resolved_symbols: AccessibleSymbols,
     conflicts: Vec<ImportConflict>,
     warnings: Vec<ImportWarning>,
 }
 
 /// Import cache for performance optimization
-struct ImportCache<U: User, E: Engine<U>> {
-    cache: HashMap<CacheKey, AccessibleSymbols<U, E>>,
+struct ImportCache {
+    cache: HashMap<CacheKey, AccessibleSymbols>,
     access_counts: HashMap<CacheKey, usize>,
     max_size: usize,
 }
 
-impl<U: User, E: Engine<U>> ImportCache<U, E> {
+impl ImportCache {
     fn new() -> Self {
         Self {
             cache: HashMap::new(),
@@ -846,7 +840,7 @@ impl<U: User, E: Engine<U>> ImportCache<U, E> {
         }
     }
 
-    fn get(&mut self, key: &CacheKey) -> Option<&AccessibleSymbols<U, E>> {
+    fn get(&mut self, key: &CacheKey) -> Option<&AccessibleSymbols> {
         if let Some(symbols) = self.cache.get(key) {
             *self.access_counts.entry(key.clone()).or_insert(0) += 1;
             Some(symbols)
@@ -855,7 +849,7 @@ impl<U: User, E: Engine<U>> ImportCache<U, E> {
         }
     }
 
-    fn insert(&mut self, key: CacheKey, symbols: AccessibleSymbols<U, E>) {
+    fn insert(&mut self, key: CacheKey, symbols: AccessibleSymbols) {
         // Evict if cache is full
         if self.cache.len() >= self.max_size {
             self.evict_lru();
@@ -946,12 +940,12 @@ pub struct CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::DefaultEngine;
+    
     use crate::interpreter::parser::ast::{Conjunction, Goal as AstGoal, Span};
     use crate::interpreter::parser::ast::{PredicateDefinition, PredicateKind, Visibility};
-    use crate::user::DefaultUser;
+    
 
-    fn create_test_module_info() -> ModuleInfo<DefaultUser, DefaultEngine<DefaultUser>> {
+    fn create_test_module_info() -> ModuleInfo {
         let mut module_info = ModuleInfo::new(std::path::PathBuf::from("test.pv"));
 
         let predicate = PredicateDefinition {

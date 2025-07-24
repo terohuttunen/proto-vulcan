@@ -4,8 +4,6 @@ use super::super::parser::ast::StructDefinition;
 use super::super::runtime_value::RuntimeValue;
 use super::super::symbol_table::InternedSymbol;
 use super::types::*;
-use crate::engine::Engine;
-use crate::user::User;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -80,9 +78,9 @@ pub struct SymbolMetadata {
 }
 
 /// Unified symbol registry for memory-efficient symbol management
-pub struct SymbolRegistry<U: User, E: Engine<U>> {
+pub struct SymbolRegistry {
     /// Canonical storage for runtime values with reference counting
-    value_symbols: HashMap<SymbolId, Rc<RuntimeValue<U, E>>>,
+    value_symbols: HashMap<SymbolId, Rc<RuntimeValue>>,
 
     /// Canonical storage for type definitions with reference counting
     type_symbols: HashMap<SymbolId, Rc<StructDefinition>>,
@@ -100,11 +98,11 @@ pub struct SymbolRegistry<U: User, E: Engine<U>> {
     module_index: HashMap<ModulePath, Vec<SymbolId>>,
 
     /// Weak references cache for performance
-    weak_cache: HashMap<SymbolId, Weak<RuntimeValue<U, E>>>,
+    weak_cache: HashMap<SymbolId, Weak<RuntimeValue>>,
     weak_type_cache: HashMap<SymbolId, Weak<StructDefinition>>,
 }
 
-impl<U: User, E: Engine<U>> SymbolRegistry<U, E> {
+impl SymbolRegistry {
     pub fn new() -> Self {
         Self {
             value_symbols: HashMap::new(),
@@ -123,7 +121,7 @@ impl<U: User, E: Engine<U>> SymbolRegistry<U, E> {
         &mut self,
         name: String,
         module_path: ModulePath,
-        value: RuntimeValue<U, E>,
+        value: RuntimeValue,
         is_public: bool,
     ) -> SymbolId {
         let symbol_id = SymbolId::next();
@@ -214,7 +212,7 @@ impl<U: User, E: Engine<U>> SymbolRegistry<U, E> {
     }
 
     /// Get a symbol by ID as a shared reference
-    pub fn get_value(&self, id: SymbolId) -> Option<SymbolRef<RuntimeValue<U, E>>> {
+    pub fn get_value(&self, id: SymbolId) -> Option<SymbolRef<RuntimeValue>> {
         self.value_symbols
             .get(&id)
             .map(|rc| SymbolRef::Shared(rc.clone()))
@@ -267,7 +265,7 @@ impl<U: User, E: Engine<U>> SymbolRegistry<U, E> {
     }
 
     /// Create a weak reference to a symbol
-    pub fn create_weak_ref(&self, id: SymbolId) -> Option<SymbolRef<RuntimeValue<U, E>>> {
+    pub fn create_weak_ref(&self, id: SymbolId) -> Option<SymbolRef<RuntimeValue>> {
         self.weak_cache
             .get(&id)
             .map(|weak| SymbolRef::Weak(weak.clone()))
@@ -334,7 +332,7 @@ impl<U: User, E: Engine<U>> SymbolRegistry<U, E> {
     }
 
     /// Create an accessible symbols collection from a list of symbol IDs
-    pub fn create_accessible_symbols(&self, symbol_ids: &[SymbolId]) -> AccessibleSymbols<U, E> {
+    pub fn create_accessible_symbols(&self, symbol_ids: &[SymbolId]) -> AccessibleSymbols {
         let mut accessible = AccessibleSymbols::new();
 
         for &id in symbol_ids {
@@ -399,10 +397,9 @@ pub struct RegistryStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::DefaultEngine;
+
     use crate::interpreter::parser::ast::{Conjunction, Goal as AstGoal, Span};
     use crate::interpreter::parser::ast::{PredicateDefinition, PredicateKind, Visibility};
-    use crate::user::DefaultUser;
 
     fn create_test_predicate() -> PredicateDefinition {
         PredicateDefinition {
@@ -435,8 +432,7 @@ mod tests {
 
     #[test]
     fn test_symbol_registration() {
-        let mut registry: SymbolRegistry<DefaultUser, DefaultEngine<DefaultUser>> =
-            SymbolRegistry::new();
+        let mut registry = SymbolRegistry::new();
         let module_path = ModulePath::from_string("test_module");
 
         // Register a value symbol
@@ -460,8 +456,7 @@ mod tests {
 
     #[test]
     fn test_type_registration() {
-        let mut registry: SymbolRegistry<DefaultUser, DefaultEngine<DefaultUser>> =
-            SymbolRegistry::new();
+        let mut registry = SymbolRegistry::new();
         let module_path = ModulePath::from_string("test_module");
 
         // Register a type symbol
@@ -483,8 +478,7 @@ mod tests {
 
     #[test]
     fn test_symbol_reference_types() {
-        let mut registry: SymbolRegistry<DefaultUser, DefaultEngine<DefaultUser>> =
-            SymbolRegistry::new();
+        let mut registry = SymbolRegistry::new();
         let module_path = ModulePath::from_string("test_module");
 
         let predicate = create_test_predicate();
@@ -505,8 +499,7 @@ mod tests {
 
     #[test]
     fn test_module_symbol_lookup() {
-        let mut registry: SymbolRegistry<DefaultUser, DefaultEngine<DefaultUser>> =
-            SymbolRegistry::new();
+        let mut registry = SymbolRegistry::new();
         let module_path = ModulePath::from_string("test_module");
 
         // Register multiple symbols in the same module
@@ -534,8 +527,7 @@ mod tests {
 
     #[test]
     fn test_symbol_reference_management() {
-        let mut registry: SymbolRegistry<DefaultUser, DefaultEngine<DefaultUser>> =
-            SymbolRegistry::new();
+        let mut registry = SymbolRegistry::new();
         let module_path = ModulePath::from_string("test_module");
 
         let predicate = create_test_predicate();

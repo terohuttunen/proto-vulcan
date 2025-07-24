@@ -1,8 +1,8 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
 use crate::relation::cons;
-use crate::user::User;
+
 
 /// A relation such that `rest` is `list` without its first element.
 ///
@@ -18,11 +18,9 @@ use crate::user::User;
 ///     assert!(query.run().next().unwrap().q == lterm!([2, 3]));
 /// }
 /// ```
-pub fn rest<U, E, G>(list: LTerm<U, E>, rest: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn rest<G>(list: LTerm, rest: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     proto_vulcan!(|first| { cons(first, rest, list) })
 }

@@ -3,10 +3,10 @@
 //! Tests query parsing functionality and basic query execution patterns.
 
 use super::super::*;
-use crate::engine::DefaultEngine;
-use crate::user::DefaultUser;
 
-type TestInterpreter = Interpreter<DefaultUser, DefaultEngine<DefaultUser>>;
+
+
+type TestInterpreter = Interpreter;
 
 #[test]
 fn test_end_to_end_query_parsing() {

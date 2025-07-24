@@ -1,23 +1,16 @@
 //! This module provides built-in assertion relations for the test framework.
 
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::lterm::LTerm;
 use crate::relation::{diseq, eq, fail, succeed};
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
-use derivative::Derivative;
 use std::rc::Rc;
 
 /// A built-in relation that succeeds if two terms can be unified.
 /// This is the primary assertion for checking equality in tests.
-pub fn assert_eq<U, E>(term1: LTerm<U, E>, term2: LTerm<U, E>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn assert_eq(term1: LTerm, term2: LTerm) -> Goal {
     if std::env::var("PROTO_VULCAN_DEBUG_TESTS").is_ok() {
         println!("EVALUATING assert_eq({:?}, {:?})", term1, term2);
     }
@@ -26,11 +19,7 @@ where
 
 /// A built-in relation that succeeds if two terms can NOT be unified.
 /// This is the primary assertion for checking inequality in tests.
-pub fn assert_neq<U, E>(term1: LTerm<U, E>, term2: LTerm<U, E>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn assert_neq(term1: LTerm, term2: LTerm) -> Goal {
     if std::env::var("PROTO_VULCAN_DEBUG_TESTS").is_ok() {
         println!("EVALUATING assert_neq({:?}, {:?})", term1, term2);
     }
@@ -38,22 +27,13 @@ where
 }
 
 /// A struct that implements the logic for checking if a variable is bound
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-struct AssertBoundGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    term: LTerm<U, E>,
+#[derive(Debug)]
+struct AssertBoundGoal {
+    term: LTerm,
 }
 
-impl<U, E> Solve<U, E> for AssertBoundGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for AssertBoundGoal {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         let debug_enabled = std::env::var("PROTO_VULCAN_DEBUG_TESTS").is_ok();
 
         if debug_enabled {
@@ -106,11 +86,7 @@ where
 
 /// A built-in relation that succeeds if a variable is bound (has a value).
 /// This is useful for testing variable states in constraint domains.
-pub fn assert_bound<U, E>(term: LTerm<U, E>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn assert_bound(term: LTerm) -> Goal {
     if term.is_var() {
         Goal::dynamic(Rc::new(AssertBoundGoal { term }))
     } else {
@@ -120,22 +96,13 @@ where
 }
 
 /// A struct that implements the logic for checking if a variable is unbound
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-struct AssertUnboundGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    term: LTerm<U, E>,
+#[derive(Debug)]
+struct AssertUnboundGoal {
+    term: LTerm,
 }
 
-impl<U, E> Solve<U, E> for AssertUnboundGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for AssertUnboundGoal {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         let debug_enabled = std::env::var("PROTO_VULCAN_DEBUG_TESTS").is_ok();
 
         if debug_enabled {
@@ -188,11 +155,7 @@ where
 
 /// A built-in relation that succeeds if a variable is unbound (no value).
 /// This is the complement to assert_bound.
-pub fn assert_unbound<U, E>(term: LTerm<U, E>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn assert_unbound(term: LTerm) -> Goal {
     if term.is_var() {
         Goal::dynamic(Rc::new(AssertUnboundGoal { term }))
     } else {
@@ -202,23 +165,14 @@ where
 }
 
 /// A struct that implements the logic for checking domain size
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-struct AssertDomainSizeGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    term: LTerm<U, E>,
+#[derive(Debug)]
+struct AssertDomainSizeGoal {
+    term: LTerm,
     expected_size: usize,
 }
 
-impl<U, E> Solve<U, E> for AssertDomainSizeGoal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for AssertDomainSizeGoal {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         let debug_enabled = std::env::var("PROTO_VULCAN_DEBUG_TESTS").is_ok();
 
         if debug_enabled {
@@ -319,11 +273,7 @@ where
 
 /// A built-in relation that succeeds if a variable's constraint domain has the expected size.
 /// This is useful for testing constraint domain behavior.
-pub fn assert_domain_size<U, E>(term: LTerm<U, E>, expected_size: usize) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn assert_domain_size(term: LTerm, expected_size: usize) -> Goal {
     Goal::dynamic(Rc::new(AssertDomainSizeGoal {
         term,
         expected_size,

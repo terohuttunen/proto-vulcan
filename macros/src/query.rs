@@ -52,7 +52,7 @@ impl ToTokens for Query {
         let body: Vec<&Clause> = self.body.iter().collect();
 
         let output = quote! {
-            #(let #query: #query_types <_, _> = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#query)); )*
+            #(let #query: #query_types = ::proto_vulcan::compound::CompoundTerm::new_var(stringify!(#query)); )*
 
             let __vars__ = vec![ #( ::proto_vulcan::Upcast::into_super(#query.clone()) ),* ];
 
@@ -83,12 +83,12 @@ impl ToTokens for Query {
             use std::fmt;
 
             #[derive(Clone, Debug)]
-            struct QResult<U: ::proto_vulcan::user::User, E: ::proto_vulcan::engine::Engine<U>> {
-                #( #query: ::proto_vulcan::lresult::LResult<U, E>, )*
+            struct QResult {
+                #( #query: ::proto_vulcan::lresult::LResult, )*
             }
 
-            impl<U: ::proto_vulcan::user::User, E: ::proto_vulcan::engine::Engine<U>> ::proto_vulcan::query::QueryResult<U, E> for QResult<U, E> {
-                fn from_vec(v: Vec<::proto_vulcan::lresult::LResult<U, E>>) -> QResult<U, E> {
+            impl ::proto_vulcan::query::QueryResult for QResult {
+                fn from_vec(v: Vec<::proto_vulcan::lresult::LResult>) -> QResult {
                     let mut vi = v.into_iter();
                     QResult {
                         #( #query: vi.next().unwrap(), )*
@@ -96,7 +96,7 @@ impl ToTokens for Query {
                 }
             }
 
-            impl<U: ::proto_vulcan::user::User, E: ::proto_vulcan::engine::Engine<U>> fmt::Display for QResult<U, E> {
+            impl fmt::Display for QResult {
                 #[allow(unused_variables, unused_assignments)]
                 fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                     let mut count = 0;
@@ -105,7 +105,7 @@ impl ToTokens for Query {
                 }
             }
 
-            ::proto_vulcan::query::Query::<QResult<_, _>>::new(__vars__, goal)
+            ::proto_vulcan::query::Query::<QResult>::new(__vars__, goal)
         };
 
         output.to_tokens(tokens);

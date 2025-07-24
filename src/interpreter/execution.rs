@@ -8,17 +8,15 @@
 use super::deferred::DeferredRelationCall;
 use super::environment::{Environment, TypeDefinition};
 use super::metaprogramming::{
-    expand_meta_statement, expand_term, MetaValue,
-    TemplateExpansionContext,
+    expand_meta_statement, expand_term, MetaValue, TemplateExpansionContext,
 };
 use super::parser::ast::{
-    Conjunction as AstConjunction, EnumVariantPatternKind, Goal as AstGoal, Literal, Pattern, PatternMatching,
-    RelationCall, SearchStrategy, StructKind, Term,
+    Conjunction as AstConjunction, EnumVariantPatternKind, Goal as AstGoal, Literal, Pattern,
+    PatternMatching, RelationCall, SearchStrategy, StructKind, Term,
 };
 use super::runtime_value::RuntimeValue;
 use super::InterpreterError;
 use crate::compound::{CompoundObject, CompoundWalkStar};
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::lterm::LTerm;
 use crate::operator::conde::Conde;
@@ -28,24 +26,25 @@ use crate::relation::eq;
 use crate::solver::{Solve, Solver};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
-use crate::user::User;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-
 /// Registry-based tuple struct that references type definitions by index
 #[derive(Clone)]
-pub struct RegistryTupleStruct<U: User, E: Engine<U>> {
+pub struct RegistryTupleStruct {
     pub type_index: usize,
-    pub args: Vec<LTerm<U, E>>,
-    pub environment: Rc<RefCell<crate::interpreter::environment::Environment<U, E>>>,
+    pub args: Vec<LTerm>,
+    pub environment: Rc<RefCell<crate::interpreter::environment::Environment>>,
 }
 
-
-impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryTupleStruct<U, E> {
+impl std::fmt::Debug for RegistryTupleStruct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RegistryTupleStruct(type_index={}, args=", self.type_index)?;
+        write!(
+            f,
+            "RegistryTupleStruct(type_index={}, args=",
+            self.type_index
+        )?;
         for (i, arg) in self.args.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -56,78 +55,91 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryTupleStruct<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryTupleStruct<U, E> {
+impl CompoundObject for RegistryTupleStruct {
     fn type_name(&self) -> String {
         let env_ref = self.environment.borrow();
-        env_ref.get_type_by_index(self.type_index)
+        env_ref
+            .get_type_by_index(self.type_index)
             .and_then(|type_def| match type_def {
-                crate::interpreter::environment::TypeDefinition::Struct(s) => Some(s.name.to_string()),
+                crate::interpreter::environment::TypeDefinition::Struct(s) => {
+                    Some(s.name.to_string())
+                }
                 _ => None,
             })
             .unwrap_or_else(|| "TupleStruct".to_string())
     }
-    
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
-        Box::new(self.args.iter().map(|arg| arg as &dyn CompoundObject<U, E>))
+
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject> + 'a> {
+        Box::new(self.args.iter().map(|arg| arg as &dyn CompoundObject))
     }
 
     fn display_string(&self) -> String {
         let type_name = self.type_name();
-        let arg_strings: Vec<String> = self.args.iter().map(|arg| {
-            if let crate::lterm::LTermInner::Compound(compound) = arg.as_ref() {
-                compound.display_string()
-            } else {
-                format!("{}", arg)
-            }
-        }).collect();
+        let arg_strings: Vec<String> = self
+            .args
+            .iter()
+            .map(|arg| {
+                if let crate::lterm::LTermInner::Compound(compound) = arg.as_ref() {
+                    compound.display_string()
+                } else {
+                    format!("{}", arg)
+                }
+            })
+            .collect();
         format!("{}({})", type_name, arg_strings.join(", "))
     }
 }
 
-impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryTupleStruct<U, E> {
-    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
+impl CompoundWalkStar for RegistryTupleStruct {
+    fn compound_walk_star(&self, smap: &crate::state::SMap) -> Self {
         Self {
             type_index: self.type_index,
-            args: self.args.iter().map(|arg| arg.compound_walk_star(smap)).collect(),
+            args: self
+                .args
+                .iter()
+                .map(|arg| arg.compound_walk_star(smap))
+                .collect(),
             environment: self.environment.clone(),
         }
     }
 }
 
-
-impl<U: User, E: Engine<U>> PartialEq for RegistryTupleStruct<U, E> {
+impl PartialEq for RegistryTupleStruct {
     fn eq(&self, other: &Self) -> bool {
         self.type_index == other.type_index && self.args == other.args
     }
 }
 
-impl<U: User, E: Engine<U>> Eq for RegistryTupleStruct<U, E> {}
+impl Eq for RegistryTupleStruct {}
 
-impl<U: User, E: Engine<U>> std::hash::Hash for RegistryTupleStruct<U, E> {
+impl std::hash::Hash for RegistryTupleStruct {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.type_index.hash(state);
         self.args.hash(state);
     }
 }
 
-impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for RegistryTupleStruct<U, E> {
-    fn into(self) -> LTerm<U, E> {
-        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
+impl Into<LTerm> for RegistryTupleStruct {
+    fn into(self) -> LTerm {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject>)
     }
 }
 
 /// Registry-based named struct that references type definitions by index
 #[derive(Clone)]
-pub struct RegistryNamedStruct<U: User, E: Engine<U>> {
+pub struct RegistryNamedStruct {
     pub type_index: usize,
-    pub fields: std::collections::HashMap<String, LTerm<U, E>>,
-    pub environment: Rc<RefCell<crate::interpreter::environment::Environment<U, E>>>,
+    pub fields: std::collections::HashMap<String, LTerm>,
+    pub environment: Rc<RefCell<crate::interpreter::environment::Environment>>,
 }
 
-
-impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryNamedStruct<U, E> {
+impl std::fmt::Debug for RegistryNamedStruct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RegistryNamedStruct(type_index={}, fields={{", self.type_index)?;
+        write!(
+            f,
+            "RegistryNamedStruct(type_index={}, fields={{",
+            self.type_index
+        )?;
         let mut first = true;
         for (field_name, field_value) in &self.fields {
             if !first {
@@ -140,42 +152,53 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryNamedStruct<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryNamedStruct<U, E> {
+impl CompoundObject for RegistryNamedStruct {
     fn type_name(&self) -> String {
         let env_ref = self.environment.borrow();
-        env_ref.get_type_by_index(self.type_index)
+        env_ref
+            .get_type_by_index(self.type_index)
             .and_then(|type_def| match type_def {
-                crate::interpreter::environment::TypeDefinition::Struct(s) => Some(s.name.to_string()),
+                crate::interpreter::environment::TypeDefinition::Struct(s) => {
+                    Some(s.name.to_string())
+                }
                 _ => None,
             })
             .unwrap_or_else(|| "NamedStruct".to_string())
     }
-    
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
+
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject> + 'a> {
         // Sort fields by name to ensure deterministic iteration order
         let mut sorted_fields: Vec<_> = self.fields.iter().collect();
         sorted_fields.sort_by_key(|(name, _)| *name);
-        Box::new(sorted_fields.into_iter().map(|(_, field)| field as &dyn CompoundObject<U, E>))
+        Box::new(
+            sorted_fields
+                .into_iter()
+                .map(|(_, field)| field as &dyn CompoundObject),
+        )
     }
 
     fn display_string(&self) -> String {
         let type_name = self.type_name();
         let mut sorted_fields: Vec<_> = self.fields.iter().collect();
         sorted_fields.sort_by_key(|(name, _)| *name);
-        let field_strings: Vec<String> = sorted_fields.iter().map(|(name, value)| {
-            let value_str = if let crate::lterm::LTermInner::Compound(compound) = value.as_ref() {
-                compound.display_string()
-            } else {
-                format!("{}", value)
-            };
-            format!("{}: {}", name, value_str)
-        }).collect();
+        let field_strings: Vec<String> = sorted_fields
+            .iter()
+            .map(|(name, value)| {
+                let value_str = if let crate::lterm::LTermInner::Compound(compound) = value.as_ref()
+                {
+                    compound.display_string()
+                } else {
+                    format!("{}", value)
+                };
+                format!("{}: {}", name, value_str)
+            })
+            .collect();
         format!("{} {{ {} }}", type_name, field_strings.join(", "))
     }
 }
 
-impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryNamedStruct<U, E> {
-    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
+impl CompoundWalkStar for RegistryNamedStruct {
+    fn compound_walk_star(&self, smap: &crate::state::SMap) -> Self {
         let mut walked_fields = std::collections::HashMap::new();
         for (name, value) in &self.fields {
             walked_fields.insert(name.clone(), value.compound_walk_star(smap));
@@ -188,16 +211,15 @@ impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryNamedStruct<U, E>
     }
 }
 
-
-impl<U: User, E: Engine<U>> PartialEq for RegistryNamedStruct<U, E> {
+impl PartialEq for RegistryNamedStruct {
     fn eq(&self, other: &Self) -> bool {
         self.type_index == other.type_index && self.fields == other.fields
     }
 }
 
-impl<U: User, E: Engine<U>> Eq for RegistryNamedStruct<U, E> {}
+impl Eq for RegistryNamedStruct {}
 
-impl<U: User, E: Engine<U>> std::hash::Hash for RegistryNamedStruct<U, E> {
+impl std::hash::Hash for RegistryNamedStruct {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.type_index.hash(state);
         // HashMap doesn't implement Hash, so we'll sort the fields first
@@ -210,33 +232,36 @@ impl<U: User, E: Engine<U>> std::hash::Hash for RegistryNamedStruct<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for RegistryNamedStruct<U, E> {
-    fn into(self) -> LTerm<U, E> {
-        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
+impl Into<LTerm> for RegistryNamedStruct {
+    fn into(self) -> LTerm {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject>)
     }
 }
 
 /// Registry-based enum variant that references type definitions by index
 #[derive(Clone)]
-pub struct RegistryEnumVariant<U: User, E: Engine<U>> {
+pub struct RegistryEnumVariant {
     pub enum_type_index: usize,
     pub variant_index: usize,
     pub variant_name: String,
-    pub variant_data: VariantData<U, E>,
-    pub environment: Rc<RefCell<crate::interpreter::environment::Environment<U, E>>>,
+    pub variant_data: VariantData,
+    pub environment: Rc<RefCell<crate::interpreter::environment::Environment>>,
 }
 
 /// Data contained in an enum variant
 #[derive(Clone)]
-pub enum VariantData<U: User, E: Engine<U>> {
-    Unit,                                               // Color::Red
-    Tuple(Vec<LTerm<U, E>>),                           // Option::Some(42)
-    Named(std::collections::HashMap<String, LTerm<U, E>>), // Person::Named { name: "John", age: 30 }
+pub enum VariantData {
+    Unit,                                            // Color::Red
+    Tuple(Vec<LTerm>),                               // Option::Some(42)
+    Named(std::collections::HashMap<String, LTerm>), // Person::Named { name: "John", age: 30 }
 }
 
-impl<U: User, E: Engine<U>> RegistryEnumVariant<U, E> {
+impl RegistryEnumVariant {
     /// Get the enum name from an environment if available
-    pub fn get_enum_name(&self, environment: Option<&crate::interpreter::environment::Environment<U, E>>) -> String {
+    pub fn get_enum_name(
+        &self,
+        environment: Option<&crate::interpreter::environment::Environment>,
+    ) -> String {
         if let Some(env) = environment {
             if let Some(type_def) = env.get_type_by_index(self.enum_type_index) {
                 if let crate::interpreter::environment::TypeDefinition::Enum(enum_def) = type_def {
@@ -249,11 +274,13 @@ impl<U: User, E: Engine<U>> RegistryEnumVariant<U, E> {
     }
 }
 
-
-impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryEnumVariant<U, E> {
+impl std::fmt::Debug for RegistryEnumVariant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RegistryEnumVariant(enum_type_index={}, variant_name={}, data=", 
-               self.enum_type_index, self.variant_name)?;
+        write!(
+            f,
+            "RegistryEnumVariant(enum_type_index={}, variant_name={}, data=",
+            self.enum_type_index, self.variant_name
+        )?;
         match &self.variant_data {
             VariantData::Unit => write!(f, "Unit"),
             VariantData::Tuple(args) => {
@@ -283,7 +310,7 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for RegistryEnumVariant<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> std::fmt::Debug for VariantData<U, E> {
+impl std::fmt::Debug for VariantData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             VariantData::Unit => write!(f, "Unit"),
@@ -313,32 +340,36 @@ impl<U: User, E: Engine<U>> std::fmt::Debug for VariantData<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryEnumVariant<U, E> {
+impl CompoundObject for RegistryEnumVariant {
     fn type_name(&self) -> String {
         let env_ref = self.environment.borrow();
-        env_ref.get_type_by_index(self.enum_type_index)
+        env_ref
+            .get_type_by_index(self.enum_type_index)
             .and_then(|type_def| match type_def {
-                crate::interpreter::environment::TypeDefinition::Enum(e) => Some(e.name.to_string()),
+                crate::interpreter::environment::TypeDefinition::Enum(e) => {
+                    Some(e.name.to_string())
+                }
                 _ => None,
             })
             .unwrap_or_else(|| "Enum".to_string())
     }
-    
-    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject<U, E>> + 'a> {
+
+    fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject> + 'a> {
         match &self.variant_data {
             VariantData::Unit => Box::new(std::iter::empty()),
-            VariantData::Tuple(args) => {
-                Box::new(args.iter().map(|arg| arg as &dyn CompoundObject<U, E>))
-            }
+            VariantData::Tuple(args) => Box::new(args.iter().map(|arg| arg as &dyn CompoundObject)),
             VariantData::Named(fields) => {
                 // Sort fields by name to ensure deterministic iteration order
                 let mut sorted_fields: Vec<_> = fields.iter().collect();
                 sorted_fields.sort_by_key(|(name, _)| *name);
-                Box::new(sorted_fields.into_iter().map(|(_, field)| field as &dyn CompoundObject<U, E>))
+                Box::new(
+                    sorted_fields
+                        .into_iter()
+                        .map(|(_, field)| field as &dyn CompoundObject),
+                )
             }
         }
     }
-
 
     fn is_enum_variant(&self) -> bool {
         true
@@ -358,43 +389,62 @@ impl<U: User, E: Engine<U>> CompoundObject<U, E> for RegistryEnumVariant<U, E> {
 
     fn display_string(&self) -> String {
         let enum_name = self.type_name();
-        
+
         match &self.variant_data {
             VariantData::Unit => format!("{}::{}", enum_name, self.variant_name),
             VariantData::Tuple(args) => {
-                let arg_strings: Vec<String> = args.iter().map(|arg| {
-                    if let crate::lterm::LTermInner::Compound(compound) = arg.as_ref() {
-                        compound.display_string()
-                    } else {
-                        format!("{}", arg)
-                    }
-                }).collect();
-                format!("{}::{}({})", enum_name, self.variant_name, arg_strings.join(", "))
+                let arg_strings: Vec<String> = args
+                    .iter()
+                    .map(|arg| {
+                        if let crate::lterm::LTermInner::Compound(compound) = arg.as_ref() {
+                            compound.display_string()
+                        } else {
+                            format!("{}", arg)
+                        }
+                    })
+                    .collect();
+                format!(
+                    "{}::{}({})",
+                    enum_name,
+                    self.variant_name,
+                    arg_strings.join(", ")
+                )
             }
             VariantData::Named(fields) => {
                 let mut sorted_fields: Vec<_> = fields.iter().collect();
                 sorted_fields.sort_by_key(|(name, _)| *name);
-                let field_strings: Vec<String> = sorted_fields.iter().map(|(name, value)| {
-                    let value_str = if let crate::lterm::LTermInner::Compound(compound) = value.as_ref() {
-                        compound.display_string()
-                    } else {
-                        format!("{}", value)
-                    };
-                    format!("{}: {}", name, value_str)
-                }).collect();
-                format!("{}::{} {{ {} }}", enum_name, self.variant_name, field_strings.join(", "))
+                let field_strings: Vec<String> = sorted_fields
+                    .iter()
+                    .map(|(name, value)| {
+                        let value_str =
+                            if let crate::lterm::LTermInner::Compound(compound) = value.as_ref() {
+                                compound.display_string()
+                            } else {
+                                format!("{}", value)
+                            };
+                        format!("{}: {}", name, value_str)
+                    })
+                    .collect();
+                format!(
+                    "{}::{} {{ {} }}",
+                    enum_name,
+                    self.variant_name,
+                    field_strings.join(", ")
+                )
             }
         }
     }
 }
 
-impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryEnumVariant<U, E> {
-    fn compound_walk_star(&self, smap: &crate::state::SMap<U, E>) -> Self {
+impl CompoundWalkStar for RegistryEnumVariant {
+    fn compound_walk_star(&self, smap: &crate::state::SMap) -> Self {
         let walked_data = match &self.variant_data {
             VariantData::Unit => VariantData::Unit,
-            VariantData::Tuple(args) => {
-                VariantData::Tuple(args.iter().map(|arg| arg.compound_walk_star(smap)).collect())
-            }
+            VariantData::Tuple(args) => VariantData::Tuple(
+                args.iter()
+                    .map(|arg| arg.compound_walk_star(smap))
+                    .collect(),
+            ),
             VariantData::Named(fields) => {
                 let mut walked_fields = std::collections::HashMap::new();
                 for (name, value) in fields {
@@ -403,7 +453,7 @@ impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryEnumVariant<U, E>
                 VariantData::Named(walked_fields)
             }
         };
-        
+
         Self {
             enum_type_index: self.enum_type_index,
             variant_index: self.variant_index,
@@ -414,16 +464,15 @@ impl<U: User, E: Engine<U>> CompoundWalkStar<U, E> for RegistryEnumVariant<U, E>
     }
 }
 
-
-impl<U: User, E: Engine<U>> PartialEq for RegistryEnumVariant<U, E> {
+impl PartialEq for RegistryEnumVariant {
     fn eq(&self, other: &Self) -> bool {
-        self.enum_type_index == other.enum_type_index 
+        self.enum_type_index == other.enum_type_index
             && self.variant_index == other.variant_index
             && self.variant_data == other.variant_data
     }
 }
 
-impl<U: User, E: Engine<U>> PartialEq for VariantData<U, E> {
+impl PartialEq for VariantData {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (VariantData::Unit, VariantData::Unit) => true,
@@ -434,10 +483,10 @@ impl<U: User, E: Engine<U>> PartialEq for VariantData<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> Eq for RegistryEnumVariant<U, E> {}
-impl<U: User, E: Engine<U>> Eq for VariantData<U, E> {}
+impl Eq for RegistryEnumVariant {}
+impl Eq for VariantData {}
 
-impl<U: User, E: Engine<U>> std::hash::Hash for RegistryEnumVariant<U, E> {
+impl std::hash::Hash for RegistryEnumVariant {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.enum_type_index.hash(state);
         self.variant_index.hash(state);
@@ -445,7 +494,7 @@ impl<U: User, E: Engine<U>> std::hash::Hash for RegistryEnumVariant<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> std::hash::Hash for VariantData<U, E> {
+impl std::hash::Hash for VariantData {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
             VariantData::Unit => 0u8.hash(state),
@@ -467,40 +516,27 @@ impl<U: User, E: Engine<U>> std::hash::Hash for VariantData<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> Into<LTerm<U, E>> for RegistryEnumVariant<U, E> {
-    fn into(self) -> LTerm<U, E> {
-        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject<U, E>>)
+impl Into<LTerm> for RegistryEnumVariant {
+    fn into(self) -> LTerm {
+        LTerm::from(Rc::new(self) as Rc<dyn CompoundObject>)
     }
 }
 
 /// A custom disjunction that uses DFS (depth-first search) semantics
-/// This works within the BFS Goal<U, E> framework but uses DFS stream operations
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-struct DFSDisjunction<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    goals: Vec<Goal<U, E>>,
+/// This works within the BFS Goal framework but uses DFS stream operations
+#[derive(Debug)]
+struct DFSDisjunction {
+    goals: Vec<Goal>,
 }
 
-impl<U, E> DFSDisjunction<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn new(goals: Vec<Goal<U, E>>) -> Goal<U, E> {
+impl DFSDisjunction {
+    fn new(goals: Vec<Goal>) -> Goal {
         Goal::dynamic(Rc::new(DFSDisjunction { goals }))
     }
 }
 
-impl<U, E> Solve<U, E> for DFSDisjunction<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+impl Solve for DFSDisjunction {
+    fn solve(&self, solver: &Solver, state: State) -> Stream {
         // Implement DFS by exploring the first goal completely before moving to the next
         // This is the opposite of the interleaving behavior in BFS
         let mut stream = Stream::empty();
@@ -519,14 +555,14 @@ where
 /// Represents a variable value that can be either relational (for logic computation)
 /// or non-relational (for meta programming)
 #[derive(Debug)]
-pub enum VariableValue<U: User, E: Engine<U>> {
+pub enum VariableValue {
     /// Relational variable for logic computation, unification, etc.
-    Relational(LTerm<U, E>),
+    Relational(LTerm),
     /// Non-relational variable for meta programming (integers, strings, booleans)
     Meta(MetaValue),
 }
 
-impl<U: User, E: Engine<U>> Clone for VariableValue<U, E> {
+impl Clone for VariableValue {
     fn clone(&self) -> Self {
         match self {
             VariableValue::Relational(lterm) => VariableValue::Relational(lterm.clone()),
@@ -535,9 +571,9 @@ impl<U: User, E: Engine<U>> Clone for VariableValue<U, E> {
     }
 }
 
-impl<U: User, E: Engine<U>> VariableValue<U, E> {
+impl VariableValue {
     /// Try to get this as an LTerm for relational operations
-    pub fn as_lterm(&self) -> Option<&LTerm<U, E>> {
+    pub fn as_lterm(&self) -> Option<&LTerm> {
         match self {
             VariableValue::Relational(lterm) => Some(lterm),
             VariableValue::Meta(_) => None,
@@ -553,7 +589,7 @@ impl<U: User, E: Engine<U>> VariableValue<U, E> {
     }
 
     /// Convert to LTerm if possible (for backward compatibility)
-    pub fn to_lterm(&self) -> Option<LTerm<U, E>> {
+    pub fn to_lterm(&self) -> Option<LTerm> {
         match self {
             VariableValue::Relational(lterm) => Some(lterm.clone()),
             VariableValue::Meta(meta) => {
@@ -578,17 +614,17 @@ impl<U: User, E: Engine<U>> VariableValue<U, E> {
 /// match arm), a new map is pushed onto the stack. When the scope is exited,
 /// the map is popped off. This ensures that variables are correctly scoped
 /// and do not leak into parent scopes.
-pub struct ExecutionContext<'a, U: User, E: Engine<U>> {
+pub struct ExecutionContext<'a> {
     /// A mutable reference to the global environment, containing all loaded relations.
-    pub environment: Rc<RefCell<Environment<U, E>>>,
+    pub environment: Rc<RefCell<Environment>>,
 
     /// A stack of scopes for local variables. Each scope is a `HashMap` from a
     /// variable name (String) to its corresponding variable value (either relational or meta).
-    pub locals: Vec<HashMap<String, VariableValue<U, E>>>,
+    pub locals: Vec<HashMap<String, VariableValue>>,
 
     /// A list of goals that need to be executed as part of the current goal's conjunction.
     /// This is used for complex operations that create intermediate goals, like arithmetic.
-    deferred_goals: Vec<Goal<U, E>>,
+    deferred_goals: Vec<Goal>,
 
     /// A counter to ensure that every fresh variable created has a unique ID.
     var_counter: usize,
@@ -600,9 +636,9 @@ pub struct ExecutionContext<'a, U: User, E: Engine<U>> {
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
+impl<'a> ExecutionContext<'a> {
     /// Creates a new `ExecutionContext`.
-    pub fn new(environment: Rc<RefCell<Environment<U, E>>>) -> Self {
+    pub fn new(environment: Rc<RefCell<Environment>>) -> Self {
         Self {
             environment,
             locals: vec![HashMap::new()], // Start with one base scope
@@ -615,7 +651,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Creates a new, unique logical variable (`LTerm::Var`).
-    pub fn create_fresh_var(&mut self) -> LTerm<U, E> {
+    pub fn create_fresh_var(&mut self) -> LTerm {
         let var = LTerm::any(); // Use anonymous variables internally
         self.var_counter += 1;
         var
@@ -633,12 +669,12 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
     /// Searches for a variable in the current scope stack.
     /// It looks from the innermost scope outwards, returning only relational variables as LTerms.
-    fn lookup_var<N: AsRef<str>>(&self, name: N) -> Option<LTerm<U, E>> {
+    fn lookup_var<N: AsRef<str>>(&self, name: N) -> Option<LTerm> {
         self.lookup_variable_value(name)?.to_lterm()
     }
 
     /// Searches for a variable value (relational or meta) in the current scope stack.
-    fn lookup_variable_value<N: AsRef<str>>(&self, name: N) -> Option<VariableValue<U, E>> {
+    fn lookup_variable_value<N: AsRef<str>>(&self, name: N) -> Option<VariableValue> {
         for scope in self.locals.iter().rev() {
             if let Some(var) = scope.get(name.as_ref()) {
                 return Some(var.clone());
@@ -654,7 +690,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
     /// Searches for a variable only in the current (innermost) scope.
     /// Used for pattern matching to ensure variables within a pattern are unified.
-    fn lookup_var_current_scope<N: AsRef<str>>(&self, name: N) -> Option<LTerm<U, E>> {
+    fn lookup_var_current_scope<N: AsRef<str>>(&self, name: N) -> Option<LTerm> {
         if let Some(scope) = self.locals.last() {
             scope.get(name.as_ref()).and_then(|var| var.to_lterm())
         } else {
@@ -663,7 +699,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Binds a variable name to an `LTerm` in the current (innermost) scope.
-    pub fn bind_var<N: AsRef<str>>(&mut self, name: N, var: LTerm<U, E>) {
+    pub fn bind_var<N: AsRef<str>>(&mut self, name: N, var: LTerm) {
         self.bind_variable_value(name, VariableValue::Relational(var));
     }
 
@@ -673,14 +709,14 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Binds a variable name to a `VariableValue` in the current (innermost) scope.
-    pub fn bind_variable_value<N: AsRef<str>>(&mut self, name: N, value: VariableValue<U, E>) {
+    pub fn bind_variable_value<N: AsRef<str>>(&mut self, name: N, value: VariableValue) {
         if let Some(scope) = self.locals.last_mut() {
             scope.insert(name.as_ref().to_string(), value);
         }
     }
 
     /// Returns the top-level variable bindings (converted to LTerms for backward compatibility).
-    pub fn get_variable_bindings(&self) -> HashMap<String, LTerm<U, E>> {
+    pub fn get_variable_bindings(&self) -> HashMap<String, LTerm> {
         self.locals
             .first()
             .map(|scope| {
@@ -693,25 +729,28 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Returns the top-level variable values (both relational and meta).
-    pub fn get_all_variable_bindings(&self) -> HashMap<String, VariableValue<U, E>> {
+    pub fn get_all_variable_bindings(&self) -> HashMap<String, VariableValue> {
         self.locals.first().cloned().unwrap_or_default()
     }
 
     /// Gets an existing variable by name, returns an error if it doesn't exist.
     /// This is useful for constraint domains that should only reference existing variables.
-    pub fn get_existing_variable(&self, name: &str) -> Result<LTerm<U, E>, InterpreterError> {
+    pub fn get_existing_variable(&self, name: &str) -> Result<LTerm, InterpreterError> {
         self.lookup_var(name)
             .ok_or_else(|| InterpreterError::UnknownVariable(name.to_string()))
     }
-    
+
     /// Resolve a type name to a registry index
     fn resolve_type_to_index<S: AsRef<str>>(&self, name: S) -> Result<usize, InterpreterError> {
         // Look up the type name as a symbol
         let name_str = name.as_ref();
-        let runtime_value = self.environment.borrow().lookup(name_str)
+        let runtime_value = self
+            .environment
+            .borrow()
+            .lookup(name_str)
             .ok_or_else(|| InterpreterError::UnknownType(name_str.to_string()))?
             .clone();
-        
+
         match runtime_value {
             RuntimeValue::Type(index) => Ok(index),
             _ => Err(InterpreterError::NotAType(name_str.to_string())),
@@ -719,7 +758,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Adds a goal to the list of deferred goals to be executed.
-    pub fn add_deferred_goal(&mut self, goal: Goal<U, E>) {
+    pub fn add_deferred_goal(&mut self, goal: Goal) {
         self.deferred_goals.push(goal);
     }
 
@@ -849,7 +888,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     /// This is the main entry point for converting an AST goal into a runtime goal
     /// that can be solved. It dispatches to the appropriate helper function based
     /// on the AST goal type.
-    pub fn ast_goal_to_runtime(&mut self, goal: &AstGoal) -> Result<Goal<U, E>, InterpreterError> {
+    pub fn ast_goal_to_runtime(&mut self, goal: &AstGoal) -> Result<Goal, InterpreterError> {
         // Clear any deferred goals from a previous run
         self.deferred_goals.clear();
 
@@ -1004,7 +1043,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     fn ast_conjunction_to_runtime(
         &mut self,
         conj: &AstConjunction,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         let mut goals = vec![];
         for g in &conj.body {
             goals.push(self.ast_goal_to_runtime(g)?);
@@ -1023,7 +1062,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     fn ast_disjunction_to_runtime(
         &mut self,
         disj: &super::parser::ast::Disjunction,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         let mut goals = vec![];
         for g in &disj.body {
             goals.push(self.ast_goal_to_runtime(g)?);
@@ -1036,7 +1075,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         &mut self,
         block: &super::parser::ast::ConstraintBlock,
         span: &super::parser::ast::Span,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         use super::constraint_domains::ConstraintDomainRegistry;
         let registry = ConstraintDomainRegistry::default();
         let domain = registry
@@ -1047,7 +1086,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Converts an AST term to a runtime LTerm.
-    pub fn ast_term_to_runtime(&mut self, term: &Term) -> Result<LTerm<U, E>, InterpreterError> {
+    pub fn ast_term_to_runtime(&mut self, term: &Term) -> Result<LTerm, InterpreterError> {
         match term {
             Term::Variable(name) => {
                 // First check if it's a regular variable
@@ -1092,57 +1131,71 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             Term::NamedStruct(named_struct, _) => {
                 // Named struct construction
                 let type_index = self.resolve_type_to_index(&named_struct.name)?;
-                
+
                 // Verify it's a named struct
                 let env = self.environment.borrow();
                 match env.get_type_by_index(type_index) {
                     Some(TypeDefinition::Struct(def)) => {
                         if !matches!(def.kind, StructKind::Named(_)) {
-                            return Err(InterpreterError::RuntimeError(
-                                format!("{} is not a named struct", named_struct.name)
-                            ));
+                            return Err(InterpreterError::RuntimeError(format!(
+                                "{} is not a named struct",
+                                named_struct.name
+                            )));
                         }
                     }
                     _ => return Err(InterpreterError::NotAType(named_struct.name.to_string())),
                 }
                 drop(env);
-                
+
                 // Convert fields
                 let mut fields = std::collections::HashMap::new();
                 for field in &named_struct.fields {
                     let field_value = self.ast_term_to_runtime(&field.value)?;
                     fields.insert(field.name.to_string(), field_value);
                 }
-                
-                let registry_struct = RegistryNamedStruct { type_index, fields, environment: self.environment.clone() };
-                Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
+
+                let registry_struct = RegistryNamedStruct {
+                    type_index,
+                    fields,
+                    environment: self.environment.clone(),
+                };
+                Ok(LTerm::from(
+                    Rc::new(registry_struct) as Rc<dyn CompoundObject>
+                ))
             }
             Term::TupleStruct(compound, _) => {
                 // Tuple struct construction
                 let type_index = self.resolve_type_to_index(&compound.name.to_string())?;
-                
+
                 // Verify it's a tuple struct
                 let env = self.environment.borrow();
                 match env.get_type_by_index(type_index) {
                     Some(TypeDefinition::Struct(def)) => {
                         if !matches!(def.kind, StructKind::Tuple(_)) {
-                            return Err(InterpreterError::RuntimeError(
-                                format!("{} is not a tuple struct", compound.name)
-                            ));
+                            return Err(InterpreterError::RuntimeError(format!(
+                                "{} is not a tuple struct",
+                                compound.name
+                            )));
                         }
                     }
                     _ => return Err(InterpreterError::NotAType(compound.name.to_string())),
                 }
                 drop(env);
-                
+
                 // Convert arguments
                 let mut args = Vec::new();
                 for arg in &compound.args {
                     args.push(self.ast_term_to_runtime(arg)?);
                 }
-                
-                let registry_struct = RegistryTupleStruct { type_index, args, environment: self.environment.clone() };
-                Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
+
+                let registry_struct = RegistryTupleStruct {
+                    type_index,
+                    args,
+                    environment: self.environment.clone(),
+                };
+                Ok(LTerm::from(
+                    Rc::new(registry_struct) as Rc<dyn CompoundObject>
+                ))
             }
             Term::Interpolation(expr, _) => {
                 // Expand interpolation using template expansion context
@@ -1156,48 +1209,72 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     }
 
     /// Converts an AST enum variant to a runtime LTerm
-    pub fn ast_enum_variant_to_runtime(&mut self, enum_variant: &super::parser::ast::EnumVariantConstruction) -> Result<LTerm<U, E>, InterpreterError> {
+    pub fn ast_enum_variant_to_runtime(
+        &mut self,
+        enum_variant: &super::parser::ast::EnumVariantConstruction,
+    ) -> Result<LTerm, InterpreterError> {
         // Resolve enum type
         let enum_type_index = self.resolve_type_to_index(&enum_variant.enum_name)?;
-        
+
         // Verify it's an enum and the variant exists
         let (variant_kind, variant_name, variant_index) = {
             let env = self.environment.borrow();
             let enum_def = match env.get_type_by_index(enum_type_index) {
                 Some(TypeDefinition::Enum(def)) => def,
-                Some(_) => return Err(InterpreterError::RuntimeError(
-                    format!("{} is not an enum", enum_variant.enum_name)
-                )),
-                None => return Err(InterpreterError::RuntimeError(
-                    format!("Unknown enum type: {}", enum_variant.enum_name)
-                )),
+                Some(_) => {
+                    return Err(InterpreterError::RuntimeError(format!(
+                        "{} is not an enum",
+                        enum_variant.enum_name
+                    )))
+                }
+                None => {
+                    return Err(InterpreterError::RuntimeError(format!(
+                        "Unknown enum type: {}",
+                        enum_variant.enum_name
+                    )))
+                }
             };
-            
+
             // Find the variant in the enum definition and its index
-            let (variant_index, variant_def) = enum_def.variants.iter()
+            let (variant_index, variant_def) = enum_def
+                .variants
+                .iter()
                 .enumerate()
                 .find(|(_, v)| v.name == enum_variant.variant_name)
-                .ok_or_else(|| InterpreterError::RuntimeError(
-                    format!("Unknown variant {} for enum {}", 
-                           enum_variant.variant_name, enum_variant.enum_name)
-                ))?;
-            
-            (variant_def.kind.clone(), variant_def.name.clone(), variant_index)
+                .ok_or_else(|| {
+                    InterpreterError::RuntimeError(format!(
+                        "Unknown variant {} for enum {}",
+                        enum_variant.variant_name, enum_variant.enum_name
+                    ))
+                })?;
+
+            (
+                variant_def.kind.clone(),
+                variant_def.name.clone(),
+                variant_index,
+            )
         }; // Drop the borrow here
-        
+
         // Create the variant data based on the construction kind
         let variant_data = match (&enum_variant.kind, &variant_kind) {
-            (super::parser::ast::EnumVariantConstructionKind::Unit, super::parser::ast::VariantKind::Unit) => {
-                VariantData::Unit
-            }
-            (super::parser::ast::EnumVariantConstructionKind::Tuple(args), super::parser::ast::VariantKind::Tuple(_)) => {
+            (
+                super::parser::ast::EnumVariantConstructionKind::Unit,
+                super::parser::ast::VariantKind::Unit,
+            ) => VariantData::Unit,
+            (
+                super::parser::ast::EnumVariantConstructionKind::Tuple(args),
+                super::parser::ast::VariantKind::Tuple(_),
+            ) => {
                 let mut runtime_args = Vec::new();
                 for arg in args {
                     runtime_args.push(self.ast_term_to_runtime(arg)?);
                 }
                 VariantData::Tuple(runtime_args)
             }
-            (super::parser::ast::EnumVariantConstructionKind::Named(fields), super::parser::ast::VariantKind::Named(_)) => {
+            (
+                super::parser::ast::EnumVariantConstructionKind::Named(fields),
+                super::parser::ast::VariantKind::Named(_),
+            ) => {
                 let mut runtime_fields = std::collections::HashMap::new();
                 for field in fields {
                     let field_value = self.ast_term_to_runtime(&field.value)?;
@@ -1205,12 +1282,14 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                 }
                 VariantData::Named(runtime_fields)
             }
-            _ => return Err(InterpreterError::RuntimeError(
-                format!("Variant construction kind does not match enum definition for {}::{}", 
-                       enum_variant.enum_name, enum_variant.variant_name)
-            )),
+            _ => {
+                return Err(InterpreterError::RuntimeError(format!(
+                    "Variant construction kind does not match enum definition for {}::{}",
+                    enum_variant.enum_name, enum_variant.variant_name
+                )))
+            }
         };
-        
+
         let enum_variant_obj = RegistryEnumVariant {
             enum_type_index,
             variant_index,
@@ -1218,14 +1297,16 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             variant_data,
             environment: self.environment.clone(),
         };
-        
-        Ok(LTerm::from(Rc::new(enum_variant_obj) as Rc<dyn CompoundObject<U, E>>))
+
+        Ok(LTerm::from(
+            Rc::new(enum_variant_obj) as Rc<dyn CompoundObject>
+        ))
     }
 
     pub fn ast_call_argument_to_runtime(
         &mut self,
         arg: &super::parser::ast::CallArgument,
-    ) -> Result<LTerm<U, E>, InterpreterError> {
+    ) -> Result<LTerm, InterpreterError> {
         use super::parser::ast::CallArgument;
 
         match arg {
@@ -1243,7 +1324,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     fn ast_relation_call_to_runtime(
         &mut self,
         call: &RelationCall,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         // First check if the relation name refers to a variable containing a relation reference
         if let Some(var_term) = self.lookup_var(call.name.name()) {
             if var_term.is_relation_ref() {
@@ -1306,10 +1387,10 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 
     fn handle_relation_value(
         &mut self,
-        rel_val: RuntimeValue<U, E>,
+        rel_val: RuntimeValue,
         relation_name: String,
-        arg_terms: Vec<LTerm<U, E>>,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+        arg_terms: Vec<LTerm>,
+    ) -> Result<Goal, InterpreterError> {
         match rel_val {
             RuntimeValue::Relation(rel_def) => {
                 if rel_def.parameters.len() != arg_terms.len() {
@@ -1404,7 +1485,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     fn ast_pattern_match_to_runtime(
         &mut self,
         pattern_match: &PatternMatching,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         // 1. Convert the term to be matched.
         let term_to_match = self.ast_term_to_runtime(&pattern_match.term)?;
 
@@ -1419,7 +1500,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             let pattern_lterm = self.convert_pattern_to_lterm(&arm.pattern)?;
 
             // 3c. Create the unification goal.
-            let unification_goal: Goal<U, E> = eq(term_to_match.clone(), pattern_lterm).cast_into();
+            let unification_goal: Goal = eq(term_to_match.clone(), pattern_lterm).cast_into();
 
             // 3d. Convert the body to a goal.
             let mut body_conj = Goal::succeed();
@@ -1441,10 +1522,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         Ok(Conde::from_array(&arm_goals).cast_into())
     }
 
-    fn convert_pattern_to_lterm(
-        &mut self,
-        pattern: &Pattern,
-    ) -> Result<LTerm<U, E>, InterpreterError> {
+    fn convert_pattern_to_lterm(&mut self, pattern: &Pattern) -> Result<LTerm, InterpreterError> {
         match pattern {
             Pattern::Variable(name) => {
                 // Check if the variable already exists in the current scope
@@ -1474,51 +1552,72 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
             Pattern::NamedStruct(named_struct_pattern) => {
                 // Named struct pattern
                 let type_index = self.resolve_type_to_index(&named_struct_pattern.name)?;
-                
+
                 // Convert field patterns
                 let mut field_patterns = std::collections::HashMap::new();
                 for field_pattern in &named_struct_pattern.fields {
                     let field_term = self.convert_pattern_to_lterm(&field_pattern.pattern)?;
                     field_patterns.insert(field_pattern.name.to_string(), field_term);
                 }
-                
-                let registry_struct = RegistryNamedStruct { type_index, fields: field_patterns, environment: self.environment.clone() };
-                Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
+
+                let registry_struct = RegistryNamedStruct {
+                    type_index,
+                    fields: field_patterns,
+                    environment: self.environment.clone(),
+                };
+                Ok(LTerm::from(
+                    Rc::new(registry_struct) as Rc<dyn CompoundObject>
+                ))
             }
             Pattern::TupleStruct(compound_pattern) => {
                 // Tuple struct pattern
                 let type_index = self.resolve_type_to_index(&compound_pattern.name)?;
-                
+
                 // Convert pattern arguments
                 let mut arg_patterns = Vec::new();
                 for arg_pattern in &compound_pattern.args {
                     let arg_term = self.convert_pattern_to_lterm(arg_pattern)?;
                     arg_patterns.push(arg_term);
                 }
-                
-                let registry_struct = RegistryTupleStruct { type_index, args: arg_patterns, environment: self.environment.clone() };
-                Ok(LTerm::from(Rc::new(registry_struct) as Rc<dyn CompoundObject<U, E>>))
+
+                let registry_struct = RegistryTupleStruct {
+                    type_index,
+                    args: arg_patterns,
+                    environment: self.environment.clone(),
+                };
+                Ok(LTerm::from(
+                    Rc::new(registry_struct) as Rc<dyn CompoundObject>
+                ))
             }
             Pattern::EnumVariant(enum_variant_pattern) => {
                 // Enum variant pattern
                 let type_index = self.resolve_type_to_index(&enum_variant_pattern.enum_name)?;
-                
+
                 // Find the variant index
                 let env = self.environment.borrow();
-                let variant_index = if let Some(TypeDefinition::Enum(enum_def)) = env.get_type_by_index(type_index) {
-                    enum_def.variants.iter().enumerate()
+                let variant_index = if let Some(TypeDefinition::Enum(enum_def)) =
+                    env.get_type_by_index(type_index)
+                {
+                    enum_def
+                        .variants
+                        .iter()
+                        .enumerate()
                         .find(|(_, variant)| variant.name == enum_variant_pattern.variant_name)
                         .map(|(index, _)| index)
-                        .ok_or_else(|| InterpreterError::RuntimeError(
-                            format!("Variant {} not found in enum {}", enum_variant_pattern.variant_name, enum_variant_pattern.enum_name)
-                        ))?
+                        .ok_or_else(|| {
+                            InterpreterError::RuntimeError(format!(
+                                "Variant {} not found in enum {}",
+                                enum_variant_pattern.variant_name, enum_variant_pattern.enum_name
+                            ))
+                        })?
                 } else {
-                    return Err(InterpreterError::RuntimeError(
-                        format!("{} is not an enum", enum_variant_pattern.enum_name)
-                    ));
+                    return Err(InterpreterError::RuntimeError(format!(
+                        "{} is not an enum",
+                        enum_variant_pattern.enum_name
+                    )));
                 };
                 drop(env);
-                
+
                 // Convert variant data based on kind
                 let variant_data = match &enum_variant_pattern.kind {
                     EnumVariantPatternKind::Unit => VariantData::Unit,
@@ -1532,28 +1631,32 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     EnumVariantPatternKind::Named(field_patterns) => {
                         let mut runtime_field_patterns = std::collections::HashMap::new();
                         for field_pattern in field_patterns {
-                            let field_term = self.convert_pattern_to_lterm(&field_pattern.pattern)?;
-                            runtime_field_patterns.insert(field_pattern.name.to_string(), field_term);
+                            let field_term =
+                                self.convert_pattern_to_lterm(&field_pattern.pattern)?;
+                            runtime_field_patterns
+                                .insert(field_pattern.name.to_string(), field_term);
                         }
                         VariantData::Named(runtime_field_patterns)
                     }
                 };
-                
-                let enum_variant_obj = RegistryEnumVariant { 
-                    enum_type_index: type_index, 
+
+                let enum_variant_obj = RegistryEnumVariant {
+                    enum_type_index: type_index,
                     variant_index,
                     variant_name: enum_variant_pattern.variant_name.to_string(),
                     variant_data,
                     environment: self.environment.clone(),
                 };
-                Ok(LTerm::from(Rc::new(enum_variant_obj) as Rc<dyn CompoundObject<U, E>>))
+                Ok(LTerm::from(
+                    Rc::new(enum_variant_obj) as Rc<dyn CompoundObject>
+                ))
             }
         }
     }
 
     /// Check if a goal contains meta features (meta statements or interpolation)
     pub fn goal_contains_meta_features(&self, goal: &super::parser::ast::Goal) -> bool {
-        use super::parser::ast::{Goal as AstGoal};
+        use super::parser::ast::Goal as AstGoal;
 
         match goal {
             AstGoal::MetaStatement(..) => true,
@@ -1633,7 +1736,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     pub fn process_goal_body_with_template_expansion(
         &mut self,
         goals: &[super::parser::ast::Goal],
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         use super::metaprogramming::{expand_goal_body, TemplateExpansionContext};
 
         // Create a shared template expansion context for all goals in this body
@@ -1665,8 +1768,8 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     pub fn process_macro_body_with_parameter_binding(
         &mut self,
         rel_def: &super::parser::ast::PredicateDefinition,
-        call_args: &[LTerm<U, E>],
-    ) -> Result<Goal<U, E>, InterpreterError> {
+        call_args: &[LTerm],
+    ) -> Result<Goal, InterpreterError> {
         use super::metaprogramming::{
             expand_goal_body, MetaValue, TemplateExpansionContext, TypeAnnotation,
         };
@@ -1696,8 +1799,10 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                             string_val,
                         )) = arg_term.as_ref()
                         {
-                            template_context
-                                .bind(param.name.to_string(), MetaValue::String(string_val.clone()));
+                            template_context.bind(
+                                param.name.to_string(),
+                                MetaValue::String(string_val.clone()),
+                            );
                         } else {
                             return Err(InterpreterError::RuntimeError(format!(
                                 "Macro parameter '{}' expects string value, got: {:?}",
@@ -1708,7 +1813,8 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
                     TypeAnnotation::Bool => {
                         // Extract boolean value from the argument term
                         if let Some(bool_val) = arg_term.get_bool() {
-                            template_context.bind(param.name.to_string(), MetaValue::Boolean(bool_val));
+                            template_context
+                                .bind(param.name.to_string(), MetaValue::Boolean(bool_val));
                         } else {
                             return Err(InterpreterError::RuntimeError(format!(
                                 "Macro parameter '{}' expects boolean value, got: {:?}",
@@ -1756,7 +1862,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         &mut self,
         rel_def: &super::parser::ast::PredicateDefinition,
         args: &[super::parser::ast::CallArgument],
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         use super::metaprogramming::{
             evaluate_meta_expression, expand_goal_body, MetaValue, TemplateExpansionContext,
             TypeAnnotation,
@@ -1977,7 +2083,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
         &mut self,
         meta_stmt: &super::metaprogramming::MetaStatement,
         span: &super::parser::ast::Span,
-    ) -> Result<Goal<U, E>, InterpreterError> {
+    ) -> Result<Goal, InterpreterError> {
         // Create template expansion context with a reasonable recursion limit
         let mut context = TemplateExpansionContext::new(100);
 
@@ -2006,7 +2112,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
     fn expand_and_evaluate_interpolation(
         &mut self,
         expr: &super::metaprogramming::MetaExpression,
-    ) -> Result<LTerm<U, E>, InterpreterError> {
+    ) -> Result<LTerm, InterpreterError> {
         // Create empty template expansion context (interpolation should only use existing bindings)
         let context = TemplateExpansionContext::new(100);
 
@@ -2022,10 +2128,7 @@ impl<'a, U: User, E: Engine<U>> ExecutionContext<'a, U, E> {
 }
 
 /// Helper to construct a list LTerm from elements and an optional tail.
-fn lterm_from_vec_and_tail<U: User, E: Engine<U>>(
-    elements: Vec<LTerm<U, E>>,
-    tail: Option<LTerm<U, E>>,
-) -> LTerm<U, E> {
+fn lterm_from_vec_and_tail(elements: Vec<LTerm>, tail: Option<LTerm>) -> LTerm {
     let mut list = tail.unwrap_or_else(LTerm::empty_list);
     for el in elements.into_iter().rev() {
         list = LTerm::cons(el, list);
@@ -2033,9 +2136,7 @@ fn lterm_from_vec_and_tail<U: User, E: Engine<U>>(
     list
 }
 
-fn convert_ast_literal_to_runtime<U: User, E: Engine<U>>(
-    literal: &Literal,
-) -> Result<LTerm<U, E>, InterpreterError> {
+fn convert_ast_literal_to_runtime(literal: &Literal) -> Result<LTerm, InterpreterError> {
     match literal {
         Literal::Boolean(b) => Ok(LTerm::from(*b)),
         Literal::Number(n) => {

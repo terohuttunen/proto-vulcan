@@ -1,4 +1,4 @@
-use crate::engine::Engine;
+
 /// Constrains x in domain
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
@@ -6,26 +6,19 @@ use crate::solver::{Solve, Solver};
 use crate::state::FiniteDomain;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::User;
+
 use std::rc::Rc;
 
-#[derive(Derivative)]
-#[derivative(Debug(bound = "U: User"))]
-pub struct DomFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
+#[derive(Debug)]
+pub struct DomFd
 {
-    x: LTerm<U, E>,
+    x: LTerm,
     domain: Rc<FiniteDomain>,
 }
 
-impl<U, E> DomFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl DomFd
 {
-    pub fn new<G: AnyGoal<U, E>>(x: LTerm<U, E>, domain: FiniteDomain) -> InferredGoal<U, E, G> {
+    pub fn new<G: AnyGoal>(x: LTerm, domain: FiniteDomain) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(DomFd {
             x,
             domain: Rc::new(domain),
@@ -33,12 +26,9 @@ where
     }
 }
 
-impl<U, E> Solve<U, E> for DomFd<U, E>
-where
-    U: User,
-    E: Engine<U>,
+impl Solve for DomFd
 {
-    fn solve(&self, _solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E> {
+    fn solve(&self, _solver: &Solver, state: State) -> Stream {
         let xwalk = state.smap_ref().walk(&self.x).clone();
         match state.process_domain(&xwalk, Rc::clone(&self.domain) as Rc<FiniteDomain>) {
             Ok(state) => Stream::unit(Box::new(state)),

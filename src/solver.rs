@@ -1,8 +1,8 @@
-use crate::engine::Engine;
+use crate::engine::{DefaultEngine, Engine};
 use crate::goal::{DFSGoal, Goal};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
-use crate::user::User;
+use crate::user::{DefaultUser, User};
 use std::any::{Any, TypeId};
 use std::fmt;
 
@@ -11,13 +11,9 @@ use crate::debugger::Debugger;
 
 /// Result of a solver iteration
 #[derive(Debug)]
-pub enum SolverResult<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub enum SolverResult {
     /// Found a solution state
-    Solution(Box<State<U, E>>),
+    Solution(Box<State>),
     /// No more solutions available (natural completion)
     NoMoreSolutions,
     /// Execution timed out
@@ -29,28 +25,20 @@ where
 /// Check timeout every N iterations to reduce overhead
 const TIMEOUT_CHECK_FREQUENCY: usize = 100;
 
-pub struct Solver<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    context: U::UserContext,
-    engine: E,
+pub struct Solver {
+    context: <DefaultUser as User>::UserContext,
+    engine: DefaultEngine,
     stream_iter_index: usize,
     #[cfg(feature = "debugger")]
-    debugger: Debugger<U, E>,
+    debugger: Debugger,
     debug_enabled: bool,
     /// Timeout information for any operation (test, query, etc.)
     timeout_info: Option<(std::time::Instant, u64)>,
 }
 
-impl<U, E> Solver<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
-    pub fn new(context: U::UserContext, debug_enabled: bool) -> Solver<U, E> {
-        let engine = E::new();
+impl Solver {
+    pub fn new(context: <DefaultUser as User>::UserContext, debug_enabled: bool) -> Solver {
+        let engine = DefaultEngine::new();
         #[cfg(feature = "debugger")]
         let debugger = Debugger::new();
         Solver {
@@ -74,7 +62,7 @@ where
         self.timeout_info = None;
     }
 
-    pub fn start(&self, goal: &Goal<U, E>, state: State<U, E>) -> Stream<U, E> {
+    pub fn start(&self, goal: &Goal, state: State) -> Stream {
         match goal {
             Goal::Succeed => Stream::unit(Box::new(state)),
             Goal::Fail => Stream::empty(),
@@ -88,7 +76,7 @@ where
         }
     }
 
-    pub fn start_dfs(&self, goal: &DFSGoal<U, E>, state: State<U, E>) -> Stream<U, E> {
+    pub fn start_dfs(&self, goal: &DFSGoal, state: State) -> Stream {
         match goal {
             DFSGoal::Succeed => Stream::unit(Box::new(state)),
             DFSGoal::Fail => Stream::empty(),
@@ -107,7 +95,7 @@ where
         }
     }
 
-    pub fn next(&mut self, stream: &mut Stream<U, E>) -> SolverResult<U, E> {
+    pub fn next(&mut self, stream: &mut Stream) -> SolverResult {
         loop {
             // Increment iteration counter
             self.stream_iter_index += 1;
@@ -161,7 +149,7 @@ where
     }
 
     /// Returns a reference to next element in the stream, if any.
-    pub fn peek<'a>(&self, stream: &'a mut Stream<U, E>) -> Option<&'a Box<State<U, E>>> {
+    pub fn peek<'a>(&self, stream: &'a mut Stream) -> Option<&'a Box<State>> {
         loop {
             match stream {
                 Stream::Lazy(_) => {
@@ -177,7 +165,7 @@ where
 
     /// Truncates the stream leaving at most one element, and returns a reference to
     /// the remaining element if any.
-    pub fn trunc<'a>(&self, stream: &'a mut Stream<U, E>) -> Option<&'a Box<State<U, E>>> {
+    pub fn trunc<'a>(&self, stream: &'a mut Stream) -> Option<&'a Box<State>> {
         loop {
             match std::mem::replace(stream, Stream::Empty) {
                 Stream::Empty => return None,
@@ -195,55 +183,41 @@ where
         }
     }
 
-    pub fn context(&self) -> &U::UserContext {
+    pub fn context(&self) -> &<DefaultUser as User>::UserContext {
         &self.context
     }
 
-    pub fn engine(&self) -> &E {
+    pub fn engine(&self) -> &DefaultEngine {
         &self.engine
     }
 }
 
-pub trait Solve<U, E>: fmt::Debug + AnySolve<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub trait Solve: fmt::Debug + AnySolve {
     /// Generate a stream of solutions to the goal by applying it to some initial state.
-    fn solve(&self, solver: &Solver<U, E>, state: State<U, E>) -> Stream<U, E>;
+    fn solve(&self, solver: &Solver, state: State) -> Stream;
 }
 
-pub trait AnySolve<U, E>: Any
-where
-    U: User,
-    E: Engine<U>,
-{
+pub trait AnySolve: Any {
     fn as_any(&self) -> &dyn Any;
 }
 
-impl<U, E, T> AnySolve<U, E> for T
+impl<T> AnySolve for T
 where
-    U: User,
-    E: Engine<U>,
-    T: Solve<U, E>,
+    T: Solve,
 {
     fn as_any(&self) -> &dyn Any {
         self
     }
 }
 
-impl<U, E> dyn Solve<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+impl dyn Solve {
     #[inline]
-    pub fn is<T: Solve<U, E>>(&self) -> bool {
+    pub fn is<T: Solve>(&self) -> bool {
         TypeId::of::<T>() == self.type_id()
     }
 
     #[inline]
-    pub fn downcast_ref<T: Any + Solve<U, E>>(&self) -> Option<&T> {
+    pub fn downcast_ref<T: Any + Solve>(&self) -> Option<&T> {
         self.as_any().downcast_ref::<T>()
     }
 }

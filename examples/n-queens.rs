@@ -6,12 +6,7 @@ use proto_vulcan::relation::infdrange;
 use proto_vulcan::relation::plusfd;
 use std::ops::RangeInclusive;
 
-fn diago<U: User, E: Engine<U>>(
-    qi: LTerm<U, E>,
-    qj: LTerm<U, E>,
-    d: LTerm<U, E>,
-    range: &RangeInclusive<isize>,
-) -> Goal<U, E> {
+fn diago(qi: LTerm, qj: LTerm, d: LTerm, range: &RangeInclusive<isize>) -> Goal {
     proto_vulcan!(
         |qi_plus_d, qj_plus_d| {
             infdrange([qi_plus_d, qj_plus_d], {range}),
@@ -23,13 +18,7 @@ fn diago<U: User, E: Engine<U>>(
     )
 }
 
-fn diagonalso<U: User, E: Engine<U>>(
-    n: isize,
-    i: isize,
-    j: isize,
-    s: LTerm<U, E>,
-    r: LTerm<U, E>,
-) -> Goal<U, E> {
+fn diagonalso(n: isize, i: isize, j: isize, s: LTerm, r: LTerm) -> Goal {
     proto_vulcan_closure!(
         match r {
             [] | [_] => ,
@@ -48,12 +37,7 @@ fn diagonalso<U: User, E: Engine<U>>(
     )
 }
 
-fn nqueenso<U: User, E: Engine<U>>(
-    queens: LTerm<U, E>,
-    n: isize,
-    i: isize,
-    l: LTerm<U, E>,
-) -> Goal<U, E> {
+fn nqueenso(queens: LTerm, n: isize, i: isize, l: LTerm) -> Goal {
     if i == 0 {
         proto_vulcan!(|ltail| {
             l == [_ | ltail],

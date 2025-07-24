@@ -1,8 +1,7 @@
-use crate::engine::Engine;
 use crate::goal::{AnyGoal, Goal};
 use crate::lterm::{LTerm, LTermInner};
 use crate::stream::Stream;
-use crate::user::User;
+use crate::user::{DefaultUser, User};
 
 #[cfg(feature = "clpfd")]
 use crate::operator::onceo;
@@ -13,13 +12,13 @@ use crate::state::map_sum::map_sum;
 /// and returning solutions for all numbers. Adds a `x == d` substitution for each `d` in
 /// the domain.
 #[cfg(feature = "clpfd")]
-fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
+fn force_ans(x: LTerm) -> Goal {
     proto_vulcan!(fngoal move |solver, state| {
-        let xwalk: LTerm<U, E> = state.smap_ref().walk(&x).clone();
+        let xwalk: LTerm = state.smap_ref().walk(&x).clone();
         let maybe_xdomain = state.dstore_ref().get(&xwalk).cloned();
 
         match (xwalk.as_ref(), maybe_xdomain) {
-            (LTermInner::<U, E>::Var(_, _), Some(xdomain)) => {
+            (LTermInner::Var(_, _), Some(xdomain)) => {
                 // Stream of solutions where xwalk can equal any value of xdomain
                 map_sum(solver, state, |d| {
                     let dterm = LTerm::from(d);
@@ -32,10 +31,10 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
                 }, Box::new((*xdomain).clone().into_iter()))
                 */
             }
-            (LTermInner::<U, E>::Cons(head, tail), _) => {
-                let head: LTerm<U, E> = head.clone();
-                let tail: LTerm<U, E> = tail.clone();
-                let g: Goal<U, E>  = proto_vulcan!([
+            (LTermInner::Cons(head, tail), _) => {
+                let head: LTerm = head.clone();
+                let tail: LTerm = tail.clone();
+                let g: Goal  = proto_vulcan!([
                     force_ans(head),
                     force_ans(tail),
                 ]);
@@ -47,7 +46,7 @@ fn force_ans<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
 }
 
 #[cfg(feature = "clpfd")]
-fn enforce_constraints_fd<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
+fn enforce_constraints_fd(x: LTerm) -> Goal {
     proto_vulcan!([
         force_ans(x),
         fngoal | engine,
@@ -57,14 +56,14 @@ fn enforce_constraints_fd<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
                 // If domain verification fails, return an error stream
                 return crate::stream::Stream::error(msg);
             }
-            let bound_x = state.dstore_ref().keys().cloned().collect::<LTerm<U, E>>();
+            let bound_x = state.dstore_ref().keys().cloned().collect::<LTerm>();
             proto_vulcan!( onceo { force_ans(bound_x) } ).solve(engine, state)
         }
     ])
 }
 
 #[cfg(not(feature = "clpfd"))]
-fn enforce_constraints_fd<U: User, E: Engine<U>>(_x: LTerm<U, E>) -> Goal<U, E> {
+fn enforce_constraints_fd(_x: LTerm) -> Goal {
     Goal::succeed()
 }
 
@@ -76,11 +75,14 @@ fn enforce_constraints_fd<U: User, E: Engine<U>>(_x: LTerm<U, E>) -> Goal<U, E> 
 /// of answers such that the result variariables always have singular domains.
 ///
 /// For disequality constraints this is a no-op.
-fn enforce_constraints<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
-    proto_vulcan!([enforce_constraints_fd(x), U::enforce_constraints(x)])
+fn enforce_constraints(x: LTerm) -> Goal {
+    proto_vulcan!([
+        enforce_constraints_fd(x),
+        DefaultUser::enforce_constraints(x)
+    ])
 }
 
-pub fn reify<U: User, E: Engine<U>>(x: LTerm<U, E>) -> Goal<U, E> {
+pub fn reify(x: LTerm) -> Goal {
     proto_vulcan!([
         enforce_constraints(x),
         fngoal move |_engine, state| {

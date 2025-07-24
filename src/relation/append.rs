@@ -1,7 +1,7 @@
-use crate::engine::Engine;
+
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
-use crate::user::User;
+
 
 /// A relation where `l`, `s`, and `ls` are proper lists, such that `ls` is `s` appended to `l`.
 ///
@@ -16,11 +16,9 @@ use crate::user::User;
 ///     });
 ///     assert!(query.run().next().unwrap().q == lterm!([1, 2, 3, 4, 5]));
 /// }
-pub fn append<U, E, G>(l: LTerm<U, E>, s: LTerm<U, E>, ls: LTerm<U, E>) -> InferredGoal<U, E, G>
+pub fn append<G>(l: LTerm, s: LTerm, ls: LTerm) -> InferredGoal<G>
 where
-    U: User,
-    E: Engine<U>,
-    G: AnyGoal<U, E>,
+    G: AnyGoal,
 {
     proto_vulcan_closure!(
         match [l, s, ls] {

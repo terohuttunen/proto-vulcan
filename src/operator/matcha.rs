@@ -1,13 +1,7 @@
-use crate::engine::Engine;
 use crate::goal::Goal;
 use crate::operator::conda::Conda;
 use crate::operator::PatternMatchOperatorParam;
-use crate::user::User;
 
-pub fn matcha<U, E>(param: PatternMatchOperatorParam<U, E, Goal<U, E>>) -> Goal<U, E>
-where
-    U: User,
-    E: Engine<U>,
-{
+pub fn matcha(param: PatternMatchOperatorParam<Goal>) -> Goal {
     Conda::from_conjunctions(param.arms)
 }
