@@ -1,6 +1,6 @@
 //! Error types for IR compilation
 
-use super::{ItemId, ModuleId, PredicateId, TypeId};
+use super::ir::{ItemId, ModuleId, PredicateId, TypeId};
 use crate::interpreter::symbol_table::InternedSymbol;
 use crate::interpreter::InterpreterError;
 use thiserror::Error;

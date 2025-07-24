@@ -32,6 +32,7 @@ pub(super) use symbol_collection::{
 };
 
 // Re-export IR types for use by compilation modules
+/*
 pub(super) use ir::{
     ConstraintBlock, EnumDefinition, EnumVariant, EnumVariantConstruction,
     EnumVariantConstructionKind, EnumVariantKind, EnumVariantPattern, EnumVariantPatternKind,
@@ -42,6 +43,7 @@ pub(super) use ir::{
     StructConstructionFields, StructDefinition, StructFields, StructPattern, StructPatternFields,
     StructuralGoal, Term, TypeAnnotation, TypeDefinition, TypeId, TypeKind, Visibility,
 };
+*/
 
 /// The IR compiler transforms AST to IR with full symbol resolution
 pub struct Compiler {
@@ -52,7 +54,7 @@ pub struct Compiler {
     /// Compilation phases tracking
     pub(super) compilation_phase: CompilationPhase,
     /// Fast symbol lookup maps per module (compilation-time only)
-    pub(super) module_symbol_maps: HashMap<ModuleId, ModuleSymbolMap>,
+    pub(super) module_symbol_maps: HashMap<ir::ModuleId, ModuleSymbolMap>,
     /// Global list of pending imports to be resolved (simplified architecture)
     pub(super) pending_imports: Vec<PendingImport>,
     /// Compilation context for warnings and validation
@@ -71,12 +73,12 @@ impl Compiler {
     pub fn with_options(options: CompilationOptions) -> Self {
         let mut module_symbol_maps = HashMap::new();
         // Initialize symbol map for the global module
-        module_symbol_maps.insert(ModuleId::new("::"), ModuleSymbolMap::new());
+        module_symbol_maps.insert(ir::ModuleId::new("::"), ModuleSymbolMap::new());
 
         Self {
             module_path_stack: vec!["::".to_string()], // Start at global module
             symbol_context: SymbolContext {
-                current_module: ModuleId::new("::"),
+                current_module: ir::ModuleId::new("::"),
             },
             compilation_phase: CompilationPhase::SymbolAndUseClauseCollection,
             module_symbol_maps,
@@ -87,8 +89,8 @@ impl Compiler {
     }
 
     /// Compile an AST program to IR using multi-phase compilation
-    pub fn compile_from_ast(&mut self, program: ast::Program) -> Result<Program, CompileError> {
-        let mut ir_program = Program::new();
+    pub fn compile_from_ast(&mut self, program: ast::Program) -> Result<ir::Program, CompileError> {
+        let mut ir_program = ir::Program::new();
 
         // Phase 1: Collect symbols and use clauses in a single pass
         self.compilation_phase = CompilationPhase::SymbolAndUseClauseCollection;
@@ -130,7 +132,7 @@ impl Compiler {
     }
 
     /// Phase 4: Validate compilation and handle warnings
-    fn validate_compilation(&self, ir_program: &Program) -> Result<(), CompileError> {
+    fn validate_compilation(&self, ir_program: &ir::Program) -> Result<(), CompileError> {
         // Run existing IR validation
         let validator = ir::validation::Validator::new();
         validator.validate_program(ir_program)?;
@@ -163,14 +165,14 @@ impl Compiler {
     pub(super) fn convert_visibility(
         &self,
         ast_vis: &ast::Visibility,
-    ) -> Result<Visibility, CompileError> {
+    ) -> Result<ir::Visibility, CompileError> {
         match ast_vis {
-            ast::Visibility::Public => Ok(Visibility::Public),
-            ast::Visibility::Private => Ok(Visibility::Private),
-            ast::Visibility::Crate => Ok(Visibility::Public), // Treat crate as public for now
-            ast::Visibility::Super => Ok(Visibility::Public), // Treat super as public for now
-            ast::Visibility::SelfModule => Ok(Visibility::Private), // Same as private
-            ast::Visibility::Restricted(_) => Ok(Visibility::Public), // Treat restricted as public for now
+            ast::Visibility::Public => Ok(ir::Visibility::Public),
+            ast::Visibility::Private => Ok(ir::Visibility::Private),
+            ast::Visibility::Crate => Ok(ir::Visibility::Public), // Treat crate as public for now
+            ast::Visibility::Super => Ok(ir::Visibility::Public), // Treat super as public for now
+            ast::Visibility::SelfModule => Ok(ir::Visibility::Private), // Same as private
+            ast::Visibility::Restricted(_) => Ok(ir::Visibility::Public), // Treat restricted as public for now
         }
     }
 

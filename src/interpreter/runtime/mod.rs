@@ -5,4 +5,5 @@
 
 pub mod context;
 
+pub use crate::goal::Goal;
 pub use context::{ExecutionContext, VariableValue};

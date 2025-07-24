@@ -3,6 +3,7 @@
 //! This module handles the third phase of compilation: compiling AST bodies to IR
 //! with full symbol resolution using the resolved symbol maps.
 
+use super::ir;
 use super::*;
 
 /// AST-to-IR compilation methods for the IR compiler
@@ -11,7 +12,7 @@ impl Compiler {
     pub(super) fn compile_bodies(
         &mut self,
         program: &ast::Program,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         for item in &program.items {
             self.compile_item_body(item, ir_program)?;
@@ -23,7 +24,7 @@ impl Compiler {
     fn compile_item_body(
         &mut self,
         item: &ast::Item,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         match item {
             ast::Item::Module(module) => {
@@ -52,7 +53,7 @@ impl Compiler {
     fn compile_module_body(
         &mut self,
         module: &ast::ModuleDefinition,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         // Look up the module in the current module's symbol map
         let module_name = module.name.to_string();
@@ -69,12 +70,12 @@ impl Compiler {
             .get(&module_name)
             .or_else(|| current_module_map.imported_symbols.get(&module_name))
             .ok_or_else(|| CompileError::UnresolvedModule {
-                attempted_item: ModuleId::new(module_name.clone()).into(),
+                attempted_item: ir::ModuleId::new(module_name.clone()).into(),
                 symbol: module.name.clone(),
             })?;
 
-        // Convert ItemId to ModuleId (we know it's a module from context)
-        let module_id = ModuleId::new(module_item_id.path.clone());
+        // Convert ItemId to ir::ModuleId (we know it's a module from context)
+        let module_id = ir::ModuleId::new(module_item_id.path.clone());
 
         // Push module context
         self.module_path_stack.push(module.name.to_string());
@@ -97,7 +98,7 @@ impl Compiler {
     fn compile_struct_body(
         &mut self,
         struct_def: &ast::StructDefinition,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         // Look up the type in the current module's symbol map
         let type_name = struct_def.name.to_string();
@@ -105,7 +106,7 @@ impl Compiler {
             .module_symbol_maps
             .get(&self.symbol_context.current_module)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: TypeId::new(struct_def.name.to_string()),
+                attempted_item: ir::TypeId::new(struct_def.name.to_string()),
                 symbol: struct_def.name.clone(),
             })?;
 
@@ -114,12 +115,12 @@ impl Compiler {
             .get(&type_name)
             .or_else(|| current_module_map.imported_symbols.get(&type_name))
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: TypeId::new(type_name.clone()).into(),
+                attempted_item: ir::TypeId::new(type_name.clone()).into(),
                 symbol: struct_def.name.clone(),
             })?;
 
-        // Convert ItemId to TypeId (we know it's a type from context)
-        let type_id = TypeId::new(type_item_id.path.clone());
+        // Convert ItemId to ir::TypeId (we know it's a type from context)
+        let type_id = ir::TypeId::new(type_item_id.path.clone());
 
         // Resolve field types
         let fields = match &struct_def.kind {
@@ -127,13 +128,13 @@ impl Compiler {
                 let mut ir_fields = vec![];
                 for field in named_fields {
                     let field_type_ref = self.resolve_type_reference(&field.type_name)?;
-                    ir_fields.push(NamedField {
+                    ir_fields.push(ir::NamedField {
                         name: field.name.clone(),
                         type_ref: field_type_ref,
                         visibility: self.convert_visibility(&field.visibility)?,
                     });
                 }
-                StructFields::Named(ir_fields)
+                ir::StructFields::Named(ir_fields)
             }
             ast::StructKind::Tuple(field_types) => {
                 let mut ir_field_types = vec![];
@@ -143,19 +144,19 @@ impl Compiler {
                     let field_type_ref = self.resolve_qualified_path_to_type(&qualified_path)?;
                     ir_field_types.push(field_type_ref);
                 }
-                StructFields::Tuple(ir_field_types)
+                ir::StructFields::Tuple(ir_field_types)
             }
         };
 
         // Update the type in the registry
         let registry = ir_program.registry_mut();
-        let updated_type = TypeDefinition {
+        let updated_type = ir::TypeDefinition {
             id: type_id,
-            kind: TypeKind::Struct(StructDefinition { fields }),
+            kind: ir::TypeKind::Struct(ir::StructDefinition { fields }),
             visibility: self.convert_visibility(&struct_def.visibility)?,
         };
 
-        registry.replace_item(Item::Type(updated_type));
+        registry.replace_item(ir::Item::Type(updated_type));
 
         Ok(())
     }
@@ -164,7 +165,7 @@ impl Compiler {
     fn compile_enum_body(
         &mut self,
         enum_def: &ast::EnumDefinition,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         // Look up the type in the current module's symbol map
         let type_name = enum_def.name.to_string();
@@ -172,7 +173,7 @@ impl Compiler {
             .module_symbol_maps
             .get(&self.symbol_context.current_module)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: TypeId::new(enum_def.name.to_string()),
+                attempted_item: ir::TypeId::new(enum_def.name.to_string()),
                 symbol: enum_def.name.clone(),
             })?;
 
@@ -181,18 +182,18 @@ impl Compiler {
             .get(&type_name)
             .or_else(|| current_module_map.imported_symbols.get(&type_name))
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: TypeId::new(type_name.clone()).into(),
+                attempted_item: ir::TypeId::new(type_name.clone()).into(),
                 symbol: enum_def.name.clone(),
             })?;
 
-        // Convert ItemId to TypeId (we know it's a type from context)
-        let type_id = TypeId::new(type_item_id.path.clone());
+        // Convert ItemId to ir::TypeId (we know it's a type from context)
+        let type_id = ir::TypeId::new(type_item_id.path.clone());
 
         // Resolve variant types
         let mut variants = vec![];
         for variant in &enum_def.variants {
             let variant_kind = match &variant.kind {
-                ast::VariantKind::Unit => EnumVariantKind::Unit,
+                ast::VariantKind::Unit => ir::EnumVariantKind::Unit,
                 ast::VariantKind::Tuple(field_types) => {
                     let mut ir_field_types = vec![];
                     for field_type in field_types {
@@ -202,23 +203,23 @@ impl Compiler {
                             self.resolve_qualified_path_to_type(&qualified_path)?;
                         ir_field_types.push(field_type_ref);
                     }
-                    EnumVariantKind::Tuple(ir_field_types)
+                    ir::EnumVariantKind::Tuple(ir_field_types)
                 }
                 ast::VariantKind::Named(fields) => {
                     let mut ir_fields = vec![];
                     for field in fields {
                         let field_type_ref = self.resolve_type_reference(&field.type_name)?;
-                        ir_fields.push(NamedField {
+                        ir_fields.push(ir::NamedField {
                             name: field.name.clone(),
                             type_ref: field_type_ref,
                             visibility: self.convert_visibility(&field.visibility)?,
                         });
                     }
-                    EnumVariantKind::Named(ir_fields)
+                    ir::EnumVariantKind::Named(ir_fields)
                 }
             };
 
-            variants.push(EnumVariant {
+            variants.push(ir::EnumVariant {
                 name: variant.name.clone(),
                 kind: variant_kind,
             });
@@ -226,13 +227,13 @@ impl Compiler {
 
         // Update the type in the registry
         let registry = ir_program.registry_mut();
-        let updated_type = TypeDefinition {
+        let updated_type = ir::TypeDefinition {
             id: type_id,
-            kind: TypeKind::Enum(EnumDefinition { variants }),
+            kind: ir::TypeKind::Enum(ir::EnumDefinition { variants }),
             visibility: self.convert_visibility(&enum_def.visibility)?,
         };
 
-        registry.replace_item(Item::Type(updated_type));
+        registry.replace_item(ir::Item::Type(updated_type));
 
         Ok(())
     }
@@ -241,15 +242,15 @@ impl Compiler {
     fn resolve_type_reference(
         &self,
         qualified_path: &ast::QualifiedPath,
-    ) -> Result<TypeId, CompileError> {
+    ) -> Result<ir::TypeId, CompileError> {
         self.resolve_qualified_path_to_type(qualified_path)
     }
 
-    /// Resolve qualified path to TypeId using proper scoped resolution
+    /// Resolve qualified path to ir::TypeId using proper scoped resolution
     fn resolve_qualified_path_to_type(
         &self,
         path: &ast::QualifiedPath,
-    ) -> Result<TypeId, CompileError> {
+    ) -> Result<ir::TypeId, CompileError> {
         // Start resolution from the current module context
         let segments: Vec<_> = path.segments().iter().map(|s| s.to_string()).collect();
 
@@ -260,7 +261,7 @@ impl Compiler {
                 .module_symbol_maps
                 .get(&self.symbol_context.current_module)
                 .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: TypeId::new(type_name.to_string()),
+                    attempted_item: ir::TypeId::new(type_name.to_string()),
                     symbol: InternedSymbol::from_text(type_name),
                 })?;
 
@@ -269,11 +270,11 @@ impl Compiler {
                 .get(type_name)
                 .or_else(|| current_module_map.imported_symbols.get(type_name))
                 .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: TypeId::new(type_name.clone()).into(),
+                    attempted_item: ir::TypeId::new(type_name.clone()).into(),
                     symbol: InternedSymbol::from_text(type_name),
                 })?;
 
-            return Ok(TypeId::new(type_item_id.path.clone()));
+            return Ok(ir::TypeId::new(type_item_id.path.clone()));
         }
 
         // Complex case: multi-segment path - walk through module hierarchy
@@ -285,7 +286,7 @@ impl Compiler {
                 .module_symbol_maps
                 .get(&current_module_id)
                 .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: TypeId::new(segment.to_string()),
+                    attempted_item: ir::TypeId::new(segment.to_string()),
                     symbol: InternedSymbol::from_text(segment),
                 })?;
 
@@ -294,45 +295,52 @@ impl Compiler {
                 .get_local_module(segment)
                 .or_else(|| {
                     module_map.get_imported_symbol(segment).and_then(|id| {
-                        if id.kind == ItemKind::Module { Some(id) } else { None }
+                        if id.kind == ir::ItemKind::Module {
+                            Some(id)
+                        } else {
+                            None
+                        }
                     })
                 })
                 .ok_or_else(|| CompileError::UnresolvedModule {
-                    attempted_item: ModuleId::new(format!("{}::{}", current_module_id.id.path, segment)),
+                    attempted_item: ir::ModuleId::new(format!(
+                        "{}::{}",
+                        current_module_id.id.path, segment
+                    )),
                     symbol: InternedSymbol::from_text(segment),
                 })?;
 
-            current_module_id = ModuleId::new(module_item_id.path.clone());
+            current_module_id = ir::ModuleId::new(module_item_id.path.clone());
         }
 
         // Now look for the type in the final target module
         let type_name = &segments[segments.len() - 1];
-        let target_module_map = self
-            .module_symbol_maps
-            .get(&current_module_id)
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: TypeId::new(type_name.to_string()),
-                symbol: InternedSymbol::from_text(type_name),
-            })?;
+        let target_module_map =
+            self.module_symbol_maps
+                .get(&current_module_id)
+                .ok_or_else(|| CompileError::UnresolvedType {
+                    attempted_item: ir::TypeId::new(type_name.to_string()),
+                    symbol: InternedSymbol::from_text(type_name),
+                })?;
 
         let type_item_id = target_module_map
             .local_symbols
             .get(type_name)
             .or_else(|| target_module_map.imported_symbols.get(type_name))
-            .filter(|id| id.kind == ItemKind::Type) // Ensure it's actually a type
+            .filter(|id| id.kind == ir::ItemKind::Type) // Ensure it's actually a type
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: TypeId::new(type_name.clone()),
+                attempted_item: ir::TypeId::new(type_name.clone()),
                 symbol: InternedSymbol::from_text(type_name),
             })?;
 
-        Ok(TypeId::new(type_item_id.path.clone()))
+        Ok(ir::TypeId::new(type_item_id.path.clone()))
     }
 
     /// Resolve qualified path to PredicateId using proper scoped resolution
     fn resolve_qualified_path_to_predicate(
         &self,
         path: &ast::QualifiedPath,
-    ) -> Result<PredicateId, CompileError> {
+    ) -> Result<ir::PredicateId, CompileError> {
         // Start resolution from the current module context
         let segments: Vec<_> = path.segments().iter().map(|s| s.to_string()).collect();
 
@@ -343,7 +351,7 @@ impl Compiler {
                 .module_symbol_maps
                 .get(&self.symbol_context.current_module)
                 .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: PredicateId::new(predicate_name.to_string()),
+                    attempted_item: ir::PredicateId::new(predicate_name.to_string()),
                     symbol: InternedSymbol::from_text(predicate_name),
                 })?;
 
@@ -352,11 +360,11 @@ impl Compiler {
                 .get(predicate_name)
                 .or_else(|| current_module_map.imported_symbols.get(predicate_name))
                 .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: PredicateId::new(predicate_name.clone()).into(),
+                    attempted_item: ir::PredicateId::new(predicate_name.clone()).into(),
                     symbol: InternedSymbol::from_text(predicate_name),
                 })?;
 
-            return Ok(PredicateId::new(predicate_item_id.path.clone()));
+            return Ok(ir::PredicateId::new(predicate_item_id.path.clone()));
         }
 
         // Complex case: multi-segment path - walk through module hierarchy
@@ -368,7 +376,7 @@ impl Compiler {
                 .module_symbol_maps
                 .get(&current_module_id)
                 .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: PredicateId::new(segment.to_string()),
+                    attempted_item: ir::PredicateId::new(segment.to_string()),
                     symbol: InternedSymbol::from_text(segment),
                 })?;
 
@@ -377,12 +385,12 @@ impl Compiler {
                 .get(segment)
                 .or_else(|| module_map.imported_symbols.get(segment))
                 .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: PredicateId::new(segment.clone()).into(),
+                    attempted_item: ir::PredicateId::new(segment.clone()).into(),
                     symbol: InternedSymbol::from_text(segment),
                 })?;
 
             // Update current module for next iteration
-            current_module_id = ModuleId::new(next_item_id.path.clone());
+            current_module_id = ir::ModuleId::new(next_item_id.path.clone());
         }
 
         // Now resolve the final segment in the target module
@@ -391,7 +399,7 @@ impl Compiler {
             self.module_symbol_maps
                 .get(&current_module_id)
                 .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: PredicateId::new(final_segment.to_string()),
+                    attempted_item: ir::PredicateId::new(final_segment.to_string()),
                     symbol: InternedSymbol::from_text(final_segment),
                 })?;
 
@@ -400,11 +408,11 @@ impl Compiler {
             .get(final_segment)
             .or_else(|| final_module_map.imported_symbols.get(final_segment))
             .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: PredicateId::new(final_segment.clone()).into(),
+                attempted_item: ir::PredicateId::new(final_segment.clone()).into(),
                 symbol: InternedSymbol::from_text(final_segment),
             })?;
 
-        Ok(PredicateId::new(predicate_item_id.path.clone()))
+        Ok(ir::PredicateId::new(predicate_item_id.path.clone()))
     }
 
     // TODO: Add remaining compilation methods for predicates, goals, terms, patterns, etc.
@@ -415,7 +423,7 @@ impl Compiler {
     fn compile_predicate_body(
         &mut self,
         predicate: &ast::PredicateDefinition,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         // Look up the predicate in the current module's symbol map
         let predicate_name = predicate.name.to_string();
@@ -423,7 +431,7 @@ impl Compiler {
             .module_symbol_maps
             .get(&self.symbol_context.current_module)
             .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: PredicateId::new(predicate.name.to_string()),
+                attempted_item: ir::PredicateId::new(predicate.name.to_string()),
                 symbol: predicate.name.clone(),
             })?;
 
@@ -432,12 +440,12 @@ impl Compiler {
             .get(&predicate_name)
             .or_else(|| current_module_map.imported_symbols.get(&predicate_name))
             .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: PredicateId::new(predicate_name.clone()).into(),
+                attempted_item: ir::PredicateId::new(predicate_name.clone()).into(),
                 symbol: predicate.name.clone(),
             })?;
 
         // Convert ItemId to PredicateId (we know it's a predicate from context)
-        let predicate_id = PredicateId::new(predicate_item_id.path.clone());
+        let predicate_id = ir::PredicateId::new(predicate_item_id.path.clone());
 
         // Compile parameters
         let mut parameters = vec![];
@@ -448,7 +456,7 @@ impl Compiler {
                 None
             };
 
-            parameters.push(Parameter {
+            parameters.push(ir::Parameter {
                 name: param.name.clone(),
                 type_annotation,
             });
@@ -462,18 +470,18 @@ impl Compiler {
 
         // Update the predicate in the registry
         let registry = ir_program.registry_mut();
-        let updated_predicate = Predicate {
+        let updated_predicate = ir::Predicate {
             id: predicate_id,
             parameters,
-            body: StructuralGoal::from_vec(body),
+            body: ir::StructuralGoal::from_vec(body),
             kind: match predicate.predicate_kind {
-                ast::PredicateKind::Relation => PredicateKind::Relation,
-                ast::PredicateKind::Macro => PredicateKind::Macro,
+                ast::PredicateKind::Relation => ir::PredicateKind::Relation,
+                ast::PredicateKind::Macro => ir::PredicateKind::Macro,
             },
             visibility: self.convert_visibility(&predicate.visibility)?,
         };
 
-        registry.replace_item(Item::Predicate(updated_predicate));
+        registry.replace_item(ir::Item::Predicate(updated_predicate));
 
         Ok(())
     }
@@ -482,18 +490,18 @@ impl Compiler {
     fn compile_impl_body(
         &mut self,
         impl_block: &ast::ImplBlock,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         // Impl blocks are treated as modules containing predicates
         let impl_module_name = impl_block.type_name.to_string();
-        
+
         // Push impl module context
         self.module_path_stack.push(impl_module_name.clone());
         let old_current = self.symbol_context.current_module.clone();
-        
+
         // Find the impl module ID that was created during symbol collection
         let module_path = self.resolve_item_path(&impl_module_name);
-        let module_id = ModuleId::new(module_path);
+        let module_id = ir::ModuleId::new(module_path);
         self.symbol_context.current_module = module_id;
 
         // Compile predicate bodies
@@ -512,36 +520,36 @@ impl Compiler {
     fn compile_type_annotation(
         &self,
         annotation: &crate::interpreter::metaprogramming::TypeAnnotation,
-    ) -> Result<TypeAnnotation, CompileError> {
+    ) -> Result<ir::TypeAnnotation, CompileError> {
         use crate::interpreter::metaprogramming::TypeAnnotation as AstTypeAnnotation;
         match annotation {
-            AstTypeAnnotation::Int => Ok(TypeAnnotation::Int),
-            AstTypeAnnotation::String => Ok(TypeAnnotation::String),
-            AstTypeAnnotation::Bool => Ok(TypeAnnotation::Bool),
-            AstTypeAnnotation::Relation(arity) => Ok(TypeAnnotation::Relation(*arity)),
+            AstTypeAnnotation::Int => Ok(ir::TypeAnnotation::Int),
+            AstTypeAnnotation::String => Ok(ir::TypeAnnotation::String),
+            AstTypeAnnotation::Bool => Ok(ir::TypeAnnotation::Bool),
+            AstTypeAnnotation::Relation(arity) => Ok(ir::TypeAnnotation::Relation(*arity)),
             AstTypeAnnotation::Custom(qualified_path) => {
                 let type_id = self.resolve_qualified_path_to_type(qualified_path)?;
-                Ok(TypeAnnotation::Custom(type_id))
+                Ok(ir::TypeAnnotation::Custom(type_id))
             }
         }
     }
 
     /// Compile an AST goal to an IR goal
-    fn compile_goal(&mut self, goal: &ast::Goal) -> Result<Goal, CompileError> {
+    fn compile_goal(&mut self, goal: &ast::Goal) -> Result<ir::Goal, CompileError> {
         match goal {
             ast::Goal::Equality(left, right, _span) => {
                 let left_term = self.compile_term(left)?;
                 let right_term = self.compile_term(right)?;
-                Ok(Goal::Equality(left_term, right_term))
+                Ok(ir::Goal::Equality(left_term, right_term))
             }
 
             ast::Goal::Disequality(left, right, _span) => {
                 let left_term = self.compile_term(left)?;
                 let right_term = self.compile_term(right)?;
-                Ok(Goal::Disequality(left_term, right_term))
+                Ok(ir::Goal::Disequality(left_term, right_term))
             }
 
-            ast::Goal::BooleanLiteral(value, _span) => Ok(Goal::Boolean(*value)),
+            ast::Goal::BooleanLiteral(value, _span) => Ok(ir::Goal::Boolean(*value)),
 
             ast::Goal::RelationCall(relation_call, _span) => {
                 self.compile_relation_call(relation_call)
@@ -552,7 +560,7 @@ impl Compiler {
                 for goal in conjunction.body.iter() {
                     goals.push(self.compile_goal(goal)?);
                 }
-                Ok(Goal::Conjunction(StructuralGoal::from_vec(goals)))
+                Ok(ir::Goal::Conjunction(ir::StructuralGoal::from_vec(goals)))
             }
 
             ast::Goal::Disjunction(disjunction, _span) => {
@@ -560,7 +568,7 @@ impl Compiler {
                 for goal in disjunction.body.iter() {
                     goals.push(self.compile_goal(goal)?);
                 }
-                Ok(Goal::Disjunction(StructuralGoal::from_vec(goals)))
+                Ok(ir::Goal::Disjunction(ir::StructuralGoal::from_vec(goals)))
             }
 
             ast::Goal::Fresh(fresh_vars, _span) => self.compile_fresh_variables(fresh_vars),
@@ -581,7 +589,7 @@ impl Compiler {
                 if goals.len() == 1 {
                     Ok(goals.into_iter().next().unwrap())
                 } else {
-                    Ok(Goal::Conjunction(StructuralGoal::from_vec(goals)))
+                    Ok(ir::Goal::Conjunction(ir::StructuralGoal::from_vec(goals)))
                 }
             }
 
@@ -598,24 +606,24 @@ impl Compiler {
     }
 
     /// Compile an AST term to an IR term
-    fn compile_term(&self, term: &ast::Term) -> Result<Term, CompileError> {
+    fn compile_term(&self, term: &ast::Term) -> Result<ir::Term, CompileError> {
         match term {
-            ast::Term::Variable(name) => Ok(Term::Variable(name.clone())),
+            ast::Term::Variable(name) => Ok(ir::Term::Variable(name.clone())),
 
-            ast::Term::Wildcard(_span) => Ok(Term::Wildcard),
+            ast::Term::Wildcard(_span) => Ok(ir::Term::Wildcard),
 
             ast::Term::Literal(literal, _span) => {
                 let ir_literal = match literal {
                     ast::Literal::Number(value) => {
                         // Try to parse as integer, default to 0 if parsing fails
                         let int_value = value.parse::<i64>().unwrap_or(0);
-                        Literal::Integer(int_value)
+                        ir::Literal::Integer(int_value)
                     }
-                    ast::Literal::String(value) => Literal::String(value.clone().into()),
-                    ast::Literal::Boolean(value) => Literal::Boolean(*value),
-                    ast::Literal::Char(value) => Literal::Char(*value),
+                    ast::Literal::String(value) => ir::Literal::String(value.clone().into()),
+                    ast::Literal::Boolean(value) => ir::Literal::Boolean(*value),
+                    ast::Literal::Char(value) => ir::Literal::Char(*value),
                 };
-                Ok(Term::Literal(ir_literal))
+                Ok(ir::Term::Literal(ir_literal))
             }
 
             ast::Term::List(list, _span) => {
@@ -630,7 +638,7 @@ impl Compiler {
                     None
                 };
 
-                Ok(Term::List(List { elements, tail }))
+                Ok(ir::Term::List(ir::List { elements, tail }))
             }
 
             ast::Term::NamedStruct(struct_construction, _span) => {
@@ -647,7 +655,7 @@ impl Compiler {
 
             ast::Term::Interpolation(meta_expr, _span) => {
                 let compiled_meta = self.compile_meta_expression(meta_expr)?;
-                Ok(Term::MetaInterpolation(compiled_meta))
+                Ok(ir::Term::MetaInterpolation(compiled_meta))
             }
 
             ast::Term::Parenthesized(inner_term, _span) => {
@@ -663,7 +671,7 @@ impl Compiler {
     fn compile_relation_call(
         &self,
         relation_call: &ast::RelationCall,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<ir::Goal, CompileError> {
         // Convert RelationName to QualifiedPath
         let qualified_path = match &relation_call.name {
             ast::RelationName::Simple(name) => ast::QualifiedPath::Relative(vec![name.clone()]),
@@ -726,7 +734,7 @@ impl Compiler {
             }
         }
 
-        Ok(Goal::PredicateCall(PredicateCall {
+        Ok(ir::Goal::PredicateCall(ir::PredicateCall {
             predicate: predicate_id,
             arguments,
         }))
@@ -735,7 +743,7 @@ impl Compiler {
     fn compile_fresh_variables(
         &mut self,
         fresh_vars: &ast::FreshVariables,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<ir::Goal, CompileError> {
         let variables = fresh_vars.vars.clone();
 
         // Compile the body goals
@@ -744,13 +752,16 @@ impl Compiler {
             body.push(self.compile_goal(goal)?);
         }
 
-        Ok(Goal::Fresh(Fresh { variables, body: StructuralGoal::from_vec(body) }))
+        Ok(ir::Goal::Fresh(ir::Fresh {
+            variables,
+            body: ir::StructuralGoal::from_vec(body),
+        }))
     }
 
     fn compile_let_declaration(
         &self,
         let_decl: &ast::LetDeclaration,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<ir::Goal, CompileError> {
         let variable = let_decl.var_name.clone();
 
         let value = if let Some(term) = &let_decl.value {
@@ -764,17 +775,17 @@ impl Compiler {
         // For now, create an empty body
         let body = Vec::new();
 
-        Ok(Goal::Let(Let {
+        Ok(ir::Goal::Let(ir::Let {
             variable,
             value,
-            body: StructuralGoal::from_vec(body),
+            body: ir::StructuralGoal::from_vec(body),
         }))
     }
 
     fn compile_pattern_match(
         &mut self,
         pattern_match: &ast::PatternMatching,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<ir::Goal, CompileError> {
         let term = self.compile_term(&pattern_match.term)?;
 
         let mut arms = Vec::new();
@@ -784,13 +795,19 @@ impl Compiler {
             for goal in arm.body.iter() {
                 body.push(self.compile_goal(goal)?);
             }
-            arms.push(PatternArm { pattern, body: StructuralGoal::from_vec(body) });
+            arms.push(ir::PatternArm {
+                pattern,
+                body: ir::StructuralGoal::from_vec(body),
+            });
         }
 
-        Ok(Goal::PatternMatch(PatternMatch { term, arms }))
+        Ok(ir::Goal::PatternMatch(ir::PatternMatch { term, arms }))
     }
 
-    fn compile_method_call(&self, _method_call: &ast::MethodCall) -> Result<Goal, CompileError> {
+    fn compile_method_call(
+        &self,
+        _method_call: &ast::MethodCall,
+    ) -> Result<ir::Goal, CompileError> {
         // Method calls are more complex and may need transformation
         // to regular predicate calls. For now, treat as unimplemented
         Err(CompileError::SemanticError {
@@ -802,7 +819,7 @@ impl Compiler {
     fn compile_named_struct_construction(
         &self,
         struct_construction: &ast::NamedStructConstruction,
-    ) -> Result<Term, CompileError> {
+    ) -> Result<ir::Term, CompileError> {
         // For named struct, the name is an InternedSymbol, need to convert to path
         let qualified_path = ast::QualifiedPath::Relative(vec![struct_construction.name.clone()]);
         let type_id = self.resolve_qualified_path_to_type(&qualified_path)?;
@@ -810,22 +827,22 @@ impl Compiler {
         let mut ir_fields = Vec::new();
         for field in &struct_construction.fields {
             let value = self.compile_term(&field.value)?;
-            ir_fields.push(NamedFieldConstruction {
+            ir_fields.push(ir::NamedFieldConstruction {
                 name: field.name.clone(),
                 value,
             });
         }
 
-        Ok(Term::Struct(StructConstruction {
+        Ok(ir::Term::Struct(ir::StructConstruction {
             type_ref: type_id,
-            fields: StructConstructionFields::Named(ir_fields),
+            fields: ir::StructConstructionFields::Named(ir_fields),
         }))
     }
 
     fn compile_tuple_struct_construction(
         &self,
         struct_construction: &ast::TupleStructConstruction,
-    ) -> Result<Term, CompileError> {
+    ) -> Result<ir::Term, CompileError> {
         let type_id = self.resolve_qualified_path_to_type(&struct_construction.name)?;
 
         let mut ir_fields = Vec::new();
@@ -833,16 +850,16 @@ impl Compiler {
             ir_fields.push(self.compile_term(arg)?);
         }
 
-        Ok(Term::Struct(StructConstruction {
+        Ok(ir::Term::Struct(ir::StructConstruction {
             type_ref: type_id,
-            fields: StructConstructionFields::Tuple(ir_fields),
+            fields: ir::StructConstructionFields::Tuple(ir_fields),
         }))
     }
 
     fn compile_enum_variant_construction(
         &self,
         enum_construction: &ast::EnumVariantConstruction,
-    ) -> Result<Term, CompileError> {
+    ) -> Result<ir::Term, CompileError> {
         // For enum construction, the enum_name is an InternedSymbol, need to convert to path
         let qualified_path =
             ast::QualifiedPath::Relative(vec![enum_construction.enum_name.clone()]);
@@ -850,30 +867,30 @@ impl Compiler {
         let variant_name = enum_construction.variant_name.clone();
 
         let kind = match &enum_construction.kind {
-            ast::EnumVariantConstructionKind::Unit => EnumVariantConstructionKind::Unit,
+            ast::EnumVariantConstructionKind::Unit => ir::EnumVariantConstructionKind::Unit,
 
             ast::EnumVariantConstructionKind::Tuple(tuple_fields) => {
                 let mut ir_fields = Vec::new();
                 for field in tuple_fields {
                     ir_fields.push(self.compile_term(field)?);
                 }
-                EnumVariantConstructionKind::Tuple(ir_fields)
+                ir::EnumVariantConstructionKind::Tuple(ir_fields)
             }
 
             ast::EnumVariantConstructionKind::Named(named_fields) => {
                 let mut ir_fields = Vec::new();
                 for field in named_fields {
                     let value = self.compile_term(&field.value)?;
-                    ir_fields.push(NamedFieldConstruction {
+                    ir_fields.push(ir::NamedFieldConstruction {
                         name: field.name.clone(),
                         value,
                     });
                 }
-                EnumVariantConstructionKind::Named(ir_fields)
+                ir::EnumVariantConstructionKind::Named(ir_fields)
             }
         };
 
-        Ok(Term::EnumVariant(EnumVariantConstruction {
+        Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
             enum_ref,
             variant_name,
             kind,
@@ -881,24 +898,24 @@ impl Compiler {
     }
 
     /// Compile pattern from AST to IR
-    fn compile_pattern(&self, pattern: &ast::Pattern) -> Result<Pattern, CompileError> {
+    fn compile_pattern(&self, pattern: &ast::Pattern) -> Result<ir::Pattern, CompileError> {
         match pattern {
-            ast::Pattern::Variable(name) => Ok(Pattern::Variable(name.clone())),
+            ast::Pattern::Variable(name) => Ok(ir::Pattern::Variable(name.clone())),
 
-            ast::Pattern::Wildcard => Ok(Pattern::Wildcard),
+            ast::Pattern::Wildcard => Ok(ir::Pattern::Wildcard),
 
             ast::Pattern::Literal(literal) => {
                 let ir_literal = match literal {
                     ast::Literal::Number(value) => {
                         // Try to parse as integer, default to 0 if parsing fails
                         let int_value = value.parse::<i64>().unwrap_or(0);
-                        Literal::Integer(int_value)
+                        ir::Literal::Integer(int_value)
                     }
-                    ast::Literal::String(value) => Literal::String(value.clone().into()),
-                    ast::Literal::Boolean(value) => Literal::Boolean(*value),
-                    ast::Literal::Char(value) => Literal::Char(*value),
+                    ast::Literal::String(value) => ir::Literal::String(value.clone().into()),
+                    ast::Literal::Boolean(value) => ir::Literal::Boolean(*value),
+                    ast::Literal::Char(value) => ir::Literal::Char(*value),
                 };
-                Ok(Pattern::Literal(ir_literal))
+                Ok(ir::Pattern::Literal(ir_literal))
             }
 
             ast::Pattern::List(list_pattern) => {
@@ -913,7 +930,7 @@ impl Compiler {
                     None
                 };
 
-                Ok(Pattern::List(ListPattern { elements, tail }))
+                Ok(ir::Pattern::List(ir::ListPattern { elements, tail }))
             }
 
             ast::Pattern::NamedStruct(struct_pattern) => {
@@ -934,7 +951,7 @@ impl Compiler {
     fn compile_named_struct_pattern(
         &self,
         struct_pattern: &ast::NamedStructPattern,
-    ) -> Result<Pattern, CompileError> {
+    ) -> Result<ir::Pattern, CompileError> {
         // For named struct pattern, the name is an InternedSymbol, need to convert to path
         let qualified_path = ast::QualifiedPath::Relative(vec![struct_pattern.name.clone()]);
         let type_id = self.resolve_qualified_path_to_type(&qualified_path)?;
@@ -942,15 +959,15 @@ impl Compiler {
         let mut ir_patterns = Vec::new();
         for field_pattern in &struct_pattern.fields {
             let pattern = self.compile_pattern(&field_pattern.pattern)?;
-            ir_patterns.push(NamedFieldPattern {
+            ir_patterns.push(ir::NamedFieldPattern {
                 name: field_pattern.name.clone(),
                 pattern,
             });
         }
 
-        Ok(Pattern::Struct(StructPattern {
+        Ok(ir::Pattern::Struct(ir::StructPattern {
             type_ref: type_id,
-            fields: StructPatternFields::Named(ir_patterns),
+            fields: ir::StructPatternFields::Named(ir_patterns),
         }))
     }
 
@@ -958,7 +975,7 @@ impl Compiler {
     fn compile_tuple_struct_pattern(
         &self,
         struct_pattern: &ast::TupleStructPattern,
-    ) -> Result<Pattern, CompileError> {
+    ) -> Result<ir::Pattern, CompileError> {
         // For tuple struct pattern, the name is an InternedSymbol, need to convert to path
         let qualified_path = ast::QualifiedPath::Relative(vec![struct_pattern.name.clone()]);
         let type_id = self.resolve_qualified_path_to_type(&qualified_path)?;
@@ -968,9 +985,9 @@ impl Compiler {
             ir_patterns.push(self.compile_pattern(pattern)?);
         }
 
-        Ok(Pattern::Struct(StructPattern {
+        Ok(ir::Pattern::Struct(ir::StructPattern {
             type_ref: type_id,
-            fields: StructPatternFields::Tuple(ir_patterns),
+            fields: ir::StructPatternFields::Tuple(ir_patterns),
         }))
     }
 
@@ -978,37 +995,37 @@ impl Compiler {
     fn compile_enum_variant_pattern(
         &self,
         enum_pattern: &ast::EnumVariantPattern,
-    ) -> Result<Pattern, CompileError> {
+    ) -> Result<ir::Pattern, CompileError> {
         // For enum variant pattern, the enum_name is an InternedSymbol, need to convert to path
         let qualified_path = ast::QualifiedPath::Relative(vec![enum_pattern.enum_name.clone()]);
         let enum_ref = self.resolve_qualified_path_to_type(&qualified_path)?;
         let variant_name = enum_pattern.variant_name.clone();
 
         let kind = match &enum_pattern.kind {
-            ast::EnumVariantPatternKind::Unit => EnumVariantPatternKind::Unit,
+            ast::EnumVariantPatternKind::Unit => ir::EnumVariantPatternKind::Unit,
 
             ast::EnumVariantPatternKind::Tuple(tuple_patterns) => {
                 let mut ir_patterns = Vec::new();
                 for pattern in tuple_patterns {
                     ir_patterns.push(self.compile_pattern(pattern)?);
                 }
-                EnumVariantPatternKind::Tuple(ir_patterns)
+                ir::EnumVariantPatternKind::Tuple(ir_patterns)
             }
 
             ast::EnumVariantPatternKind::Named(named_patterns) => {
                 let mut ir_patterns = Vec::new();
                 for field_pattern in named_patterns {
                     let pattern = self.compile_pattern(&field_pattern.pattern)?;
-                    ir_patterns.push(NamedFieldPattern {
+                    ir_patterns.push(ir::NamedFieldPattern {
                         name: field_pattern.name.clone(),
                         pattern,
                     });
                 }
-                EnumVariantPatternKind::Named(ir_patterns)
+                ir::EnumVariantPatternKind::Named(ir_patterns)
             }
         };
 
-        Ok(Pattern::EnumVariant(EnumVariantPattern {
+        Ok(ir::Pattern::EnumVariant(ir::EnumVariantPattern {
             enum_ref,
             variant_name,
             kind,
@@ -1019,24 +1036,24 @@ impl Compiler {
     fn compile_meta_expression(
         &self,
         expr: &crate::interpreter::metaprogramming::MetaExpression,
-    ) -> Result<MetaExpression, CompileError> {
+    ) -> Result<ir::MetaExpression, CompileError> {
         use crate::interpreter::metaprogramming::MetaExpression as AstMetaExpression;
 
         match expr {
             AstMetaExpression::Variable(name, _span) => {
                 // Convert string to InternedSymbol
                 let symbol = InternedSymbol::from_text(name);
-                Ok(MetaExpression::Variable(symbol))
+                Ok(ir::MetaExpression::Variable(symbol))
             }
             AstMetaExpression::Literal(value, _span) => {
                 let ir_value = self.compile_meta_value(value)?;
-                Ok(MetaExpression::Literal(ir_value))
+                Ok(ir::MetaExpression::Literal(ir_value))
             }
             AstMetaExpression::BinaryOp(op, left, right, _span) => {
                 let ir_op = self.compile_meta_binary_op(op)?;
                 let ir_left = Box::new(self.compile_meta_expression(left)?);
                 let ir_right = Box::new(self.compile_meta_expression(right)?);
-                Ok(MetaExpression::BinaryOp(ir_op, ir_left, ir_right))
+                Ok(ir::MetaExpression::BinaryOp(ir_op, ir_left, ir_right))
             }
         }
     }
@@ -1045,14 +1062,14 @@ impl Compiler {
     fn compile_meta_statement(
         &mut self,
         meta_statement: &crate::interpreter::metaprogramming::MetaStatement,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<ir::Goal, CompileError> {
         use crate::interpreter::metaprogramming::MetaStatement;
 
         match meta_statement {
             MetaStatement::Let(let_stmt) => {
                 let expression = self.compile_meta_expression(&let_stmt.expression)?;
                 let variable_type = self.compile_type_annotation(&let_stmt.variable_type)?;
-                Ok(Goal::MetaLet(MetaLet {
+                Ok(ir::Goal::MetaLet(ir::MetaLet {
                     variable: let_stmt.variable.clone(),
                     variable_type,
                     expression,
@@ -1094,13 +1111,14 @@ impl Compiler {
                     None
                 };
 
-                Ok(Goal::MetaIf(MetaIf {
+                Ok(ir::Goal::MetaIf(ir::MetaIf {
                     condition: ir_condition,
-                    then_body: StructuralGoal::from_vec(ir_then_body),
-                    else_ifs: ir_else_ifs.into_iter()
-                        .map(|(cond, body)| (cond, StructuralGoal::from_vec(body)))
+                    then_body: ir::StructuralGoal::from_vec(ir_then_body),
+                    else_ifs: ir_else_ifs
+                        .into_iter()
+                        .map(|(cond, body)| (cond, ir::StructuralGoal::from_vec(body)))
                         .collect(),
-                    else_body: ir_else_body.map(StructuralGoal::from_vec),
+                    else_body: ir_else_body.map(ir::StructuralGoal::from_vec),
                 }))
             }
             MetaStatement::For {
@@ -1118,12 +1136,12 @@ impl Compiler {
                     ir_body.push(self.compile_goal(goal)?);
                 }
 
-                Ok(Goal::MetaFor(MetaFor {
+                Ok(ir::Goal::MetaFor(ir::MetaFor {
                     variable: variable.clone(),
                     variable_type: ir_variable_type,
                     start: start_expr,
                     end: end_expr,
-                    body: StructuralGoal::from_vec(ir_body),
+                    body: ir::StructuralGoal::from_vec(ir_body),
                 }))
             }
         }
@@ -1133,13 +1151,13 @@ impl Compiler {
     fn compile_meta_value(
         &self,
         value: &crate::interpreter::metaprogramming::MetaValue,
-    ) -> Result<MetaValue, CompileError> {
+    ) -> Result<ir::MetaValue, CompileError> {
         use crate::interpreter::metaprogramming::MetaValue as AstMetaValue;
 
         match value {
-            AstMetaValue::Integer(i) => Ok(MetaValue::Integer(*i)),
-            AstMetaValue::String(s) => Ok(MetaValue::String(s.as_str().into())),
-            AstMetaValue::Boolean(b) => Ok(MetaValue::Boolean(*b)),
+            AstMetaValue::Integer(i) => Ok(ir::MetaValue::Integer(*i)),
+            AstMetaValue::String(s) => Ok(ir::MetaValue::String(s.as_str().into())),
+            AstMetaValue::Boolean(b) => Ok(ir::MetaValue::Boolean(*b)),
         }
     }
 
@@ -1147,22 +1165,22 @@ impl Compiler {
     fn compile_meta_binary_op(
         &self,
         op: &crate::interpreter::metaprogramming::MetaBinaryOp,
-    ) -> Result<MetaBinaryOp, CompileError> {
+    ) -> Result<ir::MetaBinaryOp, CompileError> {
         use crate::interpreter::metaprogramming::MetaBinaryOp as AstMetaBinaryOp;
 
         match op {
-            AstMetaBinaryOp::Add => Ok(MetaBinaryOp::Add),
-            AstMetaBinaryOp::Subtract => Ok(MetaBinaryOp::Subtract),
-            AstMetaBinaryOp::Multiply => Ok(MetaBinaryOp::Multiply),
-            AstMetaBinaryOp::Divide => Ok(MetaBinaryOp::Divide),
-            AstMetaBinaryOp::LessThan => Ok(MetaBinaryOp::LessThan),
-            AstMetaBinaryOp::LessEqual => Ok(MetaBinaryOp::LessEqual),
-            AstMetaBinaryOp::GreaterThan => Ok(MetaBinaryOp::GreaterThan),
-            AstMetaBinaryOp::GreaterEqual => Ok(MetaBinaryOp::GreaterEqual),
-            AstMetaBinaryOp::Equal => Ok(MetaBinaryOp::Equal),
-            AstMetaBinaryOp::NotEqual => Ok(MetaBinaryOp::NotEqual),
-            AstMetaBinaryOp::And => Ok(MetaBinaryOp::And),
-            AstMetaBinaryOp::Or => Ok(MetaBinaryOp::Or),
+            AstMetaBinaryOp::Add => Ok(ir::MetaBinaryOp::Add),
+            AstMetaBinaryOp::Subtract => Ok(ir::MetaBinaryOp::Subtract),
+            AstMetaBinaryOp::Multiply => Ok(ir::MetaBinaryOp::Multiply),
+            AstMetaBinaryOp::Divide => Ok(ir::MetaBinaryOp::Divide),
+            AstMetaBinaryOp::LessThan => Ok(ir::MetaBinaryOp::LessThan),
+            AstMetaBinaryOp::LessEqual => Ok(ir::MetaBinaryOp::LessEqual),
+            AstMetaBinaryOp::GreaterThan => Ok(ir::MetaBinaryOp::GreaterThan),
+            AstMetaBinaryOp::GreaterEqual => Ok(ir::MetaBinaryOp::GreaterEqual),
+            AstMetaBinaryOp::Equal => Ok(ir::MetaBinaryOp::Equal),
+            AstMetaBinaryOp::NotEqual => Ok(ir::MetaBinaryOp::NotEqual),
+            AstMetaBinaryOp::And => Ok(ir::MetaBinaryOp::And),
+            AstMetaBinaryOp::Or => Ok(ir::MetaBinaryOp::Or),
         }
     }
 
@@ -1170,25 +1188,30 @@ impl Compiler {
     fn compile_constraint_block(
         &mut self,
         constraint_block: &ast::ConstraintBlock,
-    ) -> Result<Goal, CompileError> {
-        use crate::interpreter::constraint_domains::{ConstraintDomain, VariableInfo, VariableType};
-        
+    ) -> Result<ir::Goal, CompileError> {
+        use crate::interpreter::constraint_domains::{
+            ConstraintDomain, VariableInfo, VariableType,
+        };
+
         let domain_name = constraint_block.domain.as_str();
-        
+
         // Get the constraint domain
-        let domain = self.constraint_domains.get_domain(domain_name)
+        let domain = self
+            .constraint_domains
+            .get_domain(domain_name)
             .ok_or_else(|| CompileError::SemanticError {
                 message: format!("Unknown constraint domain: {}", domain_name),
                 symbol: InternedSymbol::from_text(domain_name),
             })?;
-        
+
         // Get list of unbound variables that this constraint needs
-        let unbound_variables = domain.get_unbound_variables(&constraint_block.body)
+        let unbound_variables = domain
+            .get_unbound_variables(&constraint_block.body)
             .map_err(|err| CompileError::SemanticError {
                 message: format!("Failed to get unbound variables for constraint: {}", err),
                 symbol: InternedSymbol::from_text(domain_name),
             })?;
-        
+
         // Look up variables in the current symbol context
         let mut resolved_variables = HashMap::new();
         for var_name in unbound_variables {
@@ -1200,15 +1223,16 @@ impl Compiler {
             };
             resolved_variables.insert(var_name, var_info);
         }
-        
+
         // Compile the constraint into an IR template
-        let template = domain.compile_ir_template(&constraint_block.body, resolved_variables)
+        let template = domain
+            .compile_ir_template(&constraint_block.body, resolved_variables)
             .map_err(|err| CompileError::SemanticError {
                 message: format!("Failed to compile constraint template: {}", err),
                 symbol: InternedSymbol::from_text(domain_name),
             })?;
-        
-        Ok(Goal::Constraint(ConstraintBlock {
+
+        Ok(ir::Goal::Constraint(ir::ConstraintBlock {
             domain: domain_name.into(),
             template,
         }))

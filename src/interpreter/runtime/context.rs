@@ -4,9 +4,9 @@
 //! converts it to runtime goals for the Proto-Vulcan engine.
 
 use crate::goal::{AnyGoal, Goal, GoalCast};
-use crate::interpreter::environment::Environment;
+use crate::interpreter::compiler::ir;
 use crate::interpreter::compiler::CompileError;
-use crate::interpreter::compiler::*;
+use crate::interpreter::environment::Environment;
 use crate::interpreter::metaprogramming::MetaValue;
 use crate::interpreter::parser::ast::SearchStrategy;
 use crate::interpreter::symbol_table::InternedSymbol;
@@ -74,7 +74,7 @@ impl VariableValue {
 /// with all symbol resolution already completed.
 pub struct ExecutionContext<'a> {
     /// The compiled IR program (immutable)
-    program: Rc<Program>,
+    program: Rc<ir::Program>,
 
     /// Environment for runtime context (builtins, module loading, etc.)
     environment: Rc<RefCell<Environment>>,
@@ -97,7 +97,7 @@ pub struct ExecutionContext<'a> {
 
 impl<'a> ExecutionContext<'a> {
     /// Create a new IR execution context
-    pub fn new(program: Rc<Program>, environment: Rc<RefCell<Environment>>) -> Self {
+    pub fn new(program: Rc<ir::Program>, environment: Rc<RefCell<Environment>>) -> Self {
         Self {
             program,
             environment,
@@ -110,10 +110,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR goal to a runtime goal
-    pub fn ir_goal_to_runtime(
-        &mut self,
-        ir_goal: &crate::interpreter::compiler::Goal,
-    ) -> Result<Goal, CompileError> {
+    pub fn ir_goal_to_runtime(&mut self, ir_goal: &ir::Goal) -> Result<Goal, CompileError> {
         // Add tracing if enabled
         if let Some(trace_config) = &self.trace_config {
             if trace_config.enabled {
@@ -123,24 +120,24 @@ impl<'a> ExecutionContext<'a> {
         }
 
         let result = match ir_goal {
-            crate::interpreter::compiler::Goal::Equality(left, right) => {
+            ir::Goal::Equality(left, right) => {
                 let left_term = self.ir_term_to_runtime(left)?;
                 let right_term = self.ir_term_to_runtime(right)?;
                 Ok(crate::relation::eq::eq(left_term, right_term).cast_into())
             }
-            crate::interpreter::compiler::Goal::Disequality(left, right) => {
+            ir::Goal::Disequality(left, right) => {
                 let left_term = self.ir_term_to_runtime(left)?;
                 let right_term = self.ir_term_to_runtime(right)?;
                 Ok(crate::relation::diseq::diseq(left_term, right_term).cast_into())
             }
-            crate::interpreter::compiler::Goal::Conjunction(goals) => {
+            ir::Goal::Conjunction(goals) => {
                 let mut runtime_goals = Vec::new();
                 for goal in goals.iter() {
                     runtime_goals.push(self.ir_goal_to_runtime(goal)?);
                 }
                 Ok(self.build_conjunction(runtime_goals))
             }
-            crate::interpreter::compiler::Goal::Disjunction(goals) => {
+            ir::Goal::Disjunction(goals) => {
                 let mut runtime_goals = Vec::new();
                 for goal in goals.iter() {
                     runtime_goals.push(self.ir_goal_to_runtime(goal)?);
@@ -151,35 +148,35 @@ impl<'a> ExecutionContext<'a> {
                     SearchStrategy::Dfs => Ok(self.create_dfs_disjunction(runtime_goals)),
                 }
             }
-            crate::interpreter::compiler::Goal::PredicateCall(predicate_call) => {
+            ir::Goal::PredicateCall(predicate_call) => {
                 self.ir_predicate_call_to_runtime(predicate_call)
             }
-            crate::interpreter::compiler::Goal::Fresh(fresh) => self.ir_fresh_to_runtime(fresh),
-            crate::interpreter::compiler::Goal::Let(let_binding) => self.ir_let_to_runtime(let_binding),
-            crate::interpreter::compiler::Goal::Boolean(value) => {
+            ir::Goal::Fresh(fresh) => self.ir_fresh_to_runtime(fresh),
+            ir::Goal::Let(let_binding) => self.ir_let_to_runtime(let_binding),
+            ir::Goal::Boolean(value) => {
                 if *value {
                     Ok(Goal::succeed())
                 } else {
                     Ok(Goal::fail())
                 }
             }
-            crate::interpreter::compiler::Goal::PatternMatch(pattern_match) => {
+            ir::Goal::PatternMatch(pattern_match) => {
                 self.ir_pattern_match_to_runtime(pattern_match)
             }
-            crate::interpreter::compiler::Goal::Constraint(constraint_block) => {
+            ir::Goal::Constraint(constraint_block) => {
                 self.ir_constraint_to_runtime(constraint_block)
             }
-            crate::interpreter::compiler::Goal::MetaLet(_meta_let) => {
+            ir::Goal::MetaLet(_meta_let) => {
                 // Meta constructs should be expanded before runtime execution
                 // For now, return success (true)
                 Ok(Goal::succeed())
             }
-            crate::interpreter::compiler::Goal::MetaIf(_meta_if) => {
+            ir::Goal::MetaIf(_meta_if) => {
                 // Meta constructs should be expanded before runtime execution
                 // For now, return success (true)
                 Ok(Goal::succeed())
             }
-            crate::interpreter::compiler::Goal::MetaFor(_meta_for) => {
+            ir::Goal::MetaFor(_meta_for) => {
                 // Meta constructs should be expanded before runtime execution
                 // For now, return success (true)
                 Ok(Goal::succeed())
@@ -198,12 +195,9 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR term to a runtime LTerm
-    pub fn ir_term_to_runtime(
-        &mut self,
-        ir_term: &crate::interpreter::compiler::Term,
-    ) -> Result<LTerm, CompileError> {
+    pub fn ir_term_to_runtime(&mut self, ir_term: &ir::Term) -> Result<LTerm, CompileError> {
         match ir_term {
-            crate::interpreter::compiler::Term::Variable(name) => {
+            ir::Term::Variable(name) => {
                 // Look up variable in current scopes
                 if let Some(var_value) = self.lookup_variable_value(name) {
                     if let Some(lterm) = var_value.to_lterm() {
@@ -223,16 +217,14 @@ impl<'a> ExecutionContext<'a> {
                 self.bind_var(name.clone(), fresh_var.clone());
                 Ok(fresh_var)
             }
-            crate::interpreter::compiler::Term::Wildcard => Ok(self.create_fresh_var()),
-            crate::interpreter::compiler::Term::Literal(literal) => self.ir_literal_to_runtime(literal),
-            crate::interpreter::compiler::Term::List(list) => self.ir_list_to_runtime(list),
-            crate::interpreter::compiler::Term::Struct(struct_construction) => {
-                self.ir_struct_to_runtime(struct_construction)
-            }
-            crate::interpreter::compiler::Term::EnumVariant(enum_construction) => {
+            ir::Term::Wildcard => Ok(self.create_fresh_var()),
+            ir::Term::Literal(literal) => self.ir_literal_to_runtime(literal),
+            ir::Term::List(list) => self.ir_list_to_runtime(list),
+            ir::Term::Struct(struct_construction) => self.ir_struct_to_runtime(struct_construction),
+            ir::Term::EnumVariant(enum_construction) => {
                 self.ir_enum_variant_to_runtime(enum_construction)
             }
-            crate::interpreter::compiler::Term::MetaInterpolation(_meta_expr) => {
+            ir::Term::MetaInterpolation(_meta_expr) => {
                 // Meta interpolation should be expanded before runtime execution
                 // For now, return a fresh variable as placeholder
                 Ok(self.create_fresh_var())
@@ -241,23 +233,17 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR literal to a runtime LTerm
-    fn ir_literal_to_runtime(
-        &self,
-        ir_literal: &crate::interpreter::compiler::Literal,
-    ) -> Result<LTerm, CompileError> {
+    fn ir_literal_to_runtime(&self, ir_literal: &ir::Literal) -> Result<LTerm, CompileError> {
         match ir_literal {
-            crate::interpreter::compiler::Literal::Boolean(b) => Ok(LTerm::from(*b)),
-            crate::interpreter::compiler::Literal::Integer(i) => Ok(LTerm::from(*i as isize)),
-            crate::interpreter::compiler::Literal::String(s) => Ok(LTerm::from(s.as_ref().to_string())),
-            crate::interpreter::compiler::Literal::Char(c) => Ok(LTerm::from(*c)),
+            ir::Literal::Boolean(b) => Ok(LTerm::from(*b)),
+            ir::Literal::Integer(i) => Ok(LTerm::from(*i as isize)),
+            ir::Literal::String(s) => Ok(LTerm::from(s.as_ref().to_string())),
+            ir::Literal::Char(c) => Ok(LTerm::from(*c)),
         }
     }
 
     /// Convert an IR list to a runtime LTerm
-    fn ir_list_to_runtime(
-        &mut self,
-        list: &crate::interpreter::compiler::List,
-    ) -> Result<LTerm, CompileError> {
+    fn ir_list_to_runtime(&mut self, list: &ir::List) -> Result<LTerm, CompileError> {
         let mut elements = Vec::new();
         for element in &list.elements {
             elements.push(self.ir_term_to_runtime(element)?);
@@ -279,7 +265,7 @@ impl<'a> ExecutionContext<'a> {
     /// Convert an IR struct construction to a runtime LTerm
     fn ir_struct_to_runtime(
         &mut self,
-        struct_construction: &crate::interpreter::compiler::StructConstruction,
+        struct_construction: &ir::StructConstruction,
     ) -> Result<LTerm, CompileError> {
         // Look up the struct definition
         let struct_def = self
@@ -292,7 +278,7 @@ impl<'a> ExecutionContext<'a> {
             })?;
 
         match &struct_construction.fields {
-            crate::interpreter::compiler::StructConstructionFields::Named(named_fields) => {
+            ir::StructConstructionFields::Named(named_fields) => {
                 // Create compound term with struct name as functor
                 let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
                 for field in named_fields {
@@ -301,7 +287,7 @@ impl<'a> ExecutionContext<'a> {
                 }
                 Ok(LTerm::from_vec(args))
             }
-            crate::interpreter::compiler::StructConstructionFields::Tuple(tuple_fields) => {
+            ir::StructConstructionFields::Tuple(tuple_fields) => {
                 // Create compound term with struct name as functor
                 let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
                 for field in tuple_fields {
@@ -316,7 +302,7 @@ impl<'a> ExecutionContext<'a> {
     /// Convert an IR enum variant construction to a runtime LTerm
     fn ir_enum_variant_to_runtime(
         &mut self,
-        enum_construction: &crate::interpreter::compiler::EnumVariantConstruction,
+        enum_construction: &ir::EnumVariantConstruction,
     ) -> Result<LTerm, CompileError> {
         // Look up the enum definition
         let _enum_def = self
@@ -329,11 +315,11 @@ impl<'a> ExecutionContext<'a> {
             })?;
 
         match &enum_construction.kind {
-            crate::interpreter::compiler::EnumVariantConstructionKind::Unit => {
+            ir::EnumVariantConstructionKind::Unit => {
                 // Create atom with variant name
                 Ok(LTerm::from(enum_construction.variant_name.to_string()))
             }
-            crate::interpreter::compiler::EnumVariantConstructionKind::Tuple(tuple_fields) => {
+            ir::EnumVariantConstructionKind::Tuple(tuple_fields) => {
                 // Create compound term with variant name as functor
                 let mut args = vec![LTerm::from(enum_construction.variant_name.to_string())];
                 for field in tuple_fields {
@@ -342,7 +328,7 @@ impl<'a> ExecutionContext<'a> {
                 }
                 Ok(LTerm::from_vec(args))
             }
-            crate::interpreter::compiler::EnumVariantConstructionKind::Named(named_fields) => {
+            ir::EnumVariantConstructionKind::Named(named_fields) => {
                 // Create compound term with variant name as functor
                 let mut args = vec![LTerm::from(enum_construction.variant_name.to_string())];
                 for field in named_fields {
@@ -357,7 +343,7 @@ impl<'a> ExecutionContext<'a> {
     /// Convert an IR predicate call to a runtime goal
     fn ir_predicate_call_to_runtime(
         &mut self,
-        predicate_call: &crate::interpreter::compiler::PredicateCall,
+        predicate_call: &ir::PredicateCall,
     ) -> Result<Goal, CompileError> {
         // Convert arguments first
         let mut runtime_args = Vec::new();
@@ -395,7 +381,7 @@ impl<'a> ExecutionContext<'a> {
             })?;
 
         let predicate = match predicate_item {
-            Item::Predicate(p) => p,
+            ir::Item::Predicate(p) => p,
             _ => {
                 return Err(CompileError::UnresolvedPredicate {
                     attempted_item: predicate_call.predicate.clone(),
@@ -412,10 +398,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR fresh goal to runtime
-    fn ir_fresh_to_runtime(
-        &mut self,
-        fresh: &crate::interpreter::compiler::Fresh,
-    ) -> Result<Goal, CompileError> {
+    fn ir_fresh_to_runtime(&mut self, fresh: &ir::Fresh) -> Result<Goal, CompileError> {
         // Push new scope
         self.push_scope();
 
@@ -439,10 +422,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Convert an IR let goal to runtime
-    fn ir_let_to_runtime(
-        &mut self,
-        let_binding: &crate::interpreter::compiler::Let,
-    ) -> Result<Goal, CompileError> {
+    fn ir_let_to_runtime(&mut self, let_binding: &ir::Let) -> Result<Goal, CompileError> {
         // Push new scope
         self.push_scope();
 
@@ -472,7 +452,7 @@ impl<'a> ExecutionContext<'a> {
     /// Convert an IR pattern match to runtime
     fn ir_pattern_match_to_runtime(
         &mut self,
-        pattern_match: &crate::interpreter::compiler::PatternMatch,
+        pattern_match: &ir::PatternMatch,
     ) -> Result<Goal, CompileError> {
         let term = self.ir_term_to_runtime(&pattern_match.term)?;
 
@@ -498,7 +478,7 @@ impl<'a> ExecutionContext<'a> {
     /// Convert an IR constraint block to runtime
     fn ir_constraint_to_runtime(
         &mut self,
-        constraint_block: &crate::interpreter::compiler::ConstraintBlock,
+        constraint_block: &ir::ConstraintBlock,
     ) -> Result<Goal, CompileError> {
         // Execute the template using this IR execution context directly
         // The template can access variables and state from the IR execution
@@ -563,7 +543,7 @@ impl<'a> ExecutionContext<'a> {
     }
 
     /// Get the compiled program
-    pub fn program(&self) -> &Program {
+    pub fn program(&self) -> &ir::Program {
         &self.program
     }
 
@@ -649,7 +629,7 @@ impl<'a> ExecutionContext<'a> {
     /// Convert IR predicate definition to runtime goal
     fn ir_predicate_to_runtime(
         &mut self,
-        predicate: &crate::interpreter::compiler::Predicate,
+        predicate: &ir::Predicate,
         args: Vec<LTerm>,
     ) -> Result<Goal, CompileError> {
         // Push new scope for predicate execution
@@ -707,31 +687,29 @@ impl<'a> ExecutionContext<'a> {
     /// Compile a pattern into unification goals against a term
     fn compile_pattern(
         &mut self,
-        pattern: &crate::interpreter::compiler::Pattern,
+        pattern: &ir::Pattern,
         term: LTerm,
     ) -> Result<Goal, CompileError> {
         match pattern {
-            crate::interpreter::compiler::Pattern::Variable(var_name) => {
+            ir::Pattern::Variable(var_name) => {
                 // Pattern variables bind to the matched term
                 self.bind_var(var_name.clone(), term.clone());
                 Ok(Goal::succeed())
             }
-            crate::interpreter::compiler::Pattern::Wildcard => {
+            ir::Pattern::Wildcard => {
                 // Wildcards always match
                 Ok(Goal::succeed())
             }
-            crate::interpreter::compiler::Pattern::Literal(literal) => {
+            ir::Pattern::Literal(literal) => {
                 // Unify the term with the literal value
                 let literal_term = self.ir_literal_to_runtime(literal)?;
                 Ok(crate::relation::eq::eq(term, literal_term).cast_into())
             }
-            crate::interpreter::compiler::Pattern::List(list_pattern) => {
-                self.compile_list_pattern(list_pattern, term)
-            }
-            crate::interpreter::compiler::Pattern::Struct(struct_pattern) => {
+            ir::Pattern::List(list_pattern) => self.compile_list_pattern(list_pattern, term),
+            ir::Pattern::Struct(struct_pattern) => {
                 self.compile_struct_pattern(struct_pattern, term)
             }
-            crate::interpreter::compiler::Pattern::EnumVariant(enum_pattern) => {
+            ir::Pattern::EnumVariant(enum_pattern) => {
                 self.compile_enum_variant_pattern(enum_pattern, term)
             }
         }
@@ -740,7 +718,7 @@ impl<'a> ExecutionContext<'a> {
     /// Compile a list pattern into unification goals
     fn compile_list_pattern(
         &mut self,
-        list_pattern: &crate::interpreter::compiler::ListPattern,
+        list_pattern: &ir::ListPattern,
         term: LTerm,
     ) -> Result<Goal, CompileError> {
         let mut goals = Vec::new();
@@ -787,7 +765,7 @@ impl<'a> ExecutionContext<'a> {
     /// Compile a struct pattern into unification goals
     fn compile_struct_pattern(
         &mut self,
-        struct_pattern: &crate::interpreter::compiler::StructPattern,
+        struct_pattern: &ir::StructPattern,
         term: LTerm,
     ) -> Result<Goal, CompileError> {
         let mut goals = Vec::new();
@@ -803,7 +781,7 @@ impl<'a> ExecutionContext<'a> {
             })?;
 
         match &struct_pattern.fields {
-            crate::interpreter::compiler::StructPatternFields::Named(named_patterns) => {
+            ir::StructPatternFields::Named(named_patterns) => {
                 // Create compound term with struct name as functor
                 let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
                 let mut field_vars = Vec::new();
@@ -825,7 +803,7 @@ impl<'a> ExecutionContext<'a> {
                     goals.push(field_goal);
                 }
             }
-            crate::interpreter::compiler::StructPatternFields::Tuple(tuple_patterns) => {
+            ir::StructPatternFields::Tuple(tuple_patterns) => {
                 // Create compound term with struct name as functor
                 let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
                 let mut field_vars = Vec::new();
@@ -854,7 +832,7 @@ impl<'a> ExecutionContext<'a> {
     /// Compile an enum variant pattern into unification goals
     fn compile_enum_variant_pattern(
         &mut self,
-        enum_pattern: &crate::interpreter::compiler::EnumVariantPattern,
+        enum_pattern: &ir::EnumVariantPattern,
         term: LTerm,
     ) -> Result<Goal, CompileError> {
         let mut goals = Vec::new();
@@ -870,12 +848,12 @@ impl<'a> ExecutionContext<'a> {
             })?;
 
         match &enum_pattern.kind {
-            crate::interpreter::compiler::EnumVariantPatternKind::Unit => {
+            ir::EnumVariantPatternKind::Unit => {
                 // Create atom with variant name
                 let variant_term = LTerm::from(enum_pattern.variant_name.to_string());
                 goals.push(crate::relation::eq::eq(term, variant_term).cast_into());
             }
-            crate::interpreter::compiler::EnumVariantPatternKind::Tuple(tuple_patterns) => {
+            ir::EnumVariantPatternKind::Tuple(tuple_patterns) => {
                 // Create compound term with variant name as functor
                 let mut args = vec![LTerm::from(enum_pattern.variant_name.to_string())];
                 let mut field_vars = Vec::new();
@@ -896,7 +874,7 @@ impl<'a> ExecutionContext<'a> {
                     goals.push(field_goal);
                 }
             }
-            crate::interpreter::compiler::EnumVariantPatternKind::Named(named_patterns) => {
+            ir::EnumVariantPatternKind::Named(named_patterns) => {
                 // Create compound term with variant name as functor
                 let mut args = vec![LTerm::from(enum_pattern.variant_name.to_string())];
                 let mut field_vars = Vec::new();
@@ -933,8 +911,8 @@ mod tests {
     type TestContext<'a> = ExecutionContext<'a>;
     type TestEnvironment = Environment;
 
-    fn create_test_program() -> Program {
-        Program::new()
+    fn create_test_program() -> ir::Program {
+        ir::Program::new()
     }
 
     #[test]
@@ -989,17 +967,17 @@ mod tests {
         let context = TestContext::new(program, environment);
 
         // Test boolean literal
-        let bool_literal = crate::interpreter::compiler::Literal::Boolean(true);
+        let bool_literal = ir::Literal::Boolean(true);
         let bool_lterm = context.ir_literal_to_runtime(&bool_literal).unwrap();
         assert!(bool_lterm.is_val());
 
         // Test integer literal
-        let int_literal = crate::interpreter::compiler::Literal::Integer(42);
+        let int_literal = ir::Literal::Integer(42);
         let int_lterm = context.ir_literal_to_runtime(&int_literal).unwrap();
         assert!(int_lterm.is_val());
 
         // Test string literal
-        let string_literal = crate::interpreter::compiler::Literal::String("hello".into());
+        let string_literal = ir::Literal::String("hello".into());
         let string_lterm = context.ir_literal_to_runtime(&string_literal).unwrap();
         assert!(string_lterm.is_val());
     }

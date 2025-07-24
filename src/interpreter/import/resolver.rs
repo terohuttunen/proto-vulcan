@@ -1,10 +1,9 @@
 //! Main import resolver that orchestrates the comprehensive glob import system
 
 use super::super::environment::ModuleInfo;
-use super::super::parser::ast::StructDefinition;
 use super::super::parser::ast::QualifiedPath;
+use super::super::parser::ast::StructDefinition;
 use super::super::runtime_value::RuntimeValue;
-use super::super::symbol_table::InternedSymbol;
 use super::dependency::DependencyTracker;
 use super::registry::SymbolRegistry;
 use super::types::*;
@@ -940,10 +939,10 @@ pub struct CacheStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+    use crate::interpreter::symbol_table::InternedSymbol;
+
     use crate::interpreter::parser::ast::{Conjunction, Goal as AstGoal, Location};
     use crate::interpreter::parser::ast::{PredicateDefinition, PredicateKind, Visibility};
-    
 
     fn create_test_module_info() -> ModuleInfo {
         let mut module_info = ModuleInfo::new(std::path::PathBuf::from("test.pv"));

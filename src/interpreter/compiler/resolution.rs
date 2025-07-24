@@ -3,6 +3,7 @@
 //! This module handles the second phase of compilation: resolving use clauses
 //! and building final symbol maps using an iterative fixpoint algorithm.
 
+use super::ir::*;
 use super::*;
 use crate::interpreter::symbol_table::InternedSymbol;
 
@@ -25,8 +26,9 @@ impl Compiler {
                 match self.try_resolve_import(&pending_import, ir_program)? {
                     Some(resolved_item_id) => {
                         // Check if this is a glob import (identified by the special marker format)
-                        let is_glob_import = matches!(&pending_import.use_statement.path, ast::UsePath::Glob(_));
-                        
+                        let is_glob_import =
+                            matches!(&pending_import.use_statement.path, ast::UsePath::Glob(_));
+
                         if is_glob_import {
                             // Glob imports handle symbol addition internally, no need to add the marker
                             // The resolved_item_id is just a tracking marker for successful glob processing
@@ -41,7 +43,8 @@ impl Compiler {
                                 .module_symbol_maps
                                 .get_mut(&pending_import.importing_module)
                             {
-                                let import_symbol = InternedSymbol::from_text(&pending_import.symbol_name);
+                                let import_symbol =
+                                    InternedSymbol::from_text(&pending_import.symbol_name);
                                 match module_map.try_add_imported_symbol(
                                     local_name,
                                     resolved_item_id,

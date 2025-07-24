@@ -3,14 +3,18 @@
 //! This module handles the first phase of compilation: collecting all type, predicate,
 //! and module declarations into symbol tables and processing use statements.
 
-use super::errors::CompileWarning;
-use super::*;
+use super::errors::{CompileError, CompileWarning};
+use super::ir;
+use super::Compiler;
+use crate::interpreter::ast;
+use crate::interpreter::symbol_table::InternedSymbol;
+use std::collections::HashMap;
 
 /// Symbol resolution context during compilation
 #[derive(Debug, Clone)]
 pub struct SymbolContext {
     /// Current module being compiled
-    pub current_module: ModuleId,
+    pub current_module: ir::ModuleId,
 }
 
 /// Compilation phase tracking
@@ -26,9 +30,9 @@ pub enum CompilationPhase {
 #[derive(Debug, Clone)]
 pub struct ModuleSymbolMap {
     /// Local symbols defined in this module (types, predicates, submodules)
-    pub local_symbols: HashMap<String, ItemId>,
+    pub local_symbols: HashMap<String, ir::ItemId>,
     /// Imports symbols in this module
-    pub imported_symbols: HashMap<String, ItemId>,
+    pub imported_symbols: HashMap<String, ir::ItemId>,
 }
 
 /// A pending import during compilation
@@ -37,7 +41,7 @@ pub struct PendingImport {
     /// The AST use statement
     pub use_statement: ast::UseStatement,
     /// Module path where this import is located
-    pub importing_module: ModuleId,
+    pub importing_module: ir::ModuleId,
     /// Target module path being imported from
     pub target_module: String,
     /// Symbol name being imported
@@ -55,42 +59,42 @@ impl ModuleSymbolMap {
     }
 
     /// Check if this module has a symbol (either local or imported)
-    pub fn has_symbol(&self, name: &str) -> Option<&ItemId> {
+    pub fn has_symbol(&self, name: &str) -> Option<&ir::ItemId> {
         self.local_symbols
             .get(name)
             .or_else(|| self.imported_symbols.get(name))
     }
 
     /// Add a local symbol to this module
-    pub fn add_local_symbol(&mut self, name: String, item: impl Into<ItemId>) {
+    pub fn add_local_symbol(&mut self, name: String, item: impl Into<ir::ItemId>) {
         self.local_symbols.insert(name, item.into());
     }
 
     /// Get a local module (not imported) - enforces no-shadowing rule
-    pub fn get_local_module(&self, name: &str) -> Option<&ItemId> {
+    pub fn get_local_module(&self, name: &str) -> Option<&ir::ItemId> {
         // Only return if it's a local module (local symbol)
         self.local_symbols
             .get(name)
-            .filter(|item| item.kind == ItemKind::Module)
+            .filter(|item| item.kind == ir::ItemKind::Module)
     }
 
     /// Get a imported symbol item
-    pub fn get_imported_symbol(&self, name: &str) -> Option<&ItemId> {
+    pub fn get_imported_symbol(&self, name: &str) -> Option<&ir::ItemId> {
         self.imported_symbols.get(name)
     }
 
     /// Get all local symbols in this module (for glob imports)
-    pub fn get_all_local_symbols(&self) -> impl Iterator<Item = (&String, &ItemId)> {
+    pub fn get_all_local_symbols(&self) -> impl Iterator<Item = (&String, &ir::ItemId)> {
         self.local_symbols.iter()
     }
 
     /// Get all imported symbols in this module (for glob imports)
-    pub fn get_all_imported_symbols(&self) -> impl Iterator<Item = (&String, &ItemId)> {
+    pub fn get_all_imported_symbols(&self) -> impl Iterator<Item = (&String, &ir::ItemId)> {
         self.imported_symbols.iter()
     }
 
     /// Get all symbols (both local and imported) in this module (for glob imports)
-    pub fn get_all_symbols(&self) -> impl Iterator<Item = (&String, &ItemId)> {
+    pub fn get_all_symbols(&self) -> impl Iterator<Item = (&String, &ir::ItemId)> {
         self.local_symbols
             .iter()
             .chain(self.imported_symbols.iter())
@@ -101,7 +105,7 @@ impl ModuleSymbolMap {
     pub fn try_add_glob_imported_symbol(
         &mut self,
         local_name: String,
-        source_item: impl Into<ItemId>,
+        source_item: impl Into<ir::ItemId>,
         import_source: &str,
     ) -> Result<bool, CompileError> {
         let source_item_id = source_item.into();
@@ -121,7 +125,7 @@ impl ModuleSymbolMap {
     pub fn try_add_imported_symbol(
         &mut self,
         local_name: String,
-        source_item: impl Into<ItemId>,
+        source_item: impl Into<ir::ItemId>,
         import_source: &str,
         import_symbol: &InternedSymbol,
     ) -> Result<Option<CompileWarning>, CompileError> {
@@ -131,7 +135,7 @@ impl ModuleSymbolMap {
         // Check if this import would shadow a local symbol
         if let Some(local_item_id) = self.local_symbols.get(&local_name) {
             // HARD ERROR: Never allow shadowing of local modules (breaks path resolution)
-            if local_item_id.kind == super::ItemKind::Module {
+            if local_item_id.kind == ir::ItemKind::Module {
                 let local_symbol = InternedSymbol::from_text(&local_item_id.path);
                 return Err(CompileError::ShadowingError {
                     symbol_name: local_name,
@@ -184,7 +188,7 @@ impl Compiler {
     pub(super) fn collect_symbols_and_use_clauses(
         &mut self,
         program: &ast::Program,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         for item in &program.items {
             self.collect_item_symbols(item, ir_program)?;
@@ -196,7 +200,7 @@ impl Compiler {
     fn collect_item_symbols(
         &mut self,
         item: &ast::Item,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         match item {
             ast::Item::Module(module) => {
@@ -229,12 +233,12 @@ impl Compiler {
     fn collect_module_symbols(
         &mut self,
         module: &ast::ModuleDefinition,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         let module_path = self.resolve_item_path(&module.name.to_string());
 
         // Register module in symbol context
-        let module_id = ModuleId::new(module_path);
+        let module_id = ir::ModuleId::new(module_path);
 
         // Determine parent module (None only for root "::" itself, otherwise current_module)
         let parent = if module_id.id.path.as_ref() == "::" {
@@ -244,7 +248,7 @@ impl Compiler {
         };
 
         // Create module item
-        let ir_module = Module {
+        let ir_module = ir::Module {
             id: module_id.clone(),
             parent,
             items: vec![], // Will be populated in phase 2
@@ -292,18 +296,18 @@ impl Compiler {
     fn collect_struct_symbols(
         &mut self,
         struct_def: &ast::StructDefinition,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         let type_path = self.resolve_item_path(&struct_def.name.to_string());
 
         // Register type in symbol context
-        let type_id = TypeId::new(type_path);
+        let type_id = ir::TypeId::new(type_path);
 
         // Create type definition (fields will be resolved in phase 2)
-        let ir_type = TypeDefinition {
+        let ir_type = ir::TypeDefinition {
             id: type_id.clone(),
-            kind: TypeKind::Struct(StructDefinition {
-                fields: StructFields::Tuple(vec![]), // Placeholder
+            kind: ir::TypeKind::Struct(ir::StructDefinition {
+                fields: ir::StructFields::Tuple(vec![]), // Placeholder
             }),
             visibility: self.convert_visibility(&struct_def.visibility)?,
         };
@@ -332,17 +336,17 @@ impl Compiler {
     fn collect_enum_symbols(
         &mut self,
         enum_def: &ast::EnumDefinition,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         let type_path = self.resolve_item_path(&enum_def.name.to_string());
 
         // Register type in symbol context
-        let type_id = TypeId::new(type_path);
+        let type_id = ir::TypeId::new(type_path);
 
         // Create type definition (variants will be resolved in phase 2)
-        let ir_type = TypeDefinition {
+        let ir_type = ir::TypeDefinition {
             id: type_id.clone(),
-            kind: TypeKind::Enum(EnumDefinition {
+            kind: ir::TypeKind::Enum(ir::EnumDefinition {
                 variants: vec![], // Placeholder
             }),
             visibility: self.convert_visibility(&enum_def.visibility)?,
@@ -372,21 +376,21 @@ impl Compiler {
     fn collect_predicate_symbols(
         &mut self,
         predicate: &ast::PredicateDefinition,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         let predicate_path = self.resolve_item_path(&predicate.name.to_string());
 
         // Register predicate in symbol context
-        let predicate_id = PredicateId::new(predicate_path);
+        let predicate_id = ir::PredicateId::new(predicate_path);
 
         // Create predicate definition (body will be compiled in phase 2)
-        let ir_predicate = Predicate {
+        let ir_predicate = ir::Predicate {
             id: predicate_id.clone(),
-            parameters: vec![],                      // Placeholder
-            body: StructuralGoal::empty_container(), // Placeholder
+            parameters: vec![],                          // Placeholder
+            body: ir::StructuralGoal::empty_container(), // Placeholder
             kind: match predicate.predicate_kind {
-                ast::PredicateKind::Relation => PredicateKind::Relation,
-                ast::PredicateKind::Macro => PredicateKind::Macro,
+                ast::PredicateKind::Relation => ir::PredicateKind::Relation,
+                ast::PredicateKind::Macro => ir::PredicateKind::Macro,
             },
             visibility: self.convert_visibility(&predicate.visibility)?,
         };
@@ -415,7 +419,7 @@ impl Compiler {
     fn collect_impl_symbols(
         &mut self,
         impl_block: &ast::ImplBlock,
-        ir_program: &mut Program,
+        ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         // Impl blocks are treated as modules containing predicates
         // Modules are in their own namespace, we can use the type name directly
@@ -423,7 +427,7 @@ impl Compiler {
         let module_path = self.resolve_item_path(&impl_module_name);
 
         // Register module in symbol context
-        let module_id = ModuleId::new(module_path.clone());
+        let module_id = ir::ModuleId::new(module_path.clone());
 
         // Determine parent module (None only for root "::" itself, otherwise current_module)
         let parent = if module_id.id.path.as_ref() == "::" {
@@ -433,11 +437,11 @@ impl Compiler {
         };
 
         // Create module item
-        let ir_module = Module {
+        let ir_module = ir::Module {
             id: module_id.clone(),
             parent,
-            items: vec![],                  // Will be populated in phase 2
-            visibility: Visibility::Public, // Impl blocks are typically public
+            items: vec![],                      // Will be populated in phase 2
+            visibility: ir::Visibility::Public, // Impl blocks are typically public
         };
 
         // Add to registry

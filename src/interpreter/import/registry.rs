@@ -2,7 +2,6 @@
 
 use super::super::parser::ast::StructDefinition;
 use super::super::runtime_value::RuntimeValue;
-use super::super::symbol_table::InternedSymbol;
 use super::types::*;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
@@ -397,6 +396,7 @@ pub struct RegistryStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interpreter::symbol_table::InternedSymbol;
 
     use crate::interpreter::parser::ast::{Conjunction, Goal as AstGoal, Location};
     use crate::interpreter::parser::ast::{PredicateDefinition, PredicateKind, Visibility};
