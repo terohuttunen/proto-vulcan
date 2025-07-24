@@ -44,7 +44,7 @@ impl super::DomainConstraintTemplate for ClpfdTemplate {
         // TODO: Implement proper template-based execution
         let domain = ClpfdDomain::new();
         let parsed_constraints =
-            domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+            domain.parse_constraints(&self.body, &super::super::parser::ast::Location::dummy())?;
         parsed_constraints.convert_to_goals(execution_context)
     }
 }
@@ -58,7 +58,7 @@ impl super::IrDomainConstraintTemplate for ClpfdIrTemplate {
         // TODO: Implement proper IR template-based execution
         let domain = ClpfdDomain::new();
         let parsed_constraints =
-            domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+            domain.parse_constraints(&self.body, &super::super::parser::ast::Location::dummy())?;
 
         // Create a temporary execution context for the constraint execution
         // Since we need to bridge IR and execution contexts
@@ -88,7 +88,7 @@ impl ConstraintDomain for ClpfdDomain {
     fn parse_constraints(
         &self,
         body: &ConstraintBody,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<Box<dyn DomainConstraints>, InterpreterError> {
         // Trim the content to remove leading/trailing whitespace that might interfere
         let trimmed_content = body.raw_content.trim();
@@ -134,7 +134,7 @@ impl ConstraintDomain for ClpfdDomain {
         // For now, parse the constraint to extract variables using concrete types
         // TODO: Implement proper variable extraction without full parsing
         let parsed_constraints: Box<dyn DomainConstraints> =
-            self.parse_constraints(body, &super::super::parser::ast::Span::dummy())?;
+            self.parse_constraints(body, &super::super::parser::ast::Location::dummy())?;
         Ok(parsed_constraints.extract_variables())
     }
 
@@ -179,7 +179,7 @@ impl ClpfdDomain {
 
         // There should be exactly one pair, corresponding to the `constraint` rule
         if let Some(pair) = pairs.peek() {
-            let dummy_span = super::super::parser::ast::Span::dummy();
+            let dummy_span = super::super::parser::ast::Location::dummy();
             Self::build_constraint(pair, &dummy_span)
         } else {
             Err(InterpreterError::InvalidConstraintSyntax {
@@ -193,7 +193,7 @@ impl ClpfdDomain {
 
     fn build_constraint(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<ClpfdConstraint, InterpreterError> {
         let inner_pair = pair.into_inner().next().unwrap();
         match inner_pair.as_rule() {
@@ -211,7 +211,7 @@ impl ClpfdDomain {
 
     fn build_fresh_constraint(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let mut vars = vec![];
@@ -239,7 +239,7 @@ impl ClpfdDomain {
 
     fn build_domain_constraint(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let var_pair = inner.next().unwrap();
@@ -264,7 +264,7 @@ impl ClpfdDomain {
 
     fn build_list_domain_constraint(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let var_list_pair = inner.next().unwrap(); // var_list
@@ -284,7 +284,7 @@ impl ClpfdDomain {
 
     fn build_domain_spec(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<DomainSpec, InterpreterError> {
         let inner_pair = pair.into_inner().next().unwrap();
         match inner_pair.as_rule() {
@@ -378,7 +378,7 @@ impl ClpfdDomain {
 
     fn build_domain_bound(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<DomainBound, InterpreterError> {
         match pair.as_rule() {
             Rule::integer => {
@@ -445,7 +445,7 @@ impl ClpfdDomain {
 
     fn build_arith_constraint(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<ClpfdConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let left = Self::build_arith_expr(inner.next().unwrap(), source_span);
@@ -458,7 +458,7 @@ impl ClpfdDomain {
     // This function uses the Pratt parser technique to handle operator precedence.
     fn build_arith_expr(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> ArithExpr {
         let pratt = pest::pratt_parser::PrattParser::new()
             .op(pest::pratt_parser::Op::infix(
@@ -481,7 +481,7 @@ impl ClpfdDomain {
                             // Fallback to a variable if parsing fails
                             crate::interpreter::metaprogramming::MetaExpression::Variable(
                                 content.to_string(),
-                                super::super::parser::ast::Span::dummy(),
+                                super::super::parser::ast::Location::dummy(),
                             )
                         });
                     ArithExpr::Interpolation(meta_expr)
@@ -502,7 +502,7 @@ impl ClpfdDomain {
                             .unwrap_or_else(|_| {
                                 crate::interpreter::metaprogramming::MetaExpression::Variable(
                                     content.to_string(),
-                                    super::super::parser::ast::Span::dummy(),
+                                    super::super::parser::ast::Location::dummy(),
                                 )
                             });
                             ArithExpr::Interpolation(meta_expr)
@@ -575,7 +575,7 @@ impl ClpfdDomain {
 /// Parsed CLPFD constraints
 struct ClpfdConstraints {
     constraints: Vec<ClpfdConstraint>,
-    source_span: super::super::parser::ast::Span,
+    source_span: super::super::parser::ast::Location,
 }
 
 impl DomainConstraints for ClpfdConstraints {
@@ -688,7 +688,7 @@ impl ClpfdConstraint {
     fn convert_to_goal(
         &self,
         execution_context: &mut ExecutionContext,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<Goal, InterpreterError> {
         match self {
             ClpfdConstraint::Domain {
@@ -1024,7 +1024,7 @@ fn eval_arith_expr(
 fn eval_domain_bound(
     bound: &DomainBound,
     execution_context: &mut ExecutionContext,
-    source_span: &super::super::parser::ast::Span,
+    source_span: &super::super::parser::ast::Location,
 ) -> Result<isize, InterpreterError> {
     match bound {
         DomainBound::Integer(val) => Ok(*val as isize),

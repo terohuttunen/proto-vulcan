@@ -398,7 +398,7 @@ pub struct RegistryStats {
 mod tests {
     use super::*;
 
-    use crate::interpreter::parser::ast::{Conjunction, Goal as AstGoal, Span};
+    use crate::interpreter::parser::ast::{Conjunction, Goal as AstGoal, Location};
     use crate::interpreter::parser::ast::{PredicateDefinition, PredicateKind, Visibility};
 
     fn create_test_predicate() -> PredicateDefinition {
@@ -414,9 +414,9 @@ mod tests {
                     body: vec![],
                     params: None,
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
-            span: Span::dummy(),
+            span: Location::dummy(),
         }
     }
 
@@ -426,7 +426,7 @@ mod tests {
             visibility: Visibility::Public,
             name: "TestStruct".to_string().into(),
             kind: StructKind::Tuple(vec![InternedSymbol::from_text("i32")]),
-            span: Span::dummy(),
+            span: Location::dummy(),
         }
     }
 

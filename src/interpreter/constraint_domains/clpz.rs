@@ -35,7 +35,7 @@ impl super::DomainConstraintTemplate for ClpzTemplate {
         // TODO: Implement proper template-based execution
         let domain = ClpzDomain::new();
         let parsed_constraints =
-            domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+            domain.parse_constraints(&self.body, &super::super::parser::ast::Location::dummy())?;
         parsed_constraints.convert_to_goals(execution_context)
     }
 }
@@ -63,7 +63,7 @@ impl super::IrDomainConstraintTemplate for ClpzIrTemplate {
         // For now, fall back to the original parsing approach with temporary context
         let domain = ClpzDomain::new();
         let parsed_constraints =
-            domain.parse_constraints(&self.body, &super::super::parser::ast::Span::dummy())?;
+            domain.parse_constraints(&self.body, &super::super::parser::ast::Location::dummy())?;
         parsed_constraints.convert_to_goals(&mut temp_execution_context)
     }
 }
@@ -85,7 +85,7 @@ impl ConstraintDomain for ClpzDomain {
     fn parse_constraints(
         &self,
         body: &ConstraintBody,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<Box<dyn DomainConstraints>, InterpreterError> {
         let trimmed_content = body.raw_content.trim();
 
@@ -127,7 +127,7 @@ impl ConstraintDomain for ClpzDomain {
         // For now, parse the constraint to extract variables using concrete types
         // TODO: Implement proper variable extraction without full parsing
         let parsed_constraints: Box<dyn DomainConstraints> =
-            self.parse_constraints(body, &super::super::parser::ast::Span::dummy())?;
+            self.parse_constraints(body, &super::super::parser::ast::Location::dummy())?;
         Ok(parsed_constraints.extract_variables())
     }
 
@@ -161,7 +161,7 @@ impl ConstraintDomain for ClpzDomain {
 impl ClpzDomain {
     fn build_constraint(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<ClpzConstraint, InterpreterError> {
         let constraint_pair = pair.into_inner().next().unwrap();
 
@@ -177,7 +177,7 @@ impl ClpzDomain {
 
     fn build_fresh_constraint(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<ClpzConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let mut vars = vec![];
@@ -204,7 +204,7 @@ impl ClpzDomain {
 
     fn build_arith_constraint(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<ClpzConstraint, InterpreterError> {
         let mut inner = pair.into_inner();
         let left = Self::build_arith_expr(inner.next().unwrap(), source_span);
@@ -216,7 +216,7 @@ impl ClpzDomain {
 
     fn build_arith_expr(
         pair: pest::iterators::Pair<Rule>,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> ArithExpr {
         match pair.as_rule() {
             Rule::integer => ArithExpr::Integer(pair.as_str().parse().unwrap()),
@@ -228,7 +228,7 @@ impl ClpzDomain {
                         .unwrap_or_else(|_| {
                             crate::interpreter::metaprogramming::MetaExpression::Variable(
                                 content.to_string(),
-                                super::super::parser::ast::Span::dummy(),
+                                super::super::parser::ast::Location::dummy(),
                             )
                         });
 
@@ -254,7 +254,7 @@ impl ClpzDomain {
                         .unwrap_or_else(|_| {
                             crate::interpreter::metaprogramming::MetaExpression::Variable(
                                 content.to_string(),
-                                super::super::parser::ast::Span::dummy(),
+                                super::super::parser::ast::Location::dummy(),
                             )
                         });
                         match &meta_expr {
@@ -334,7 +334,7 @@ impl ClpzDomain {
 /// Parsed CLPZ constraints
 struct ClpzConstraints {
     constraints: Vec<ClpzConstraint>,
-    source_span: super::super::parser::ast::Span,
+    source_span: super::super::parser::ast::Location,
 }
 
 impl DomainConstraints for ClpzConstraints {
@@ -418,7 +418,7 @@ impl ClpzConstraint {
     fn convert_to_goal(
         &self,
         execution_context: &mut ExecutionContext,
-        source_span: &super::super::parser::ast::Span,
+        source_span: &super::super::parser::ast::Location,
     ) -> Result<Goal, InterpreterError> {
         match self {
             ClpzConstraint::Expression { left, op, right } => {

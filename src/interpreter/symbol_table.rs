@@ -1,12 +1,11 @@
 /// Symbol table implementation with string interning for Proto-Vulcan
-/// 
+///
 /// This module provides efficient symbol management through a two-level interning system:
 /// 1. String interning: Deduplicates string content using Rc<str>
 /// 2. Symbol creation: Combines interned strings with source location information
-/// 
+///
 /// AST nodes store Rc<Symbol> for direct access without table lookups.
-
-use super::parser::ast::Span;
+use super::parser::ast::Location;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -17,7 +16,7 @@ pub struct Symbol {
     /// The identifier text (interned for memory efficiency)
     pub text: Rc<str>,
     /// Source location where this symbol appears
-    pub span: Span,
+    pub location: Location,
     /// File path where this symbol is defined (interned for memory efficiency)
     pub file_path: Rc<PathBuf>,
 }
@@ -29,8 +28,8 @@ impl Symbol {
     }
 
     /// Get the source span for this symbol
-    pub fn span(&self) -> Span {
-        self.span.clone()
+    pub fn span(&self) -> Location {
+        self.location.clone()
     }
 
     /// Get the file path where this symbol appears
@@ -68,8 +67,8 @@ impl InternedSymbol {
         use std::rc::Rc;
         let symbol = Rc::new(Symbol {
             text: text.into(),
-            span: crate::interpreter::parser::ast::Span::new(0, 0), // Empty span
-            file_path: Rc::new(std::path::PathBuf::new()), // Empty path
+            location: crate::interpreter::parser::ast::Location::new(0, 0, 0, 0), // Empty span
+            file_path: Rc::new(std::path::PathBuf::new()),                        // Empty path
         });
         Self(symbol)
     }
@@ -80,13 +79,13 @@ impl InternedSymbol {
     }
 
     /// Get the source span
-    pub fn span(&self) -> Span {
-        self.0.span.clone()
+    pub fn span(&self) -> Location {
+        self.0.location.clone()
     }
 
     /// Get the source span as a reference
-    pub fn span_ref(&self) -> &Span {
-        &self.0.span
+    pub fn span_ref(&self) -> &Location {
+        &self.0.location
     }
 
     /// Get the file path
@@ -247,16 +246,19 @@ impl std::hash::Hash for InternedSymbol {
 
 impl InternedSymbol {
     /// Temporary method to create a InternedSymbol from a string and span (TODO: remove when parser uses symbol table)
-    pub fn from_string_and_span(text: String, span: crate::interpreter::parser::ast::Span) -> Self {
+    pub fn from_string_and_span(
+        text: String,
+        span: crate::interpreter::parser::ast::Location,
+    ) -> Self {
         use std::rc::Rc;
         let symbol = Rc::new(Symbol {
             text: text.as_str().into(),
-            span,
+            location: span,
             file_path: Rc::new(std::path::PathBuf::new()),
         });
         InternedSymbol::new(symbol)
     }
-    
+
     /// Check if the symbol text contains a substring (useful for "::" checks)
     pub fn contains(&self, pattern: &str) -> bool {
         self.0.text.contains(pattern)
@@ -270,7 +272,6 @@ impl std::ops::Deref for InternedSymbol {
         &self.0.text
     }
 }
-
 
 /// String interning table for deduplicating string content
 #[derive(Debug)]
@@ -373,13 +374,18 @@ impl SymbolTable {
     }
 
     /// Create a new symbol with interned string and file path
-    pub fn create_symbol(&mut self, text: &str, span: Span, file_path: PathBuf) -> InternedSymbol {
+    pub fn create_symbol(
+        &mut self,
+        text: &str,
+        span: Location,
+        file_path: PathBuf,
+    ) -> InternedSymbol {
         let interned_text = self.string_table.intern(text);
         let interned_file = self.file_table.intern(file_path);
 
         let symbol = Rc::new(Symbol {
             text: interned_text,
-            span,
+            location: span,
             file_path: interned_file,
         });
 
@@ -415,15 +421,15 @@ mod tests {
     #[test]
     fn test_string_interning() {
         let mut table = StringTable::new();
-        
+
         let str1 = table.intern("hello");
         let str2 = table.intern("hello");
         let str3 = table.intern("world");
-        
+
         // Same string should return the same Rc
         assert!(Rc::ptr_eq(&str1, &str2));
         assert!(!Rc::ptr_eq(&str1, &str3));
-        
+
         // Should only have 2 unique strings
         assert_eq!(table.len(), 2);
     }
@@ -431,15 +437,15 @@ mod tests {
     #[test]
     fn test_file_interning() {
         let mut table = FileTable::new();
-        
+
         let file1 = table.intern(PathBuf::from("test.pv"));
         let file2 = table.intern(PathBuf::from("test.pv"));
         let file3 = table.intern(PathBuf::from("other.pv"));
-        
+
         // Same file should return the same Rc
         assert!(Rc::ptr_eq(&file1, &file2));
         assert!(!Rc::ptr_eq(&file1, &file3));
-        
+
         // Should only have 2 unique files
         assert_eq!(table.len(), 2);
     }
@@ -447,59 +453,82 @@ mod tests {
     #[test]
     fn test_symbol_creation() {
         let mut table = SymbolTable::new();
-        
-        let symbol1 = table.create_symbol("main", Span::new(0, 4), PathBuf::from("test.pv"));
-        let symbol2 = table.create_symbol("main", Span::new(10, 14), PathBuf::from("test.pv"));
-        let symbol3 = table.create_symbol("other", Span::new(0, 5), PathBuf::from("test.pv"));
-        
+
+        let symbol1 =
+            table.create_symbol("main", Location::new(0, 0, 0, 4), PathBuf::from("test.pv"));
+        let symbol2 = table.create_symbol(
+            "main",
+            Location::new(0, 0, 10, 14),
+            PathBuf::from("test.pv"),
+        );
+        let symbol3 =
+            table.create_symbol("other", Location::new(0, 0, 0, 5), PathBuf::from("test.pv"));
+
         // Symbols with same text should be equal (text-only comparison)
         assert_eq!(symbol1, symbol2);
         assert_ne!(symbol1, symbol3);
-        
+
         // But they should share interned strings and files
         assert!(Rc::ptr_eq(&symbol1.symbol().text, &symbol2.symbol().text));
         // Note: file_path() returns &PathBuf, not &Rc<PathBuf>, so we can't compare Rc pointers directly
         // The interning is happening at the symbol level
-        
-        // Different text should not share strings  
+
+        // Different text should not share strings
         assert!(!Rc::ptr_eq(&symbol1.symbol().text, &symbol3.symbol().text));
     }
 
     #[test]
     fn test_symbol_stats() {
         let mut table = SymbolTable::new();
-        
-        table.create_symbol("main", Span::new(0, 4), PathBuf::from("test.pv"));
-        table.create_symbol("main", Span::new(10, 14), PathBuf::from("test.pv"));
-        table.create_symbol("other", Span::new(0, 5), PathBuf::from("other.pv"));
-        
+
+        table.create_symbol("main", Location::new(0, 0, 0, 4), PathBuf::from("test.pv"));
+        table.create_symbol(
+            "main",
+            Location::new(0, 0, 10, 14),
+            PathBuf::from("test.pv"),
+        );
+        table.create_symbol(
+            "other",
+            Location::new(0, 0, 0, 5),
+            PathBuf::from("other.pv"),
+        );
+
         let stats = table.stats();
         assert_eq!(stats.unique_strings, 2); // "main" and "other"
-        assert_eq!(stats.unique_files, 2);   // "test.pv" and "other.pv"
+        assert_eq!(stats.unique_files, 2); // "test.pv" and "other.pv"
     }
 
     #[test]
     fn test_symbol_comparison() {
         let mut table = SymbolTable::new();
-        
+
         // Create two symbols with same text but different locations/files
-        let symbol1 = table.create_symbol("test", Span::new(0, 4), PathBuf::from("file1.pv"));
-        let symbol2 = table.create_symbol("test", Span::new(10, 14), PathBuf::from("file2.pv"));
-        let symbol3 = table.create_symbol("other", Span::new(0, 5), PathBuf::from("file1.pv"));
-        
+        let symbol1 =
+            table.create_symbol("test", Location::new(0, 0, 0, 4), PathBuf::from("file1.pv"));
+        let symbol2 = table.create_symbol(
+            "test",
+            Location::new(0, 0, 10, 14),
+            PathBuf::from("file2.pv"),
+        );
+        let symbol3 = table.create_symbol(
+            "other",
+            Location::new(0, 0, 0, 5),
+            PathBuf::from("file1.pv"),
+        );
+
         // Symbols with same text should be equal regardless of location/file
         assert_eq!(symbol1, symbol2);
         assert_eq!(symbol2, symbol1);
-        
+
         // Symbols with different text should not be equal
         assert_ne!(symbol1, symbol3);
         assert_ne!(symbol2, symbol3);
-        
+
         // Test comparison with strings
         assert_eq!(symbol1, "test");
         assert_eq!(symbol1, "test".to_string());
         assert_ne!(symbol1, "other");
-        
+
         // Test cross-type comparisons
         assert_eq!(symbol1.symbol(), symbol2.symbol());
         assert_eq!(*symbol1.symbol(), *symbol2.symbol());

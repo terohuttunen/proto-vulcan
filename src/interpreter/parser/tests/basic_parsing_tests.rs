@@ -13,7 +13,7 @@ fn test_parse_empty_program() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -24,7 +24,7 @@ fn test_parse_simple_relation() {
     let ast = parse_str(input).unwrap();
     let expected_ast = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -33,7 +33,7 @@ fn test_parse_simple_relation() {
             search_strategy: None,
             body: vec![],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected_ast);
 }
@@ -44,7 +44,7 @@ fn test_parse_pub_relation() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Public,
             predicate_kind: ast::PredicateKind::Macro,
             attributes: vec![],
@@ -63,10 +63,10 @@ fn test_parse_pub_relation() {
             body: vec![Goal::Equality(
                 Term::Variable(InternedSymbol::from_text("a")),
                 Term::Variable(InternedSymbol::from_text("b")),
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -134,9 +134,9 @@ fn test_parse_tuple_struct() {
             visibility: ast::Visibility::Private,
             name: "MyTuple".to_string().into(),
             kind: StructKind::Tuple(vec![InternedSymbol::from_text("A"), InternedSymbol::from_text("B")]),
-            span: Span::dummy(),
+            span: Location::dummy(),
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -154,18 +154,18 @@ fn test_parse_named_struct() {
                     visibility: ast::Visibility::Public,
                     name: "field".to_string().into(),
                     type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("T")]),
-                    span: Span::dummy(),
+                    span: Location::dummy(),
                 },
                 NamedField {
                     visibility: ast::Visibility::Private,
                     name: "other".to_string().into(),
                     type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("U")]),
-                    span: Span::dummy(),
+                    span: Location::dummy(),
                 },
             ]),
-            span: Span::dummy(),
+            span: Location::dummy(),
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -183,9 +183,9 @@ fn test_parse_impl_block() {
     let expected = Program {
         items: vec![Item::Impl(ImplBlock {
             type_name: "Point".to_string().into(),
-            span: Span::dummy(),
+            span: Location::dummy(),
             predicates: vec![PredicateDefinition {
-                span: Span::dummy(),
+                span: Location::dummy(),
                 visibility: ast::Visibility::Private,
                 predicate_kind: ast::PredicateKind::Relation,
                 attributes: vec![],
@@ -221,13 +221,13 @@ fn test_parse_impl_block() {
                                 },
                             ],
                         },
-                        Span::dummy(),
+                        Location::dummy(),
                     ),
-                    Span::dummy(),
+                    Location::dummy(),
                 )],
             }],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     // Check structural correctness instead of exact equality to handle span differences
     assert_eq!(ast.items.len(), 1);
@@ -254,7 +254,7 @@ fn test_parse_literals() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -264,37 +264,37 @@ fn test_parse_literals() {
             body: vec![
                 Goal::Equality(
                     Term::Variable(InternedSymbol::from_text("a")),
-                    Term::Literal(Literal::Boolean(true), Span::dummy()),
-                    Span::dummy(),
+                    Term::Literal(Literal::Boolean(true), Location::dummy()),
+                    Location::dummy(),
                 ),
                 Goal::Equality(
                     Term::Variable(InternedSymbol::from_text("b")),
-                    Term::Literal(Literal::Boolean(false), Span::dummy()),
-                    Span::dummy(),
+                    Term::Literal(Literal::Boolean(false), Location::dummy()),
+                    Location::dummy(),
                 ),
                 Goal::Equality(
                     Term::Variable(InternedSymbol::from_text("c")),
-                    Term::Literal(Literal::Number("42".to_string()), Span::dummy()),
-                    Span::dummy(),
+                    Term::Literal(Literal::Number("42".to_string()), Location::dummy()),
+                    Location::dummy(),
                 ),
                 Goal::Equality(
                     Term::Variable(InternedSymbol::from_text("d")),
-                    Term::Literal(Literal::Number("-17".to_string()), Span::dummy()),
-                    Span::dummy(),
+                    Term::Literal(Literal::Number("-17".to_string()), Location::dummy()),
+                    Location::dummy(),
                 ),
                 Goal::Equality(
                     Term::Variable(InternedSymbol::from_text("e")),
-                    Term::Literal(Literal::String("hello".to_string()), Span::dummy()),
-                    Span::dummy(),
+                    Term::Literal(Literal::String("hello".to_string()), Location::dummy()),
+                    Location::dummy(),
                 ),
                 Goal::Equality(
                     Term::Variable(InternedSymbol::from_text("f")),
-                    Term::Literal(Literal::Char('x'), Span::dummy()),
-                    Span::dummy(),
+                    Term::Literal(Literal::Char('x'), Location::dummy()),
+                    Location::dummy(),
                 ),
             ],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -305,7 +305,7 @@ fn test_parse_list_construction() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -317,18 +317,18 @@ fn test_parse_list_construction() {
                 Term::List(
                     ListConstruction {
                         elements: vec![
-                            Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                            Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
-                            Term::Literal(Literal::Number("3".to_string()), Span::dummy()),
+                            Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                            Term::Literal(Literal::Number("2".to_string()), Location::dummy()),
+                            Term::Literal(Literal::Number("3".to_string()), Location::dummy()),
                         ],
                         tail: None,
                     },
-                    Span::dummy(),
+                    Location::dummy(),
                 ),
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -339,7 +339,7 @@ fn test_parse_tuple_struct_construction() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -353,15 +353,15 @@ fn test_parse_tuple_struct_construction() {
                         name: QualifiedPath::Relative(vec![InternedSymbol::from_text("Option"), InternedSymbol::from_text("Some")]),
                         args: vec![Term::Literal(
                             Literal::Number("42".to_string()),
-                            Span::dummy(),
+                            Location::dummy(),
                         )],
                     },
-                    Span::dummy(),
+                    Location::dummy(),
                 ),
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -377,7 +377,7 @@ fn test_parse_disjunction() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -389,21 +389,21 @@ fn test_parse_disjunction() {
                     body: vec![
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("a")),
-                            Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("a")),
-                            Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("2".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                     ],
                     params: None,
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -414,7 +414,7 @@ fn test_parse_conjunction() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -426,21 +426,21 @@ fn test_parse_conjunction() {
                     body: vec![
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("a")),
-                            Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("b")),
-                            Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("2".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                     ],
                     params: None,
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -451,7 +451,7 @@ fn test_parse_fresh_variables() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -464,13 +464,13 @@ fn test_parse_fresh_variables() {
                     body: vec![Goal::Equality(
                         Term::Variable(InternedSymbol::from_text("x")),
                         Term::Variable(InternedSymbol::from_text("y")),
-                        Span::dummy(),
+                        Location::dummy(),
                     )],
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -487,7 +487,7 @@ fn test_parse_pattern_matching() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -511,7 +511,7 @@ fn test_parse_pattern_matching() {
                                     name: RelationName::Simple("succeed".to_string().into()),
                                     args: vec![],
                                 },
-                                Span::dummy(),
+                                Location::dummy(),
                             )],
                         },
                         PatternArm {
@@ -521,8 +521,8 @@ fn test_parse_pattern_matching() {
                             }),
                             body: vec![Goal::Equality(
                                 Term::Variable(InternedSymbol::from_text("a")),
-                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                                Span::dummy(),
+                                Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                                Location::dummy(),
                             )],
                         },
                         PatternArm {
@@ -532,15 +532,15 @@ fn test_parse_pattern_matching() {
                                     name: RelationName::Simple("fail".to_string().into()),
                                     args: vec![],
                                 },
-                                Span::dummy(),
+                                Location::dummy(),
                             )],
                         },
                     ],
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -557,7 +557,7 @@ fn test_parse_pattern_matching_single_goal() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -581,7 +581,7 @@ fn test_parse_pattern_matching_single_goal() {
                                     name: RelationName::Simple("succeed".to_string().into()),
                                     args: vec![],
                                 },
-                                Span::dummy(),
+                                Location::dummy(),
                             )],
                         },
                         PatternArm {
@@ -591,8 +591,8 @@ fn test_parse_pattern_matching_single_goal() {
                             }),
                             body: vec![Goal::Equality(
                                 Term::Variable(InternedSymbol::from_text("a")),
-                                Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                                Span::dummy(),
+                                Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                                Location::dummy(),
                             )],
                         },
                         PatternArm {
@@ -602,15 +602,15 @@ fn test_parse_pattern_matching_single_goal() {
                                     name: RelationName::Simple("fail".to_string().into()),
                                     args: vec![],
                                 },
-                                Span::dummy(),
+                                Location::dummy(),
                             )],
                         },
                     ],
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -625,7 +625,7 @@ fn test_parse_list_pattern_with_tail() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -649,14 +649,14 @@ fn test_parse_list_pattern_with_tail() {
                         body: vec![Goal::Equality(
                             Term::Variable("a".to_string().into()),
                             Term::Variable("b".to_string().into()),
-                            Span::dummy(),
+                            Location::dummy(),
                         )],
                     }],
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     // Check structural correctness instead of exact equality to handle span differences
     assert_eq!(ast.items.len(), 1);
@@ -680,7 +680,7 @@ fn test_parse_let_declaration() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -693,26 +693,26 @@ fn test_parse_let_declaration() {
                         var_name: "x".to_string().into(),
                         value: Some(Term::Literal(
                             Literal::Number("42".to_string()),
-                            Span::dummy(),
+                            Location::dummy(),
                         )),
                     },
-                    Span::dummy(),
+                    Location::dummy(),
                 ),
                 Goal::Let(
                     LetDeclaration {
                         var_name: "y".to_string().into(),
                         value: None,
                     },
-                    Span::dummy(),
+                    Location::dummy(),
                 ),
                 Goal::Equality(
                     Term::Variable(InternedSymbol::from_text("x")),
                     Term::Variable(InternedSymbol::from_text("y")),
-                    Span::dummy(),
+                    Location::dummy(),
                 ),
             ],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -723,7 +723,7 @@ fn test_parse_method_call() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -739,10 +739,10 @@ fn test_parse_method_call() {
                         Term::Variable(InternedSymbol::from_text("b")),
                     ],
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -753,7 +753,7 @@ fn test_parse_relation_call() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -769,10 +769,10 @@ fn test_parse_relation_call() {
                         CallArgument::Term(Term::Variable(InternedSymbol::from_text("c"))),
                     ],
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -783,7 +783,7 @@ fn test_parse_relation_call_no_args() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -795,10 +795,10 @@ fn test_parse_relation_call_no_args() {
                     name: RelationName::Simple("succeed".to_string().into()),
                     args: vec![],
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -828,7 +828,7 @@ fn test_parse_disequality() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -838,10 +838,10 @@ fn test_parse_disequality() {
             body: vec![Goal::Disequality(
                 Term::Variable(InternedSymbol::from_text("a")),
                 Term::Variable(InternedSymbol::from_text("b")),
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -872,7 +872,7 @@ fn test_parse_module() {
                         ),
                         InternedSymbol::from_text("HashMap"),
                     ),
-                    span: Span::dummy(),
+                    span: Location::dummy(),
                 }),
                 Item::Struct(StructDefinition {
                     visibility: ast::Visibility::Private,
@@ -882,19 +882,19 @@ fn test_parse_module() {
                             visibility: ast::Visibility::Private,
                             name: "x".to_string().into(),
                             type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
-                            span: Span::dummy(),
+                            span: Location::dummy(),
                         },
                         NamedField {
                             visibility: ast::Visibility::Private,
                             name: "y".to_string().into(),
                             type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
-                            span: Span::dummy(),
+                            span: Location::dummy(),
                         },
                     ]),
-                    span: Span::dummy(),
+                    span: Location::dummy(),
                 }),
                 Item::Predicate(PredicateDefinition {
-                    span: Span::dummy(),
+                    span: Location::dummy(),
                     visibility: ast::Visibility::Private,
                     predicate_kind: ast::PredicateKind::Relation,
                     attributes: vec![],
@@ -906,13 +906,13 @@ fn test_parse_module() {
                             name: RelationName::Simple("succeed".to_string().into()),
                             args: vec![],
                         },
-                        Span::dummy(),
+                        Location::dummy(),
                     )],
                 }),
             ],
-            span: Span::dummy(),
+            span: Location::dummy(),
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -923,7 +923,7 @@ fn test_parse_parenthesized_goal() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -935,18 +935,18 @@ fn test_parse_parenthesized_goal() {
                     Goal::Equality(
                         Term::Variable(InternedSymbol::from_text("a")),
                         Term::Variable(InternedSymbol::from_text("b")),
-                        Span::dummy(),
+                        Location::dummy(),
                     ),
                     Goal::Equality(
                         Term::Variable(InternedSymbol::from_text("c")),
                         Term::Variable(InternedSymbol::from_text("d")),
-                        Span::dummy(),
+                        Location::dummy(),
                     ),
                 ],
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -957,7 +957,7 @@ fn test_parse_parenthesized_term() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -968,12 +968,12 @@ fn test_parse_parenthesized_term() {
                 Term::Variable(InternedSymbol::from_text("a")),
                 Term::Parenthesized(
                     Box::new(Term::Variable(InternedSymbol::from_text("b"))),
-                    Span::dummy(),
+                    Location::dummy(),
                 ),
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -988,7 +988,7 @@ fn test_parse_named_struct_pattern() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -1018,14 +1018,14 @@ fn test_parse_named_struct_pattern() {
                         body: vec![Goal::Equality(
                             Term::Variable("a".to_string().into()),
                             Term::Variable("b".to_string().into()),
-                            Span::dummy(),
+                            Location::dummy(),
                         )],
                     }],
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -1125,10 +1125,10 @@ fn test_parse_tuple_struct_construction_qualified() {
             name: QualifiedPath::External(InternedSymbol::from_text("std"), vec![InternedSymbol::from_text("option"), InternedSymbol::from_text("Option"), InternedSymbol::from_text("Some")]),
             args: vec![Term::Literal(
                 Literal::Number("1".to_string()),
-                Span::dummy(),
+                Location::dummy(),
             )],
         },
-        Span::dummy(),
+        Location::dummy(),
     );
 
     assert_eq!(*rhs, expected_term);
@@ -1154,7 +1154,7 @@ fn test_parse_tuple_struct_construction_no_parens() {
             name: QualifiedPath::External(InternedSymbol::from_text("std"), vec![InternedSymbol::from_text("option"), InternedSymbol::from_text("Option"), InternedSymbol::from_text("None")]),
             args: vec![],
         },
-        Span::dummy(),
+        Location::dummy(),
     );
 
     assert_eq!(*rhs, expected_term);
@@ -1181,7 +1181,7 @@ fn test_parse_complex_example() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -1193,8 +1193,8 @@ fn test_parse_complex_example() {
                     body: vec![
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("a")),
-                            Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                         Goal::Disjunction(
                             Disjunction {
@@ -1203,17 +1203,17 @@ fn test_parse_complex_example() {
                                         Term::Variable(InternedSymbol::from_text("b")),
                                         Term::Literal(
                                             Literal::Number("2".to_string()),
-                                            Span::dummy(),
+                                            Location::dummy(),
                                         ),
-                                        Span::dummy(),
+                                        Location::dummy(),
                                     ),
                                     Goal::Equality(
                                         Term::Variable(InternedSymbol::from_text("c")),
                                         Term::Literal(
                                             Literal::Number("3".to_string()),
-                                            Span::dummy(),
+                                            Location::dummy(),
                                         ),
-                                        Span::dummy(),
+                                        Location::dummy(),
                                     ),
                                 ],
                                 params: Some(SearchParams {
@@ -1223,15 +1223,15 @@ fn test_parse_complex_example() {
                                     custom_params: vec![],
                                 }),
                             },
-                            Span::dummy(),
+                            Location::dummy(),
                         ),
                     ],
                     params: None,
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -1278,13 +1278,13 @@ fn test_parse_simple_conjunction() {
                     let expected = Conjunction::new(vec![
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("a")),
-                            Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("b")),
-                            Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("2".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                     ]);
                     assert_eq!(conj, &expected);
@@ -1313,13 +1313,13 @@ fn test_parse_simple_disjunction() {
                     let expected = Disjunction::new(vec![
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("a")),
-                            Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("b")),
-                            Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("2".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                     ]);
                     assert_eq!(disj, &expected);
@@ -1349,13 +1349,13 @@ fn test_parse_conjunction_with_strategy() {
                     vec![
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("a")),
-                            Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("b")),
-                            Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("2".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                     ],
                     params,
@@ -1386,13 +1386,13 @@ fn test_parse_disjunction_with_limit() {
                     vec![
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("a")),
-                            Term::Literal(Literal::Number("1".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                         Goal::Equality(
                             Term::Variable(InternedSymbol::from_text("b")),
-                            Term::Literal(Literal::Number("2".to_string()), Span::dummy()),
-                            Span::dummy(),
+                            Term::Literal(Literal::Number("2".to_string()), Location::dummy()),
+                            Location::dummy(),
                         ),
                     ],
                     params,
@@ -1469,7 +1469,7 @@ fn test_parse_custom_params() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -1481,7 +1481,7 @@ fn test_parse_custom_params() {
                     body: vec![Goal::Equality(
                         Term::Variable(InternedSymbol::from_text("a")),
                         Term::Variable(InternedSymbol::from_text("b")),
-                        Span::dummy(),
+                        Location::dummy(),
                     )],
                     params: Some(SearchParams {
                         strategy: None,
@@ -1496,10 +1496,10 @@ fn test_parse_custom_params() {
                         ],
                     }),
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -1559,7 +1559,7 @@ fn test_parse_search_params() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -1569,10 +1569,10 @@ fn test_parse_search_params() {
             body: vec![Goal::Equality(
                 Term::Variable(InternedSymbol::from_text("a")),
                 Term::Variable(InternedSymbol::from_text("b")),
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -1583,7 +1583,7 @@ fn test_parse_all_block() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -1595,7 +1595,7 @@ fn test_parse_all_block() {
                     body: vec![Goal::Equality(
                         Term::Variable(InternedSymbol::from_text("a")),
                         Term::Variable(InternedSymbol::from_text("b")),
-                        Span::dummy(),
+                        Location::dummy(),
                     )],
                     params: Some(SearchParams {
                         strategy: Some(SearchStrategy::Dfs),
@@ -1604,10 +1604,10 @@ fn test_parse_all_block() {
                         custom_params: vec![],
                     }),
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }
@@ -1618,7 +1618,7 @@ fn test_parse_any_block() {
     let ast = parse_str(input).unwrap();
     let expected = Program {
         items: vec![Item::Predicate(PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: ast::Visibility::Private,
             predicate_kind: ast::PredicateKind::Relation,
             attributes: vec![],
@@ -1630,7 +1630,7 @@ fn test_parse_any_block() {
                     body: vec![Goal::Equality(
                         Term::Variable(InternedSymbol::from_text("a")),
                         Term::Variable(InternedSymbol::from_text("b")),
-                        Span::dummy(),
+                        Location::dummy(),
                     )],
                     params: Some(SearchParams {
                         strategy: Some(SearchStrategy::Bfs),
@@ -1639,10 +1639,10 @@ fn test_parse_any_block() {
                         custom_params: vec![],
                     }),
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
         })],
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(ast, expected);
 }

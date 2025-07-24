@@ -1074,7 +1074,7 @@ impl<'a> ExecutionContext<'a> {
     fn convert_constraint_block(
         &mut self,
         block: &super::parser::ast::ConstraintBlock,
-        span: &super::parser::ast::Span,
+        span: &super::parser::ast::Location,
     ) -> Result<Goal, InterpreterError> {
         use super::constraint_domains::ConstraintDomainRegistry;
         let registry = ConstraintDomainRegistry::default();
@@ -2082,7 +2082,7 @@ impl<'a> ExecutionContext<'a> {
     fn expand_and_execute_meta_statement(
         &mut self,
         meta_stmt: &super::metaprogramming::MetaStatement,
-        span: &super::parser::ast::Span,
+        span: &super::parser::ast::Location,
     ) -> Result<Goal, InterpreterError> {
         // Create template expansion context with a reasonable recursion limit
         let mut context = TemplateExpansionContext::new(100);

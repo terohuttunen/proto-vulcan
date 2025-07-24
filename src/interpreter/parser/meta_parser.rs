@@ -4,7 +4,7 @@ use pest_derive::Parser;
 use thiserror::Error;
 
 use crate::interpreter::metaprogramming::{MetaBinaryOp, MetaExpression, MetaValue};
-use crate::interpreter::parser::ast::Span;
+use crate::interpreter::parser::ast::Location;
 
 #[derive(Parser)]
 #[grammar = "interpreter/parser/meta_expr.pest"]
@@ -23,19 +23,23 @@ pub enum MetaParseError {
 type MetaParseResult<T> = Result<T, MetaParseError>;
 
 /// Helper function to map meta expression positions to source positions
-pub fn map_meta_position_to_source(meta_pos: usize, source_span: &Span) -> usize {
+pub fn map_meta_position_to_source(meta_pos: usize, source_span: &Location) -> usize {
     source_span.start + meta_pos
 }
 
 /// Helper function to create a span for meta expression content within source context
-pub fn create_meta_span(meta_start: usize, meta_end: usize, source_span: &Span) -> Span {
+pub fn create_meta_span(meta_start: usize, meta_end: usize, source_span: &Location) -> Location {
     let source_start = map_meta_position_to_source(meta_start, source_span);
     let source_end = map_meta_position_to_source(meta_end, source_span);
-    Span::new(source_start, source_end)
+    // TODO: line and column not mapped
+    Location::new(0, 0, source_start, source_end)
 }
 
 /// Parse a meta expression from a string with source span context
-pub fn parse_meta_expression(input: &str, source_span: &Span) -> MetaParseResult<MetaExpression> {
+pub fn parse_meta_expression(
+    input: &str,
+    source_span: &Location,
+) -> MetaParseResult<MetaExpression> {
     let pairs = MetaExpressionParser::parse(Rule::meta_expression, input)?;
     let expr_pair = pairs.into_iter().next().unwrap();
     build_meta_expression(expr_pair.into_inner().next().unwrap(), source_span)
@@ -46,7 +50,7 @@ pub fn parse_meta_expression(input: &str, source_span: &Span) -> MetaParseResult
 /// Build a meta expression from a pest pair with source span context
 pub fn build_meta_expression(
     pair: Pair<Rule>,
-    source_span: &Span,
+    source_span: &Location,
 ) -> MetaParseResult<MetaExpression> {
     match pair.as_rule() {
         Rule::meta_or_expression => {
@@ -263,52 +267,55 @@ mod tests {
 
     #[test]
     fn test_parse_simple_variable() {
-        let expr = parse_meta_expression("x", &Span::new(0, 1)).unwrap();
+        let expr = parse_meta_expression("x", &Location::new(0, 0, 0, 1)).unwrap();
         assert_eq!(
             expr,
-            MetaExpression::Variable("x".to_string(), Span::new(0, 1))
+            MetaExpression::Variable("x".to_string(), Location::new(0, 0, 0, 1))
         );
     }
 
     #[test]
     fn test_parse_integer_literal() {
-        let expr = parse_meta_expression("42", &Span::new(0, 2)).unwrap();
+        let expr = parse_meta_expression("42", &Location::new(0, 0, 0, 2)).unwrap();
         assert_eq!(
             expr,
-            MetaExpression::Literal(MetaValue::Integer(42), Span::new(0, 2))
+            MetaExpression::Literal(MetaValue::Integer(42), Location::new(0, 0, 0, 2))
         );
     }
 
     #[test]
     fn test_parse_string_literal() {
-        let expr = parse_meta_expression("\"hello\"", &Span::new(0, 8)).unwrap();
+        let expr = parse_meta_expression("\"hello\"", &Location::new(0, 0, 0, 8)).unwrap();
         assert_eq!(
             expr,
-            MetaExpression::Literal(MetaValue::String("hello".to_string()), Span::new(0, 8))
+            MetaExpression::Literal(
+                MetaValue::String("hello".to_string()),
+                Location::new(0, 0, 0, 8)
+            )
         );
     }
 
     #[test]
     fn test_parse_boolean_literal() {
-        let expr = parse_meta_expression("true", &Span::new(0, 4)).unwrap();
+        let expr = parse_meta_expression("true", &Location::new(0, 0, 0, 4)).unwrap();
         assert_eq!(
             expr,
-            MetaExpression::Literal(MetaValue::Boolean(true), Span::new(0, 4))
+            MetaExpression::Literal(MetaValue::Boolean(true), Location::new(0, 0, 0, 4))
         );
     }
 
     #[test]
     fn test_parse_addition() {
-        let expr = parse_meta_expression("x + 1", &Span::new(0, 5)).unwrap();
+        let expr = parse_meta_expression("x + 1", &Location::new(0, 0, 0, 5)).unwrap();
         match expr {
             MetaExpression::BinaryOp(MetaBinaryOp::Add, left, right, _) => {
                 assert_eq!(
                     *left,
-                    MetaExpression::Variable("x".to_string(), Span::new(0, 1))
+                    MetaExpression::Variable("x".to_string(), Location::new(0, 0, 0, 1))
                 );
                 assert_eq!(
                     *right,
-                    MetaExpression::Literal(MetaValue::Integer(1), Span::new(4, 5))
+                    MetaExpression::Literal(MetaValue::Integer(1), Location::new(0, 0, 4, 5))
                 );
             }
             _ => panic!("Expected addition expression"),
@@ -319,16 +326,16 @@ mod tests {
 
     #[test]
     fn test_parse_comparison() {
-        let expr = parse_meta_expression("x < 5", &Span::new(0, 5)).unwrap();
+        let expr = parse_meta_expression("x < 5", &Location::new(0, 0, 0, 5)).unwrap();
         match expr {
             MetaExpression::BinaryOp(MetaBinaryOp::LessThan, left, right, _) => {
                 assert_eq!(
                     *left,
-                    MetaExpression::Variable("x".to_string(), Span::new(0, 1))
+                    MetaExpression::Variable("x".to_string(), Location::new(0, 0, 0, 1))
                 );
                 assert_eq!(
                     *right,
-                    MetaExpression::Literal(MetaValue::Integer(5), Span::new(4, 5))
+                    MetaExpression::Literal(MetaValue::Integer(5), Location::new(0, 0, 4, 5))
                 );
             }
             _ => panic!("Expected comparison expression"),
@@ -337,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_parse_parentheses() {
-        let expr = parse_meta_expression("(x + 1) * 2", &Span::new(0, 10)).unwrap();
+        let expr = parse_meta_expression("(x + 1) * 2", &Location::new(0, 0, 0, 10)).unwrap();
         match expr {
             MetaExpression::BinaryOp(MetaBinaryOp::Multiply, left, right, _) => {
                 match *left {
@@ -346,7 +353,7 @@ mod tests {
                 }
                 assert_eq!(
                     *right,
-                    MetaExpression::Literal(MetaValue::Integer(2), Span::new(8, 9))
+                    MetaExpression::Literal(MetaValue::Integer(2), Location::new(0, 0, 8, 9))
                 );
             }
             _ => panic!("Expected multiplication expression"),

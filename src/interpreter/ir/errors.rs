@@ -319,7 +319,7 @@ impl CompileError {
     /// Get the source location information from this error, if available
     pub fn source_location(
         &self,
-    ) -> Option<(std::path::PathBuf, crate::interpreter::parser::ast::Span)> {
+    ) -> Option<(std::path::PathBuf, crate::interpreter::parser::ast::Location)> {
         match self {
             CompileError::UnresolvedType { symbol, .. } => {
                 Some((symbol.file_path().clone(), symbol.span()))

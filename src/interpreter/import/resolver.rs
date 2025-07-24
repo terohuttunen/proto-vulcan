@@ -941,7 +941,7 @@ pub struct CacheStats {
 mod tests {
     use super::*;
     
-    use crate::interpreter::parser::ast::{Conjunction, Goal as AstGoal, Span};
+    use crate::interpreter::parser::ast::{Conjunction, Goal as AstGoal, Location};
     use crate::interpreter::parser::ast::{PredicateDefinition, PredicateKind, Visibility};
     
 
@@ -960,9 +960,9 @@ mod tests {
                     body: vec![],
                     params: None,
                 },
-                Span::dummy(),
+                Location::dummy(),
             )],
-            span: Span::dummy(),
+            span: Location::dummy(),
         };
 
         module_info.public_symbols.insert(

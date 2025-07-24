@@ -4,7 +4,8 @@ use std::fmt::{self, Display};
 
 /// Helper function to join InternedSymbol slices with a separator
 fn join_symbols(symbols: &[InternedSymbol], separator: &str) -> String {
-    symbols.iter()
+    symbols
+        .iter()
         .map(|s| s.text())
         .collect::<Vec<_>>()
         .join(separator)
@@ -161,20 +162,34 @@ impl Display for QualifiedName {
 
 /// Source location information for better error reporting
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Span {
+pub struct Location {
+    /// Line
+    pub line: usize,
+    /// Column
+    pub col: usize,
     /// Start position (byte offset)
     pub start: usize,
     /// End position (byte offset)
     pub end: usize,
 }
 
-impl Span {
-    pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
+impl Location {
+    pub fn new(line: usize, col: usize, start: usize, end: usize) -> Self {
+        Self {
+            line,
+            col,
+            start,
+            end,
+        }
     }
 
     pub fn dummy() -> Self {
-        Self { start: 0, end: 0 }
+        Self {
+            line: 0,
+            col: 0,
+            start: 0,
+            end: 0,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -184,20 +199,15 @@ impl Span {
     pub fn is_empty(&self) -> bool {
         self.start >= self.end
     }
-
-    /// Combine two spans into one that covers both
-    pub fn union(&self, other: &Span) -> Span {
-        Span::new(self.start.min(other.start), self.end.max(other.end))
-    }
 }
 
-impl Default for Span {
+impl Default for Location {
     fn default() -> Self {
         Self::dummy()
     }
 }
 
-impl Display for Span {
+impl Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}..{}", self.start, self.end)
     }
@@ -241,14 +251,14 @@ impl Display for Visibility {
 
 /// Trait for AST nodes that have source location information
 pub trait Spanned {
-    fn span(&self) -> &Span;
+    fn span(&self) -> &Location;
 }
 
 /// A convenient wrapper for AST nodes with span information
 #[derive(Debug, Clone)]
 pub struct Located<T> {
     pub node: T,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl<T: PartialEq> PartialEq for Located<T> {
@@ -258,14 +268,14 @@ impl<T: PartialEq> PartialEq for Located<T> {
 }
 
 impl<T> Located<T> {
-    pub fn new(node: T, span: Span) -> Self {
+    pub fn new(node: T, span: Location) -> Self {
         Self { node, span }
     }
 
     pub fn dummy(node: T) -> Self {
         Self {
             node,
-            span: Span::dummy(),
+            span: Location::dummy(),
         }
     }
 }
@@ -277,13 +287,13 @@ where
     fn default() -> Self {
         Self {
             node: T::default(),
-            span: Span::default(),
+            span: Location::default(),
         }
     }
 }
 
 impl<T> Spanned for Located<T> {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -291,7 +301,7 @@ impl<T> Spanned for Located<T> {
 #[derive(Debug, Clone)]
 pub struct Program {
     pub items: Vec<Item>,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for Program {
@@ -301,7 +311,7 @@ impl PartialEq for Program {
 }
 
 impl Spanned for Program {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -318,7 +328,7 @@ pub enum Item {
 }
 
 impl Spanned for Item {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         match self {
             Item::Use(use_stmt) => use_stmt.span(),
             Item::ModuleDeclaration(mod_decl) => mod_decl.span(),
@@ -334,7 +344,7 @@ impl Spanned for Item {
 #[derive(Debug, Clone)]
 pub struct UseStatement {
     pub path: UsePath,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for UseStatement {
@@ -344,7 +354,7 @@ impl PartialEq for UseStatement {
 }
 
 impl Spanned for UseStatement {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -365,7 +375,7 @@ pub struct ModuleDefinition {
     pub name: InternedSymbol,
     pub search_strategy: Option<SearchStrategy>,
     pub items: Vec<Item>,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for ModuleDefinition {
@@ -378,7 +388,7 @@ impl PartialEq for ModuleDefinition {
 }
 
 impl Spanned for ModuleDefinition {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -388,7 +398,7 @@ impl Spanned for ModuleDefinition {
 pub struct ModuleDeclaration {
     pub visibility: Visibility,
     pub name: InternedSymbol,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for ModuleDeclaration {
@@ -398,7 +408,7 @@ impl PartialEq for ModuleDeclaration {
 }
 
 impl Spanned for ModuleDeclaration {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -414,7 +424,7 @@ pub struct StructDefinition {
     pub visibility: Visibility,
     pub name: InternedSymbol,
     pub kind: StructKind,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for StructDefinition {
@@ -424,7 +434,7 @@ impl PartialEq for StructDefinition {
 }
 
 impl Spanned for StructDefinition {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -440,7 +450,7 @@ pub struct NamedField {
     pub visibility: Visibility,
     pub name: InternedSymbol,
     pub type_name: QualifiedPath,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for NamedField {
@@ -452,7 +462,7 @@ impl PartialEq for NamedField {
 }
 
 impl Spanned for NamedField {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -462,19 +472,19 @@ pub struct EnumDefinition {
     pub visibility: Visibility,
     pub name: InternedSymbol,
     pub variants: Vec<EnumVariant>,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for EnumDefinition {
     fn eq(&self, other: &Self) -> bool {
-        self.visibility == other.visibility 
-            && self.name == other.name 
+        self.visibility == other.visibility
+            && self.name == other.name
             && self.variants == other.variants
     }
 }
 
 impl Spanned for EnumDefinition {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -483,7 +493,7 @@ impl Spanned for EnumDefinition {
 pub struct EnumVariant {
     pub name: InternedSymbol,
     pub kind: VariantKind,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for EnumVariant {
@@ -493,23 +503,23 @@ impl PartialEq for EnumVariant {
 }
 
 impl Spanned for EnumVariant {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VariantKind {
-    Unit,                           // Color::Red
-    Tuple(Vec<InternedSymbol>),            // Option::Some(T)
-    Named(Vec<NamedField>),        // Person::Named { name: String, age: u32 }
+    Unit,                       // Color::Red
+    Tuple(Vec<InternedSymbol>), // Option::Some(T)
+    Named(Vec<NamedField>),     // Person::Named { name: String, age: u32 }
 }
 
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
     pub type_name: InternedSymbol,
     pub predicates: Vec<PredicateDefinition>,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for ImplBlock {
@@ -519,7 +529,7 @@ impl PartialEq for ImplBlock {
 }
 
 impl Spanned for ImplBlock {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -560,7 +570,7 @@ pub struct PredicateDefinition {
     pub parameters: Vec<Parameter>,
     pub search_strategy: Option<SearchStrategy>,
     pub body: GoalBody,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for PredicateDefinition {
@@ -576,7 +586,7 @@ impl PartialEq for PredicateDefinition {
 }
 
 impl Spanned for PredicateDefinition {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         &self.span
     }
 }
@@ -693,20 +703,20 @@ pub type GoalBody = Vec<Goal>;
 
 #[derive(Debug, Clone)]
 pub enum Goal {
-    Let(LetDeclaration, Span),
-    Fresh(FreshVariables, Span),
-    Disjunction(Disjunction, Span),
-    Conjunction(Conjunction, Span),
-    PatternMatch(PatternMatching, Span),
-    RelationCall(RelationCall, Span),
-    MethodCall(MethodCall, Span),
-    Equality(Term, Term, Span),
-    Disequality(Term, Term, Span),
-    Parenthesized(GoalBody, Span),
-    BooleanLiteral(bool, Span),
-    ConstraintBlock(ConstraintBlock, Span),
+    Let(LetDeclaration, Location),
+    Fresh(FreshVariables, Location),
+    Disjunction(Disjunction, Location),
+    Conjunction(Conjunction, Location),
+    PatternMatch(PatternMatching, Location),
+    RelationCall(RelationCall, Location),
+    MethodCall(MethodCall, Location),
+    Equality(Term, Term, Location),
+    Disequality(Term, Term, Location),
+    Parenthesized(GoalBody, Location),
+    BooleanLiteral(bool, Location),
+    ConstraintBlock(ConstraintBlock, Location),
     // NEW: Meta programming constructs
-    MetaStatement(MetaStatement, Span),
+    MetaStatement(MetaStatement, Location),
 }
 
 impl PartialEq for Goal {
@@ -731,7 +741,7 @@ impl PartialEq for Goal {
 }
 
 impl Spanned for Goal {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         match self {
             Goal::Let(_, span) => span,
             Goal::Fresh(_, span) => span,
@@ -876,19 +886,18 @@ pub struct MethodCall {
     pub args: Vec<Term>,
 }
 
-
 #[derive(Debug, Clone)]
 pub enum Term {
-    Literal(Literal, Span),
+    Literal(Literal, Location),
     Variable(InternedSymbol),
-    Wildcard(Span),
-    List(ListConstruction, Span),
-    NamedStruct(NamedStructConstruction, Span),
-    TupleStruct(TupleStructConstruction, Span),
-    EnumVariant(EnumVariantConstruction, Span),
-    Parenthesized(Box<Term>, Span),
+    Wildcard(Location),
+    List(ListConstruction, Location),
+    NamedStruct(NamedStructConstruction, Location),
+    TupleStruct(TupleStructConstruction, Location),
+    EnumVariant(EnumVariantConstruction, Location),
+    Parenthesized(Box<Term>, Location),
     // NEW: Interpolation for meta expressions
-    Interpolation(MetaExpression, Span),
+    Interpolation(MetaExpression, Location),
 }
 
 impl PartialEq for Term {
@@ -909,7 +918,7 @@ impl PartialEq for Term {
 }
 
 impl Spanned for Term {
-    fn span(&self) -> &Span {
+    fn span(&self) -> &Location {
         match self {
             Term::Literal(_, span) => span,
             Term::Variable(symbol) => symbol.span_ref(),
@@ -958,8 +967,8 @@ pub struct EnumVariantConstruction {
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnumVariantConstructionKind {
     Unit,                         // Color::Red
-    Tuple(Vec<Term>),            // Option::Some(42)
-    Named(Vec<FieldInitializer>),     // Result::Ok { value: 42 }
+    Tuple(Vec<Term>),             // Option::Some(42)
+    Named(Vec<FieldInitializer>), // Result::Ok { value: 42 }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1028,7 +1037,7 @@ pub struct ConstraintBlock {
 #[derive(Debug, Clone)]
 pub struct ConstraintBody {
     pub raw_content: String,
-    pub span: Span,
+    pub span: Location,
 }
 
 impl PartialEq for ConstraintBody {
@@ -1491,7 +1500,6 @@ impl Display for EnumVariantConstruction {
         }
     }
 }
-
 
 impl Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

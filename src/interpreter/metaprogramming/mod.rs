@@ -39,13 +39,13 @@ impl fmt::Display for TypeAnnotation {
 /// Meta expressions for computation and interpolation
 #[derive(Debug, Clone)]
 pub enum MetaExpression {
-    Variable(String, super::parser::ast::Span),
-    Literal(MetaValue, super::parser::ast::Span),
+    Variable(String, super::parser::ast::Location),
+    Literal(MetaValue, super::parser::ast::Location),
     BinaryOp(
         MetaBinaryOp,
         Box<MetaExpression>,
         Box<MetaExpression>,
-        super::parser::ast::Span,
+        super::parser::ast::Location,
     ),
 }
 
@@ -366,7 +366,7 @@ pub type TemplateExpansionResult = Result<Vec<super::parser::ast::Goal>, MetaErr
 pub fn expand_meta_statement(
     statement: &MetaStatement,
     context: &mut TemplateExpansionContext,
-    original_span: &super::parser::ast::Span,
+    original_span: &super::parser::ast::Location,
 ) -> TemplateExpansionResult {
     context.check_depth()?;
     context.push_depth();
@@ -402,7 +402,7 @@ pub fn expand_meta_statement(
 fn expand_let_statement(
     let_stmt: &LetStatement,
     context: &mut TemplateExpansionContext,
-    original_span: &super::parser::ast::Span,
+    original_span: &super::parser::ast::Location,
 ) -> TemplateExpansionResult {
     let value = evaluate_meta_expression(&let_stmt.expression, &context.bindings)?;
 
@@ -443,7 +443,7 @@ fn expand_if_statement(
     else_ifs: &[(MetaExpression, super::parser::ast::GoalBody)],
     else_body: Option<&super::parser::ast::GoalBody>,
     context: &mut TemplateExpansionContext,
-    _original_span: &super::parser::ast::Span,
+    _original_span: &super::parser::ast::Location,
 ) -> TemplateExpansionResult {
     let condition_value = evaluate_meta_expression(condition, &context.bindings)?;
 
@@ -493,7 +493,7 @@ fn expand_for_statement(
     for_range: &MetaForRange,
     body: &super::parser::ast::GoalBody,
     context: &mut TemplateExpansionContext,
-    original_span: &super::parser::ast::Span,
+    original_span: &super::parser::ast::Location,
 ) -> TemplateExpansionResult {
     // Evaluate the start and end expressions
     let start_val = evaluate_meta_expression(&for_range.start, &context.bindings)?;
@@ -859,15 +859,15 @@ pub fn expand_call_argument(
             let term = match value {
                 MetaValue::Integer(i) => super::parser::ast::Term::Literal(
                     super::parser::ast::Literal::Number(i.to_string()),
-                    super::parser::ast::Span::dummy(),
+                    super::parser::ast::Location::dummy(),
                 ),
                 MetaValue::String(s) => super::parser::ast::Term::Literal(
                     super::parser::ast::Literal::String(s),
-                    super::parser::ast::Span::dummy(),
+                    super::parser::ast::Location::dummy(),
                 ),
                 MetaValue::Boolean(b) => super::parser::ast::Term::Literal(
                     super::parser::ast::Literal::Boolean(b),
-                    super::parser::ast::Span::dummy(),
+                    super::parser::ast::Location::dummy(),
                 ),
             };
 
@@ -977,7 +977,7 @@ impl fmt::Display for MetaValue {
 /// to source file coordinates using the source span context.
 pub fn map_meta_error_position(
     pest_error: &crate::interpreter::parser::meta_parser::MetaParseError,
-    source_span: &super::parser::ast::Span,
+    source_span: &super::parser::ast::Location,
 ) -> String {
     match pest_error {
         crate::interpreter::parser::meta_parser::MetaParseError::Pest(inner_error) => {

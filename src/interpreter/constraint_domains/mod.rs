@@ -86,7 +86,7 @@ pub trait ConstraintDomain {
     fn parse_constraints(
         &self,
         body: &ConstraintBody,
-        source_span: &super::parser::ast::Span,
+        source_span: &super::parser::ast::Location,
     ) -> Result<Box<dyn DomainConstraints>, InterpreterError>;
 
     /// Get description of supported syntax for error messages
@@ -152,7 +152,7 @@ impl ConstraintDomainRegistry {
         execution_context: &mut ExecutionContext,
         domain_name: &str,
         body: &ConstraintBody,
-        source_span: &super::parser::ast::Span,
+        source_span: &super::parser::ast::Location,
     ) -> Result<Goal, InterpreterError> {
         let domain = self.get_domain(domain_name).ok_or_else(|| {
             InterpreterError::InvalidConstraintSyntax {

@@ -138,14 +138,14 @@ fn test_display_mod_declaration() {
     let mod_decl = ModuleDeclaration {
         visibility: ast::Visibility::Private,
         name: "test_module".to_string().into(),
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(format!("{}", mod_decl), "mod test_module;");
 
     let pub_mod_decl = ModuleDeclaration {
         visibility: ast::Visibility::Public,
         name: "public_module".to_string().into(),
-        span: Span::dummy(),
+        span: Location::dummy(),
     };
     assert_eq!(format!("{}", pub_mod_decl), "pub mod public_module;");
 }

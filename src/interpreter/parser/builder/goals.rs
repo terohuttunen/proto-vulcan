@@ -126,7 +126,7 @@ impl<'a> AstBuilder<'a> {
         let mut inner = pair.into_inner();
         let mut domain = "clpfd".to_string(); // Default domain
         let mut raw_content = "".to_string();
-        let mut body_span = Span::dummy(); // Default span if body not found
+        let mut body_span = Location::dummy(); // Default span if body not found
 
         // The first pairs can be constraint_params
         if let Some(p) = inner.peek() {

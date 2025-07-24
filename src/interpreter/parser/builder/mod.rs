@@ -49,16 +49,17 @@ impl<'a> AstBuilder<'a> {
     }
 
     /// Helper function to extract span information from a Pest pair
-    pub fn pair_to_span(&self, pair: &Pair<Rule>) -> Span {
+    pub fn pair_to_span(&self, pair: &Pair<Rule>) -> Location {
         let span = pair.as_span();
-        Span::new(span.start(), span.end())
+        let (line, col) = pair.line_col();
+        Location::new(line, col, span.start(), span.end())
     }
 
     /// Create an interned symbol from text and span
     pub fn create_symbol(
         &mut self,
         text: &str,
-        span: Span,
+        span: Location,
     ) -> crate::interpreter::symbol_table::InternedSymbol {
         self.symbol_table
             .create_symbol(text, span, self.current_file.clone())

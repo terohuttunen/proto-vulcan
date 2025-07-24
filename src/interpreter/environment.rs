@@ -1263,7 +1263,7 @@ mod tests {
         let mut env = TestEnv::new();
 
         let relation = PredicateDefinition {
-            span: Span::dummy(),
+            span: Location::dummy(),
             visibility: Visibility::Private,
             predicate_kind: PredicateKind::Relation,
             attributes: vec![],
@@ -1294,16 +1294,16 @@ mod tests {
                     visibility: Visibility::Private,
                     name: "x".to_string().into(),
                     type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
-                    span: Span::dummy(),
+                    span: Location::dummy(),
                 },
                 NamedField {
                     visibility: Visibility::Private,
                     name: "y".to_string().into(),
                     type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
-                    span: Span::dummy(),
+                    span: Location::dummy(),
                 },
             ]),
-            span: Span::dummy(),
+            span: Location::dummy(),
         };
 
         env.load_struct(struct_def).unwrap();
@@ -1321,7 +1321,7 @@ mod tests {
             name: "test_module".to_string().into(),
             search_strategy: None,
             items: vec![Item::Predicate(PredicateDefinition {
-                span: Span::dummy(),
+                span: Location::dummy(),
                 visibility: Visibility::Private,
                 predicate_kind: PredicateKind::Relation,
                 attributes: vec![],
@@ -1330,7 +1330,7 @@ mod tests {
                 search_strategy: None,
                 body: vec![],
             })],
-            span: Span::dummy(),
+            span: Location::dummy(),
         };
 
         env.load_module(module).unwrap();
@@ -1378,7 +1378,7 @@ mod qualified_path_resolution_tests {
             parameters: vec![],
             search_strategy: None,
             body: vec![],
-            span: crate::interpreter::parser::ast::Span::dummy(),
+            span: crate::interpreter::parser::ast::Location::dummy(),
         });
 
         env.globals
