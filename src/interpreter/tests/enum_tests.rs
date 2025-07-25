@@ -10,12 +10,13 @@
 use crate::prelude::*;
 use crate::interpreter::Interpreter;
 use crate::interpreter::parser;
+use crate::interpreter::ExecutionConfig;
 
 type TestInterpreter = Interpreter;
 
 /// Helper function to create a test interpreter with basic enum definitions
 fn create_test_interpreter_with_enums() -> TestInterpreter {
-    let mut interpreter = TestInterpreter::new();
+    let mut interpreter = TestInterpreter::with_stdlib();
     
     // Load basic enum definitions for testing
     let enum_program = r#"
@@ -32,22 +33,22 @@ fn create_test_interpreter_with_enums() -> TestInterpreter {
         }
         
         enum Shape {
-            Circle(radius),
-            Rectangle { width: i32, height: i32 },
-            Triangle(side1, side2, side3),
+            Circle(Number),
+            Rectangle { width: Number, height: Number },
+            Triangle(Number, Number, Number),
             Point,
         }
         
         enum Container {
             Empty,
-            Single(value),
-            Pair { first: i32, second: i32 },
-            Triple(a, b, c),
+            Single(Number),
+            Pair { first: Number, second: Number },
+            Triple(Number, Number, Number),
         }
     "#;
     
     let parsed_program = parser::parse_str(enum_program).expect("Failed to parse test enums");
-    interpreter.load_program(parsed_program).expect("Failed to load test enums");
+    interpreter.load_program_ast(parsed_program).expect("Failed to load test enums");
     interpreter
 }
 
@@ -59,30 +60,31 @@ mod enum_construction_tests {
     #[test]
     fn test_unit_enum_construction() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Color::Red == Color::Red").unwrap();
+        let results: Vec<_> = interpreter.query("Color::Red == Color::Red", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_tuple_enum_construction() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Shape::Circle(5) == Shape::Circle(5)").unwrap();
+        let results: Vec<_> = interpreter.query("Shape::Circle(5) == Shape::Circle(5)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_named_enum_construction() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Shape::Rectangle { width: 10, height: 20 } == Shape::Rectangle { width: 10, height: 20 }"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query(
+            "Shape::Rectangle { width: 10, height: 20 } == Shape::Rectangle { width: 10, height: 20 }",
+            ExecutionConfig::default()
+        ).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_enum_construction_with_variables() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Shape::Circle(X) == Shape::Circle(5)").unwrap();
+        let results: Vec<_> = interpreter.query("Shape::Circle(X) == Shape::Circle(5)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         // The variable X should be bound to 5
         let bindings = &results[0];
@@ -92,9 +94,10 @@ mod enum_construction_tests {
     #[test]
     fn test_named_enum_construction_with_variables() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Shape::Rectangle { width: W, height: 20 } == Shape::Rectangle { width: 10, height: 20 }"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query(
+            "Shape::Rectangle { width: W, height: 20 } == Shape::Rectangle { width: 10, height: 20 }",
+            ExecutionConfig::default()
+        ).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         // The variable W should be bound to 10
         let bindings = &results[0];
@@ -104,14 +107,14 @@ mod enum_construction_tests {
     #[test]
     fn test_enum_construction_different_variants_fail() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Color::Red == Color::Blue").unwrap();
+        let results: Vec<_> = interpreter.query("Color::Red == Color::Blue", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 0); // Should fail to unify
     }
 
     #[test]
     fn test_enum_construction_different_types_fail() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Color::Red == Status::Active").unwrap();
+        let results: Vec<_> = interpreter.query("Color::Red == Status::Active", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 0); // Should fail to unify
     }
 }
@@ -124,67 +127,95 @@ mod enum_equality_tests {
     #[test]
     fn test_unit_enum_equality() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Color::Red == Color::Red").unwrap();
+        let results: Vec<_> = interpreter.query("Color::Red == Color::Red", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_unit_enum_inequality() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Color::Red != Color::Blue").unwrap();
+        let results: Vec<_> = interpreter.query("Color::Red != Color::Blue", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_tuple_enum_equality() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Shape::Circle(5) == Shape::Circle(5)").unwrap();
+        let results: Vec<_> = interpreter.query("Shape::Circle(5) == Shape::Circle(5)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_tuple_enum_inequality_different_values() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Shape::Circle(5) != Shape::Circle(3)").unwrap();
+        let results: Vec<_> = interpreter.query("Shape::Circle(5) != Shape::Circle(3)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_tuple_enum_inequality_different_variants() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Shape::Circle(5) != Shape::Point").unwrap();
+        let results: Vec<_> = interpreter.query("Shape::Circle(5) != Shape::Point", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_named_enum_equality() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Shape::Rectangle { width: 10, height: 20 } == Shape::Rectangle { width: 10, height: 20 }"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query(
+            "Shape::Rectangle { width: 10, height: 20 } == Shape::Rectangle { width: 10, height: 20 }",
+            ExecutionConfig::default()
+        ).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_named_enum_inequality_different_values() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Shape::Rectangle { width: 10, height: 20 } != Shape::Rectangle { width: 5, height: 20 }"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query(
+            "Shape::Rectangle { width: 10, height: 20 } != Shape::Rectangle { width: 5, height: 20 }",
+            ExecutionConfig::default()
+        ).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_cross_type_inequality() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("Color::Red != Status::Active").unwrap();
+        let results: Vec<_> = interpreter.query("Color::Red != Status::Active", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_complex_enum_equality_chain() {
-        let mut interpreter = create_test_interpreter_with_enums();
+        let mut interpreter = TestInterpreter::with_stdlib();
         let program = r#"
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            
+            enum Status {
+                Active,
+                Inactive,
+                Pending,
+            }
+            
+            enum Shape {
+                Circle(Number),
+                Rectangle { width: Number, height: Number },
+                Triangle(Number, Number, Number),
+                Point,
+            }
+            
+            enum Container {
+                Empty,
+                Single(Number),
+                Pair { first: Number, second: Number },
+                Triple(Number, Number, Number),
+            }
+            
             rel test_equality_chain() {
                 all {
                     Color::Red == Color::Red,
@@ -195,8 +226,8 @@ mod enum_equality_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
-        let results = interpreter.query("test_equality_chain()").unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
+        let results: Vec<_> = interpreter.query("test_equality_chain()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 }
@@ -209,16 +240,14 @@ mod enum_unification_tests {
     #[test]
     fn test_enum_unification_in_lists() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "[Color::Red, Color::Green, Color::Blue] == [Color::Red, Color::Green, Color::Blue]"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("[Color::Red, Color::Green, Color::Blue] == [Color::Red, Color::Green, Color::Blue]", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_enum_unification_with_variables_in_lists() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query("[Color::Red, X] == [Color::Red, Color::Blue]").unwrap();
+        let results: Vec<_> = interpreter.query("[Color::Red, X] == [Color::Red, Color::Blue]", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         let bindings = &results[0];
         assert!(bindings.bindings.contains_key("X"));
@@ -227,27 +256,21 @@ mod enum_unification_tests {
     #[test]
     fn test_enum_unification_nested_structures() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Container::Single(Color::Red) == Container::Single(Color::Red)"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("Container::Single(Color::Red) == Container::Single(Color::Red)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_enum_unification_mixed_types() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Container::Pair { first: Color::Red, second: Status::Active } == Container::Pair { first: Color::Red, second: Status::Active }"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("Container::Pair { first: Color::Red, second: Status::Active } == Container::Pair { first: Color::Red, second: Status::Active }", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_enum_unification_with_partial_variables() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Container::Triple(Shape::Circle(R), Color::Green, S) == Container::Triple(Shape::Circle(7), Color::Green, Status::Pending)"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("Container::Triple(Shape::Circle(R), Color::Green, S) == Container::Triple(Shape::Circle(7), Color::Green, Status::Pending)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         let bindings = &results[0];
         assert!(bindings.bindings.contains_key("R"));
@@ -257,18 +280,14 @@ mod enum_unification_tests {
     #[test]
     fn test_enum_unification_failure_wrong_variant() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Container::Single(X) == Container::Empty"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("Container::Single(X) == Container::Empty", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 0); // Should fail - different variants
     }
 
     #[test]
     fn test_enum_unification_failure_wrong_type() {
         let mut interpreter = create_test_interpreter_with_enums();
-        let results = interpreter.query(
-            "Container::Single(X) == Color::Red"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("Container::Single(X) == Color::Red", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 0); // Should fail - different types entirely
     }
 }
@@ -280,8 +299,34 @@ mod enum_pattern_matching_tests {
 
     #[test]
     fn test_simple_enum_pattern_matching() {
-        let mut interpreter = create_test_interpreter_with_enums();
+        let mut interpreter = TestInterpreter::with_stdlib();
         let program = r#"
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            
+            enum Status {
+                Active,
+                Inactive,
+                Pending,
+            }
+            
+            enum Shape {
+                Circle(Number),
+                Rectangle { width: Number, height: Number },
+                Triangle(Number, Number, Number),
+                Point,
+            }
+            
+            enum Container {
+                Empty,
+                Single(Number),
+                Pair { first: Number, second: Number },
+                Triple(Number, Number, Number),
+            }
+            
             rel test_pattern(result) {
                 match Color::Red {
                     Color::Red => result == "success",
@@ -290,15 +335,43 @@ mod enum_pattern_matching_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
-        let results = interpreter.query("test_pattern(R)").unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
+        let results: Vec<_> = interpreter.query("test_pattern(R)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_tuple_enum_pattern_matching() {
-        let mut interpreter = create_test_interpreter_with_enums();
+        let mut interpreter = TestInterpreter::with_stdlib();
+        
+        // Combined program with enum definitions and predicates
         let program = r#"
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            
+            enum Status {
+                Active,
+                Inactive,
+                Pending,
+            }
+            
+            enum Shape {
+                Circle(Number),
+                Rectangle { width: Number, height: Number },
+                Triangle(Number, Number, Number),
+                Point,
+            }
+            
+            enum Container {
+                Empty,
+                Single(Number),
+                Pair { first: Number, second: Number },
+                Triple(Number, Number, Number),
+            }
+            
             rel test_tuple_pattern(radius) {
                 match Shape::Circle(radius) {
                     Shape::Circle(R) => R == radius,
@@ -307,15 +380,43 @@ mod enum_pattern_matching_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
-        let results = interpreter.query("test_tuple_pattern(5)").unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
+        let results: Vec<_> = interpreter.query("test_tuple_pattern(5)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_named_enum_pattern_matching() {
-        let mut interpreter = create_test_interpreter_with_enums();
+        let mut interpreter = TestInterpreter::with_stdlib();
+        
+        // Combined program with enum definitions and predicates
         let program = r#"
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            
+            enum Status {
+                Active,
+                Inactive,
+                Pending,
+            }
+            
+            enum Shape {
+                Circle(Number),
+                Rectangle { width: Number, height: Number },
+                Triangle(Number, Number, Number),
+                Point,
+            }
+            
+            enum Container {
+                Empty,
+                Single(Number),
+                Pair { first: Number, second: Number },
+                Triple(Number, Number, Number),
+            }
+            
             rel test_named_pattern(w, h) {
                 match Shape::Rectangle { width: w, height: h } {
                     Shape::Rectangle { width: W, height: H } => {
@@ -327,15 +428,43 @@ mod enum_pattern_matching_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
-        let results = interpreter.query("test_named_pattern(10, 20)").unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
+        let results: Vec<_> = interpreter.query("test_named_pattern(10, 20)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
-    #[test]
+    #[test] 
     fn test_nested_enum_pattern_matching() {
-        let mut interpreter = create_test_interpreter_with_enums();
+        let mut interpreter = TestInterpreter::with_stdlib();
+        
+        // Combined program with enum definitions and predicates
         let program = r#"
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            
+            enum Status {
+                Active,
+                Inactive,
+                Pending,
+            }
+            
+            enum Shape {
+                Circle(Number),
+                Rectangle { width: Number, height: Number },
+                Triangle(Number, Number, Number),
+                Point,
+            }
+            
+            enum Container {
+                Empty,
+                Single(Number),
+                Pair { first: Number, second: Number },
+                Triple(Number, Number, Number),
+            }
+            
             rel test_nested_pattern(color) {
                 match Container::Single(color) {
                     Container::Single(Color::Red) => true,
@@ -345,15 +474,43 @@ mod enum_pattern_matching_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
-        let results = interpreter.query("test_nested_pattern(Color::Red)").unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
+        let results: Vec<_> = interpreter.query("test_nested_pattern(Color::Red)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_complex_pattern_matching_with_multiple_variants() {
-        let mut interpreter = create_test_interpreter_with_enums();
+        let mut interpreter = TestInterpreter::with_stdlib();
+        
+        // Combined program with enum definitions and predicates
         let program = r#"
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            
+            enum Status {
+                Active,
+                Inactive,
+                Pending,
+            }
+            
+            enum Shape {
+                Circle(Number),
+                Rectangle { width: Number, height: Number },
+                Triangle(Number, Number, Number),
+                Point,
+            }
+            
+            enum Container {
+                Empty,
+                Single(Number),
+                Pair { first: Number, second: Number },
+                Triple(Number, Number, Number),
+            }
+            
             rel classify_container(container, result) {
                 match container {
                     Container::Empty => result == "empty_type",
@@ -364,16 +521,16 @@ mod enum_pattern_matching_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
         
         // Test each variant
-        let results = interpreter.query("classify_container(Container::Empty, R)").unwrap();
+        let results: Vec<_> = interpreter.query("classify_container(Container::Empty, R)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         
-        let results = interpreter.query("classify_container(Container::Single(Color::Red), R)").unwrap();
+        let results: Vec<_> = interpreter.query("classify_container(Container::Single(Color::Red), R)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         
-        let results = interpreter.query("classify_container(Container::Pair { first: 1, second: 2 }, R)").unwrap();
+        let results: Vec<_> = interpreter.query("classify_container(Container::Pair { first: 1, second: 2 }, R)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 }
@@ -385,10 +542,16 @@ mod enum_type_system_tests {
 
     #[test]
     fn test_enum_variant_index_uniqueness() {
-        let mut interpreter = create_test_interpreter_with_enums();
+        let mut interpreter = TestInterpreter::with_stdlib();
         
         // Test that different variants have different indices
         let program = r#"
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            
             rel test_variant_indices() {
                 all {
                     Color::Red != Color::Green,
@@ -398,17 +561,29 @@ mod enum_type_system_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
-        let results = interpreter.query("test_variant_indices()").unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
+        let results: Vec<_> = interpreter.query("test_variant_indices()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
     #[test]
     fn test_enum_type_index_separation() {
-        let mut interpreter = create_test_interpreter_with_enums();
+        let mut interpreter = TestInterpreter::with_stdlib();
         
         // Test that different enum types are properly separated
         let program = r#"
+            enum Color {
+                Red,
+                Green,
+                Blue,
+            }
+            
+            enum Status {
+                Active,
+                Inactive,
+                Pending,
+            }
+            
             rel test_type_separation() {
                 all {
                     Color::Red != Status::Active,
@@ -418,8 +593,8 @@ mod enum_type_system_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
-        let results = interpreter.query("test_type_separation()").unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
+        let results: Vec<_> = interpreter.query("test_type_separation()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
@@ -429,7 +604,7 @@ mod enum_type_system_tests {
         
         // Test that we can't construct variants with wrong arity
         // This should be caught during parsing/semantic analysis
-        let result = interpreter.query("Shape::Point(5) == Shape::Point(5)");
+        let result = interpreter.query("Shape::Point(5) == Shape::Point(5)", ExecutionConfig::default());
         assert!(result.is_err()); // Should fail - Point is a unit variant
     }
 }
@@ -444,7 +619,7 @@ mod enum_error_handling_tests {
         let mut interpreter = create_test_interpreter_with_enums();
         
         // Try to use an undefined variant
-        let result = interpreter.query("Color::Purple == Color::Purple");
+        let result = interpreter.query("Color::Purple == Color::Purple", ExecutionConfig::default());
         assert!(result.is_err()); // Should fail - Purple is not defined
     }
 
@@ -453,7 +628,7 @@ mod enum_error_handling_tests {
         let mut interpreter = create_test_interpreter_with_enums();
         
         // Try to use an undefined enum type
-        let result = interpreter.query("Animal::Dog == Animal::Dog");
+        let result = interpreter.query("Animal::Dog == Animal::Dog", ExecutionConfig::default());
         assert!(result.is_err()); // Should fail - Animal enum is not defined
     }
 
@@ -462,7 +637,7 @@ mod enum_error_handling_tests {
         let mut interpreter = create_test_interpreter_with_enums();
         
         // Try to use tuple syntax for named variant
-        let result = interpreter.query("Shape::Rectangle(10, 20) == Shape::Rectangle(10, 20)");
+        let result = interpreter.query("Shape::Rectangle(10, 20) == Shape::Rectangle(10, 20)", ExecutionConfig::default());
         assert!(result.is_err()); // Should fail - Rectangle requires named syntax
     }
 
@@ -471,7 +646,7 @@ mod enum_error_handling_tests {
         let mut interpreter = create_test_interpreter_with_enums();
         
         // Try to use named syntax for tuple variant
-        let result = interpreter.query("Shape::Circle { radius: 5 } == Shape::Circle { radius: 5 }");
+        let result = interpreter.query("Shape::Circle { radius: 5 } == Shape::Circle { radius: 5 }", ExecutionConfig::default());
         assert!(result.is_err()); // Should fail - Circle requires tuple syntax
     }
 
@@ -481,7 +656,7 @@ mod enum_error_handling_tests {
         
         // Try to construct named variant with missing fields
         // This should fail during parsing since Rectangle requires both width and height
-        let result = interpreter.query("Shape::Rectangle { width: 10 } == Shape::Rectangle { width: 10 }");
+        let result = interpreter.query("Shape::Rectangle { width: 10 } == Shape::Rectangle { width: 10 }", ExecutionConfig::default());
         // The test expectation might be wrong - let's see what actually happens
         // For now, let's just ensure the query executes
         let _result = result; // Don't assert failure for now
@@ -498,7 +673,7 @@ mod enum_display_tests {
         let mut interpreter = create_test_interpreter_with_enums();
         
         // Test that enums display correctly in query results
-        let results = interpreter.query("X == Color::Red").unwrap();
+        let results: Vec<_> = interpreter.query("X == Color::Red", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         
         // The display should show the enum variant name
@@ -512,9 +687,7 @@ mod enum_display_tests {
         let mut interpreter = create_test_interpreter_with_enums();
         
         // Test display of complex enum structures
-        let results = interpreter.query(
-            "X == Container::Triple(Shape::Circle(5), Color::Red, Status::Active)"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("X == Container::Triple(Shape::Circle(5), Color::Red, Status::Active)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         
         let bindings = &results[0];
@@ -548,9 +721,9 @@ mod enum_performance_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
         
-        let results = interpreter.query("test_large_enum_chain()").unwrap();
+        let results: Vec<_> = interpreter.query("test_large_enum_chain()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
@@ -559,9 +732,7 @@ mod enum_performance_tests {
         let mut interpreter = create_test_interpreter_with_enums();
         
         // Test unification performance with many variables
-        let results = interpreter.query(
-            "Container::Triple(A, B, C) == Container::Triple(Shape::Circle(5), Color::Red, Status::Active)"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("Container::Triple(A, B, C) == Container::Triple(Shape::Circle(5), Color::Red, Status::Active)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         
         let bindings = &results[0];
@@ -591,9 +762,9 @@ mod enum_integration_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
         
-        let results = interpreter.query("test_enum_with_constraint(X, C)").unwrap();
+        let results: Vec<_> = interpreter.query("test_enum_with_constraint(X, C)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
         
         let bindings = &results[0];
@@ -614,9 +785,9 @@ mod enum_integration_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
         
-        let results = interpreter.query("test_enum_list_operations(R)").unwrap();
+        let results: Vec<_> = interpreter.query("test_enum_list_operations(R)", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert_eq!(results.len(), 1);
     }
 
@@ -632,11 +803,9 @@ mod enum_integration_tests {
             }
         "#;
         let parsed_program = parser::parse_str(program).unwrap();
-        interpreter.load_program(parsed_program).unwrap();
+        interpreter.load_program_ast(parsed_program).unwrap();
         
-        let results = interpreter.query(
-            "has_red_color([Color::Red, Color::Blue, Color::Red])"
-        ).unwrap();
+        let results: Vec<_> = interpreter.query("has_red_color([Color::Red, Color::Blue, Color::Red])", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
         assert!(results.len() >= 1); // member finds multiple matches for multiple Red colors
     }
 }

@@ -3,6 +3,7 @@
 //! Tests core interpreter creation, program loading, and basic functionality.
 
 use super::super::*;
+use super::super::ExecutionConfig;
 
 
 use crate::interpreter::symbol_table::InternedSymbol;
@@ -12,30 +13,34 @@ type TestInterpreter = Interpreter;
 
 #[test]
 fn test_interpreter_creation() {
-    let interpreter = TestInterpreter::new();
+    let interpreter = TestInterpreter::with_stdlib();
     assert_eq!(interpreter.environment().current_scope(), "global");
 }
 
 #[test]
 fn test_empty_program() {
-    let mut interpreter = TestInterpreter::new();
+    let mut interpreter = TestInterpreter::with_stdlib();
     let program = Program {
         items: vec![],
         span: Default::default(),
     };
-    let result = interpreter.load_program(program);
+    let result = interpreter.load_program_ast(program);
     assert!(result.is_ok());
 }
 
 #[test]
 fn test_query_parsing_error() {
-    let mut interpreter = TestInterpreter::new();
-    let result = interpreter.query("invalid query");
+    let mut interpreter = TestInterpreter::with_stdlib();
+    
+    // Load a minimal program first since the new system requires a base program
+    let minimal_program = parser::parse_str("rel dummy() { true == true }").unwrap();
+    interpreter.load_program_ast(minimal_program).unwrap();
+    
+    // Now test the invalid query
+    let result = interpreter.query("invalid query", ExecutionConfig::default()).map(|iter| iter.collect_limited(100).unwrap_or_default());
     assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        InterpreterError::ParseError(_)
-    ));
+    let error = result.unwrap_err();
+    assert!(matches!(error, InterpreterError::ParseError(_)));
 }
 
 #[test]
@@ -55,13 +60,13 @@ fn test_comprehensive_program_loading() {
                         span: Default::default(),
                         visibility: ast::Visibility::Public,
                         name: "x".to_string().into(),
-                        type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
+                        type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("Number")]),
                     },
                     NamedField {
                         span: Default::default(),
                         visibility: ast::Visibility::Public,
                         name: "y".to_string().into(),
-                        type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("i32")]),
+                        type_name: QualifiedPath::Relative(vec![InternedSymbol::from_text("Number")]),
                     },
                 ]),
             }),
@@ -128,26 +133,19 @@ fn test_comprehensive_program_loading() {
     };
 
     // Load the program
-    let result = interpreter.load_program(program);
+    let result = interpreter.load_program_ast(program);
     assert!(result.is_ok(), "Failed to load program: {:?}", result.err());
 
     // Verify the components were loaded correctly
-    let env = interpreter.environment();
-
+    
     // Check that the relation was loaded
-    let distance_rel = env.lookup("distance");
-    assert!(distance_rel.is_some(), "distance relation should be loaded");
-    assert!(
-        distance_rel.unwrap().is_relation(),
-        "distance should be a relation"
-    );
+    assert!(interpreter.has_predicate("distance"), "distance relation should be loaded");
 
     // Check that the struct was loaded
-    let point_struct = env.get_struct("Point");
-    assert!(point_struct.is_some(), "Point struct should be loaded");
-    assert_eq!(point_struct.unwrap().name.as_ref(), "Point");
+    assert!(interpreter.has_type("Point"), "Point struct should be loaded");
 
     // Check that module scoping works
+    let env = interpreter.environment();
     assert_eq!(env.current_scope(), "global");
 }
 

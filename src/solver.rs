@@ -5,6 +5,7 @@ use crate::stream::{LazyStream, Stream};
 use crate::user::{DefaultUser, User};
 use std::any::{Any, TypeId};
 use std::fmt;
+use std::rc::Rc;
 
 #[cfg(feature = "debugger")]
 use crate::debugger::Debugger;
@@ -34,6 +35,8 @@ pub struct Solver {
     debug_enabled: bool,
     /// Timeout information for any operation (test, query, etc.)
     timeout_info: Option<(std::time::Instant, u64)>,
+    /// Optional program for accessing type information during execution
+    program: Option<Rc<crate::interpreter::compiler::ir::Program>>,
 }
 
 impl Solver {
@@ -49,6 +52,28 @@ impl Solver {
             debugger,
             debug_enabled,
             timeout_info: None,
+            program: None,
+        }
+    }
+
+    /// Create a new Solver with program access for type information
+    pub fn with_program(
+        context: <DefaultUser as User>::UserContext,
+        debug_enabled: bool,
+        program: Rc<crate::interpreter::compiler::ir::Program>,
+    ) -> Solver {
+        let engine = DefaultEngine::new();
+        #[cfg(feature = "debugger")]
+        let debugger = Debugger::new();
+        Solver {
+            context,
+            engine,
+            stream_iter_index: 0,
+            #[cfg(feature = "debugger")]
+            debugger,
+            debug_enabled,
+            timeout_info: None,
+            program: Some(program),
         }
     }
 
@@ -191,6 +216,15 @@ impl Solver {
 
     pub fn engine(&self) -> &DefaultEngine {
         &self.engine
+    }
+
+    pub fn program(&self) -> Option<&Rc<crate::interpreter::compiler::ir::Program>> {
+        self.program.as_ref()
+    }
+
+    /// Set the IR program for accessing type information during execution
+    pub fn set_program(&mut self, program: Rc<crate::interpreter::compiler::ir::Program>) {
+        self.program = Some(program);
     }
 }
 

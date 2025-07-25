@@ -1,233 +1,188 @@
+//! Query execution for the Proto-Vulcan interpreter
+//!
+//! This module handles parsing and executing queries in the Proto-Vulcan language.
+//! It supports both the new IR-based execution and legacy AST-based execution.
+
 use super::environment::Environment;
-use super::execution::ExecutionContext;
-use super::parser::ast::Goal;
-use super::runtime::context::ExecutionContext as IrExecutionContext;
 use super::InterpreterError;
+use super::parser::ast::{Goal, Term};
+use super::runtime::context::ExecutionContext;
 use crate::lresult::LResult;
-use crate::lterm::LTerm;
-// Removed unused imports for cleaner code
 use crate::user::{DefaultUser, User};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/// Query execution configuration
-#[derive(Debug, Clone)]
+/// Configuration for query execution
+#[derive(Debug, Clone, Default)]
 pub struct QueryConfig {
-    /// Optional timeout in milliseconds
+    /// Timeout in milliseconds
     pub timeout: Option<u64>,
-    /// Optional trace configuration
+    /// Trace configuration
     pub trace: Option<super::trace::TraceConfig>,
 }
 
-impl Default for QueryConfig {
-    fn default() -> Self {
-        Self {
-            timeout: None,
-            trace: None,
-        }
-    }
-}
-
-impl QueryConfig {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_timeout(mut self, timeout_ms: u64) -> Self {
-        self.timeout = Some(timeout_ms);
-        self
-    }
-
-    pub fn with_trace(mut self, trace_config: super::trace::TraceConfig) -> Self {
-        self.trace = Some(trace_config);
-        self
-    }
-}
-
-/// Query result containing variable bindings
+/// Result of a single query execution
 #[derive(Debug, Clone)]
 pub struct QueryResult {
     pub bindings: HashMap<String, LResult>,
 }
 
 impl QueryResult {
-    /// Create a new empty query result
     pub fn new() -> Self {
         Self {
             bindings: HashMap::new(),
         }
     }
-
-    /// Add a variable binding
-    pub fn bind(&mut self, var_name: String, value: LResult) {
-        self.bindings.insert(var_name, value);
-    }
-
-    /// Get a variable binding
-    pub fn get(&self, var_name: &str) -> Option<&LResult> {
-        self.bindings.get(var_name)
-    }
-
-    /// Check if the result has any bindings
-    pub fn is_empty(&self) -> bool {
-        self.bindings.is_empty()
-    }
-
-    /// Create a new any LResult
-    fn any() -> LResult {
-        LResult(
-            LTerm::any(),
-            Rc::new(crate::state::constraint::store::ConstraintStore::new()),
-        )
-    }
-
-    /// Create from LResult vector (for core query result compatibility)
-    pub fn from_lresults(results: Vec<LResult>) -> Self {
-        let mut bindings = HashMap::new();
-        for (i, result) in results.into_iter().enumerate() {
-            bindings.insert(format!("_{}", i), result);
-        }
-        Self { bindings }
-    }
 }
 
-/// Execute a query using the IR-based execution system
+/// Parse a query string into an AST goal
+pub fn parse_query(query_str: &str) -> Result<Goal, InterpreterError> {
+    let stripped = query_str.trim();
+    if stripped.is_empty() {
+        return Err(InterpreterError::ParseError(
+            "Query cannot be empty".to_string(),
+        ));
+    }
+
+    // For now, parse the query as a simple relation call or goal
+    // TODO: Implement proper goal-only parsing
+    // As a temporary solution, wrap it in a dummy relation and parse
+    let dummy_program = format!("rel __query__() {{ {} }}", stripped);
+    let program = super::parser::parse_str(&dummy_program)
+        .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
+    
+    // Extract the goal from the dummy relation
+    if let Some(item) = program.items.first() {
+        if let super::parser::ast::Item::Predicate(rel) = item {
+            if let Some(goal) = rel.body.first() {
+                return Ok(goal.clone());
+            }
+        }
+    }
+    
+    Err(InterpreterError::ParseError("Failed to parse query".to_string()))
+}
+
+/// Execute a query using the IR-based execution system with compiler infrastructure
 pub fn execute_query_ir(
     ir_program: Rc<super::compiler::ir::Program>,
     environment: Rc<RefCell<Environment>>,
     query: Goal,
     config: QueryConfig,
 ) -> Result<Vec<QueryResult>, InterpreterError> {
-    // First, compile the query AST to IR
-    let mut compiler = super::compiler::Compiler::new();
+    use super::parser::ast;
+    use super::compiler::Compiler;
+    use super::runtime::context::{PredicateClosure, ArgumentValue};
+    use crate::interpreter::symbol_table::InternedSymbol;
     
-    // Create a temporary program with just the query goal
-    // For now, we'll compile the query directly as if it were a goal within the main program
-    // TODO: This is a simplified approach - we may need a more sophisticated query compilation
-    
-    // Create IR ExecutionContext with the compiled program
-    let mut ir_execution_context = IrExecutionContext::new(ir_program.clone(), environment);
-    
-    // Extract variables from the query and bind them in the IR context
+    // Step 1: Extract variables from the query for later result collection
     let query_vars = extract_variables_from_goal(&query);
-    for var_name in &query_vars {
-        let fresh_var = ir_execution_context.create_fresh_var();
-        ir_execution_context.bind_var(
-            super::symbol_table::InternedSymbol::from_text(var_name), 
-            fresh_var
-        );
-    }
     
-    // Convert AST Goal to IR Goal and then to runtime goal
-    // For now, we'll compile the query as if it were part of the main program
-    // This is a simplified approach - in a more sophisticated system, 
-    // queries might have their own compilation path
+    // Step 2: Create a temporary AST program with the query as a predicate body
+    // Note: We need to import the existing program so the query can reference its predicates
+    let query_predicate_name = InternedSymbol::from("__query__".to_string());
+    let query_parameters: Vec<ast::Parameter> = query_vars.iter()
+        .map(|var_name| ast::Parameter {
+            name: InternedSymbol::from(var_name.clone()),
+            type_annotation: None,
+        })
+        .collect();
     
-    // Create a temporary AST program containing just the query goal wrapped in a predicate
-    let temp_program = super::parser::ast::Program {
-        items: vec![
-            super::parser::ast::Item::Predicate(super::parser::ast::PredicateDefinition {
-                attributes: vec![],
-                visibility: super::parser::ast::Visibility::Private,
-                predicate_kind: super::parser::ast::PredicateKind::Relation,
-                name: super::symbol_table::InternedSymbol::from_text("__query"),
-                parameters: query_vars.iter().map(|var_name| super::parser::ast::Parameter {
-                    name: super::symbol_table::InternedSymbol::from_text(var_name),
-                    type_annotation: None,
-                }).collect(),
-                search_strategy: None,
-                body: vec![query.clone()],
-                span: super::parser::ast::Location::dummy(),
-            })
-        ],
-        span: super::parser::ast::Location::dummy(),
+    let query_predicate = ast::PredicateDefinition {
+        visibility: ast::Visibility::Private,
+        predicate_kind: ast::PredicateKind::Relation,
+        attributes: vec![],
+        name: query_predicate_name.clone(),
+        parameters: query_parameters,
+        search_strategy: None,
+        body: vec![query.clone()],
+        span: ast::Location::dummy(),
     };
     
-    // Compile the temporary program to get the IR goal
-    let mut query_compiler = super::compiler::Compiler::new();
-    let query_ir_program = query_compiler.compile_from_ast(temp_program)
-        .map_err(|e| InterpreterError::RuntimeError(format!("Query IR compilation failed: {:?}", e)))?;
+    // Step 3: Add the query directly to the existing IR program without AST conversion
+    let query_ir_program = Compiler::add_query_to_program(
+        (*ir_program).clone(), // Clone the base program  
+        query.clone()
+    ).map_err(|e| {
+        InterpreterError::RuntimeError(format!("Query compilation failed: {:?}", e))
+    })?;
     
-    // Extract the query predicate from the compiled IR program
-    let query_predicate_id = super::compiler::ir::PredicateId::new("::__query");
-    let query_predicate = query_ir_program.registry.get_predicate(&query_predicate_id)
-        .ok_or_else(|| InterpreterError::RuntimeError("Query predicate not found in IR".to_string()))?;
+    // Step 4: Extract the query predicate from the compiled IR program
+    let query_predicate_id = super::compiler::ir::PredicateId::new("::__query__");
+    let query_ir_predicate = query_ir_program.registry.get_predicate(&query_predicate_id)
+        .ok_or_else(|| InterpreterError::RuntimeError("Failed to find compiled query predicate".to_string()))?
+        .clone();
     
-    // Create runtime goal by executing the query predicate body
-    let mut runtime_goals = Vec::new();
-    for ir_goal in query_predicate.body.iter() {
-        runtime_goals.push(ir_execution_context.ir_goal_to_runtime(ir_goal)
-            .map_err(|e| InterpreterError::RuntimeError(format!("IR goal conversion failed: {:?}", e)))?);
-    }
-    let runtime_goal = if runtime_goals.is_empty() {
-        crate::goal::Goal::succeed()
-    } else {
-        runtime_goals.into_iter().reduce(|acc, goal| 
-            crate::operator::conj::Conj::new(acc, goal)
-        ).unwrap()
-    };
+    // Step 5: Create argument values for the query variables (all relational, no meta)
+    let mut execution_context = ExecutionContext::new(Rc::new(query_ir_program), environment.clone());
     
-    // Get the actual variable bindings used during goal conversion
-    let variable_bindings = ir_execution_context.get_variable_bindings();
-
-    // Add reification goals for each user-visible variable
-    use crate::goal::{AnyGoal, GoalCast};
-    use crate::operator::conj::InferredConj;
-    use crate::state::reify;
-
-    let mut goals = vec![runtime_goal.clone()];
-
-    for var_term in variable_bindings.values() {
-        goals.push(reify(var_term.clone()).cast_into());
-    }
-
-    let mut reified_goal = AnyGoal::succeed();
-    for goal in goals.into_iter().rev() {
-        reified_goal = InferredConj::new(goal, reified_goal).cast_into();
-    }
-
-    // Create solver and initial state
+    // Provide base program access for predicate resolution during closure execution
+    execution_context.set_base_program(ir_program.clone());
+    let captured_args: Vec<ArgumentValue> = query_vars.iter()
+        .map(|var_name| {
+            let fresh_var = execution_context.create_fresh_var();
+            let symbol = InternedSymbol::from(var_name.clone());
+            execution_context.bind_var(symbol, fresh_var.clone());
+            ArgumentValue::Relational(fresh_var)
+        })
+        .collect();
+    
+    // Step 6: Create predicate closure for the query
+    // Use the original IR program as context for predicate resolution
+    let query_closure = PredicateClosure::new(
+        Rc::new(query_ir_predicate),
+        captured_args,
+        ir_program.clone(),
+        environment,
+    );
+    
+    // Step 7: Create solver and execute the query closure
     let user_state = DefaultUser::default();
     let user_globals = <DefaultUser as User>::UserContext::default();
     let mut solver = crate::solver::Solver::new(user_globals, false);
-
+    
     // Set timeout if provided
     if let Some(timeout_ms) = config.timeout {
         let start_time = std::time::Instant::now();
         solver.set_timeout(start_time, timeout_ms);
     }
-
-    // Execute the goal and collect results
+    
+    // Set the IR program in the solver for deferred relation calls
+    solver.set_program(ir_program);
+    
     let initial_state = crate::state::State::new(user_state);
-    let stream = solver.start(&reified_goal, initial_state);
-    let mut stream = stream;
+    
+    // Execute the query closure
+    let stream = query_closure.expand_and_solve(&solver, initial_state);
     let mut results = Vec::new();
-
+    let mut stream = stream;
+    
+    // Get variable bindings for result collection
+    let variable_bindings = execution_context.get_variable_bindings();
+    
     // Collect up to 100 results (to prevent infinite loops)
     let max_results = 100;
     let mut result_count = 0;
-
+    
     while result_count < max_results {
         match solver.next(&mut stream) {
             crate::solver::SolverResult::Solution(state_box) => {
                 let state = &*state_box;
                 let mut query_result = QueryResult::new();
-
-                // Finalize the state by processing the constraint store
+                
+                // Process the constraint store
                 let smap = state.smap_ref();
                 let purified_cstore = state.cstore_ref().clone().purify(smap);
                 let reified_cstore = Rc::new(purified_cstore.walk_star(smap));
-
-                // Extract variable bindings from the state
-                for var_name in &query_vars {
-                    if let Some(var_term) = variable_bindings.get(var_name) {
-                        let resolved_term = smap.walk_star(var_term);
-                        let result_with_constraints = LResult(resolved_term, Rc::clone(&reified_cstore));
-                        query_result.bind(var_name.clone(), result_with_constraints);
-                    }
+                
+                // Get resolved values for each variable
+                for (var_name, var_term) in &variable_bindings {
+                    let resolved_term = smap.walk_star(var_term);
+                    let result_with_constraints = LResult(resolved_term, Rc::clone(&reified_cstore));
+                    query_result.bindings.insert(var_name.clone(), result_with_constraints);
                 }
-
+                
                 results.push(query_result);
                 result_count += 1;
             }
@@ -236,148 +191,11 @@ pub fn execute_query_ir(
             crate::solver::SolverResult::Error(_) => break,
         }
     }
-
+    
     Ok(results)
 }
 
-/// Execute a query against the environment with configuration
-pub fn execute_query(
-    environment: Rc<RefCell<Environment>>,
-    query: Goal,
-    config: QueryConfig,
-) -> Result<Vec<QueryResult>, InterpreterError> {
-    // Pre-populate the execution context with variables from the query
-    let mut execution_context = ExecutionContext::new(environment);
-    let query_vars = extract_variables_from_goal(&query);
-    for var_name in &query_vars {
-        let fresh_var = execution_context.create_fresh_var();
-        execution_context.bind_var(var_name.clone(), fresh_var);
-    }
 
-    // Convert the AST query to a runtime goal
-    let runtime_goal = execution_context.ast_goal_to_runtime(&query)?;
-
-    // Get the actual variable bindings used during goal conversion
-    let variable_bindings = execution_context.get_variable_bindings();
-
-    // Add reification goals for each user-visible variable.  Reifying each variable
-    // individually mirrors the code emitted by the procedural macros and guarantees
-    // that every binding is walked and materialised in the final substitution map.
-    use crate::goal::{AnyGoal, GoalCast};
-    use crate::operator::conj::InferredConj;
-    use crate::state::reify;
-
-    let mut goals = vec![runtime_goal.clone()];
-
-    for var_term in variable_bindings.values() {
-        goals.push(reify(var_term.clone()).cast_into());
-    }
-
-    let mut reified_goal = AnyGoal::succeed();
-    for goal in goals.into_iter().rev() {
-        reified_goal = InferredConj::new(goal, reified_goal).cast_into();
-    }
-
-    // Create solver and initial state
-    let user_state = DefaultUser::default();
-    let user_globals = <DefaultUser as User>::UserContext::default();
-    let mut solver = crate::solver::Solver::new(user_globals, false);
-
-    // Set timeout if provided
-    if let Some(timeout_ms) = config.timeout {
-        let start_time = std::time::Instant::now();
-        solver.set_timeout(start_time, timeout_ms);
-    }
-
-    // Initialize trace state if tracing is enabled
-    let mut trace_state = config.trace.as_ref().map(|trace_config| {
-        let mut state = super::trace::TraceState::new(trace_config.clone());
-        state.print_search_header();
-        println!("Executing query with {} variables", query_vars.len());
-        state.enter_relation("query");
-        state
-    });
-
-    let initial_state = crate::state::State::new(user_state);
-
-    // Execute the goal and collect results
-    let stream = solver.start(&reified_goal, initial_state);
-    let mut results = Vec::new();
-
-    // Create a mutable stream to iterate through
-    let mut stream = stream;
-
-    // Collect up to 100 results (to prevent infinite loops)
-    let max_results = 100;
-    let mut result_count = 0;
-
-    while result_count < max_results {
-        match solver.next(&mut stream) {
-            crate::solver::SolverResult::Solution(state_box) => {
-                let state = &*state_box;
-                let mut query_result = QueryResult::new();
-
-                // Finalize the state by processing the constraint store, same as in ResultIterator
-                let smap = state.smap_ref();
-                let purified_cstore = state.cstore_ref().clone().purify(smap);
-                let reified_cstore = Rc::new(purified_cstore.walk_star(smap));
-
-                // The key fix: use the reified substitution map to get resolved values
-                // After reification, the substitution map contains the resolved values
-                for (var_name, var_term) in &variable_bindings {
-                    // Walk the variable term to get its value in the reified state
-                    let resolved_term = smap.walk_star(var_term);
-                    let result_with_constraints =
-                        LResult(resolved_term, Rc::clone(&reified_cstore));
-                    query_result.bind(var_name.clone(), result_with_constraints);
-                }
-
-                // Trace the solution if tracing is enabled
-                if let Some(ref mut trace) = trace_state {
-                    let bindings: Vec<(String, String)> = query_result
-                        .bindings
-                        .iter()
-                        .map(|(k, v)| (k.clone(), format!("{}", v.0)))
-                        .collect();
-                    trace.trace_solution(&bindings);
-                }
-
-                results.push(query_result);
-                result_count += 1;
-            }
-            crate::solver::SolverResult::NoMoreSolutions => {
-                // Natural completion (no more solutions)
-                if let Some(ref mut trace) = trace_state {
-                    trace.exit_relation("query", true);
-                }
-                break;
-            }
-            crate::solver::SolverResult::Timeout => {
-                // Timeout occurred
-                if let Some(ref mut trace) = trace_state {
-                    trace.exit_relation("query", false);
-                }
-                return Err(InterpreterError::RuntimeError(
-                    "Query execution timed out".to_string(),
-                ));
-            }
-            crate::solver::SolverResult::Error(msg) => {
-                // Error occurred during execution
-                if let Some(ref mut trace) = trace_state {
-                    trace.exit_relation("query", false);
-                }
-                return Err(InterpreterError::RuntimeError(msg));
-            }
-        }
-    }
-
-    // Print trace summary if tracing was enabled
-    if let Some(ref trace) = trace_state {
-        trace.print_summary();
-    }
-
-    Ok(results)
-}
 
 /// Extract variable names from a goal AST
 fn extract_variables_from_goal(goal: &Goal) -> Vec<String> {
@@ -389,177 +207,101 @@ fn extract_variables_from_goal(goal: &Goal) -> Vec<String> {
 }
 
 fn extract_variables_from_goal_recursive(goal: &Goal, vars: &mut Vec<String>) {
-    use super::parser::ast::*;
+    use crate::interpreter::parser::ast::{Goal as AstGoal};
 
     match goal {
-        Goal::Equality(left, right, _) => {
+        AstGoal::Equality(left, right, _) => {
             extract_variables_from_term(left, vars);
             extract_variables_from_term(right, vars);
         }
-        Goal::Disequality(left, right, _) => {
+        AstGoal::Disequality(left, right, _) => {
             extract_variables_from_term(left, vars);
             extract_variables_from_term(right, vars);
         }
-        Goal::Conjunction(conj, _) => {
-            for goal in &conj.body {
+        AstGoal::RelationCall(rel_call, _) => {
+            for arg in &rel_call.args {
+                match arg {
+                    super::parser::ast::CallArgument::Term(term) => extract_variables_from_term(term, vars),
+                    super::parser::ast::CallArgument::MetaExpression(_) => {}, // Skip meta expressions
+                }
+            }
+        }
+        AstGoal::Conjunction(goals, _) => {
+            for goal in &goals.body {
                 extract_variables_from_goal_recursive(goal, vars);
             }
         }
-        Goal::Disjunction(disj, _) => {
-            for goal in &disj.body {
+        AstGoal::Disjunction(goals, _) => {
+            for goal in &goals.body {
                 extract_variables_from_goal_recursive(goal, vars);
             }
         }
-        Goal::Fresh(fresh, _) => {
-            // Don't extract fresh variables as they are locally scoped
-            for goal in &fresh.body {
+        AstGoal::Fresh(fresh_goal, _) => {
+            for goal in &fresh_goal.body {
                 extract_variables_from_goal_recursive(goal, vars);
             }
         }
-        Goal::RelationCall(call, _) => {
-            for arg in &call.args {
-                extract_variables_from_call_argument(arg, vars);
-            }
+        AstGoal::ConstraintBlock(_cb, _) => {
+            // ConstraintBlocks have raw content, not parsed goals, so no variables to extract directly
         }
-        Goal::MethodCall(call, _) => {
-            extract_variables_from_term(&call.receiver, vars);
-            for arg in &call.args {
-                extract_variables_from_term(arg, vars);
-            }
-        }
-        Goal::Let(let_decl, _) => {
-            if let Some(value) = &let_decl.value {
-                extract_variables_from_term(value, vars);
-            }
-        }
-        Goal::Parenthesized(body, _) => {
-            for goal in body {
-                extract_variables_from_goal_recursive(goal, vars);
-            }
-        }
-        Goal::PatternMatch(pattern_match, _) => {
-            extract_variables_from_term(&pattern_match.term, vars);
-            for arm in &pattern_match.arms {
-                for goal in &arm.body {
+        AstGoal::PatternMatch(match_goal, _) => {
+            extract_variables_from_term(&match_goal.term, vars);
+            for clause in &match_goal.arms {
+                for goal in &clause.body {
                     extract_variables_from_goal_recursive(goal, vars);
                 }
             }
         }
-        Goal::BooleanLiteral(..) => {
-            // Boolean literals don't contain variables
-        }
-        Goal::ConstraintBlock(..) => {
-            // TODO: Extract variables from constraint blocks
-        }
-        Goal::MetaStatement(..) => {
-            // TODO: Implement meta statement variable extraction
-            // For now, do nothing as meta statements don't introduce variables
-        }
+        _ => {} // Other goal types don't contribute variables
     }
 }
 
-fn extract_variables_from_term(term: &super::parser::ast::Term, vars: &mut Vec<String>) {
-    use super::parser::ast::*;
+fn extract_variables_from_term(term: &Term, vars: &mut Vec<String>) {
+    use crate::interpreter::parser::ast::Term;
 
     match term {
-        Term::Variable(var_name) => {
-            vars.push(var_name.to_string());
-        }
-        Term::Wildcard(_) => {
-            // Wildcards don't contain variables to extract
-        }
-        Term::List(list_construction, _) => {
-            for element in &list_construction.elements {
-                extract_variables_from_term(element, vars);
-            }
-            if let Some(tail) = &list_construction.tail {
-                extract_variables_from_term(tail, vars);
-            }
+        Term::Variable(name) => {
+            vars.push(name.to_string());
         }
         Term::NamedStruct(named_struct, _) => {
             for field in &named_struct.fields {
                 extract_variables_from_term(&field.value, vars);
             }
         }
-        Term::TupleStruct(compound, _) => {
-            for arg in &compound.args {
-                extract_variables_from_term(arg, vars);
+        Term::TupleStruct(tuple_struct, _) => {
+            for field in &tuple_struct.args {
+                extract_variables_from_term(field, vars);
             }
         }
-        Term::Literal(..) => {
-            // Literals don't contain variables
-        }
-        Term::Parenthesized(inner, _) => {
-            extract_variables_from_term(inner, vars);
-        }
-        Term::Interpolation(..) => {
-            // TODO: Extract variables from meta expressions in interpolations
-            // For now, do nothing
-        }
         Term::EnumVariant(enum_variant, _) => {
-            // Extract variables from enum variant construction
             match &enum_variant.kind {
-                super::parser::ast::EnumVariantConstructionKind::Unit => {}
-                super::parser::ast::EnumVariantConstructionKind::Tuple(args) => {
-                    for arg in args {
-                        extract_variables_from_term(arg, vars);
+                super::parser::ast::EnumVariantConstructionKind::Unit => {},
+                super::parser::ast::EnumVariantConstructionKind::Tuple(fields) => {
+                    for field in fields {
+                        extract_variables_from_term(field, vars);
                     }
-                }
+                },
                 super::parser::ast::EnumVariantConstructionKind::Named(fields) => {
                     for field in fields {
                         extract_variables_from_term(&field.value, vars);
                     }
-                }
+                },
             }
         }
-    }
-}
-
-fn extract_variables_from_call_argument(
-    arg: &super::parser::ast::CallArgument,
-    vars: &mut Vec<String>,
-) {
-    use super::parser::ast::CallArgument;
-
-    match arg {
-        CallArgument::Term(term) => extract_variables_from_term(term, vars),
-        CallArgument::MetaExpression(expr) => extract_variables_from_meta_expression(expr, vars),
-    }
-}
-
-fn extract_variables_from_meta_expression(
-    expr: &super::metaprogramming::MetaExpression,
-    vars: &mut Vec<String>,
-) {
-    use super::metaprogramming::MetaExpression;
-
-    match expr {
-        MetaExpression::Variable(name, _) => {
-            if !vars.contains(name) {
-                vars.push(name.clone());
+        Term::List(list_term, _) => {
+            for element in &list_term.elements {
+                extract_variables_from_term(element, vars);
+            }
+            if let Some(tail) = &list_term.tail {
+                extract_variables_from_term(tail, vars);
             }
         }
-        MetaExpression::BinaryOp(_, left, right, _) => {
-            extract_variables_from_meta_expression(left, vars);
-            extract_variables_from_meta_expression(right, vars);
+        Term::Parenthesized(inner, _) => {
+            extract_variables_from_term(inner, vars);
         }
-        MetaExpression::Literal(_, _) => {
-            // Literals don't contain variables
-        }
+        // Other term types (integers, strings, etc.) don't contain variables
+        _ => {}
     }
-}
-
-/// Parse a query string using the existing parser
-pub fn parse_query(query_str: &str) -> Result<Goal, InterpreterError> {
-    use super::parser::{build_goal, Rule, VulcanParser};
-    use pest::Parser;
-
-    let pair = VulcanParser::parse(Rule::goal, query_str)
-        .map_err(|e| InterpreterError::ParseError(e.to_string()))?
-        .next()
-        .ok_or_else(|| InterpreterError::ParseError("Empty query".to_string()))?;
-
-    build_goal(pair).map_err(|e| InterpreterError::ParseError(e.to_string()))
 }
 
 #[cfg(test)]
@@ -567,37 +309,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_query_result_creation() {
-        let result: QueryResult = QueryResult::new();
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_query_result_binding() {
-        let mut result: QueryResult = QueryResult::new();
-        let term = LTerm::from(42);
-        let lresult = LResult(
-            term.clone(),
-            Rc::new(crate::state::constraint::store::ConstraintStore::new()),
-        );
-        result.bind("x".to_string(), lresult.clone());
-
-        assert!(!result.is_empty());
-        assert_eq!(result.get("x"), Some(&lresult));
-    }
-
-    #[test]
-    fn test_parse_equality_query() {
-        let query = parse_query("x == 42").unwrap();
+    fn test_parse_simple_query() {
+        let query = parse_query("X == 5").unwrap();
         match query {
-            Goal::Equality(left, right, _) => {
-                assert!(matches!(left, super::super::parser::ast::Term::Variable(_)));
-                assert!(matches!(
-                    right,
-                    super::super::parser::ast::Term::Literal(..)
-                ));
-            }
-            _ => panic!("Expected equality goal"),
+            Goal::Equality(_, _, _) => {} // Expected
+            _ => panic!("Expected unification goal"),
         }
     }
 

@@ -598,7 +598,7 @@ impl TestRunner {
 
     /// Match an LTerm against an enum variant pattern.
     fn matches_enum_variant(lterm: &LTerm, enum_variant: &ast::EnumVariantConstruction) -> bool {
-        use super::execution::{RegistryEnumVariant, VariantData};
+        use super::runtime::{RegistryEnumVariant, VariantData};
         use crate::lterm::LTermInner;
 
         // Check if the LTerm is a compound object representing an enum variant
@@ -643,8 +643,9 @@ impl TestRunner {
                         // Check that all AST fields exist in LTerm fields and match
                         ast_fields.iter().all(|ast_field| {
                             lterm_fields
-                                .get(&*ast_field.name)
-                                .map(|field_value| {
+                                .iter()
+                                .find(|(name, _)| name == &*ast_field.name)
+                                .map(|(_, field_value)| {
                                     Self::matches_pattern(field_value, &ast_field.value)
                                 })
                                 .unwrap_or(false)
@@ -664,7 +665,7 @@ impl TestRunner {
 
     /// Match an LTerm against a named struct pattern.
     fn matches_named_struct(lterm: &LTerm, named_struct: &ast::NamedStructConstruction) -> bool {
-        use super::execution::RegistryNamedStruct;
+        use super::runtime::RegistryNamedStruct;
         use crate::lterm::LTermInner;
 
         // Check if the LTerm is a compound object representing a named struct
@@ -681,8 +682,9 @@ impl TestRunner {
                 named_struct.fields.iter().all(|ast_field| {
                     named_struct_obj
                         .fields
-                        .get(&*ast_field.name)
-                        .map(|field_value| Self::matches_pattern(field_value, &ast_field.value))
+                        .iter()
+                        .find(|(name, _)| name == &*ast_field.name)
+                        .map(|(_, field_value)| Self::matches_pattern(field_value, &ast_field.value))
                         .unwrap_or(false)
                 })
             } else {
@@ -695,7 +697,7 @@ impl TestRunner {
 
     /// Match an LTerm against a tuple struct pattern.
     fn matches_tuple_struct(lterm: &LTerm, tuple_struct: &ast::TupleStructConstruction) -> bool {
-        use super::execution::RegistryTupleStruct;
+        use super::runtime::RegistryTupleStruct;
         use crate::lterm::LTermInner;
 
         // Check if the LTerm is a compound object representing a tuple struct
@@ -796,7 +798,7 @@ impl TestRunner {
             }
         };
 
-        if let Err(e) = interpreter.load_program(program) {
+        if let Err(e) = interpreter.load_program_ast(program) {
             return TestResult::Error(format!(
                 "Load error in file {}: {}",
                 item.file_path.display(),
@@ -817,6 +819,20 @@ impl TestRunner {
             println!("RUNNING TEST: {}", item.test_name);
             println!("File: {}", item.file_path.display());
             println!("Debug mode enabled - assertion evaluations will be shown");
+            
+            // Debug: Show IR program state
+            if let Some(base_program) = &interpreter.base_program {
+                println!("IR program loaded with {} items", base_program.registry.all_items().count());
+                println!("Available predicates:");
+                for item in base_program.registry.all_items() {
+                    if let crate::interpreter::compiler::ir::Item::Predicate(pred) = item {
+                        println!("  - predicate ID: {}", pred.id.id.path.as_ref());
+                    }
+                }
+            } else {
+                println!("WARNING: No IR program loaded in test interpreter");
+            }
+            
             println!("============================================================");
         }
 

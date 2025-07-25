@@ -6,6 +6,7 @@
 
 use super::*;
 use im_rc::HashMap;
+use crate::interpreter::symbol_table::InternedSymbol;
 
 /// Unified registry for all IR items
 /// Uses ItemId for stable, path-based identification with im-rc HashMap for efficient structural sharing
@@ -433,6 +434,7 @@ mod tests {
         let type_def = TypeDefinition {
             id: TypeId::new("::test"),
             kind: TypeKind::Struct(StructDefinition {
+                name: InternedSymbol::from_text("test"),
                 fields: StructFields::Tuple(vec![]),
             }),
             visibility: Visibility::Public,
@@ -535,6 +537,7 @@ mod tests {
         registry.add_type(TypeDefinition {
             id: TypeId::new("::parent::child::MyType"),
             kind: TypeKind::Struct(StructDefinition {
+                name: InternedSymbol::from_text("MyType"),
                 fields: StructFields::Tuple(vec![]),
             }),
             visibility: Visibility::Public,
@@ -581,6 +584,7 @@ mod tests {
         registry.add_type(TypeDefinition {
             id: TypeId::new("::Type1"),
             kind: TypeKind::Struct(StructDefinition {
+                name: InternedSymbol::from_text("Type1"),
                 fields: StructFields::Tuple(vec![]),
             }),
             visibility: Visibility::Public,
@@ -612,6 +616,7 @@ mod tests {
         let type_def = TypeDefinition {
             id: type_ref.clone(),
             kind: TypeKind::Struct(StructDefinition {
+                name: InternedSymbol::from_text("TestStruct"),
                 fields: StructFields::Tuple(vec![]),
             }),
             visibility: Visibility::Public,
@@ -676,6 +681,7 @@ mod tests {
         let child_type = TypeDefinition {
             id: TypeId::new("::parent::ChildType"),
             kind: TypeKind::Struct(StructDefinition {
+                name: InternedSymbol::from_text("ChildType"),
                 fields: StructFields::Tuple(vec![]),
             }),
             visibility: Visibility::Public,
@@ -803,6 +809,7 @@ mod tests {
         let child_type = TypeDefinition {
             id: TypeId::new("::parent::child::ChildType"),
             kind: TypeKind::Struct(StructDefinition {
+                name: InternedSymbol::from_text("ChildType"),
                 fields: StructFields::Tuple(vec![]),
             }),
             visibility: Visibility::Public,
@@ -836,6 +843,7 @@ mod tests {
         let type_def = TypeDefinition {
             id: TypeId::new("::TestType"),
             kind: TypeKind::Struct(StructDefinition {
+                name: InternedSymbol::from_text("TestType"),
                 fields: StructFields::Tuple(vec![]),
             }),
             visibility: Visibility::Public,
@@ -906,6 +914,7 @@ mod tests {
         let type_def = TypeDefinition {
             id: type_id.clone(),
             kind: TypeKind::Struct(StructDefinition {
+                name: InternedSymbol::from_text("TestStruct"),
                 fields: StructFields::Tuple(vec![]),
             }),
             visibility: Visibility::Public,

@@ -36,7 +36,7 @@ pub enum LTermInner {
     Val(LValue),
 
     /// Variable (uid, name)
-    Var(VarID, &'static str),
+    Var(VarID, Rc<str>),
 
     // User defined item
     User(<DefaultUser as User>::UserTerm),
@@ -69,19 +69,19 @@ impl LTerm {
         Rc::ptr_eq(&this.inner, &other.inner)
     }
 
-    pub fn var(name: &'static str) -> LTerm {
+    pub fn var(name: &str) -> LTerm {
         if name == "_" {
             panic!("Error: Invalid variable name. Name \"_\" is reserved for any-variables.")
         }
 
         LTerm {
-            inner: Rc::new(LTermInner::Var(VarID::new(), name)),
+            inner: Rc::new(LTermInner::Var(VarID::new(), Rc::from(name))),
         }
     }
 
     pub fn any() -> LTerm {
         LTerm {
-            inner: Rc::new(LTermInner::Var(VarID::new(), "_")),
+            inner: Rc::new(LTermInner::Var(VarID::new(), Rc::from("_"))),
         }
     }
 
@@ -258,7 +258,7 @@ impl LTerm {
 
     pub fn is_any(&self) -> bool {
         match self.as_ref() {
-            LTermInner::Var(_, "_") => true,
+            LTermInner::Var(_, name) if name.as_ref() == "_" => true,
             _ => false,
         }
     }

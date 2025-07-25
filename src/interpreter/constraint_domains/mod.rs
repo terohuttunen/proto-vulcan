@@ -72,7 +72,7 @@ pub trait DomainConstraints {
     /// Convert parsed constraints to runtime goals
     fn convert_to_goals(
         &self,
-        execution_context: &mut super::execution::ExecutionContext,
+        execution_context: &mut super::runtime::context::ExecutionContext,
     ) -> Result<crate::goal::Goal, InterpreterError>;
 
     /// Extract variable names for query processing

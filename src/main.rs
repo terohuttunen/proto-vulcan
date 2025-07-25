@@ -1,12 +1,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
-use proto_vulcan::interpreter::compiler::{CompilationOptions, CompileWarning};
+use proto_vulcan::interpreter::compiler::CompilationOptions;
 use proto_vulcan::interpreter::parser::parse_str;
-use proto_vulcan::interpreter::query::QueryResult;
+use proto_vulcan::interpreter::{QueryResult, ExecutionConfig};
 use proto_vulcan::interpreter::test_runner::{TestRunOptions, TestRunner};
 use proto_vulcan::interpreter::{
     create_main_query, find_main_relation,
-    query::QueryConfig,
     trace::{TraceConfig, TraceLevel},
     Interpreter, InterpreterError,
 };
@@ -359,7 +358,8 @@ fn run_file(
         }
     };
 
-    interpreter.load_program(program)?;
+    let config = ExecutionConfig::default();
+    interpreter.load_program(&file_contents, config)?;
 
     let timeout_ms = if timeout_secs > 0 {
         Some(timeout_secs * 1000) // Convert seconds to milliseconds
@@ -375,21 +375,28 @@ fn run_file(
             actual_query.bright_white()
         );
 
-        // Create trace configuration and use QueryConfig
+        // Create trace configuration and use ExecutionConfig
         let trace_config = TraceConfig {
             enabled: true,
             level: TraceLevel::from_u8(trace_level),
         };
-        let config = QueryConfig {
+        let config = ExecutionConfig {
             timeout: timeout_ms,
+            result_limit: if limit > 0 { Some(limit) } else { None },
             trace: Some(trace_config),
+            ..Default::default()
         };
 
         // Run query with unified configuration
-        interpreter.execute_query(&actual_query, config)
+        interpreter.query(&actual_query, config).map(|iter| iter.collect_limited(limit.max(100)).unwrap_or_default())
     } else {
         // Run normal query with timeout
-        interpreter.query_with_timeout(&actual_query, timeout_ms)
+        let config = ExecutionConfig {
+            timeout: timeout_ms,
+            result_limit: if limit > 0 { Some(limit) } else { None },
+            ..Default::default()
+        };
+        interpreter.query(&actual_query, config).map(|iter| iter.collect_limited(limit.max(100)).unwrap_or_default())
     };
 
     match query_result {

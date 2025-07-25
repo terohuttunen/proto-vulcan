@@ -393,6 +393,7 @@ pub enum TypeKind {
 /// Struct definition
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
+    pub name: InternedSymbol,
     pub fields: StructFields,
 }
 
@@ -414,6 +415,7 @@ pub struct NamedField {
 /// Enum definition
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDefinition {
+    pub name: InternedSymbol,
     pub variants: Vec<EnumVariant>,
 }
 
@@ -932,6 +934,7 @@ fn hash_type_content(type_def: &TypeDefinition, hasher: &mut impl Hasher) {
 
 /// Hash a struct definition
 fn hash_struct_definition(struct_def: &StructDefinition, hasher: &mut impl Hasher) {
+    struct_def.name.hash(hasher);
     match &struct_def.fields {
         StructFields::Named(named_fields) => {
             "named_fields".hash(hasher);
@@ -954,6 +957,7 @@ fn hash_struct_definition(struct_def: &StructDefinition, hasher: &mut impl Hashe
 
 /// Hash an enum definition
 fn hash_enum_definition(enum_def: &EnumDefinition, hasher: &mut impl Hasher) {
+    enum_def.name.hash(hasher);
     enum_def.variants.len().hash(hasher);
     for variant in &enum_def.variants {
         variant.name.hash(hasher);

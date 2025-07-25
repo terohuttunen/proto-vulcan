@@ -3,7 +3,7 @@
 //! overflow during the initial goal-to-AST conversion.
 
 use super::environment::Environment;
-use super::execution::ExecutionContext;
+use super::runtime::context::ExecutionContext;
 use super::parser::ast::{PredicateDefinition, SearchStrategy};
 use crate::goal::{AnyGoal, Goal};
 use crate::lterm::LTerm;
@@ -58,7 +58,15 @@ impl DeferredRelationCall {
 
 impl Solve for DeferredRelationCall {
     fn solve(&self, solver: &Solver, state: State) -> Stream {
-        let mut exec_context = ExecutionContext::new(self.environment.clone());
+        // Get the IR program from the solver (if available)
+        let program = match solver.program() {
+            Some(program) => program,
+            None => {
+                return Stream::error("No IR program available in solver for deferred relation call execution".to_string());
+            }
+        };
+        
+        let mut exec_context = ExecutionContext::new(program.clone(), self.environment.clone());
 
         // Set up the search strategy context
         // If the relation has its own @dfs/@bfs strategy, use that; otherwise inherit from parent
@@ -102,7 +110,7 @@ impl Solve for DeferredRelationCall {
         // Directly bind call arguments to parameter names (no fresh variables needed)
         // This preserves variable identity and eliminates coordination issues
         for (param, arg) in self.rel_def.parameters.iter().zip(self.call_args.iter()) {
-            exec_context.bind_var(&param.name, arg.clone());
+            exec_context.bind_var(param.name.clone(), arg.clone());
         }
 
         // Convert the relation's body (AST) into a runtime goal. This is the core of the lazy evaluation.
@@ -110,28 +118,12 @@ impl Solve for DeferredRelationCall {
         // Note: Macro predicates should never reach this point as they are eagerly expanded
         // in ast_relation_call_to_runtime(). This code only handles regular relations.
 
-        let body_goals_result = {
-            // Check if the body contains meta statements or interpolation
-            let has_meta_features = self
-                .rel_def
-                .body
-                .iter()
-                .any(|g| exec_context.goal_contains_meta_features(g));
-
-            if has_meta_features {
-                // Use template-aware processing for relation bodies with meta statements
-                exec_context
-                    .process_goal_body_with_template_expansion(&self.rel_def.body)
-                    .map(|goal| vec![goal])
-            } else {
-                // Use regular processing for relation bodies without meta statements
-                self.rel_def
-                    .body
-                    .iter()
-                    .map(|g| exec_context.ast_goal_to_runtime(g))
-                    .collect::<Result<Vec<_>, _>>()
-            }
-        };
+        // In the IR-based system, deferred relation calls should not be executing AST bodies
+        // This is a legacy pattern that needs to be replaced with IR-based deferred execution
+        let body_goals_result: Result<Vec<crate::goal::Goal>, crate::interpreter::InterpreterError> = 
+            Err(crate::interpreter::InterpreterError::RuntimeError(
+                "Deferred relation calls with AST bodies not supported in IR-based execution. Relations should be compiled to IR first.".to_string()
+            ));
 
         // Pop the scope now that the body has been converted.
         exec_context.pop_scope();

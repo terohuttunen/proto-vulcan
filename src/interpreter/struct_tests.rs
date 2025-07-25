@@ -7,6 +7,7 @@ use crate::{
     engine::DefaultEngine,
     user::DefaultUser,
 };
+use super::ExecutionConfig;
 
 type TestInterpreter = Interpreter;
 
@@ -18,7 +19,7 @@ mod tuple_struct_tests {
     #[test]
     fn test_tuple_struct_construction() {
         let program = r#"
-            struct Point(i32, i32);
+            struct Point(Number, Number);
             
             rel test_point() {
                 Point(1, 2) == Point(1, 2);
@@ -26,17 +27,17 @@ mod tuple_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_point()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_point()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should find at least one solution");
     }
 
     #[test]
     fn test_tuple_struct_pattern_matching() {
         let program = r#"
-            struct Point(i32, i32);
+            struct Point(Number, Number);
             
             rel get_x(point, x) {
                 Point(x, _) == point;
@@ -44,10 +45,10 @@ mod tuple_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("get_x(Point(42, 13), X)").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("get_x(Point(42, 13), X)", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should find solution where X = 42");
         
         // Check that X is bound to 42
@@ -60,7 +61,7 @@ mod tuple_struct_tests {
     #[test]
     fn test_nested_tuple_structs() {
         let program = r#"
-            struct Point(i32, i32);
+            struct Point(Number, Number);
             struct Line(Point, Point);
             
             rel test_line() {
@@ -69,17 +70,17 @@ mod tuple_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_line()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_line()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should find solution for nested tuple structs");
     }
 
     #[test]
     fn test_tuple_struct_unification() {
         let program = r#"
-            struct Pair(i32, i32);
+            struct Pair(Number, Number);
             
             rel same_pair(p1, p2) {
                 p1 == p2;
@@ -87,10 +88,10 @@ mod tuple_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("same_pair(Pair(X, Y), Pair(1, 2))").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("same_pair(Pair(X, Y), Pair(1, 2))", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should unify and bind X=1, Y=2");
     }
 }
@@ -103,7 +104,7 @@ mod named_struct_tests {
     #[test]
     fn test_named_struct_construction() {
         let program = r#"
-            struct PersonConstruct { name: String, age: i32 }
+            struct PersonConstruct { name: String, age: Number }
             
             rel test_person_construct_equality() {
                 PersonConstruct {name: "Alice", age: 30} == PersonConstruct {name: "Alice", age: 30};
@@ -111,17 +112,17 @@ mod named_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_person_construct_equality()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_person_construct_equality()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Named struct construction and equality should work");
     }
 
     #[test]
     fn test_named_struct_pattern_matching() {
         let program = r#"
-            struct PersonPattern { name: String, age: i32 }
+            struct PersonPattern { name: String, age: Number }
             
             rel get_pattern_name(person, name) {
                 PersonPattern {name: name, age: _} == person;
@@ -129,10 +130,10 @@ mod named_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query(r#"get_pattern_name(PersonPattern {name: "Bob", age: 25}, Name)"#).expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query(r#"get_pattern_name(PersonPattern {name: "Bob", age: 25}, Name)"#, ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should extract name from named struct");
         
         // Check that Name is bound to "Bob"
@@ -144,7 +145,7 @@ mod named_struct_tests {
     #[test]
     fn test_named_struct_field_order_independence() {
         let program = r#"
-            struct PointOrder { x: i32, y: i32 }
+            struct PointOrder { x: Number, y: Number }
             
             rel same_point_order(p1, p2) {
                 p1 == p2;
@@ -152,11 +153,11 @@ mod named_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
         // Test that field order doesn't matter
-        let results = interpreter.query("same_point_order(PointOrder {x: 1, y: 2}, PointOrder {y: 2, x: 1})").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("same_point_order(PointOrder {x: 1, y: 2}, PointOrder {y: 2, x: 1})", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Named structs should match regardless of field order");
     }
 
@@ -171,10 +172,10 @@ mod named_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_address_equality()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_address_equality()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Compound struct equality should work");
     }
 
@@ -196,10 +197,10 @@ mod named_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_nested_structs()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_nested_structs()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should handle nested named structs");
     }
 }
@@ -212,7 +213,7 @@ mod mixed_struct_tests {
     #[test]
     fn test_tuple_and_named_structs_together() {
         let program = r#"
-            struct PointMixed(i32, i32);
+            struct PointMixed(Number, Number);
             struct RectangleMixed { top_left: PointMixed, bottom_right: PointMixed }
             
             rel test_mixed_types() {
@@ -227,17 +228,17 @@ mod mixed_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_mixed_types()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_mixed_types()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should handle mixing tuple and named structs");
     }
 
     #[test]
     fn test_struct_with_variables() {
         let program = r#"
-            struct Pair(i32, i32);
+            struct Pair(Number, Number);
             
             rel extract_both(pair, x, y) {
                 Pair(x, y) == pair;
@@ -245,10 +246,10 @@ mod mixed_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("extract_both(Pair(42, 99), X, Y)").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("extract_both(Pair(42, 99), X, Y)", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should extract both values from tuple struct");
         
         // Verify both variables are bound
@@ -260,7 +261,7 @@ mod mixed_struct_tests {
     #[test]
     fn test_struct_inequality() {
         let program = r#"
-            struct Point(i32, i32);
+            struct Point(Number, Number);
             
             rel different_points(p1, p2) {
                 p1 != p2;
@@ -268,10 +269,10 @@ mod mixed_struct_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("different_points(Point(1, 2), Point(3, 4))").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("different_points(Point(1, 2), Point(3, 4))", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Should recognize different structs as unequal");
     }
 }
@@ -284,7 +285,7 @@ mod interpreter_syntax_tests {
     #[test]
     fn test_tuple_struct_syntax_basic() {
         let program = r#"
-            struct Point(i32, i32);
+            struct Point(Number, Number);
             struct Color(String);
             
             rel test_tuple_syntax() {
@@ -294,18 +295,18 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_tuple_syntax()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_tuple_syntax()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Tuple struct syntax should work correctly");
     }
 
     #[test]
     fn test_named_struct_syntax_basic() {
         let program = r#"
-            struct Person { name: String, age: i32 }
-            struct Book { title: String, author: String, pages: i32 }
+            struct Person { name: String, age: Number }
+            struct Book { title: String, author: String, pages: Number }
             
             rel test_named_syntax() {
                 Person {name: "Alice", age: 30} == Person {name: "Alice", age: 30};
@@ -315,18 +316,18 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_named_syntax()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_named_syntax()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Named struct syntax should work correctly");
     }
 
     #[test]
     fn test_mixed_struct_syntax() {
         let program = r#"
-            struct Point(i32, i32);
-            struct Circle { center: Point, radius: i32 }
+            struct Point(Number, Number);
+            struct Circle { center: Point, radius: Number }
             struct Rectangle { top_left: Point, bottom_right: Point }
             
             rel test_mixed_syntax() {
@@ -339,18 +340,18 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_mixed_syntax()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_mixed_syntax()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Mixed struct syntax should work correctly");
     }
 
     #[test]
     fn test_struct_pattern_syntax() {
         let program = r#"
-            struct Person { name: String, age: i32 }
-            struct Point(i32, i32);
+            struct Person { name: String, age: Number }
+            struct Point(Number, Number);
             
             rel get_person_name(person, name) {
                 Person {name: name, age: _} == person;
@@ -362,20 +363,20 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
         // Test named struct pattern matching
-        let results1 = interpreter.query(r#"get_person_name(Person {name: "Bob", age: 25}, Name)"#)
-            .expect("Failed to execute named pattern query");
+        let results1 = interpreter.query(r#"get_person_name(Person {name: "Bob", age: 25}, Name)"#, ExecutionConfig::default())
+            .expect("Failed to execute named pattern query").collect_limited(100).unwrap_or_default();
         assert!(!results1.is_empty(), "Named struct pattern matching should work");
         
         let name_binding = results1[0].bindings.get("Name").expect("Name should be bound");
         assert!(format!("{:?}", name_binding).contains("Bob"), "Name should be extracted correctly");
         
         // Test tuple struct pattern matching
-        let results2 = interpreter.query("get_point_x(Point(42, 13), X)")
-            .expect("Failed to execute tuple pattern query");
+        let results2 = interpreter.query("get_point_x(Point(42, 13), X)", ExecutionConfig::default())
+            .expect("Failed to execute tuple pattern query").collect_limited(100).unwrap_or_default();
         assert!(!results2.is_empty(), "Tuple struct pattern matching should work");
         
         let x_binding = results2[0].bindings.get("X").expect("X should be bound");
@@ -385,7 +386,7 @@ mod interpreter_syntax_tests {
     #[test]
     fn test_struct_field_order_syntax() {
         let program = r#"
-            struct Config { host: String, port: i32, ssl: String }
+            struct Config { host: String, port: Number, ssl: String }
             
             rel same_config(c1, c2) {
                 c1 == c2
@@ -393,12 +394,12 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
         // Test that field order doesn't matter in syntax
-        let results = interpreter.query(r#"same_config(Config {host: "localhost", port: 8080, ssl: "true"}, Config {ssl: "true", host: "localhost", port: 8080})"#)
-            .expect("Failed to execute field order query");
+        let results: Vec<_> = interpreter.query(r#"same_config(Config {host: "localhost", port: 8080, ssl: "true"}, Config {ssl: "true", host: "localhost", port: 8080})"#, ExecutionConfig::default())
+            .expect("Failed to execute field order query").collect_limited(100).unwrap_or_default();
         
         assert!(!results.is_empty(), "Field order should not matter in named struct syntax");
     }
@@ -408,7 +409,7 @@ mod interpreter_syntax_tests {
         let program = r#"
             struct Address { street: String, city: String, zip: String }
             struct Person { name: String, address: Address }
-            struct Company { name: String, hq: Address, employees: i32 }
+            struct Company { name: String, hq: Address, employees: Number }
             
             rel test_nested_syntax() {
                 Person {
@@ -432,18 +433,18 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
-        let results = interpreter.query("test_nested_syntax()").expect("Failed to execute query");
+        let results: Vec<_> = interpreter.query("test_nested_syntax()", ExecutionConfig::default()).expect("Failed to execute query").collect_limited(100).unwrap_or_default();
         assert!(!results.is_empty(), "Nested struct syntax should work correctly");
     }
 
     #[test]
     fn test_struct_in_relations() {
         let program = r#"
-            struct Point(i32, i32);
-            struct Vector { x: i32, y: i32 }
+            struct Point(Number, Number);
+            struct Vector { x: Number, y: Number }
             
             rel distance_from_origin(point, dist) {
                 |x, y| {
@@ -469,22 +470,22 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
         // Test tuple struct in relations
-        let results1 = interpreter.query("distance_from_origin(Point(3, 4), Dist)")
-            .expect("Failed to execute distance query");
+        let results1 = interpreter.query("distance_from_origin(Point(3, 4), Dist)", ExecutionConfig::default())
+            .expect("Failed to execute distance query").collect_limited(100).unwrap_or_default();
         assert!(!results1.is_empty(), "Tuple struct should work in relations");
         
         // Test named struct in relations
-        let results2 = interpreter.query("vector_magnitude(Vector {x: 5, y: 12}, Mag)")
-            .expect("Failed to execute magnitude query");
+        let results2 = interpreter.query("vector_magnitude(Vector {x: 5, y: 12}, Mag)", ExecutionConfig::default())
+            .expect("Failed to execute magnitude query").collect_limited(100).unwrap_or_default();
         assert!(!results2.is_empty(), "Named struct should work in relations");
         
         // Test conversion between struct types
-        let results3 = interpreter.query("point_to_vector(Point(1, 2), Vec)")
-            .expect("Failed to execute conversion query");
+        let results3 = interpreter.query("point_to_vector(Point(1, 2), Vec)", ExecutionConfig::default())
+            .expect("Failed to execute conversion query").collect_limited(100).unwrap_or_default();
         assert!(!results3.is_empty(), "Struct conversion should work in relations");
         
         let vec_binding = results3[0].bindings.get("Vec").expect("Vec should be bound");
@@ -495,9 +496,9 @@ mod interpreter_syntax_tests {
     #[test]
     fn test_complex_struct_queries() {
         let program = r#"
-            struct User { id: i32, name: String }
-            struct Post { id: i32, author: User, title: String }
-            struct Comment { post_id: i32, author: User, text: String }
+            struct User { id: Number, name: String }
+            struct Post { id: Number, author: User, title: String }
+            struct Comment { post_id: Number, author: User, text: String }
             
             rel author_posted(user, post) {
                 Post {author: user, id: _, title: _} == post;
@@ -516,28 +517,28 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
         // Test complex pattern matching with nested structs
         let alice = r#"User {id: 1, name: "Alice"}"#;
         let post = format!(r#"Post {{id: 100, author: {}, title: "Hello World"}}"#, alice);
         let comment = format!(r#"Comment {{post_id: 100, author: {}, text: "Great post!"}}"#, alice);
         
-        let results1 = interpreter.query(&format!("author_posted({}, {})", alice, post))
-            .expect("Failed to execute author_posted query");
+        let results1 = interpreter.query(&format!("author_posted({}, {})", alice, post), ExecutionConfig::default())
+            .expect("Failed to execute author_posted query").collect_limited(100).unwrap_or_default();
         assert!(!results1.is_empty(), "Complex struct pattern matching should work");
         
-        let results2 = interpreter.query(&format!("same_author({}, {})", post, comment))
-            .expect("Failed to execute same_author query");
+        let results2 = interpreter.query(&format!("same_author({}, {})", post, comment), ExecutionConfig::default())
+            .expect("Failed to execute same_author query").collect_limited(100).unwrap_or_default();
         assert!(!results2.is_empty(), "Complex struct unification should work");
     }
 
     #[test]
     fn test_struct_with_variables() {
         let program = r#"
-            struct Pair(i32, i32);
-            struct Named { first: i32, second: i32 }
+            struct Pair(Number, Number);
+            struct Named { first: Number, second: Number }
             
             rel extract_tuple(pair, x, y) {
                 Pair(x, y) == pair;
@@ -556,12 +557,12 @@ mod interpreter_syntax_tests {
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
-        let mut interpreter = TestInterpreter::new();
-        interpreter.load_program(parsed_program).expect("Failed to load program");
+        let mut interpreter = TestInterpreter::with_stdlib();
+        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
         
         // Test variable extraction from tuple struct
-        let results1 = interpreter.query("extract_tuple(Pair(10, 20), X, Y)")
-            .expect("Failed to execute tuple extraction");
+        let results1 = interpreter.query("extract_tuple(Pair(10, 20), X, Y)", ExecutionConfig::default())
+            .expect("Failed to execute tuple extraction").collect_limited(100).unwrap_or_default();
         assert!(!results1.is_empty(), "Variable extraction from tuple should work");
         
         let x_val = results1[0].bindings.get("X").expect("X should be bound");
@@ -570,13 +571,13 @@ mod interpreter_syntax_tests {
         assert!(format!("{:?}", y_val).contains("20"), "Y should be 20");
         
         // Test variable extraction from named struct
-        let results2 = interpreter.query("extract_named(Named {first: 30, second: 40}, A, B)")
-            .expect("Failed to execute named extraction");
+        let results2 = interpreter.query("extract_named(Named {first: 30, second: 40}, A, B)", ExecutionConfig::default())
+            .expect("Failed to execute named extraction").collect_limited(100).unwrap_or_default();
         assert!(!results2.is_empty(), "Variable extraction from named should work");
         
         // Test conversion between struct types with variables
-        let results3 = interpreter.query("convert_pair_to_named(Pair(5, 15), Named)")
-            .expect("Failed to execute conversion");
+        let results3 = interpreter.query("convert_pair_to_named(Pair(5, 15), Named)", ExecutionConfig::default())
+            .expect("Failed to execute conversion").collect_limited(100).unwrap_or_default();
         assert!(!results3.is_empty(), "Struct type conversion should work");
         
         let named_val = results3[0].bindings.get("Named").expect("Named should be bound");

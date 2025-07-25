@@ -185,7 +185,7 @@ rel test_nested_if_statements(result) {
 // Test enum variant expansion in metaprogramming
 enum Color { Red, Green, Blue }
 enum Container { Empty, Single(value), Pair(first, second) }
-enum Person { Anonymous, Named { name: String, age: i32 } }
+enum Person { Anonymous, Named { name: String, age: Number } }
 
 // Test enum variants with interpolated values
 @test(expected = [Container::Single(42)])
@@ -229,9 +229,9 @@ rel test_enum_complex_expansion(result) {
 }
 
 // Test struct expansion in metaprogramming
-struct Point(i32, i32);
-struct Rectangle { width: i32, height: i32 }
-struct Box { item: String, quantity: i32 }
+struct Point(Number, Number);
+struct Rectangle { width: Number, height: Number }
+struct Box { item: String, quantity: Number }
 
 // Test tuple struct with interpolated values
 @test(expected = [Point(10, 20)])

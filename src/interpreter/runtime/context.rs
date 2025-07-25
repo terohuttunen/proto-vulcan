@@ -11,6 +11,15 @@ use crate::interpreter::compiler::ir::MetaValue;
 use crate::interpreter::parser::ast::SearchStrategy;
 use crate::interpreter::symbol_table::InternedSymbol;
 use crate::interpreter::trace::TraceConfig;
+use crate::interpreter::runtime::compound_objects::{RegistryTupleStruct, RegistryNamedStruct, RegistryEnumVariant, VariantData};
+
+/// Result of predicate lookup - indicates where the predicate was found
+enum PredicateLocation {
+    /// Found in an IR program (predicate, source program)
+    IR(ir::Predicate, Rc<ir::Program>),
+    /// Found as a builtin (function reference, arity)
+    Builtin(Rc<dyn Fn(Vec<LTerm>) -> Goal>, usize),
+}
 use crate::lterm::LTerm;
 use crate::solver::Solver;
 use crate::state::State;
@@ -91,6 +100,10 @@ impl PredicateClosure {
             self.program.clone(), 
             self.environment.clone()  // Same environment = same builtins
         );
+        
+        // Set base program for cross-program predicate resolution
+        // This ensures closures can resolve predicates from the base program context
+        temp_context.set_base_program(self.program.clone());
         
         // Bind captured arguments to predicate parameters
         for (param, arg) in self.predicate_ir.parameters.iter().zip(&self.captured_args) {
@@ -186,6 +199,9 @@ pub struct ExecutionContext {
     /// Environment for runtime context (builtins, module loading, etc.)
     environment: Rc<RefCell<Environment>>,
 
+    /// Base program for predicate lookup (used in query execution)
+    base_program: Option<Rc<ir::Program>>,
+
     /// Variable scoping stack for execution - supports both relational and meta variables
     variable_scopes: Vec<HashMap<InternedSymbol, VariableValue>>,
 
@@ -202,10 +218,50 @@ impl ExecutionContext {
         Self {
             program,
             environment,
+            base_program: None,
             variable_scopes: vec![HashMap::new()], // Start with global scope
             search_strategy_stack: vec![SearchStrategy::Bfs], // Default to BFS
             trace_config: None,                               // No tracing by default
         }
+    }
+
+    /// Set the base program for predicate lookup
+    pub fn set_base_program(&mut self, base_program: Rc<ir::Program>) {
+        self.base_program = Some(base_program);
+    }
+
+    /// Lookup a predicate in current program, base program, or builtins
+    fn lookup_predicate(&self, predicate_id: &ir::PredicateId) -> Result<PredicateLocation, CompileError> {
+        // Try current program first
+        if let Some(predicate_item) = self.program.registry.get_item(predicate_id) {
+            if let ir::Item::Predicate(predicate) = predicate_item {
+                return Ok(PredicateLocation::IR(predicate.clone(), self.program.clone()));
+            }
+        }
+        
+        // Try base program if available  
+        if let Some(base_program) = &self.base_program {
+            if let Some(predicate_item) = base_program.registry.get_item(predicate_id) {
+                if let ir::Item::Predicate(predicate) = predicate_item {
+                    return Ok(PredicateLocation::IR(predicate.clone(), base_program.clone()));
+                }
+            }
+        }
+        
+        // Try builtins
+        let predicate_name = predicate_id.as_ref().path.to_string();
+        let env = self.environment.borrow();
+        if let Some(runtime_value) = env.lookup(&predicate_name) {
+            if let crate::interpreter::runtime_value::RuntimeValue::BuiltinRelation { func, arity } = runtime_value {
+                return Ok(PredicateLocation::Builtin(func.clone(), *arity));
+            }
+        }
+        
+        // Not found
+        Err(CompileError::UnresolvedPredicate {
+            attempted_item: predicate_id.clone(),
+            symbol: InternedSymbol::from_text(&predicate_id.as_ref().path),
+        })
     }
 
     /// Convert an IR goal to a runtime goal
@@ -308,10 +364,11 @@ impl ExecutionContext {
                         });
                     }
                 }
-                // Variable not found - create fresh variable and bind it
-                let fresh_var = self.create_fresh_var();
-                self.bind_var(name.clone(), fresh_var.clone());
-                Ok(fresh_var)
+                // Variable not found - this should be an error, not automatic variable creation
+                Err(CompileError::SemanticError {
+                    message: format!("Unbound variable: {}", name),
+                    symbol: name.clone(),
+                })
             }
             ir::Term::Wildcard => Ok(self.create_fresh_var()),
             ir::Term::Literal(literal) => self.ir_literal_to_runtime(literal),
@@ -371,26 +428,41 @@ impl ExecutionContext {
             .ok_or_else(|| CompileError::UnresolvedType {
                 attempted_item: struct_construction.type_ref.clone(),
                 symbol: InternedSymbol::from_text(&struct_construction.type_ref.as_ref().path),
-            })?;
+            })?
+            .clone(); // Clone early to avoid borrowing issues
 
         match &struct_construction.fields {
             ir::StructConstructionFields::Named(named_fields) => {
-                // Create compound term with struct name as functor
-                let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
+                // Create RegistryNamedStruct compound object - preserve definition order
+                let mut fields = Vec::new();
                 for field in named_fields {
                     let field_value = self.ir_term_to_runtime(&field.value)?;
-                    args.push(field_value);
+                    fields.push((field.name.to_string(), field_value));
                 }
-                Ok(LTerm::from_vec(args))
+                
+                let compound = RegistryNamedStruct {
+                    type_id: struct_construction.type_ref.clone(),
+                    structural_type: ir::StructuralType::new(struct_def.clone()),
+                    fields,
+                };
+                
+                Ok(LTerm::from(Rc::new(compound) as Rc<dyn crate::compound::CompoundObject>))
             }
             ir::StructConstructionFields::Tuple(tuple_fields) => {
-                // Create compound term with struct name as functor
-                let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
+                // Create RegistryTupleStruct compound object
+                let mut args = Vec::new();
                 for field in tuple_fields {
                     let field_value = self.ir_term_to_runtime(field)?;
                     args.push(field_value);
                 }
-                Ok(LTerm::from_vec(args))
+                
+                let compound = RegistryTupleStruct {
+                    type_id: struct_construction.type_ref.clone(),
+                    structural_type: ir::StructuralType::new(struct_def.clone()),
+                    args,
+                };
+                
+                Ok(LTerm::from(Rc::new(compound) as Rc<dyn crate::compound::CompoundObject>))
             }
         }
     }
@@ -401,37 +473,69 @@ impl ExecutionContext {
         enum_construction: &ir::EnumVariantConstruction,
     ) -> Result<LTerm, CompileError> {
         // Look up the enum definition
-        let _enum_def = self
+        let enum_def = self
             .program
             .registry
             .get_type(&enum_construction.enum_ref)
             .ok_or_else(|| CompileError::UnresolvedType {
                 attempted_item: enum_construction.enum_ref.clone(),
                 symbol: InternedSymbol::from_text(&enum_construction.enum_ref.as_ref().path),
-            })?;
+            })?
+            .clone();
 
         match &enum_construction.kind {
             ir::EnumVariantConstructionKind::Unit => {
-                // Create atom with variant name
-                Ok(LTerm::from(enum_construction.variant_name.to_string()))
+                // Create proper unit enum variant compound object
+                let variant_index = self.get_variant_index(&enum_def, &enum_construction.variant_name)
+                    .unwrap_or(0);
+                let enum_variant = RegistryEnumVariant {
+                    enum_type_id: enum_construction.enum_ref.clone(),
+                    structural_type: ir::StructuralType::new(enum_def.clone()),
+                    variant_index,
+                    variant_name: enum_construction.variant_name.to_string(),
+                    variant_data: VariantData::Unit,
+                };
+                Ok(LTerm::from(Rc::new(enum_variant) as Rc<dyn crate::compound::CompoundObject>))
             }
             ir::EnumVariantConstructionKind::Tuple(tuple_fields) => {
-                // Create compound term with variant name as functor
-                let mut args = vec![LTerm::from(enum_construction.variant_name.to_string())];
+                // Create runtime arguments from tuple fields
+                let mut args = Vec::new();
                 for field in tuple_fields {
                     let field_value = self.ir_term_to_runtime(field)?;
                     args.push(field_value);
                 }
-                Ok(LTerm::from_vec(args))
+
+                // Create proper tuple enum variant compound object
+                let variant_index = self.get_variant_index(&enum_def, &enum_construction.variant_name)
+                    .unwrap_or(0);
+                let enum_variant = RegistryEnumVariant {
+                    enum_type_id: enum_construction.enum_ref.clone(),
+                    structural_type: ir::StructuralType::new(enum_def.clone()),
+                    variant_index,
+                    variant_name: enum_construction.variant_name.to_string(),
+                    variant_data: VariantData::Tuple(args),
+                };
+                Ok(LTerm::from(Rc::new(enum_variant) as Rc<dyn crate::compound::CompoundObject>))
             }
             ir::EnumVariantConstructionKind::Named(named_fields) => {
-                // Create compound term with variant name as functor
-                let mut args = vec![LTerm::from(enum_construction.variant_name.to_string())];
+                // Create field bindings for named enum variant construction - preserve definition order
+                let mut field_bindings = Vec::new();
                 for field in named_fields {
                     let field_value = self.ir_term_to_runtime(&field.value)?;
-                    args.push(field_value);
+                    field_bindings.push((field.name.to_string(), field_value));
                 }
-                Ok(LTerm::from_vec(args))
+
+                // Create proper named enum variant compound object
+                let variant_index = self.get_variant_index(&enum_def, &enum_construction.variant_name)
+                    .unwrap_or(0);
+                let enum_variant = RegistryEnumVariant {
+                    enum_type_id: enum_construction.enum_ref.clone(),
+                    structural_type: ir::StructuralType::new(enum_def.clone()),
+                    variant_index,
+                    variant_name: enum_construction.variant_name.to_string(),
+                    variant_data: VariantData::Named(field_bindings),
+                };
+                Ok(LTerm::from(Rc::new(enum_variant) as Rc<dyn crate::compound::CompoundObject>))
             }
         }
     }
@@ -441,15 +545,30 @@ impl ExecutionContext {
         &mut self,
         predicate_call: &ir::PredicateCall,
     ) -> Result<Goal, CompileError> {
-        // Check arity using registry convenience method
-        let expected_arity = self
-            .program
-            .registry
-            .get_predicate_arity(&predicate_call.predicate)
-            .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: predicate_call.predicate.clone(),
-                symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
-            })?;
+        // Check arity - try IR registry first, then Environment builtins
+        let expected_arity = if let Some(arity) = self.program.registry.get_predicate_arity(&predicate_call.predicate) {
+            arity
+        } else {
+            // Fallback: Check if it's a builtin relation in the environment
+            let predicate_name = predicate_call.predicate.as_ref().path.to_string();
+            let env = self.environment.borrow();
+            
+            if let Some(runtime_value) = env.lookup(&predicate_name) {
+                if let crate::interpreter::runtime_value::RuntimeValue::BuiltinRelation { arity, .. } = runtime_value {
+                    *arity
+                } else {
+                    return Err(CompileError::UnresolvedPredicate {
+                        attempted_item: predicate_call.predicate.clone(),
+                        symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
+                    });
+                }
+            } else {
+                return Err(CompileError::UnresolvedPredicate {
+                    attempted_item: predicate_call.predicate.clone(),
+                    symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
+                });
+            }
+        };
 
         if predicate_call.arguments.len() != expected_arity {
             return Err(CompileError::ArityMismatch {
@@ -460,78 +579,60 @@ impl ExecutionContext {
             });
         }
 
-        // Check if any arguments need meta evaluation
-        let has_meta_args = predicate_call.arguments.iter().any(|arg| {
-            matches!(arg, ir::Term::MetaInterpolation(_))
-        });
+        // Unified closure strategy: ALL predicate calls create closures for deferred execution
+        // This prevents stack overflow from immediate recursive expansion
         
-        if has_meta_args {
-            // Create lazy closure for meta arguments
-            let mut captured_args = Vec::new();
-            for arg in &predicate_call.arguments {
-                match arg {
-                    ir::Term::MetaInterpolation(meta_expr) => {
-                        let meta_value = self.evaluate_meta_expr(meta_expr)?;
-                        captured_args.push(ArgumentValue::Meta(meta_value));
-                    }
-                    _ => {
-                        let lterm = self.ir_term_to_runtime(arg)?;
-                        captured_args.push(ArgumentValue::Relational(lterm));
-                    }
+        // Convert all arguments to ArgumentValue (meta or relational)
+        let mut captured_args = Vec::new();
+        for arg in &predicate_call.arguments {
+            match arg {
+                ir::Term::MetaInterpolation(meta_expr) => {
+                    let meta_value = self.evaluate_meta_expr(meta_expr)?;
+                    captured_args.push(ArgumentValue::Meta(meta_value));
                 }
-            }
-            
-            // Look up predicate and create closure
-            let predicate_item = self
-                .program
-                .registry
-                .get_item(&predicate_call.predicate)
-                .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: predicate_call.predicate.clone(),
-                    symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
-                })?;
-                
-            if let ir::Item::Predicate(predicate) = predicate_item {
-                let closure = self.create_predicate_closure(Rc::new(predicate.clone()), captured_args);
-                Ok(Goal::lazy_macro(Rc::new(closure)))
-            } else {
-                Err(CompileError::UnresolvedPredicate {
-                    attempted_item: predicate_call.predicate.clone(),
-                    symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
-                })
-            }
-        } else {
-            // No meta arguments - handle normally with immediate expansion
-            let mut runtime_args = Vec::new();
-            for arg in &predicate_call.arguments {
-                runtime_args.push(self.ir_term_to_runtime(arg)?);
-            }
-
-            // Look up the predicate for actual goal creation
-            let predicate_item = self
-                .program
-                .registry
-                .get_item(&predicate_call.predicate)
-                .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: predicate_call.predicate.clone(),
-                    symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
-                })?;
-
-            let predicate = match predicate_item {
-                ir::Item::Predicate(p) => p,
                 _ => {
-                    return Err(CompileError::UnresolvedPredicate {
-                        attempted_item: predicate_call.predicate.clone(),
-                        symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
-                    })
+                    let lterm = self.ir_term_to_runtime(arg)?;
+                    captured_args.push(ArgumentValue::Relational(lterm));
                 }
-            };
-
-            // Clone the predicate to avoid borrowing issues (this is efficient with Rc sharing)
-            let predicate_owned = predicate.clone();
-
-            // Convert the predicate to runtime goal immediately
-            self.ir_predicate_to_runtime(&predicate_owned, runtime_args)
+            }
+        }
+        
+        // Look up predicate using the helper method that supports base program context
+        match self.lookup_predicate(&predicate_call.predicate)? {
+            PredicateLocation::IR(predicate, context_program) => {
+                // Create closure for IR predicates
+                let closure = PredicateClosure::new(
+                    Rc::new(predicate),
+                    captured_args,
+                    context_program,
+                    self.environment.clone(),
+                );
+                Ok(Goal::lazy_macro(Rc::new(closure)))
+            }
+            PredicateLocation::Builtin(func, expected_arity) => {
+                // For builtin relations, verify arity and call directly (no closure needed)
+                if captured_args.len() != expected_arity {
+                    return Err(CompileError::ArityMismatch {
+                        predicate_item: predicate_call.predicate.clone(),
+                        expected_arity,
+                        actual_arity: captured_args.len(),
+                        symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
+                    });
+                }
+                
+                // Convert ArgumentValues back to LTerms for builtin function call
+                let runtime_args: Vec<_> = captured_args.into_iter().map(|arg| {
+                    match arg {
+                        ArgumentValue::Relational(lterm) => lterm,
+                        ArgumentValue::Meta(_) => {
+                            // Builtins don't support meta arguments - this is an error
+                            panic!("Builtin relations cannot have meta arguments");
+                        }
+                    }
+                }).collect();
+                
+                Ok(func(runtime_args))
+            }
         }
     }
 
@@ -634,6 +735,14 @@ impl ExecutionContext {
     /// Create a fresh variable (uses LTerm's global counter)
     pub fn create_fresh_var(&mut self) -> LTerm {
         LTerm::any()
+    }
+
+    /// Create a fresh variable with a specific name for field binding
+    pub fn create_named_fresh_var(&mut self, name: &str) -> LTerm {
+        use crate::lterm::LTerm;
+        
+        let var = LTerm::var(name);
+        var
     }
 
     /// Bind a relational variable in the current scope
@@ -930,22 +1039,29 @@ impl ExecutionContext {
             .ok_or_else(|| CompileError::UnresolvedType {
                 attempted_item: struct_pattern.type_ref.clone(),
                 symbol: InternedSymbol::from_text(&struct_pattern.type_ref.as_ref().path),
-            })?;
+            })?
+            .clone();
 
         match &struct_pattern.fields {
             ir::StructPatternFields::Named(named_patterns) => {
-                // Create compound term with struct name as functor
-                let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
+                // Create field bindings for named struct pattern - preserve definition order
+                let mut field_bindings = Vec::new();
                 let mut field_vars = Vec::new();
 
-                // Create fresh variables for each field
-                for _field in named_patterns {
-                    let field_var = self.create_fresh_var();
+                // Create named variables for each field using the field names
+                for field_pattern in named_patterns {
+                    let field_var = self.create_named_fresh_var(&field_pattern.name.to_string());
                     field_vars.push(field_var.clone());
-                    args.push(field_var);
+                    field_bindings.push((field_pattern.name.to_string(), field_var));
                 }
 
-                let struct_term = LTerm::from_vec(args);
+                // Create proper RegistryNamedStruct compound object
+                let named_struct = RegistryNamedStruct {
+                    type_id: struct_pattern.type_ref.clone(),
+                    structural_type: ir::StructuralType::new(struct_def.clone()),
+                    fields: field_bindings,
+                };
+                let struct_term = LTerm::from(Rc::new(named_struct) as Rc<dyn crate::compound::CompoundObject>);
                 goals.push(crate::relation::eq::eq(term, struct_term).cast_into());
 
                 // Recursively compile field patterns
@@ -956,18 +1072,23 @@ impl ExecutionContext {
                 }
             }
             ir::StructPatternFields::Tuple(tuple_patterns) => {
-                // Create compound term with struct name as functor
-                let mut args = vec![LTerm::from(struct_def.id.id.path.to_string())];
+                // Create field variables for tuple struct pattern
                 let mut field_vars = Vec::new();
 
-                // Create fresh variables for each field
-                for _pattern in tuple_patterns {
-                    let field_var = self.create_fresh_var();
+                // Create fresh variables for each field with meaningful names
+                for (field_index, _pattern) in tuple_patterns.iter().enumerate() {
+                    let field_name = format!("field{}", field_index);
+                    let field_var = self.create_named_fresh_var(&field_name);
                     field_vars.push(field_var.clone());
-                    args.push(field_var);
                 }
 
-                let struct_term = LTerm::from_vec(args);
+                // Create proper RegistryTupleStruct compound object
+                let tuple_struct = RegistryTupleStruct {
+                    type_id: struct_pattern.type_ref.clone(),
+                    structural_type: ir::StructuralType::new(struct_def.clone()),
+                    args: field_vars.clone(),
+                };
+                let struct_term = LTerm::from(Rc::new(tuple_struct) as Rc<dyn crate::compound::CompoundObject>);
                 goals.push(crate::relation::eq::eq(term, struct_term).cast_into());
 
                 // Recursively compile field patterns
@@ -990,55 +1111,100 @@ impl ExecutionContext {
         let mut goals = Vec::new();
 
         // Look up the enum definition
-        let _enum_def = self
+        let enum_def = self
             .program
             .registry
             .get_type(&enum_pattern.enum_ref)
             .ok_or_else(|| CompileError::UnresolvedType {
                 attempted_item: enum_pattern.enum_ref.clone(),
                 symbol: InternedSymbol::from_text(&enum_pattern.enum_ref.as_ref().path),
-            })?;
+            })?
+            .clone();
 
         match &enum_pattern.kind {
             ir::EnumVariantPatternKind::Unit => {
-                // Create atom with variant name
-                let variant_term = LTerm::from(enum_pattern.variant_name.to_string());
+                // Create proper unit enum variant compound object
+                let variant_index = self.get_variant_index(&enum_def, &enum_pattern.variant_name)
+                    .unwrap_or(0);
+                let enum_variant = RegistryEnumVariant {
+                    enum_type_id: enum_pattern.enum_ref.clone(),
+                    structural_type: ir::StructuralType::new(enum_def.clone()),
+                    variant_index,
+                    variant_name: enum_pattern.variant_name.to_string(),
+                    variant_data: VariantData::Unit,
+                };
+                let variant_term = LTerm::from(Rc::new(enum_variant) as Rc<dyn crate::compound::CompoundObject>);
                 goals.push(crate::relation::eq::eq(term, variant_term).cast_into());
             }
             ir::EnumVariantPatternKind::Tuple(tuple_patterns) => {
-                // Create compound term with variant name as functor
-                let mut args = vec![LTerm::from(enum_pattern.variant_name.to_string())];
-                let mut field_vars = Vec::new();
+                // Special case: if tuple_patterns is empty, this is actually a unit variant
+                if tuple_patterns.is_empty() {
+                    // Create proper unit enum variant compound object
+                    let variant_index = self.get_variant_index(&enum_def, &enum_pattern.variant_name)
+                        .unwrap_or(0);
+                    let enum_variant = RegistryEnumVariant {
+                        enum_type_id: enum_pattern.enum_ref.clone(),
+                        structural_type: ir::StructuralType::new(enum_def.clone()),
+                        variant_index,
+                        variant_name: enum_pattern.variant_name.to_string(),
+                        variant_data: VariantData::Unit,
+                    };
+                    let variant_term = LTerm::from(Rc::new(enum_variant) as Rc<dyn crate::compound::CompoundObject>);
+                    goals.push(crate::relation::eq::eq(term, variant_term).cast_into());
+                } else {
+                    // Create field variables for tuple enum variant pattern
+                    let mut field_vars = Vec::new();
 
-                // Create fresh variables for each field
-                for _pattern in tuple_patterns {
-                    let field_var = self.create_fresh_var();
-                    field_vars.push(field_var.clone());
-                    args.push(field_var);
-                }
+                    // Create named variables for each field with meaningful names
+                    for (field_index, _pattern) in tuple_patterns.iter().enumerate() {
+                        let field_name = format!("field{}", field_index);
+                        let field_var = self.create_named_fresh_var(&field_name);
+                        field_vars.push(field_var.clone());
+                    }
 
-                let variant_term = LTerm::from_vec(args);
-                goals.push(crate::relation::eq::eq(term, variant_term).cast_into());
+                    // Create proper tuple enum variant compound object
+                    let variant_index = self.get_variant_index(&enum_def, &enum_pattern.variant_name)
+                        .unwrap_or(0);
+                    let enum_variant = RegistryEnumVariant {
+                        enum_type_id: enum_pattern.enum_ref.clone(),
+                        structural_type: ir::StructuralType::new(enum_def.clone()),
+                        variant_index,
+                        variant_name: enum_pattern.variant_name.to_string(),
+                        variant_data: VariantData::Tuple(field_vars.clone()),
+                    };
+                    let variant_term = LTerm::from(Rc::new(enum_variant) as Rc<dyn crate::compound::CompoundObject>);
+                    goals.push(crate::relation::eq::eq(term, variant_term).cast_into());
 
-                // Recursively compile field patterns
-                for (i, field_pattern) in tuple_patterns.iter().enumerate() {
-                    let field_goal = self.compile_pattern(field_pattern, field_vars[i].clone())?;
-                    goals.push(field_goal);
+                    // Recursively compile field patterns
+                    for (i, field_pattern) in tuple_patterns.iter().enumerate() {
+                        let field_goal = self.compile_pattern(field_pattern, field_vars[i].clone())?;
+                        goals.push(field_goal);
+                    }
                 }
             }
             ir::EnumVariantPatternKind::Named(named_patterns) => {
-                // Create compound term with variant name as functor
-                let mut args = vec![LTerm::from(enum_pattern.variant_name.to_string())];
+                // Create field bindings for named enum variant pattern - preserve definition order
+                let mut field_bindings = Vec::new();
                 let mut field_vars = Vec::new();
 
-                // Create fresh variables for each field
-                for _field in named_patterns {
-                    let field_var = self.create_fresh_var();
+                // Create named variables for each field using the field names
+                for field_pattern in named_patterns {
+                    let field_var = self.create_named_fresh_var(&field_pattern.name.to_string());
                     field_vars.push(field_var.clone());
-                    args.push(field_var);
+                    field_bindings.push((field_pattern.name.to_string(), field_var));
                 }
 
-                let variant_term = LTerm::from_vec(args);
+                // Create proper named enum variant compound object
+                let variant_index = self.get_variant_index(&enum_def, &enum_pattern.variant_name)
+                    .unwrap_or(0);
+                let enum_variant = RegistryEnumVariant {
+                    enum_type_id: enum_pattern.enum_ref.clone(),
+                    structural_type: ir::StructuralType::new(enum_def.clone()),
+                    variant_index,
+                    variant_name: enum_pattern.variant_name.to_string(),
+                    variant_data: VariantData::Named(field_bindings),
+                };
+                let variant_term = LTerm::from(Rc::new(enum_variant) as Rc<dyn crate::compound::CompoundObject>);
                 goals.push(crate::relation::eq::eq(term, variant_term).cast_into());
 
                 // Recursively compile field patterns
@@ -1089,6 +1255,18 @@ impl ExecutionContext {
                 let right_val = self.evaluate_meta_expr(right)?;
                 self.evaluate_meta_binary_op(op.clone(), left_val, right_val)
             }
+        }
+    }
+
+    /// Get the variant index for an enum variant
+    fn get_variant_index(&self, enum_def: &ir::TypeDefinition, variant_name: &str) -> Option<usize> {
+        match &enum_def.kind {
+            ir::TypeKind::Enum(enum_definition) => {
+                enum_definition.variants.iter().position(|variant| {
+                    variant.name.to_string() == variant_name
+                })
+            }
+            _ => None,
         }
     }
 

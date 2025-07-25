@@ -4,6 +4,7 @@
 //! arithmetic constraints, distinct constraints, and complex problems.
 
 use super::super::*;
+use super::super::ExecutionConfig;
 
 
 
@@ -24,8 +25,8 @@ fn test_constraint_block_basic_domain() {
     }
     "#;
     let program = parser::parse_str(program_str).unwrap();
-    interpreter.load_program(program).unwrap();
-    let results = interpreter.query("solve()").unwrap();
+    interpreter.load_program_ast(program).unwrap();
+    let results = interpreter.query("solve()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
     // Fresh blocks with constraint blocks work but return empty bindings
     // since the fresh variables are scoped within the block
     assert!(!results.is_empty());
@@ -48,8 +49,8 @@ fn test_constraint_block_arithmetic() {
     }
     "#;
     let program = parser::parse_str(program_str).unwrap();
-    interpreter.load_program(program).unwrap();
-    let results = interpreter.query("solve()").unwrap();
+    interpreter.load_program_ast(program).unwrap();
+    let results = interpreter.query("solve()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
     // Fresh blocks with constraint blocks work but return empty bindings
     // since the fresh variables are scoped within the block
     assert!(!results.is_empty());
@@ -74,8 +75,8 @@ fn test_constraint_block_distinct() {
     }
     "#;
     let program = parser::parse_str(program_str).unwrap();
-    interpreter.load_program(program).unwrap();
-    let results = interpreter.query("solve()").unwrap();
+    interpreter.load_program_ast(program).unwrap();
+    let results = interpreter.query("solve()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
     // Fresh blocks with constraint blocks work but return empty bindings
     // since the fresh variables are scoped within the block
     assert!(!results.is_empty());
@@ -113,8 +114,8 @@ fn test_constraint_block_simple_queens() {
     }
     "#;
     let program = parser::parse_str(program_str).unwrap();
-    interpreter.load_program(program).unwrap();
-    let results = interpreter.query("solve()").unwrap();
+    interpreter.load_program_ast(program).unwrap();
+    let results = interpreter.query("solve()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
     // Fresh blocks with constraint blocks work but return empty bindings
     // since the fresh variables are scoped within the block
     assert!(!results.is_empty());
@@ -135,8 +136,8 @@ fn test_constraint_block_fresh_variables() {
     }
     "#;
     let program = parser::parse_str(program_str).unwrap();
-    interpreter.load_program(program).unwrap();
-    let results = interpreter.query("solve()").unwrap();
+    interpreter.load_program_ast(program).unwrap();
+    let results = interpreter.query("solve()", ExecutionConfig::default()).unwrap().collect_limited(100).unwrap_or_default();
     // Fresh blocks with constraint blocks work but return empty bindings
     // since the fresh variables are scoped within the block
     assert!(!results.is_empty());
@@ -161,7 +162,7 @@ fn test_constraint_block_multiple_domains() {
     }
     "#;
     let program = parser::parse_str(program_str).unwrap();
-    interpreter.load_program(program).unwrap();
+    interpreter.load_program_ast(program).unwrap();
     // We can't query this because the "clp_test" domain doesn't exist.
     // The fact that it parses is the test.
 }

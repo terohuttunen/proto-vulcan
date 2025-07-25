@@ -264,17 +264,7 @@ impl Compiler {
             });
         }
 
-        // Initialize symbol map for this module
-        self.module_symbol_maps
-            .insert(module_id.clone(), ModuleSymbolMap::new());
-
-        // Add this module as a symbol in its parent module's symbol map
-        if let Some(parent_map) = self
-            .module_symbol_maps
-            .get_mut(&self.symbol_context.current_module)
-        {
-            parent_map.add_local_symbol(module.name.to_string(), &module_id);
-        }
+        // Module is already added to the IR registry above, no need for symbol maps
 
         // Push module onto path stack and process children
         self.module_path_stack.push(module.name.to_string());
@@ -307,6 +297,7 @@ impl Compiler {
         let ir_type = ir::TypeDefinition {
             id: type_id.clone(),
             kind: ir::TypeKind::Struct(ir::StructDefinition {
+                name: struct_def.name.clone(),
                 fields: ir::StructFields::Tuple(vec![]), // Placeholder
             }),
             visibility: self.convert_visibility(&struct_def.visibility)?,
@@ -321,13 +312,7 @@ impl Compiler {
             });
         }
 
-        // Add to current module's symbol map
-        if let Some(module_map) = self
-            .module_symbol_maps
-            .get_mut(&self.symbol_context.current_module)
-        {
-            module_map.add_local_symbol(struct_def.name.to_string(), &type_id);
-        }
+        // Type is already added to the IR registry above, no need for symbol maps
 
         Ok(())
     }
@@ -347,6 +332,7 @@ impl Compiler {
         let ir_type = ir::TypeDefinition {
             id: type_id.clone(),
             kind: ir::TypeKind::Enum(ir::EnumDefinition {
+                name: enum_def.name.clone(),
                 variants: vec![], // Placeholder
             }),
             visibility: self.convert_visibility(&enum_def.visibility)?,
@@ -354,20 +340,14 @@ impl Compiler {
 
         // Add to registry
         let registry = ir_program.registry_mut();
-        if !registry.add_type(ir_type) {
+        if !registry.add_type(ir_type.clone()) {
             return Err(CompileError::DuplicateItem {
                 item: type_id.id.clone(),
                 symbol: enum_def.name.clone(),
             });
         }
 
-        // Add to current module's symbol map
-        if let Some(module_map) = self
-            .module_symbol_maps
-            .get_mut(&self.symbol_context.current_module)
-        {
-            module_map.add_local_symbol(enum_def.name.to_string(), &type_id);
-        }
+        // Type is already added to the IR registry above, no need for symbol maps
 
         Ok(())
     }
@@ -404,13 +384,7 @@ impl Compiler {
             });
         }
 
-        // Add to current module's symbol map
-        if let Some(module_map) = self
-            .module_symbol_maps
-            .get_mut(&self.symbol_context.current_module)
-        {
-            module_map.add_local_symbol(predicate.name.to_string(), &predicate_id);
-        }
+        // Predicate is already added to the IR registry above, no need for symbol maps
 
         Ok(())
     }

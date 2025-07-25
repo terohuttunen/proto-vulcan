@@ -70,25 +70,16 @@ fn unify_rec_compound(
     ucompound: &dyn CompoundObject,
     vcompound: &dyn CompoundObject,
 ) -> SResult {
-    // First check type registry indices for objects that use the type registry (like enums)
-    match (
-        ucompound.type_registry_index(),
-        vcompound.type_registry_index(),
-    ) {
-        (Some(u_type_idx), Some(v_type_idx)) => {
-            if u_type_idx != v_type_idx {
+    // First check TypeId for objects that use the IR type system (required)
+    match (ucompound.get_type_id(), vcompound.get_type_id()) {
+        (Some(u_type_id), Some(v_type_id)) => {
+            if u_type_id != v_type_id {
                 return Err(()); // Different types cannot unify
             }
             // Same type, continue to variant check
         }
-        (None, None) => {
-            // Neither uses type registry, fall back to type_id comparison
-            if ucompound.type_id() != vcompound.type_id() {
-                return Err(());
-            }
-        }
         _ => {
-            // One uses type registry and the other doesn't, they cannot unify
+            // Compound objects without TypeId cannot be unified properly
             return Err(());
         }
     }
@@ -101,7 +92,7 @@ fn unify_rec_compound(
             }
         }
         (None, None) => {
-            // Neither has a variant index, continue with children comparison
+            // Neither has a variant index (e.g., structs), continue with children comparison
         }
         _ => {
             // One has a variant index and the other doesn't, they cannot unify

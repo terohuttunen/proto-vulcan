@@ -14,6 +14,8 @@ impl Compiler {
         program: &ast::Program,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
+        // Phase 3: Body compilation
+        
         for item in &program.items {
             self.compile_item_body(item, ir_program)?;
         }
@@ -55,20 +57,9 @@ impl Compiler {
         module: &ast::ModuleDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
-        // Look up the module in the current module's symbol map
+        // Look up the module in the current module using IR registry
         let module_name = module.name.to_string();
-        let current_module_map = self
-            .module_symbol_maps
-            .get(&self.symbol_context.current_module)
-            .ok_or_else(|| CompileError::UnresolvedModule {
-                attempted_item: self.symbol_context.current_module.clone(),
-                symbol: module.name.clone(),
-            })?;
-
-        let module_item_id = current_module_map
-            .local_symbols
-            .get(&module_name)
-            .or_else(|| current_module_map.imported_symbols.get(&module_name))
+        let module_item_id = self.resolve_local_symbol_with_kind(&module_name, ir::ItemKind::Module, ir_program)
             .ok_or_else(|| CompileError::UnresolvedModule {
                 attempted_item: ir::ModuleId::new(module_name.clone()).into(),
                 symbol: module.name.clone(),
@@ -100,20 +91,9 @@ impl Compiler {
         struct_def: &ast::StructDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
-        // Look up the type in the current module's symbol map
+        // Look up the type in the current module using IR registry
         let type_name = struct_def.name.to_string();
-        let current_module_map = self
-            .module_symbol_maps
-            .get(&self.symbol_context.current_module)
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(struct_def.name.to_string()),
-                symbol: struct_def.name.clone(),
-            })?;
-
-        let type_item_id = current_module_map
-            .local_symbols
-            .get(&type_name)
-            .or_else(|| current_module_map.imported_symbols.get(&type_name))
+        let type_item_id = self.resolve_local_symbol_with_kind(&type_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
                 attempted_item: ir::TypeId::new(type_name.clone()).into(),
                 symbol: struct_def.name.clone(),
@@ -127,7 +107,7 @@ impl Compiler {
             ast::StructKind::Named(named_fields) => {
                 let mut ir_fields = vec![];
                 for field in named_fields {
-                    let field_type_ref = self.resolve_type_reference(&field.type_name)?;
+                    let field_type_ref = self.resolve_type_reference(&field.type_name, ir_program)?;
                     ir_fields.push(ir::NamedField {
                         name: field.name.clone(),
                         type_ref: field_type_ref,
@@ -141,7 +121,7 @@ impl Compiler {
                 for field_type in field_types {
                     // Convert InternedSymbol to qualified path
                     let qualified_path = ast::QualifiedPath::Relative(vec![field_type.clone()]);
-                    let field_type_ref = self.resolve_qualified_path_to_type(&qualified_path)?;
+                    let field_type_ref = self.resolve_qualified_path_to_type(&qualified_path, ir_program)?;
                     ir_field_types.push(field_type_ref);
                 }
                 ir::StructFields::Tuple(ir_field_types)
@@ -152,7 +132,10 @@ impl Compiler {
         let registry = ir_program.registry_mut();
         let updated_type = ir::TypeDefinition {
             id: type_id,
-            kind: ir::TypeKind::Struct(ir::StructDefinition { fields }),
+            kind: ir::TypeKind::Struct(ir::StructDefinition { 
+                name: struct_def.name.clone(),
+                fields 
+            }),
             visibility: self.convert_visibility(&struct_def.visibility)?,
         };
 
@@ -167,20 +150,9 @@ impl Compiler {
         enum_def: &ast::EnumDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
-        // Look up the type in the current module's symbol map
+        // Look up the type in the current module using IR registry
         let type_name = enum_def.name.to_string();
-        let current_module_map = self
-            .module_symbol_maps
-            .get(&self.symbol_context.current_module)
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(enum_def.name.to_string()),
-                symbol: enum_def.name.clone(),
-            })?;
-
-        let type_item_id = current_module_map
-            .local_symbols
-            .get(&type_name)
-            .or_else(|| current_module_map.imported_symbols.get(&type_name))
+        let type_item_id = self.resolve_local_symbol_with_kind(&type_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
                 attempted_item: ir::TypeId::new(type_name.clone()).into(),
                 symbol: enum_def.name.clone(),
@@ -200,7 +172,7 @@ impl Compiler {
                         // Convert InternedSymbol to qualified path
                         let qualified_path = ast::QualifiedPath::Relative(vec![field_type.clone()]);
                         let field_type_ref =
-                            self.resolve_qualified_path_to_type(&qualified_path)?;
+                            self.resolve_qualified_path_to_type(&qualified_path, ir_program)?;
                         ir_field_types.push(field_type_ref);
                     }
                     ir::EnumVariantKind::Tuple(ir_field_types)
@@ -208,7 +180,7 @@ impl Compiler {
                 ast::VariantKind::Named(fields) => {
                     let mut ir_fields = vec![];
                     for field in fields {
-                        let field_type_ref = self.resolve_type_reference(&field.type_name)?;
+                        let field_type_ref = self.resolve_type_reference(&field.type_name, ir_program)?;
                         ir_fields.push(ir::NamedField {
                             name: field.name.clone(),
                             type_ref: field_type_ref,
@@ -229,7 +201,10 @@ impl Compiler {
         let registry = ir_program.registry_mut();
         let updated_type = ir::TypeDefinition {
             id: type_id,
-            kind: ir::TypeKind::Enum(ir::EnumDefinition { variants }),
+            kind: ir::TypeKind::Enum(ir::EnumDefinition { 
+                name: enum_def.name.clone(),
+                variants 
+            }),
             visibility: self.convert_visibility(&enum_def.visibility)?,
         };
 
@@ -242,177 +217,105 @@ impl Compiler {
     fn resolve_type_reference(
         &self,
         qualified_path: &ast::QualifiedPath,
+        ir_program: &ir::Program,
     ) -> Result<ir::TypeId, CompileError> {
-        self.resolve_qualified_path_to_type(qualified_path)
+        self.resolve_qualified_path_to_type(qualified_path, ir_program)
     }
 
     /// Resolve qualified path to ir::TypeId using proper scoped resolution
     fn resolve_qualified_path_to_type(
         &self,
         path: &ast::QualifiedPath,
+        ir_program: &ir::Program,
     ) -> Result<ir::TypeId, CompileError> {
-        // Start resolution from the current module context
         let segments: Vec<_> = path.segments().iter().map(|s| s.to_string()).collect();
 
-        // Simple case: single segment - look in current module
+        // Simple case: single segment - look in current module first, then check builtins
         if segments.len() == 1 {
             let type_name = &segments[0];
-            let current_module_map = self
-                .module_symbol_maps
-                .get(&self.symbol_context.current_module)
-                .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: ir::TypeId::new(type_name.to_string()),
-                    symbol: InternedSymbol::from_text(type_name),
-                })?;
-
-            let type_item_id = current_module_map
-                .local_symbols
-                .get(type_name)
-                .or_else(|| current_module_map.imported_symbols.get(type_name))
-                .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: ir::TypeId::new(type_name.clone()).into(),
-                    symbol: InternedSymbol::from_text(type_name),
-                })?;
-
-            return Ok(ir::TypeId::new(type_item_id.path.clone()));
-        }
-
-        // Complex case: multi-segment path - walk through module hierarchy
-        let mut current_module_id = self.symbol_context.current_module.clone();
-
-        // Walk through all segments except the last one to find the target module
-        for segment in &segments[..segments.len() - 1] {
-            let module_map = self
-                .module_symbol_maps
-                .get(&current_module_id)
-                .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: ir::TypeId::new(segment.to_string()),
-                    symbol: InternedSymbol::from_text(segment),
-                })?;
-
-            // Look for the segment as a local or imported module
-            let module_item_id = module_map
-                .get_local_module(segment)
-                .or_else(|| {
-                    module_map.get_imported_symbol(segment).and_then(|id| {
-                        if id.kind == ir::ItemKind::Module {
-                            Some(id)
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .ok_or_else(|| CompileError::UnresolvedModule {
-                    attempted_item: ir::ModuleId::new(format!(
-                        "{}::{}",
-                        current_module_id.id.path, segment
-                    )),
-                    symbol: InternedSymbol::from_text(segment),
-                })?;
-
-            current_module_id = ir::ModuleId::new(module_item_id.path.clone());
-        }
-
-        // Now look for the type in the final target module
-        let type_name = &segments[segments.len() - 1];
-        let target_module_map =
-            self.module_symbol_maps
-                .get(&current_module_id)
-                .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: ir::TypeId::new(type_name.to_string()),
-                    symbol: InternedSymbol::from_text(type_name),
-                })?;
-
-        let type_item_id = target_module_map
-            .local_symbols
-            .get(type_name)
-            .or_else(|| target_module_map.imported_symbols.get(type_name))
-            .filter(|id| id.kind == ir::ItemKind::Type) // Ensure it's actually a type
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(type_name.clone()),
+            
+            // First try to find in current module using IR registry
+            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(type_name, ir::ItemKind::Type, ir_program) {
+                return Ok(ir::TypeId::new(type_item_id.path.clone()));
+            }
+            
+            // If not found locally, check if it's a builtin type
+            if Self::is_builtin_type(type_name) {
+                return Ok(ir::TypeId::new(format!("{}", type_name)));
+            }
+            
+            // Not found and not a builtin type - return error
+            return Err(CompileError::UnresolvedType {
+                attempted_item: ir::TypeId::new(type_name.clone()).into(),
                 symbol: InternedSymbol::from_text(type_name),
-            })?;
+            });
+        }
 
-        Ok(ir::TypeId::new(type_item_id.path.clone()))
+        // Complex case: multi-segment path - convert to full path and look up directly
+        let full_path = self.qualified_path_to_string(path);
+        let type_id = ir::TypeId::new(full_path);
+        
+        // Check if this type exists in the IR registry
+        if ir_program.registry.get_type(&type_id).is_some() {
+            return Ok(type_id);
+        }
+        
+        // Not found - return error with the last segment as the symbol name
+        let empty_string = String::new();
+        let type_name = segments.last().unwrap_or(&empty_string);
+        return Err(CompileError::UnresolvedType {
+            attempted_item: type_id,
+            symbol: InternedSymbol::from_text(type_name),
+        })
     }
 
     /// Resolve qualified path to PredicateId using proper scoped resolution
     fn resolve_qualified_path_to_predicate(
         &self,
         path: &ast::QualifiedPath,
+        ir_program: &ir::Program,
     ) -> Result<ir::PredicateId, CompileError> {
-        // Start resolution from the current module context
         let segments: Vec<_> = path.segments().iter().map(|s| s.to_string()).collect();
 
-        // Simple case: single segment - look in current module
+        // Simple case: single segment - look in current module first
         if segments.len() == 1 {
             let predicate_name = &segments[0];
-            let current_module_map = self
-                .module_symbol_maps
-                .get(&self.symbol_context.current_module)
-                .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: ir::PredicateId::new(predicate_name.to_string()),
-                    symbol: InternedSymbol::from_text(predicate_name),
-                })?;
-
-            let predicate_item_id = current_module_map
-                .local_symbols
-                .get(predicate_name)
-                .or_else(|| current_module_map.imported_symbols.get(predicate_name))
-                .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: ir::PredicateId::new(predicate_name.clone()).into(),
-                    symbol: InternedSymbol::from_text(predicate_name),
-                })?;
-
-            return Ok(ir::PredicateId::new(predicate_item_id.path.clone()));
+            
+            // Check if this might be a builtin predicate - allow to pass through for runtime resolution
+            if predicate_name.starts_with("__builtin_") || 
+               predicate_name.starts_with("assert_") {
+                // Create PredicateId for runtime builtin resolution
+                return Ok(ir::PredicateId::new(predicate_name.clone()));
+            }
+            
+            // First try to find in current module using IR registry
+            if let Some(predicate_item_id) = self.resolve_local_symbol_with_kind(predicate_name, ir::ItemKind::Predicate, ir_program) {
+                return Ok(ir::PredicateId::new(predicate_item_id.path.clone()));
+            }
+            
+            // Not found locally - return error
+            return Err(CompileError::UnresolvedPredicate {
+                attempted_item: ir::PredicateId::new(predicate_name.clone()),
+                symbol: InternedSymbol::from_text(predicate_name),
+            });
         }
 
-        // Complex case: multi-segment path - walk through module hierarchy
-        let mut current_module_id = self.symbol_context.current_module.clone();
-
-        // Walk through all segments except the last one to find the target module
-        for segment in &segments[..segments.len() - 1] {
-            let module_map = self
-                .module_symbol_maps
-                .get(&current_module_id)
-                .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: ir::PredicateId::new(segment.to_string()),
-                    symbol: InternedSymbol::from_text(segment),
-                })?;
-
-            let next_item_id = module_map
-                .local_symbols
-                .get(segment)
-                .or_else(|| module_map.imported_symbols.get(segment))
-                .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: ir::PredicateId::new(segment.clone()).into(),
-                    symbol: InternedSymbol::from_text(segment),
-                })?;
-
-            // Update current module for next iteration
-            current_module_id = ir::ModuleId::new(next_item_id.path.clone());
+        // Complex case: multi-segment path - convert to full path and look up directly
+        let full_path = self.qualified_path_to_string(path);
+        let predicate_id = ir::PredicateId::new(full_path);
+        
+        // Check if this predicate exists in the IR registry
+        if ir_program.registry.get_predicate(&predicate_id).is_some() {
+            return Ok(predicate_id);
         }
-
-        // Now resolve the final segment in the target module
-        let final_segment = &segments[segments.len() - 1];
-        let final_module_map =
-            self.module_symbol_maps
-                .get(&current_module_id)
-                .ok_or_else(|| CompileError::UnresolvedPredicate {
-                    attempted_item: ir::PredicateId::new(final_segment.to_string()),
-                    symbol: InternedSymbol::from_text(final_segment),
-                })?;
-
-        let predicate_item_id = final_module_map
-            .local_symbols
-            .get(final_segment)
-            .or_else(|| final_module_map.imported_symbols.get(final_segment))
-            .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: ir::PredicateId::new(final_segment.clone()).into(),
-                symbol: InternedSymbol::from_text(final_segment),
-            })?;
-
-        Ok(ir::PredicateId::new(predicate_item_id.path.clone()))
+        
+        // Not found - return error with the last segment as the symbol name
+        let empty_string = String::new();
+        let predicate_name = segments.last().unwrap_or(&empty_string);
+        return Err(CompileError::UnresolvedPredicate {
+            attempted_item: predicate_id,
+            symbol: InternedSymbol::from_text(predicate_name),
+        })
     }
 
     // TODO: Add remaining compilation methods for predicates, goals, terms, patterns, etc.
@@ -425,22 +328,13 @@ impl Compiler {
         predicate: &ast::PredicateDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
-        // Look up the predicate in the current module's symbol map
+        // Look up the predicate using IR registry
         let predicate_name = predicate.name.to_string();
-        let current_module_map = self
-            .module_symbol_maps
-            .get(&self.symbol_context.current_module)
+        
+        // Find predicate using IR registry
+        let predicate_item_id = self.resolve_local_symbol_with_kind(&predicate_name, ir::ItemKind::Predicate, ir_program)
             .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: ir::PredicateId::new(predicate.name.to_string()),
-                symbol: predicate.name.clone(),
-            })?;
-
-        let predicate_item_id = current_module_map
-            .local_symbols
-            .get(&predicate_name)
-            .or_else(|| current_module_map.imported_symbols.get(&predicate_name))
-            .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: ir::PredicateId::new(predicate_name.clone()).into(),
+                attempted_item: ir::PredicateId::new(predicate_name.clone()),
                 symbol: predicate.name.clone(),
             })?;
 
@@ -451,7 +345,7 @@ impl Compiler {
         let mut parameters = vec![];
         for param in &predicate.parameters {
             let type_annotation = if let Some(annotation) = &param.type_annotation {
-                Some(self.compile_type_annotation(annotation)?)
+                Some(self.compile_type_annotation(annotation, ir_program)?)
             } else {
                 None
             };
@@ -465,7 +359,7 @@ impl Compiler {
         // Compile body goals
         let mut body = vec![];
         for goal in predicate.body.iter() {
-            body.push(self.compile_goal(goal)?);
+            body.push(self.compile_goal(goal, ir_program)?);
         }
 
         // Update the predicate in the registry
@@ -520,6 +414,7 @@ impl Compiler {
     fn compile_type_annotation(
         &self,
         annotation: &crate::interpreter::metaprogramming::TypeAnnotation,
+        ir_program: &ir::Program,
     ) -> Result<ir::TypeAnnotation, CompileError> {
         use crate::interpreter::metaprogramming::TypeAnnotation as AstTypeAnnotation;
         match annotation {
@@ -528,37 +423,37 @@ impl Compiler {
             AstTypeAnnotation::Bool => Ok(ir::TypeAnnotation::Bool),
             AstTypeAnnotation::Relation(arity) => Ok(ir::TypeAnnotation::Relation(*arity)),
             AstTypeAnnotation::Custom(qualified_path) => {
-                let type_id = self.resolve_qualified_path_to_type(qualified_path)?;
+                let type_id = self.resolve_qualified_path_to_type(qualified_path, ir_program)?;
                 Ok(ir::TypeAnnotation::Custom(type_id))
             }
         }
     }
 
     /// Compile an AST goal to an IR goal
-    fn compile_goal(&mut self, goal: &ast::Goal) -> Result<ir::Goal, CompileError> {
+    pub(super) fn compile_goal(&mut self, goal: &ast::Goal, ir_program: &ir::Program) -> Result<ir::Goal, CompileError> {
         match goal {
             ast::Goal::Equality(left, right, _span) => {
-                let left_term = self.compile_term(left)?;
-                let right_term = self.compile_term(right)?;
+                let left_term = self.compile_term(left, ir_program)?;
+                let right_term = self.compile_term(right, ir_program)?;
                 Ok(ir::Goal::Equality(left_term, right_term))
             }
 
             ast::Goal::Disequality(left, right, _span) => {
-                let left_term = self.compile_term(left)?;
-                let right_term = self.compile_term(right)?;
+                let left_term = self.compile_term(left, ir_program)?;
+                let right_term = self.compile_term(right, ir_program)?;
                 Ok(ir::Goal::Disequality(left_term, right_term))
             }
 
             ast::Goal::BooleanLiteral(value, _span) => Ok(ir::Goal::Boolean(*value)),
 
             ast::Goal::RelationCall(relation_call, _span) => {
-                self.compile_relation_call(relation_call)
+                self.compile_relation_call(relation_call, ir_program)
             }
 
             ast::Goal::Conjunction(conjunction, _span) => {
                 let mut goals = Vec::new();
                 for goal in conjunction.body.iter() {
-                    goals.push(self.compile_goal(goal)?);
+                    goals.push(self.compile_goal(goal, ir_program)?);
                 }
                 Ok(ir::Goal::Conjunction(ir::StructuralGoal::from_vec(goals)))
             }
@@ -566,24 +461,24 @@ impl Compiler {
             ast::Goal::Disjunction(disjunction, _span) => {
                 let mut goals = Vec::new();
                 for goal in disjunction.body.iter() {
-                    goals.push(self.compile_goal(goal)?);
+                    goals.push(self.compile_goal(goal, ir_program)?);
                 }
                 Ok(ir::Goal::Disjunction(ir::StructuralGoal::from_vec(goals)))
             }
 
-            ast::Goal::Fresh(fresh_vars, _span) => self.compile_fresh_variables(fresh_vars),
+            ast::Goal::Fresh(fresh_vars, _span) => self.compile_fresh_variables(fresh_vars, ir_program),
 
-            ast::Goal::Let(let_decl, _span) => self.compile_let_declaration(let_decl),
+            ast::Goal::Let(let_decl, _span) => self.compile_let_declaration(let_decl, ir_program),
 
             ast::Goal::PatternMatch(pattern_match, _span) => {
-                self.compile_pattern_match(pattern_match)
+                self.compile_pattern_match(pattern_match, ir_program)
             }
 
             ast::Goal::Parenthesized(goal_body, _span) => {
                 // For parenthesized goals, compile the body as a conjunction
                 let mut goals = Vec::new();
                 for goal in goal_body {
-                    goals.push(self.compile_goal(goal)?);
+                    goals.push(self.compile_goal(goal, ir_program)?);
                 }
                 // If there's only one goal, return it directly to avoid unnecessary nesting
                 if goals.len() == 1 {
@@ -600,13 +495,13 @@ impl Compiler {
             ast::Goal::MethodCall(method_call, _span) => self.compile_method_call(method_call),
 
             ast::Goal::MetaStatement(meta_statement, _span) => {
-                self.compile_meta_statement(meta_statement)
+                self.compile_meta_statement(meta_statement, ir_program)
             }
         }
     }
 
     /// Compile an AST term to an IR term
-    fn compile_term(&self, term: &ast::Term) -> Result<ir::Term, CompileError> {
+    fn compile_term(&self, term: &ast::Term, ir_program: &ir::Program) -> Result<ir::Term, CompileError> {
         match term {
             ast::Term::Variable(name) => Ok(ir::Term::Variable(name.clone())),
 
@@ -629,11 +524,11 @@ impl Compiler {
             ast::Term::List(list, _span) => {
                 let mut elements = Vec::new();
                 for element in &list.elements {
-                    elements.push(self.compile_term(element)?);
+                    elements.push(self.compile_term(element, ir_program)?);
                 }
 
                 let tail = if let Some(tail_term) = &list.tail {
-                    Some(Box::new(self.compile_term(tail_term)?))
+                    Some(Box::new(self.compile_term(tail_term, ir_program)?))
                 } else {
                     None
                 };
@@ -642,15 +537,15 @@ impl Compiler {
             }
 
             ast::Term::NamedStruct(struct_construction, _span) => {
-                self.compile_named_struct_construction(struct_construction)
+                self.compile_named_struct_construction(struct_construction, ir_program)
             }
 
             ast::Term::TupleStruct(struct_construction, _span) => {
-                self.compile_tuple_struct_construction(struct_construction)
+                self.compile_tuple_struct_construction(struct_construction, ir_program)
             }
 
             ast::Term::EnumVariant(enum_construction, _span) => {
-                self.compile_enum_variant_construction(enum_construction)
+                self.compile_enum_variant_construction(enum_construction, ir_program)
             }
 
             ast::Term::Interpolation(meta_expr, _span) => {
@@ -660,7 +555,7 @@ impl Compiler {
 
             ast::Term::Parenthesized(inner_term, _span) => {
                 // For parenthesized terms, just compile the inner term
-                self.compile_term(inner_term)
+                self.compile_term(inner_term, ir_program)
             }
         }
     }
@@ -671,6 +566,7 @@ impl Compiler {
     fn compile_relation_call(
         &self,
         relation_call: &ast::RelationCall,
+        ir_program: &ir::Program,
     ) -> Result<ir::Goal, CompileError> {
         // Convert RelationName to QualifiedPath
         let qualified_path = match &relation_call.name {
@@ -713,14 +609,14 @@ impl Compiler {
         };
 
         // Resolve the predicate reference
-        let predicate_id = self.resolve_qualified_path_to_predicate(&qualified_path)?;
+        let predicate_id = self.resolve_qualified_path_to_predicate(&qualified_path, ir_program)?;
 
         // Compile arguments
         let mut arguments = Vec::new();
         for arg in &relation_call.args {
             match arg {
                 ast::CallArgument::Term(term) => {
-                    arguments.push(self.compile_term(term)?);
+                    arguments.push(self.compile_term(term, ir_program)?);
                 }
                 ast::CallArgument::MetaExpression(_meta_expr) => {
                     // Meta expressions are handled during preprocessing
@@ -743,13 +639,14 @@ impl Compiler {
     fn compile_fresh_variables(
         &mut self,
         fresh_vars: &ast::FreshVariables,
+        ir_program: &ir::Program,
     ) -> Result<ir::Goal, CompileError> {
         let variables = fresh_vars.vars.clone();
 
         // Compile the body goals
         let mut body = Vec::new();
         for goal in fresh_vars.body.iter() {
-            body.push(self.compile_goal(goal)?);
+            body.push(self.compile_goal(goal, ir_program)?);
         }
 
         Ok(ir::Goal::Fresh(ir::Fresh {
@@ -761,11 +658,12 @@ impl Compiler {
     fn compile_let_declaration(
         &self,
         let_decl: &ast::LetDeclaration,
+        ir_program: &ir::Program,
     ) -> Result<ir::Goal, CompileError> {
         let variable = let_decl.var_name.clone();
 
         let value = if let Some(term) = &let_decl.value {
-            Some(self.compile_term(term)?)
+            Some(self.compile_term(term, ir_program)?)
         } else {
             None
         };
@@ -785,15 +683,16 @@ impl Compiler {
     fn compile_pattern_match(
         &mut self,
         pattern_match: &ast::PatternMatching,
+        ir_program: &ir::Program,
     ) -> Result<ir::Goal, CompileError> {
-        let term = self.compile_term(&pattern_match.term)?;
+        let term = self.compile_term(&pattern_match.term, ir_program)?;
 
         let mut arms = Vec::new();
         for arm in &pattern_match.arms {
-            let pattern = self.compile_pattern(&arm.pattern)?;
+            let pattern = self.compile_pattern(&arm.pattern, ir_program)?;
             let mut body = Vec::new();
             for goal in arm.body.iter() {
-                body.push(self.compile_goal(goal)?);
+                body.push(self.compile_goal(goal, ir_program)?);
             }
             arms.push(ir::PatternArm {
                 pattern,
@@ -819,14 +718,54 @@ impl Compiler {
     fn compile_named_struct_construction(
         &self,
         struct_construction: &ast::NamedStructConstruction,
+        ir_program: &ir::Program,
     ) -> Result<ir::Term, CompileError> {
-        // For named struct, the name is an InternedSymbol, need to convert to path
-        let qualified_path = ast::QualifiedPath::Relative(vec![struct_construction.name.clone()]);
-        let type_id = self.resolve_qualified_path_to_type(&qualified_path)?;
+        // Check if this might be an enum variant with named fields (semantic disambiguation)
+        // For names like "Shape::Rectangle", check if this is parsed as a single name containing "::"
+        let struct_name_str = struct_construction.name.to_string();
+        if let Some(colon_pos) = struct_name_str.find("::") {
+            // This looks like "Shape::Rectangle" - could be an enum variant
+            let potential_enum_name = &struct_name_str[..colon_pos];
+            let potential_variant_name = &struct_name_str[colon_pos + 2..];
+            
+            // Try to resolve the enum part as a type using IR registry
+            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(potential_enum_name, ir::ItemKind::Type, ir_program)
+            {
+                // This is a type! Treat as enum variant with named fields
+                let enum_ref = ir::TypeId::new(type_item_id.path.clone());
+                
+                // Compile the fields as enum variant named fields
+                let mut ir_fields = Vec::new();
+                for field in &struct_construction.fields {
+                    let value = self.compile_term(&field.value, ir_program)?;
+                    ir_fields.push(ir::NamedFieldConstruction {
+                        name: field.name.clone(),
+                        value,
+                    });
+                }
+                
+                return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
+                    enum_ref,
+                    variant_name: InternedSymbol::from_text(potential_variant_name),
+                    kind: ir::EnumVariantConstructionKind::Named(ir_fields),
+                }));
+            }
+        }
+        
+        // If not an enum variant, treat as regular named struct
+        // Look up the struct type using IR registry
+        let struct_name = struct_construction.name.to_string();
+        let type_item_id = self.resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: ir::TypeId::new(struct_name.clone()),
+                symbol: struct_construction.name.clone(),
+            })?;
+
+        let type_id = ir::TypeId::new(type_item_id.path.clone());
 
         let mut ir_fields = Vec::new();
         for field in &struct_construction.fields {
-            let value = self.compile_term(&field.value)?;
+            let value = self.compile_term(&field.value, ir_program)?;
             ir_fields.push(ir::NamedFieldConstruction {
                 name: field.name.clone(),
                 value,
@@ -842,12 +781,59 @@ impl Compiler {
     fn compile_tuple_struct_construction(
         &self,
         struct_construction: &ast::TupleStructConstruction,
+        ir_program: &ir::Program,
     ) -> Result<ir::Term, CompileError> {
-        let type_id = self.resolve_qualified_path_to_type(&struct_construction.name)?;
+        // Check if this is actually an enum variant (semantic disambiguation)
+        // For paths like Color::Red, try to resolve Color as a type first
+        if let ast::QualifiedPath::Relative(segments) = &struct_construction.name {
+            if segments.len() == 2 {
+                // This could be an enum variant like Color::Red
+                let potential_enum_name = &segments[0];
+                let potential_variant_name = &segments[1];
+                
+                // Use IR registry as source of truth instead of fragile symbol maps
+                // Try to find the enum type directly in the current program's registry
+                let enum_name_str = potential_enum_name.to_string();
+                let potential_enum_type_id = ir::TypeId::new(format!("::{}", enum_name_str));
+                
+                // Try semantic disambiguation: look up the enum type in the IR registry
+                if let Some(enum_type_item) = ir_program.registry.get_type(&potential_enum_type_id) {
+                    // Found the enum type! Check if it's actually an enum
+                    if matches!(enum_type_item.kind, ir::TypeKind::Enum(_)) {
+                        // This is an enum variant like Color::Red
+                        let enum_ref = potential_enum_type_id;
+                        
+                        // Compile the arguments as enum variant fields
+                        let mut ir_fields = Vec::new();
+                        for arg in &struct_construction.args {
+                            ir_fields.push(self.compile_term(arg, ir_program)?);
+                        }
+                        
+                        let kind = if ir_fields.is_empty() {
+                            ir::EnumVariantConstructionKind::Unit
+                        } else {
+                            ir::EnumVariantConstructionKind::Tuple(ir_fields)
+                        };
+
+                        return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
+                            enum_ref,
+                            variant_name: potential_variant_name.clone(),
+                            kind,
+                        }));
+                    } else {
+                        // Found type but it's not an enum, continue to regular struct compilation
+                    }
+                }
+                // Not found or not an enum, continue to regular struct compilation
+            }
+        }
+        
+        // If not an enum variant, treat as regular tuple struct
+        let type_id = self.resolve_qualified_path_to_type(&struct_construction.name, ir_program)?;
 
         let mut ir_fields = Vec::new();
         for arg in &struct_construction.args {
-            ir_fields.push(self.compile_term(arg)?);
+            ir_fields.push(self.compile_term(arg, ir_program)?);
         }
 
         Ok(ir::Term::Struct(ir::StructConstruction {
@@ -859,11 +845,17 @@ impl Compiler {
     fn compile_enum_variant_construction(
         &self,
         enum_construction: &ast::EnumVariantConstruction,
+        ir_program: &ir::Program,
     ) -> Result<ir::Term, CompileError> {
-        // For enum construction, the enum_name is an InternedSymbol, need to convert to path
-        let qualified_path =
-            ast::QualifiedPath::Relative(vec![enum_construction.enum_name.clone()]);
-        let enum_ref = self.resolve_qualified_path_to_type(&qualified_path)?;
+        // Look up the enum type using IR registry
+        let enum_name = enum_construction.enum_name.to_string();
+        let type_item_id = self.resolve_local_symbol_with_kind(&enum_name, ir::ItemKind::Type, ir_program)
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: ir::TypeId::new(enum_name.clone()),
+                symbol: enum_construction.enum_name.clone(),
+            })?;
+
+        let enum_ref = ir::TypeId::new(type_item_id.path.clone());
         let variant_name = enum_construction.variant_name.clone();
 
         let kind = match &enum_construction.kind {
@@ -872,7 +864,7 @@ impl Compiler {
             ast::EnumVariantConstructionKind::Tuple(tuple_fields) => {
                 let mut ir_fields = Vec::new();
                 for field in tuple_fields {
-                    ir_fields.push(self.compile_term(field)?);
+                    ir_fields.push(self.compile_term(field, ir_program)?);
                 }
                 ir::EnumVariantConstructionKind::Tuple(ir_fields)
             }
@@ -880,7 +872,7 @@ impl Compiler {
             ast::EnumVariantConstructionKind::Named(named_fields) => {
                 let mut ir_fields = Vec::new();
                 for field in named_fields {
-                    let value = self.compile_term(&field.value)?;
+                    let value = self.compile_term(&field.value, ir_program)?;
                     ir_fields.push(ir::NamedFieldConstruction {
                         name: field.name.clone(),
                         value,
@@ -898,7 +890,7 @@ impl Compiler {
     }
 
     /// Compile pattern from AST to IR
-    fn compile_pattern(&self, pattern: &ast::Pattern) -> Result<ir::Pattern, CompileError> {
+    fn compile_pattern(&self, pattern: &ast::Pattern, ir_program: &ir::Program) -> Result<ir::Pattern, CompileError> {
         match pattern {
             ast::Pattern::Variable(name) => Ok(ir::Pattern::Variable(name.clone())),
 
@@ -921,11 +913,11 @@ impl Compiler {
             ast::Pattern::List(list_pattern) => {
                 let mut elements = Vec::new();
                 for element in &list_pattern.elements {
-                    elements.push(self.compile_pattern(element)?);
+                    elements.push(self.compile_pattern(element, ir_program)?);
                 }
 
                 let tail = if let Some(tail_pattern) = &list_pattern.tail {
-                    Some(Box::new(self.compile_pattern(tail_pattern)?))
+                    Some(Box::new(self.compile_pattern(tail_pattern, ir_program)?))
                 } else {
                     None
                 };
@@ -934,15 +926,15 @@ impl Compiler {
             }
 
             ast::Pattern::NamedStruct(struct_pattern) => {
-                self.compile_named_struct_pattern(struct_pattern)
+                self.compile_named_struct_pattern(struct_pattern, ir_program)
             }
 
             ast::Pattern::TupleStruct(struct_pattern) => {
-                self.compile_tuple_struct_pattern(struct_pattern)
+                self.compile_tuple_struct_pattern(struct_pattern, ir_program)
             }
 
             ast::Pattern::EnumVariant(enum_pattern) => {
-                self.compile_enum_variant_pattern(enum_pattern)
+                self.compile_enum_variant_pattern(enum_pattern, ir_program)
             }
         }
     }
@@ -951,14 +943,53 @@ impl Compiler {
     fn compile_named_struct_pattern(
         &self,
         struct_pattern: &ast::NamedStructPattern,
+        ir_program: &ir::Program,
     ) -> Result<ir::Pattern, CompileError> {
-        // For named struct pattern, the name is an InternedSymbol, need to convert to path
-        let qualified_path = ast::QualifiedPath::Relative(vec![struct_pattern.name.clone()]);
-        let type_id = self.resolve_qualified_path_to_type(&qualified_path)?;
+        // Check if this might be an enum variant pattern with named fields (semantic disambiguation)
+        let struct_name_str = struct_pattern.name.to_string();
+        if let Some(colon_pos) = struct_name_str.find("::") {
+            // This looks like "Shape::Rectangle" - could be an enum variant pattern
+            let potential_enum_name = &struct_name_str[..colon_pos];
+            let potential_variant_name = &struct_name_str[colon_pos + 2..];
+            
+            // Try to resolve the enum part as a type using IR registry
+            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(potential_enum_name, ir::ItemKind::Type, ir_program)
+            {
+                // This is a type! Treat as enum variant pattern with named fields
+                let enum_ref = ir::TypeId::new(type_item_id.path.clone());
+                
+                // Compile the field patterns as enum variant named field patterns
+                let mut ir_patterns = Vec::new();
+                for field_pattern in &struct_pattern.fields {
+                    let pattern = self.compile_pattern(&field_pattern.pattern, ir_program)?;
+                    ir_patterns.push(ir::NamedFieldPattern {
+                        name: field_pattern.name.clone(),
+                        pattern,
+                    });
+                }
+                
+                return Ok(ir::Pattern::EnumVariant(ir::EnumVariantPattern {
+                    enum_ref,
+                    variant_name: InternedSymbol::from_text(potential_variant_name),
+                    kind: ir::EnumVariantPatternKind::Named(ir_patterns),
+                }));
+            }
+        }
+        
+        // If not an enum variant, treat as regular named struct pattern
+        // Look up the struct type using IR registry
+        let struct_name = struct_pattern.name.to_string();
+        let type_item_id = self.resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: ir::TypeId::new(struct_name.clone()),
+                symbol: struct_pattern.name.clone(),
+            })?;
+
+        let type_id = ir::TypeId::new(type_item_id.path.clone());
 
         let mut ir_patterns = Vec::new();
         for field_pattern in &struct_pattern.fields {
-            let pattern = self.compile_pattern(&field_pattern.pattern)?;
+            let pattern = self.compile_pattern(&field_pattern.pattern, ir_program)?;
             ir_patterns.push(ir::NamedFieldPattern {
                 name: field_pattern.name.clone(),
                 pattern,
@@ -975,14 +1006,49 @@ impl Compiler {
     fn compile_tuple_struct_pattern(
         &self,
         struct_pattern: &ast::TupleStructPattern,
+        ir_program: &ir::Program,
     ) -> Result<ir::Pattern, CompileError> {
-        // For tuple struct pattern, the name is an InternedSymbol, need to convert to path
-        let qualified_path = ast::QualifiedPath::Relative(vec![struct_pattern.name.clone()]);
-        let type_id = self.resolve_qualified_path_to_type(&qualified_path)?;
+        // Check if this might be an enum variant pattern (semantic disambiguation)
+        let struct_name_str = struct_pattern.name.to_string();
+        if let Some(colon_pos) = struct_name_str.find("::") {
+            // This looks like "Color::Red" - could be an enum variant pattern
+            let potential_enum_name = &struct_name_str[..colon_pos];
+            let potential_variant_name = &struct_name_str[colon_pos + 2..];
+            
+            // Try to resolve the enum part as a type using IR registry
+            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(potential_enum_name, ir::ItemKind::Type, ir_program)
+            {
+                // This is a type! Treat as enum variant pattern with tuple fields
+                let enum_ref = ir::TypeId::new(type_item_id.path.clone());
+                
+                // Compile the argument patterns as enum variant tuple field patterns
+                let mut ir_patterns = Vec::new();
+                for pattern in &struct_pattern.args {
+                    ir_patterns.push(self.compile_pattern(pattern, ir_program)?);
+                }
+                
+                return Ok(ir::Pattern::EnumVariant(ir::EnumVariantPattern {
+                    enum_ref,
+                    variant_name: InternedSymbol::from_text(potential_variant_name),
+                    kind: ir::EnumVariantPatternKind::Tuple(ir_patterns),
+                }));
+            }
+        }
+        
+        // If not an enum variant, treat as regular tuple struct pattern
+        // Look up the struct type using IR registry
+        let struct_name = struct_pattern.name.to_string();
+        let type_item_id = self.resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: ir::TypeId::new(struct_name.clone()),
+                symbol: struct_pattern.name.clone(),
+            })?;
+
+        let type_id = ir::TypeId::new(type_item_id.path.clone());
 
         let mut ir_patterns = Vec::new();
         for pattern in &struct_pattern.args {
-            ir_patterns.push(self.compile_pattern(pattern)?);
+            ir_patterns.push(self.compile_pattern(pattern, ir_program)?);
         }
 
         Ok(ir::Pattern::Struct(ir::StructPattern {
@@ -995,10 +1061,17 @@ impl Compiler {
     fn compile_enum_variant_pattern(
         &self,
         enum_pattern: &ast::EnumVariantPattern,
+        ir_program: &ir::Program,
     ) -> Result<ir::Pattern, CompileError> {
-        // For enum variant pattern, the enum_name is an InternedSymbol, need to convert to path
-        let qualified_path = ast::QualifiedPath::Relative(vec![enum_pattern.enum_name.clone()]);
-        let enum_ref = self.resolve_qualified_path_to_type(&qualified_path)?;
+        // Look up the enum type using IR registry
+        let enum_name = enum_pattern.enum_name.to_string();
+        let type_item_id = self.resolve_local_symbol_with_kind(&enum_name, ir::ItemKind::Type, ir_program)
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: ir::TypeId::new(enum_name.clone()),
+                symbol: enum_pattern.enum_name.clone(),
+            })?;
+
+        let enum_ref = ir::TypeId::new(type_item_id.path.clone());
         let variant_name = enum_pattern.variant_name.clone();
 
         let kind = match &enum_pattern.kind {
@@ -1007,7 +1080,7 @@ impl Compiler {
             ast::EnumVariantPatternKind::Tuple(tuple_patterns) => {
                 let mut ir_patterns = Vec::new();
                 for pattern in tuple_patterns {
-                    ir_patterns.push(self.compile_pattern(pattern)?);
+                    ir_patterns.push(self.compile_pattern(pattern, ir_program)?);
                 }
                 ir::EnumVariantPatternKind::Tuple(ir_patterns)
             }
@@ -1015,7 +1088,7 @@ impl Compiler {
             ast::EnumVariantPatternKind::Named(named_patterns) => {
                 let mut ir_patterns = Vec::new();
                 for field_pattern in named_patterns {
-                    let pattern = self.compile_pattern(&field_pattern.pattern)?;
+                    let pattern = self.compile_pattern(&field_pattern.pattern, ir_program)?;
                     ir_patterns.push(ir::NamedFieldPattern {
                         name: field_pattern.name.clone(),
                         pattern,
@@ -1062,13 +1135,14 @@ impl Compiler {
     fn compile_meta_statement(
         &mut self,
         meta_statement: &crate::interpreter::metaprogramming::MetaStatement,
+        ir_program: &ir::Program,
     ) -> Result<ir::Goal, CompileError> {
         use crate::interpreter::metaprogramming::MetaStatement;
 
         match meta_statement {
             MetaStatement::Let(let_stmt) => {
                 let expression = self.compile_meta_expression(&let_stmt.expression)?;
-                let variable_type = self.compile_type_annotation(&let_stmt.variable_type)?;
+                let variable_type = self.compile_type_annotation(&let_stmt.variable_type, ir_program)?;
                 Ok(ir::Goal::MetaLet(ir::MetaLet {
                     variable: let_stmt.variable.clone(),
                     variable_type,
@@ -1086,7 +1160,7 @@ impl Compiler {
                 // Compile then body
                 let mut ir_then_body = Vec::new();
                 for goal in then_body {
-                    ir_then_body.push(self.compile_goal(goal)?);
+                    ir_then_body.push(self.compile_goal(goal, ir_program)?);
                 }
 
                 // Compile else if branches
@@ -1095,7 +1169,7 @@ impl Compiler {
                     let ir_else_if_condition = self.compile_meta_expression(else_if_condition)?;
                     let mut ir_else_if_body = Vec::new();
                     for goal in else_if_body {
-                        ir_else_if_body.push(self.compile_goal(goal)?);
+                        ir_else_if_body.push(self.compile_goal(goal, ir_program)?);
                     }
                     ir_else_ifs.push((ir_else_if_condition, ir_else_if_body));
                 }
@@ -1104,7 +1178,7 @@ impl Compiler {
                 let ir_else_body = if let Some(else_goals) = else_body {
                     let mut ir_else_goals = Vec::new();
                     for goal in else_goals {
-                        ir_else_goals.push(self.compile_goal(goal)?);
+                        ir_else_goals.push(self.compile_goal(goal, ir_program)?);
                     }
                     Some(ir_else_goals)
                 } else {
@@ -1129,11 +1203,11 @@ impl Compiler {
             } => {
                 let start_expr = self.compile_meta_expression(&range.start)?;
                 let end_expr = self.compile_meta_expression(&range.end)?;
-                let ir_variable_type = self.compile_type_annotation(variable_type)?;
+                let ir_variable_type = self.compile_type_annotation(variable_type, ir_program)?;
 
                 let mut ir_body = Vec::new();
                 for goal in body {
-                    ir_body.push(self.compile_goal(goal)?);
+                    ir_body.push(self.compile_goal(goal, ir_program)?);
                 }
 
                 Ok(ir::Goal::MetaFor(ir::MetaFor {
@@ -1236,5 +1310,11 @@ impl Compiler {
             domain: domain_name.into(),
             template,
         }))
+    }
+    
+    /// Check if a type name refers to a builtin primitive type
+    /// These types are handled internally by the compiler and not registered in the IR registry
+    fn is_builtin_type(type_name: &str) -> bool {
+        matches!(type_name, "Bool" | "Number" | "Char" | "String")
     }
 }

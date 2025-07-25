@@ -1,19 +1,20 @@
 use self::environment::Environment;
 use self::parser::ast;
-use self::query::QueryResult;
 use crate::lterm::{LTerm, LTermInner};
 use std::cell::RefCell;
 use std::fmt::{self, Display};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+// use std::collections::HashMap; // Not used in this module
+use std::time::Duration;
+use crate::user::DefaultUser;
 
 mod assertions;
 pub mod compiler;
 pub mod constraint_domains;
 pub mod deferred;
 mod environment;
-mod execution;
 pub mod import;
 mod integration;
 pub mod metaprogramming;
@@ -27,6 +28,16 @@ mod struct_tests;
 pub mod symbol_table;
 pub mod test_runner;
 pub mod trace;
+
+// New streaming API modules
+mod config;
+mod results;
+mod iterator;
+
+// Re-export new API types
+pub use config::*;
+pub use results::*;
+pub use iterator::*;
 
 /// Validation functions for @main relations
 pub fn find_main_relation(
@@ -106,6 +117,7 @@ pub fn create_main_query(main_rel: &ast::PredicateDefinition) -> String {
 pub enum InterpreterError {
     ParseError(String),
     RuntimeError(String),
+    QueryExecutionError(String),
     UnknownRelation(String),
     UnknownVariable(String),
     UnknownType(String),
@@ -147,6 +159,7 @@ impl Display for InterpreterError {
         match self {
             InterpreterError::ParseError(e) => write!(f, "Parse error: {}", e),
             InterpreterError::RuntimeError(e) => write!(f, "Runtime error: {}", e),
+            InterpreterError::QueryExecutionError(e) => write!(f, "Query execution error: {}", e),
             InterpreterError::UnknownRelation(name) => write!(f, "Unknown predicate: {}", name),
             InterpreterError::UnknownVariable(name) => write!(f, "Unknown variable: {}", name),
             InterpreterError::UnknownType(name) => write!(f, "Unknown type: {}", name),
@@ -224,11 +237,18 @@ impl Display for InterpreterError {
 
 impl std::error::Error for InterpreterError {}
 
+impl From<compiler::errors::CompileError> for InterpreterError {
+    fn from(err: compiler::errors::CompileError) -> Self {
+        InterpreterError::RuntimeError(format!("Compilation error: {:?}", err))
+    }
+}
+
 /// The main interpreter struct
 pub struct Interpreter {
     pub environment: Rc<RefCell<Environment>>,
-    /// Compiled IR program (None if no program has been loaded)
-    pub ir_program: Option<Rc<compiler::ir::Program>>,
+    /// Base program stored for query execution (cloned for each execution)
+    /// This is never accessed at runtime - always cloned first
+    pub base_program: Option<compiler::ir::Program>,
 }
 
 impl Interpreter {
@@ -236,7 +256,7 @@ impl Interpreter {
     pub fn new() -> Self {
         Self {
             environment: Rc::new(RefCell::new(Environment::new())),
-            ir_program: None,
+            base_program: None,
         }
     }
 
@@ -258,9 +278,67 @@ impl Interpreter {
         self.environment.borrow()
     }
 
-    /// Get a reference to the compiled IR program
-    pub fn ir_program(&self) -> Option<&Rc<compiler::ir::Program>> {
-        self.ir_program.as_ref()
+    /// Get a reference to the base program
+    pub fn base_program(&self) -> Option<&compiler::ir::Program> {
+        self.base_program.as_ref()
+    }
+
+    /// Check if a predicate exists in the loaded program (IR-based)
+    pub fn has_predicate(&self, name: &str) -> bool {
+        if let Some(program) = &self.base_program {
+            let predicate_id = compiler::ir::PredicateId::new(format!("::{}", name));
+            program.registry.get_predicate(&predicate_id).is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Check if a type exists in the loaded program (IR-based)
+    pub fn has_type(&self, name: &str) -> bool {
+        if let Some(program) = &self.base_program {
+            let type_id = compiler::ir::TypeId::new(format!("::{}", name));
+            program.registry.get_type(&type_id).is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Get struct field information (IR-based)
+    pub fn get_struct_fields(&self, name: &str) -> Option<Vec<String>> {
+        if let Some(program) = &self.base_program {
+            let type_id = compiler::ir::TypeId::new(format!("::{}", name));
+            if let Some(type_def) = program.registry.get_type(&type_id) {
+                match &type_def.kind {
+                    compiler::ir::TypeKind::Struct(struct_def) => {
+                        match &struct_def.fields {
+                            compiler::ir::StructFields::Named(fields) => {
+                                Some(fields.iter().map(|f| f.name.to_string()).collect())
+                            }
+                            compiler::ir::StructFields::Tuple(_) => Some(Vec::new()),
+                        }
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Get predicate arity (IR-based)
+    pub fn get_predicate_arity(&self, name: &str) -> Option<usize> {
+        if let Some(program) = &self.base_program {
+            let predicate_id = compiler::ir::PredicateId::new(format!("::{}", name));
+            if let Some(predicate) = program.registry.get_predicate(&predicate_id) {
+                Some(predicate.parameters.len())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     /// Register core builtin relations
@@ -326,26 +404,108 @@ impl Interpreter {
         );
     }
 
-    /// Load a program into the interpreter
-    pub fn load_program(&mut self, program: ast::Program) -> Result<(), InterpreterError> {
-        // Compile AST to IR using the IR compiler
-        let mut compiler = compiler::Compiler::new();
-        let ir_program = compiler.compile_from_ast(program)
-            .map_err(|e| InterpreterError::RuntimeError(format!("IR compilation failed: {:?}", e)))?;
+    /// Load a program as the base program for subsequent queries
+    pub fn load_program(
+        &mut self, 
+        program_source: &str, 
+        config: ExecutionConfig
+    ) -> Result<LoadResult, InterpreterError> {
+        let start_time = std::time::Instant::now();
         
-        // Store the compiled IR program
-        self.ir_program = Some(Rc::new(ir_program));
+        // Parse program
+        let program_ast = parser::parse_str(program_source)
+            .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
         
+        if config.check_only {
+            return Ok(LoadResult {
+                compilation_time: Duration::default(),
+                warnings: Vec::new(),
+                module_count: 0,
+                predicate_count: 0,
+                type_count: 0,
+                check_result: Some(CheckResult {
+                    is_valid: true,
+                    errors: Vec::new(),
+                    warnings: Vec::new(),
+                    ast: if config.show_ast { Some(program_ast) } else { None },
+                    parse_time: start_time.elapsed(),
+                }),
+            });
+        }
+        
+        // Compile program
+        let ir_program = self.compile_program_with_config(program_ast, &config)?;
+        let compilation_time = start_time.elapsed();
+        
+        // Count items in the program (simplified - actual count methods need to be implemented)
+        let module_count = 1; // TODO: Get actual count from ir_program.registry
+        let predicate_count = 0; // TODO: Get actual count from ir_program.registry  
+        let type_count = 0; // TODO: Get actual count from ir_program.registry
+        
+        // Store as base program
+        self.base_program = Some(ir_program);
+        
+        Ok(LoadResult {
+            compilation_time,
+            warnings: Vec::new(), // TODO: Get from compiler
+            module_count,
+            predicate_count,
+            type_count,
+            check_result: None,
+        })
+    }
+
+    /// Load a program from AST (for backward compatibility)
+    pub fn load_program_ast(&mut self, program: ast::Program) -> Result<(), InterpreterError> {
+        // Use the new API with default config
+        self.load_program_from_ast_with_config(program, ExecutionConfig::default())?;
         Ok(())
+    }
+    
+    /// Load a program from AST with configuration
+    pub fn load_program_from_ast_with_config(&mut self, program_ast: ast::Program, config: ExecutionConfig) -> Result<LoadResult, InterpreterError> {
+        let start_time = std::time::Instant::now();
+        
+        if config.check_only {
+            return Ok(LoadResult {
+                compilation_time: Duration::default(),
+                warnings: Vec::new(),
+                module_count: 0,
+                predicate_count: 0,
+                type_count: 0,
+                check_result: Some(CheckResult {
+                    is_valid: true,
+                    errors: Vec::new(),
+                    warnings: Vec::new(),
+                    ast: if config.show_ast { Some(program_ast) } else { None },
+                    parse_time: start_time.elapsed(),
+                }),
+            });
+        }
+        
+        // Compile program
+        let ir_program = self.compile_program_with_config(program_ast, &config)?;
+        let compilation_time = start_time.elapsed();
+        
+        // Store as base program
+        self.base_program = Some(ir_program);
+        
+        Ok(LoadResult {
+            compilation_time,
+            warnings: Vec::new(),
+            module_count: 1,
+            predicate_count: 0,
+            type_count: 0,
+            check_result: None,
+        })
     }
 
     /// Load a specific module into the interpreter
     pub fn load_module(&mut self, _name: &str, path: &Path) -> Result<(), InterpreterError> {
         let source =
             fs::read_to_string(path).map_err(|e| InterpreterError::IoError(e.to_string()))?;
-        let program =
-            parser::parse_str(&source).map_err(|e| InterpreterError::ParseError(e.to_string()))?;
-        self.load_program(program)
+        self.load_program(&source, ExecutionConfig::default())?;
+        Ok(())
     }
 
     /// Load the standard library.
@@ -395,105 +555,306 @@ impl Interpreter {
         }
     }
 
-    /// Execute a query string
-    pub fn query(&mut self, query_str: &str) -> Result<Vec<QueryResult>, InterpreterError> {
-        self.query_with_timeout(query_str, None)
+    // ===== NEW STREAMING API METHODS =====
+
+    /// Execute a query against the loaded base program
+    pub fn query(
+        &mut self, 
+        query: &str, 
+        config: ExecutionConfig
+    ) -> Result<QueryResultIterator, InterpreterError> {
+        // Require loaded base program
+        let base_program = self.base_program.as_ref()
+            .ok_or_else(|| InterpreterError::RuntimeError("No base program loaded. Call load_program() first.".to_string()))?;
+
+        // Clone base program for this execution (cheap due to Rc/im-rc)
+        let mut runtime_program = base_program.clone();
+
+        // Parse query
+        let query_goal = query::parse_query(query)?;
+
+        // Compile query into the runtime program
+        self.compile_query_into_runtime_program(&mut runtime_program, query_goal, &config)?;
+
+        // Execute with runtime program
+        self.execute_with_runtime_program(runtime_program, "__query__", config)
     }
 
-    /// Execute a query string with optional timeout
-    pub fn query_with_timeout(
+    /// Execute a program with a specific query (no pre-loading required)
+    pub fn run_program(
         &mut self,
-        query_str: &str,
-        timeout_ms: Option<u64>,
-    ) -> Result<Vec<QueryResult>, InterpreterError> {
-        self.query_with_test_timeout(query_str, timeout_ms, None)
+        program_source: &str,
+        query: &str,
+        config: ExecutionConfig
+    ) -> Result<QueryResultIterator, InterpreterError> {
+        // Parse program and query
+        let program_ast = parser::parse_str(program_source)
+            .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
+        let query_goal = query::parse_query(query)?;
+
+        // Compile program
+        let mut runtime_program = self.compile_program_with_config(program_ast, &config)?;
+
+        // Compile query into the program
+        self.compile_query_into_runtime_program(&mut runtime_program, query_goal, &config)?;
+
+        // Execute
+        self.execute_with_runtime_program(runtime_program, "__query__", config)
     }
 
-    /// Execute a query string with optional timeout and test timeout
+    /// Execute a program's @main relation
+    pub fn run_main(
+        &mut self, 
+        program_source: &str, 
+        config: ExecutionConfig
+    ) -> Result<QueryResultIterator, InterpreterError> {
+        // Parse program
+        let program_ast = parser::parse_str(program_source)
+            .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
+
+        // Find @main relation
+        let main_relation = find_main_relation(&program_ast)
+            .map_err(|e| InterpreterError::RuntimeError(e))?
+            .ok_or_else(|| InterpreterError::RuntimeError("No @main relation found".to_string()))?;
+
+        // Create query for main relation
+        let main_query_str = create_main_query(main_relation);
+        let main_query_goal = query::parse_query(&main_query_str)?;
+
+        // Compile program
+        let mut runtime_program = self.compile_program_with_config(program_ast, &config)?;
+
+        // Compile main query into the program
+        self.compile_query_into_runtime_program(&mut runtime_program, main_query_goal, &config)?;
+
+        // Execute
+        self.execute_with_runtime_program(runtime_program, "__query__", config)
+    }
+
+    /// Execute tests in a program
+    pub fn run_tests(
+        &mut self, 
+        program_source: &str, 
+        config: ExecutionConfig
+    ) -> Result<TestResults, InterpreterError> {
+        // For now, return a placeholder implementation
+        // TODO: Implement proper test discovery and execution
+        let start_time = std::time::Instant::now();
+        
+        // Parse program to validate it
+        let _program_ast = parser::parse_str(program_source)
+            .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
+
+        // Return basic test results for now
+        Ok(TestResults {
+            total_tests: 0,
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            execution_time: start_time.elapsed(),
+            test_details: Vec::new(),
+        })
+    }
+
+    /// Check program syntax and compilation without execution
+    pub fn check_program(
+        &mut self, 
+        program_source: &str, 
+        config: ExecutionConfig
+    ) -> Result<CheckResult, InterpreterError> {
+        let start_time = std::time::Instant::now();
+        
+        // Parse
+        let program_ast = match parser::parse_str(program_source) {
+            Ok(ast) => ast,
+            Err(e) => {
+                return Ok(CheckResult {
+                    is_valid: false,
+                    errors: vec![compiler::CompileError::SemanticError {
+                        message: format!("Parse error: {}", e),
+                        symbol: symbol_table::InternedSymbol::from_text("unknown"),
+                    }],
+                    warnings: Vec::new(),
+                    ast: None,
+                    parse_time: start_time.elapsed(),
+                });
+            }
+        };
+
+        let parse_time = start_time.elapsed();
+
+        // Compile
+        let mut compiler = compiler::Compiler::new();
+        let compile_result = compiler.compile_from_ast(program_ast.clone());
+        
+        match compile_result {
+            Ok(_) => Ok(CheckResult {
+                is_valid: true,
+                errors: Vec::new(),
+                warnings: compiler.get_warnings().to_vec(),
+                ast: if config.show_ast { Some(program_ast) } else { None },
+                parse_time,
+            }),
+            Err(e) => Ok(CheckResult {
+                is_valid: false,
+                errors: vec![e],
+                warnings: compiler.get_warnings().to_vec(),
+                ast: if config.show_ast { Some(program_ast) } else { None },
+                parse_time,
+            }),
+        }
+    }
+
+    /// Compile program to IR without execution
+    pub fn compile_program(
+        &mut self, 
+        program_source: &str, 
+        config: ExecutionConfig
+    ) -> Result<CompileResult, InterpreterError> {
+        let program_ast = parser::parse_str(program_source)
+            .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
+
+        let start_time = std::time::Instant::now();
+        let ir_program = self.compile_program_with_config(program_ast, &config)?;
+
+        Ok(CompileResult {
+            ir_program,
+            compilation_time: start_time.elapsed(),
+            warnings: Vec::new(), // TODO: Get from compiler
+            show_ir: config.show_ir,
+        })
+    }
+
+    // ===== INTERNAL HELPER METHODS =====
+
+    /// Internal method to compile a program with configuration
+    fn compile_program_with_config(
+        &self, 
+        program_ast: ast::Program, 
+        config: &ExecutionConfig
+    ) -> Result<compiler::ir::Program, InterpreterError> {
+        let mut compiler = compiler::Compiler::new();
+        
+        // Set compilation options based on config
+        // TODO: Set compilation options from config when available
+        // For now, use default options
+        
+        compiler.compile_from_ast(program_ast)
+            .map_err(|e| InterpreterError::RuntimeError(format!("Compilation failed: {:?}", e)))
+    }
+
+    /// Internal method to compile a query into a runtime program
+    fn compile_query_into_runtime_program(
+        &self,
+        runtime_program: &mut compiler::ir::Program,
+        query_goal: ast::Goal,
+        _config: &ExecutionConfig,
+    ) -> Result<(), InterpreterError> {
+        // Compile the query into the runtime program
+        
+        // Use the improved add_query_to_program method that doesn't require AST conversion
+        let final_program = compiler::Compiler::add_query_to_program(
+            runtime_program.clone(), 
+            query_goal
+        ).map_err(|e| InterpreterError::RuntimeError(format!("Query compilation failed: {:?}", e)))?;
+        
+        *runtime_program = final_program;
+        Ok(())
+    }
+
+    /// Internal method to execute with a runtime program
+    fn execute_with_runtime_program(
+        &self,
+        runtime_program: compiler::ir::Program,
+        query_predicate_name: &str,
+        config: ExecutionConfig,
+    ) -> Result<QueryResultIterator, InterpreterError> {
+        // Create execution context with runtime program
+        let mut execution_context = runtime::context::ExecutionContext::new(
+            Rc::new(runtime_program), 
+            self.environment.clone()
+        );
+
+        // Extract query predicate
+        let query_predicate_id = compiler::ir::PredicateId::new(format!("::{}", query_predicate_name));
+        let query_predicate = execution_context.program().registry.get_predicate(&query_predicate_id)
+            .ok_or_else(|| InterpreterError::RuntimeError(format!("Query predicate '{}' not found", query_predicate_name)))?
+            .clone();
+
+        // Create solver
+        let user_state = DefaultUser::default();
+        let user_globals = <DefaultUser as crate::user::User>::UserContext::default();
+        let mut solver = crate::solver::Solver::new(user_globals, false);
+
+        // Set timeout if configured
+        if let Some(timeout_ms) = config.timeout {
+            solver.set_timeout(std::time::Instant::now(), timeout_ms);
+        }
+
+        // Create initial state and stream
+        let initial_state = crate::state::State::new(user_state);
+        
+        // Create captured arguments for query predicate parameters
+        let captured_args: Vec<runtime::context::ArgumentValue> = query_predicate.parameters.iter()
+            .map(|param| {
+                let named_var = execution_context.create_named_fresh_var(&param.name);
+                execution_context.bind_var(param.name.clone(), named_var.clone());
+                runtime::context::ArgumentValue::Relational(named_var)
+            })
+            .collect();
+
+        // Create predicate closure and execute
+        let predicate_closure = runtime::context::PredicateClosure::new(
+            Rc::new(query_predicate),
+            captured_args,
+            Rc::new(execution_context.program().clone()),
+            self.environment.clone(),
+        );
+
+        let stream = predicate_closure.expand_and_solve(&solver, initial_state);
+
+        // Get variable bindings from execution context
+        let variable_bindings = execution_context.get_variable_bindings();
+
+        Ok(QueryResultIterator::new(solver, stream, variable_bindings, config))
+    }
+
+    // ===== BACKWARD COMPATIBILITY METHODS =====
+
+    /// Execute a program with a query (legacy method for backward compatibility)
+    pub fn execute_program_with_query(
+        &mut self,
+        program_source: &str,
+        query_str: &str,
+    ) -> Result<Vec<QueryResult>, InterpreterError> {
+        // Use the new streaming API but collect results to Vec
+        let config = ExecutionConfig::default();
+        let results = self.run_program(program_source, query_str, config)?;
+        results.collect_limited(100)
+    }
+
+    /// Execute a query with test timeout (legacy method for backward compatibility)
     pub fn query_with_test_timeout(
         &mut self,
         query_str: &str,
         timeout_ms: Option<u64>,
         test_timeout_info: Option<(std::time::Instant, u64)>,
     ) -> Result<Vec<QueryResult>, InterpreterError> {
-        let mut query_goal = query::parse_query(query_str)?;
-
-        // Apply semantic analysis to the query goal
-        semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
-
-        // Create query config with appropriate timeout
+        // Create config from parameters
         let timeout = test_timeout_info
             .map(|(_, timeout_ms)| timeout_ms)
             .or(timeout_ms);
-        let config = query::QueryConfig {
+        
+        let config = ExecutionConfig {
             timeout,
             ..Default::default()
         };
-
-        // Use IR-based query execution if IR program is available
-        if let Some(ir_program) = &self.ir_program {
-            query::execute_query_ir(ir_program.clone(), self.environment.clone(), query_goal, config)
-        } else {
-            // Fall back to old AST-based execution if no IR program is loaded
-            query::execute_query(self.environment.clone(), query_goal, config)
-        }
+        
+        // Use the new streaming API
+        let results = self.query(query_str, config)?;
+        results.collect_limited(100)
     }
-
-    /// Execute a query string with tracing enabled
-    pub fn query_with_trace(
-        &mut self,
-        query_str: &str,
-        trace_config: &mut trace::TraceConfig,
-    ) -> Result<Vec<QueryResult>, InterpreterError> {
-        self.query_with_trace_and_timeout(query_str, trace_config, None)
-    }
-
-    /// Execute a query string with tracing and optional timeout
-    pub fn query_with_trace_and_timeout(
-        &mut self,
-        query_str: &str,
-        trace_config: &mut trace::TraceConfig,
-        timeout_ms: Option<u64>,
-    ) -> Result<Vec<QueryResult>, InterpreterError> {
-        let mut query_goal = query::parse_query(query_str)?;
-
-        // Apply semantic analysis to the query goal
-        semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
-
-        // TODO: Integrate tracing with the new unified QueryConfig system
-        let config = query::QueryConfig {
-            timeout: timeout_ms,
-            ..Default::default()
-        };
-
-        // Use IR-based query execution if IR program is available
-        if let Some(ir_program) = &self.ir_program {
-            query::execute_query_ir(ir_program.clone(), self.environment.clone(), query_goal, config)
-        } else {
-            // Fall back to old AST-based execution if no IR program is loaded
-            query::execute_query(self.environment.clone(), query_goal, config)
-        }
-    }
-
-    /// Execute a query string with unified configuration
-    pub fn execute_query(
-        &mut self,
-        query_str: &str,
-        config: query::QueryConfig,
-    ) -> Result<Vec<QueryResult>, InterpreterError> {
-        let mut query_goal = query::parse_query(query_str)?;
-
-        // Apply semantic analysis to the query goal
-        semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
-
-        // Use IR-based query execution if IR program is available
-        if let Some(ir_program) = &self.ir_program {
-            query::execute_query_ir(ir_program.clone(), self.environment.clone(), query_goal, config)
-        } else {
-            // Fall back to old AST-based execution if no IR program is loaded
-            query::execute_query(self.environment.clone(), query_goal, config)
-        }
-    }
+    
 }
 
 impl Default for Interpreter {

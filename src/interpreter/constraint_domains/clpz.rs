@@ -7,7 +7,7 @@
 
 use super::ConstraintDomain;
 use crate::goal::{AnyGoal, Goal, GoalCast};
-use crate::interpreter::execution::ExecutionContext;
+use crate::interpreter::runtime::context::ExecutionContext;
 use crate::interpreter::parser::ast::ConstraintBody;
 use crate::interpreter::InterpreterError;
 use crate::lterm::LTerm;
@@ -316,7 +316,8 @@ impl ClpzConstraint {
                 execution_context.push_scope();
                 for var in vars {
                     let fresh_var = execution_context.create_fresh_var();
-                    execution_context.bind_var(var.clone(), fresh_var);
+                    let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var.clone());
+                    execution_context.bind_var(symbol, fresh_var);
                 }
 
                 let mut goals = vec![];
@@ -378,20 +379,24 @@ fn eval_arith_expr(
 ) -> Result<LTerm, InterpreterError> {
     match expr {
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
-        ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
+        ArithExpr::Variable(name) => {
+            let symbol = crate::interpreter::symbol_table::InternedSymbol::from(name.clone());
+            execution_context.lookup_var(&symbol).ok_or_else(|| {
+                InterpreterError::UnknownVariable(name.clone())
+            })
+        }
         ArithExpr::Interpolation(meta_expr) => {
             // For simple variable interpolations, directly access the execution context
             match meta_expr {
                 crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
                     // Directly look up the variable in the execution context
-                    execution_context
-                        .get_existing_variable(var_name)
-                        .map_err(|_| {
-                            InterpreterError::RuntimeError(format!(
-                                "Interpolation variable '{}' not found in constraint context",
-                                var_name
-                            ))
-                        })
+                    let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
+                    execution_context.lookup_var(&symbol).ok_or_else(|| {
+                        InterpreterError::RuntimeError(format!(
+                            "Interpolation variable '{}' not found in constraint context",
+                            var_name
+                        ))
+                    })
                 }
                 _ => {
                     // For complex expressions, use template expansion with execution context bindings
@@ -423,8 +428,10 @@ fn eval_arith_expr(
                         ))
                     })?;
 
-                    // Convert to runtime term
-                    execution_context.ast_term_to_runtime(&expanded_term)
+                    // Complex metaprogramming expansion should be handled in IR template system
+                    Err(InterpreterError::RuntimeError(
+                        "Complex metaprogramming interpolation in constraint arithmetic not yet supported in IR mode".to_string()
+                    ))
                 }
             }
         }
@@ -433,29 +440,33 @@ fn eval_arith_expr(
             let right_term = eval_arith_expr(right, execution_context)?;
             let result_term = execution_context.create_fresh_var();
 
-            let goal = match op {
+            let goal: Goal = match op {
                 ArithOp::Add => {
                     use crate::relation::clpz::plusz::plusz;
-                    plusz(left_term, right_term, result_term.clone()).cast_into()
+                    plusz::<Goal>(left_term, right_term, result_term.clone()).cast_into()
                 }
                 ArithOp::Subtract => {
                     use crate::relation::clpz::plusz::plusz;
                     // For x - y = z, we use x = y + z, so plusz(right_term, result_term, left_term)
-                    plusz(right_term, result_term.clone(), left_term).cast_into()
+                    plusz::<Goal>(right_term, result_term.clone(), left_term).cast_into()
                 }
                 ArithOp::Multiply => {
                     use crate::relation::clpz::timesz::timesz;
-                    timesz(left_term, right_term, result_term.clone()).cast_into()
+                    timesz::<Goal>(left_term, right_term, result_term.clone()).cast_into()
                 }
                 ArithOp::Divide => {
                     use crate::relation::clpz::timesz::timesz;
                     // For x / y = z, we use z * y = x
-                    timesz(result_term.clone(), right_term, left_term).cast_into()
+                    timesz::<Goal>(result_term.clone(), right_term, left_term).cast_into()
                 }
             };
 
-            execution_context.add_deferred_goal(goal);
-            Ok(result_term)
+            // In IR execution, we don't defer goals - they should be composed into the main goal
+            // For now, we'll have to restructure this to return the goal along with the term
+            // This is a limitation of the current arithmetic evaluation design
+            Err(InterpreterError::RuntimeError(
+                "Complex arithmetic expressions with constraints not yet supported in IR mode".to_string()
+            ))
         }
     }
 }

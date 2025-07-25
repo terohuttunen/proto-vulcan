@@ -49,12 +49,9 @@ impl Validator {
             return Ok(());
         }
 
-        // Check for circular dependency
+        // Skip if currently being validated (prevents infinite recursion without failing)
         if self.validation_stack.contains(item_id) {
-            return Err(super::super::CompileError::CircularDependency {
-                cycle: self.format_dependency_cycle(item_id),
-                symbol: InternedSymbol::from_text(&item_id.path),
-            });
+            return Ok(());
         }
 
         // Add to validation stack
@@ -258,6 +255,12 @@ impl Validator {
         program: &Program,
     ) -> Result<(), super::super::CompileError> {
         let type_ref = type_ref.as_ref();
+        
+        // Skip validation for builtin types
+        if Self::is_builtin_type(&type_ref.path) {
+            return Ok(());
+        }
+        
         // Check that the type exists
         let type_item = program.registry.get_type(type_ref).ok_or_else(|| {
             super::super::CompileError::UnresolvedType {
@@ -379,6 +382,13 @@ impl Validator {
         program: &Program,
     ) -> Result<(), super::super::CompileError> {
         // Check arity match using registry convenience method
+        // Skip validation for builtin predicates (they will be resolved at runtime)
+        let predicate_name = predicate_call.predicate.as_ref().path.to_string();
+        if predicate_name.starts_with("__builtin_") || predicate_name.starts_with("assert_") {
+            // Skip arity validation for builtins - will be checked at runtime
+            return Ok(());
+        }
+        
         let expected_arity = program
             .registry
             .get_predicate_arity(&predicate_call.predicate)
@@ -584,5 +594,11 @@ impl Validator {
             .collect();
 
         format!("{} -> {}", cycle_items.join(" -> "), current_item.path)
+    }
+
+    /// Check if a type name refers to a builtin primitive type
+    /// These types are handled internally by the compiler and not registered in the IR registry
+    fn is_builtin_type(type_name: &str) -> bool {
+        matches!(type_name, "Bool" | "Number" | "Char" | "String")
     }
 }

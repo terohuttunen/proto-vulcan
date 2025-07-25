@@ -73,7 +73,7 @@ rel test_multiple_enums(result) {
 // Complex enums with tuple and named variants
 enum Shape {
     Circle(radius),
-    Rectangle { width: i32, height: i32 },
+    Rectangle { width: Number, height: Number },
     Triangle(side1, side2, side3),
     Point,
 }
@@ -81,7 +81,7 @@ enum Shape {
 enum Container {
     Empty,
     Single(value),
-    Pair { first: i32, second: i32 },
+    Pair { first: Number, second: Number },
     Triple(a, b, c),
 }
 
@@ -188,19 +188,19 @@ rel test_enum_extraction_helper(container) {
 
 // Define structs to mix with enums
 struct Point {
-    x: i32,
-    y: i32,
+    x: Number,
+    y: Number,
 }
 
 struct Person {
     name: String,
-    age: i32,
+    age: Number,
     status: Status,
 }
 
 struct Rectangle {
-    width: i32,
-    height: i32,
+    width: Number,
+    height: Number,
     color: Color,
 }
 

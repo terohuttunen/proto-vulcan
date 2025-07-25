@@ -8,7 +8,7 @@
 
 use super::ConstraintDomain;
 use crate::goal::{AnyGoal, Goal, GoalCast};
-use crate::interpreter::execution::ExecutionContext;
+use crate::interpreter::runtime::context::ExecutionContext;
 use crate::interpreter::parser::ast::ConstraintBody;
 use crate::interpreter::parser::meta_parser;
 use crate::interpreter::InterpreterError;
@@ -33,9 +33,13 @@ impl super::DomainConstraintTemplate for ClpfdTemplate {
         &self,
         execution_context: &mut super::super::runtime::context::ExecutionContext,
     ) -> Result<crate::goal::Goal, InterpreterError> {
-        // TODO: Implement proper template-based execution with IR ExecutionContext
-        // For now, return a placeholder goal
-        Ok(Goal::succeed())
+        // Parse the constraint body using the template's compiled information
+        let domain = ClpfdDomain::new();
+        let constraint = domain.parse_individual_constraint(&self.body.raw_content)?;
+        
+        // Convert the parsed constraint to a goal using the IR execution context
+        // The variables map in the template provides the variable type information
+        constraint.convert_to_goal_ir(execution_context, &self.variables)
     }
 }
 
@@ -565,7 +569,61 @@ pub enum CompOp {
 }
 
 impl ClpfdConstraint {
-    /// Converts a single constraint into a goal.
+    /// Converts a single constraint into a goal using IR execution context and template variables.
+    fn convert_to_goal_ir(
+        &self,
+        execution_context: &mut ExecutionContext,
+        variables: &std::collections::HashMap<String, super::VariableInfo>,
+    ) -> Result<Goal, InterpreterError> {
+        match self {
+            ClpfdConstraint::Domain {
+                variable,
+                domain_spec,
+            } => {
+                // Look up variable using template variable information
+                let var_info = variables.get(variable).ok_or_else(|| {
+                    InterpreterError::UnknownVariable(variable.clone())
+                })?;
+                
+                // Get the variable as an LTerm
+                let var_term = match var_info.var_type {
+                    super::VariableType::Relational => {
+                        let symbol = crate::interpreter::symbol_table::InternedSymbol::from(variable.clone());
+                        execution_context.lookup_var(&symbol).ok_or_else(|| {
+                            InterpreterError::UnknownVariable(variable.clone())
+                        })?
+                    }
+                    super::VariableType::Meta => {
+                        return Err(InterpreterError::RuntimeError(
+                            "Meta variables not yet supported in domain constraints".to_string()
+                        ));
+                    }
+                };
+                
+                match domain_spec {
+                    DomainSpec::Range(start, end) => {
+                        use crate::relation::clpfd::infd::infdrange;
+                        let range = *start as isize..=*end as isize;
+                        Ok(infdrange(var_term, &range).cast_into())
+                    }
+                    DomainSpec::Set(values) => {
+                        use crate::relation::clpfd::infd::infd;
+                        let domain_values: Vec<isize> =
+                            values.iter().map(|&v| v as isize).collect();
+                        Ok(infd(var_term, &domain_values).cast_into())
+                    }
+                    _ => Err(InterpreterError::RuntimeError(
+                        "Interpolated domain specs not yet supported in IR mode".to_string()
+                    )),
+                }
+            }
+            _ => Err(InterpreterError::RuntimeError(
+                "Only domain constraints are implemented in IR mode".to_string()
+            )),
+        }
+    }
+
+    /// Converts a single constraint into a goal (legacy AST-based method).
     /// This will require accessing the execution context to resolve variables.
     fn convert_to_goal(
         &self,
@@ -577,36 +635,11 @@ impl ClpfdConstraint {
                 variable,
                 domain_spec,
             } => {
-                let var_term = if variable.starts_with('{') && variable.ends_with('}') {
-                    // This is an interpolated variable stored as "{content}"
-                    let content = &variable[1..variable.len() - 1]; // Remove braces
-                    let meta_expr = meta_parser::parse_meta_expression(content, source_span)
-                        .map_err(|_| {
-                            InterpreterError::RuntimeError(format!(
-                                "Invalid meta expression in domain variable: {}",
-                                content
-                            ))
-                        })?;
-
-                    // Evaluate the meta expression to get the variable term
-                    use crate::interpreter::metaprogramming::{
-                        expand_term, TemplateExpansionContext,
-                    };
-                    use crate::interpreter::parser::ast::Term;
-
-                    let context = TemplateExpansionContext::new(100);
-                    let dummy_term = Term::Interpolation(meta_expr, source_span.clone());
-                    let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
-                        InterpreterError::RuntimeError(format!(
-                            "Meta expression expansion error in domain variable: {}",
-                            e
-                        ))
-                    })?;
-
-                    execution_context.ast_term_to_runtime(&expanded_term)?
-                } else {
-                    execution_context.get_existing_variable(variable)?
-                };
+                // Look up variable by name, converting string to InternedSymbol
+                let symbol = crate::interpreter::symbol_table::InternedSymbol::from(variable.clone());
+                let var_term = execution_context.lookup_var(&symbol).ok_or_else(|| {
+                    InterpreterError::UnknownVariable(variable.clone())
+                })?;
                 match domain_spec {
                     DomainSpec::Range(start, end) => {
                         use crate::relation::clpfd::infd::infdrange;
@@ -643,7 +676,12 @@ impl ClpfdConstraint {
                 // Convert variable names to LTerms
                 let var_terms: Result<Vec<_>, _> = variables
                     .iter()
-                    .map(|var| execution_context.get_existing_variable(var))
+                    .map(|var| {
+                        let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var.clone());
+                        execution_context.lookup_var(&symbol).ok_or_else(|| {
+                            InterpreterError::UnknownVariable(var.clone())
+                        })
+                    })
                     .collect();
                 let var_terms = var_terms?;
 
@@ -713,7 +751,10 @@ impl ClpfdConstraint {
                         if let Ok(int_val) = arg.parse::<i32>() {
                             Ok(LTerm::from(int_val as isize))
                         } else {
-                            execution_context.get_existing_variable(arg)
+                            let symbol = crate::interpreter::symbol_table::InternedSymbol::from(arg.clone());
+                            execution_context.lookup_var(&symbol).ok_or_else(|| {
+                                InterpreterError::UnknownVariable(arg.clone())
+                            })
                         }
                     })
                     .collect();
@@ -746,7 +787,8 @@ impl ClpfdConstraint {
                 execution_context.push_scope();
                 for var in vars {
                     let fresh_var = execution_context.create_fresh_var();
-                    execution_context.bind_var(var.clone(), fresh_var);
+                    let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var.clone());
+                    execution_context.bind_var(symbol, fresh_var);
                 }
 
                 let mut goals = vec![];
@@ -811,6 +853,7 @@ impl ClpfdConstraint {
         }
         vars
     }
+
 }
 
 /// Evaluates an arithmetic expression, creating temporary variables for intermediate results.
@@ -820,20 +863,24 @@ fn eval_arith_expr(
 ) -> Result<LTerm, InterpreterError> {
     match expr {
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
-        ArithExpr::Variable(name) => execution_context.get_existing_variable(name),
+        ArithExpr::Variable(name) => {
+            let symbol = crate::interpreter::symbol_table::InternedSymbol::from(name.clone());
+            execution_context.lookup_var(&symbol).ok_or_else(|| {
+                InterpreterError::UnknownVariable(name.clone())
+            })
+        }
         ArithExpr::Interpolation(meta_expr) => {
             // For simple variable interpolations, directly access the execution context
             match meta_expr {
                 crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
                     // Directly look up the variable in the execution context
-                    execution_context
-                        .get_existing_variable(var_name)
-                        .map_err(|_| {
-                            InterpreterError::RuntimeError(format!(
-                                "Interpolation variable '{}' not found in constraint context",
-                                var_name
-                            ))
-                        })
+                    let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
+                    execution_context.lookup_var(&symbol).ok_or_else(|| {
+                        InterpreterError::RuntimeError(format!(
+                            "Interpolation variable '{}' not found in constraint context",
+                            var_name
+                        ))
+                    })
                 }
                 _ => {
                     // For complex expressions, use template expansion with execution context bindings
@@ -865,8 +912,10 @@ fn eval_arith_expr(
                         ))
                     })?;
 
-                    // Convert to runtime term
-                    execution_context.ast_term_to_runtime(&expanded_term)
+                    // Complex metaprogramming expansion should be handled in IR template system
+                    Err(InterpreterError::RuntimeError(
+                        "Complex metaprogramming interpolation in constraint arithmetic not yet supported in IR mode".to_string()
+                    ))
                 }
             }
         }
@@ -875,30 +924,34 @@ fn eval_arith_expr(
             let right_term = eval_arith_expr(right, execution_context)?;
             let result_term = execution_context.create_fresh_var();
 
-            let goal = match op {
+            let goal: Goal = match op {
                 ArithOp::Add => {
                     use crate::relation::clpfd::plusfd::plusfd;
-                    plusfd(left_term, right_term, result_term.clone()).cast_into()
+                    plusfd::<Goal>(left_term, right_term, result_term.clone()).cast_into()
                 }
                 ArithOp::Subtract => {
                     use crate::relation::clpfd::minusfd::minusfd;
-                    minusfd(left_term, right_term, result_term.clone()).cast_into()
+                    minusfd::<Goal>(left_term, right_term, result_term.clone()).cast_into()
                 }
                 ArithOp::Multiply => {
                     use crate::relation::clpfd::timesfd::timesfd;
-                    timesfd(left_term, right_term, result_term.clone()).cast_into()
+                    timesfd::<Goal>(left_term, right_term, result_term.clone()).cast_into()
                 }
                 ArithOp::Divide => {
                     // Note: CLP(FD) division is often not a primitive.
                     // This will likely need a more complex implementation or might not be fully supported.
                     // For now, we create a multiplication goal: result * right == left
                     use crate::relation::clpfd::timesfd::timesfd;
-                    timesfd(result_term.clone(), right_term, left_term).cast_into()
+                    timesfd::<Goal>(result_term.clone(), right_term, left_term).cast_into()
                 }
             };
 
-            execution_context.add_deferred_goal(goal);
-            Ok(result_term)
+            // In IR execution, we don't defer goals - they should be composed into the main goal
+            // For now, we'll have to restructure this to return the goal along with the term
+            // This is a limitation of the current arithmetic evaluation design
+            Err(InterpreterError::RuntimeError(
+                "Complex arithmetic expressions with constraints not yet supported in IR mode".to_string()
+            ))
         }
     }
 }
@@ -915,15 +968,13 @@ fn eval_domain_bound(
             match meta_expr {
                 crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
                     // Directly look up the variable in the execution context
-                    let var_term =
-                        execution_context
-                            .get_existing_variable(var_name)
-                            .map_err(|_| {
-                                InterpreterError::RuntimeError(format!(
-                                    "Interpolation variable '{}' not found in constraint context",
-                                    var_name
-                                ))
-                            })?;
+                    let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
+                    let var_term = execution_context.lookup_var(&symbol).ok_or_else(|| {
+                        InterpreterError::RuntimeError(format!(
+                            "Interpolation variable '{}' not found in constraint context",
+                            var_name
+                        ))
+                    })?;
 
                     // Extract integer value using get_number()
                     var_term.get_number().ok_or_else(|| {
@@ -963,15 +1014,10 @@ fn eval_domain_bound(
                         ))
                     })?;
 
-                    // Convert to runtime and extract integer
-                    let runtime_term = execution_context.ast_term_to_runtime(&expanded_term)?;
-
-                    // Extract integer value using get_number()
-                    runtime_term.get_number().ok_or_else(|| {
-                        InterpreterError::RuntimeError(
-                            "Domain bound meta expression must evaluate to an integer".to_string(),
-                        )
-                    })
+                    // Complex metaprogramming expansion should be handled in IR template system
+                    Err(InterpreterError::RuntimeError(
+                        "Complex metaprogramming interpolation in domain bounds not yet supported in IR mode".to_string()
+                    ))
                 }
             }
         }

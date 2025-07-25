@@ -94,10 +94,10 @@ pub trait CompoundObject:
         None
     }
 
-    /// Get the type registry index for compound objects that use the type registry
-    /// This allows unification to distinguish between different enum types
-    /// Returns None for compound objects that don't use the type registry
-    fn type_registry_index(&self) -> Option<usize> {
+    /// Get the TypeId for compound objects that use the IR type system
+    /// This is the preferred method for type comparison in unification
+    /// Returns None for compound objects that don't have a TypeId
+    fn get_type_id(&self) -> Option<&crate::interpreter::compiler::ir::TypeId> {
         None
     }
 
