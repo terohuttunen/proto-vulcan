@@ -1,6 +1,7 @@
 use super::environment::Environment;
 use super::execution::ExecutionContext;
 use super::parser::ast::Goal;
+use super::runtime::context::ExecutionContext as IrExecutionContext;
 use super::InterpreterError;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
@@ -89,6 +90,154 @@ impl QueryResult {
         }
         Self { bindings }
     }
+}
+
+/// Execute a query using the IR-based execution system
+pub fn execute_query_ir(
+    ir_program: Rc<super::compiler::ir::Program>,
+    environment: Rc<RefCell<Environment>>,
+    query: Goal,
+    config: QueryConfig,
+) -> Result<Vec<QueryResult>, InterpreterError> {
+    // First, compile the query AST to IR
+    let mut compiler = super::compiler::Compiler::new();
+    
+    // Create a temporary program with just the query goal
+    // For now, we'll compile the query directly as if it were a goal within the main program
+    // TODO: This is a simplified approach - we may need a more sophisticated query compilation
+    
+    // Create IR ExecutionContext with the compiled program
+    let mut ir_execution_context = IrExecutionContext::new(ir_program.clone(), environment);
+    
+    // Extract variables from the query and bind them in the IR context
+    let query_vars = extract_variables_from_goal(&query);
+    for var_name in &query_vars {
+        let fresh_var = ir_execution_context.create_fresh_var();
+        ir_execution_context.bind_var(
+            super::symbol_table::InternedSymbol::from_text(var_name), 
+            fresh_var
+        );
+    }
+    
+    // Convert AST Goal to IR Goal and then to runtime goal
+    // For now, we'll compile the query as if it were part of the main program
+    // This is a simplified approach - in a more sophisticated system, 
+    // queries might have their own compilation path
+    
+    // Create a temporary AST program containing just the query goal wrapped in a predicate
+    let temp_program = super::parser::ast::Program {
+        items: vec![
+            super::parser::ast::Item::Predicate(super::parser::ast::PredicateDefinition {
+                attributes: vec![],
+                visibility: super::parser::ast::Visibility::Private,
+                predicate_kind: super::parser::ast::PredicateKind::Relation,
+                name: super::symbol_table::InternedSymbol::from_text("__query"),
+                parameters: query_vars.iter().map(|var_name| super::parser::ast::Parameter {
+                    name: super::symbol_table::InternedSymbol::from_text(var_name),
+                    type_annotation: None,
+                }).collect(),
+                search_strategy: None,
+                body: vec![query.clone()],
+                span: super::parser::ast::Location::dummy(),
+            })
+        ],
+        span: super::parser::ast::Location::dummy(),
+    };
+    
+    // Compile the temporary program to get the IR goal
+    let mut query_compiler = super::compiler::Compiler::new();
+    let query_ir_program = query_compiler.compile_from_ast(temp_program)
+        .map_err(|e| InterpreterError::RuntimeError(format!("Query IR compilation failed: {:?}", e)))?;
+    
+    // Extract the query predicate from the compiled IR program
+    let query_predicate_id = super::compiler::ir::PredicateId::new("::__query");
+    let query_predicate = query_ir_program.registry.get_predicate(&query_predicate_id)
+        .ok_or_else(|| InterpreterError::RuntimeError("Query predicate not found in IR".to_string()))?;
+    
+    // Create runtime goal by executing the query predicate body
+    let mut runtime_goals = Vec::new();
+    for ir_goal in query_predicate.body.iter() {
+        runtime_goals.push(ir_execution_context.ir_goal_to_runtime(ir_goal)
+            .map_err(|e| InterpreterError::RuntimeError(format!("IR goal conversion failed: {:?}", e)))?);
+    }
+    let runtime_goal = if runtime_goals.is_empty() {
+        crate::goal::Goal::succeed()
+    } else {
+        runtime_goals.into_iter().reduce(|acc, goal| 
+            crate::operator::conj::Conj::new(acc, goal)
+        ).unwrap()
+    };
+    
+    // Get the actual variable bindings used during goal conversion
+    let variable_bindings = ir_execution_context.get_variable_bindings();
+
+    // Add reification goals for each user-visible variable
+    use crate::goal::{AnyGoal, GoalCast};
+    use crate::operator::conj::InferredConj;
+    use crate::state::reify;
+
+    let mut goals = vec![runtime_goal.clone()];
+
+    for var_term in variable_bindings.values() {
+        goals.push(reify(var_term.clone()).cast_into());
+    }
+
+    let mut reified_goal = AnyGoal::succeed();
+    for goal in goals.into_iter().rev() {
+        reified_goal = InferredConj::new(goal, reified_goal).cast_into();
+    }
+
+    // Create solver and initial state
+    let user_state = DefaultUser::default();
+    let user_globals = <DefaultUser as User>::UserContext::default();
+    let mut solver = crate::solver::Solver::new(user_globals, false);
+
+    // Set timeout if provided
+    if let Some(timeout_ms) = config.timeout {
+        let start_time = std::time::Instant::now();
+        solver.set_timeout(start_time, timeout_ms);
+    }
+
+    // Execute the goal and collect results
+    let initial_state = crate::state::State::new(user_state);
+    let stream = solver.start(&reified_goal, initial_state);
+    let mut stream = stream;
+    let mut results = Vec::new();
+
+    // Collect up to 100 results (to prevent infinite loops)
+    let max_results = 100;
+    let mut result_count = 0;
+
+    while result_count < max_results {
+        match solver.next(&mut stream) {
+            crate::solver::SolverResult::Solution(state_box) => {
+                let state = &*state_box;
+                let mut query_result = QueryResult::new();
+
+                // Finalize the state by processing the constraint store
+                let smap = state.smap_ref();
+                let purified_cstore = state.cstore_ref().clone().purify(smap);
+                let reified_cstore = Rc::new(purified_cstore.walk_star(smap));
+
+                // Extract variable bindings from the state
+                for var_name in &query_vars {
+                    if let Some(var_term) = variable_bindings.get(var_name) {
+                        let resolved_term = smap.walk_star(var_term);
+                        let result_with_constraints = LResult(resolved_term, Rc::clone(&reified_cstore));
+                        query_result.bind(var_name.clone(), result_with_constraints);
+                    }
+                }
+
+                results.push(query_result);
+                result_count += 1;
+            }
+            crate::solver::SolverResult::NoMoreSolutions => break,
+            crate::solver::SolverResult::Timeout => break,
+            crate::solver::SolverResult::Error(_) => break,
+        }
+    }
+
+    Ok(results)
 }
 
 /// Execute a query against the environment with configuration

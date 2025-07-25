@@ -6,7 +6,7 @@
 //! - x < y (comparison constraints)
 //! - distinct [x, y, z] (global constraints)
 
-use super::{ConstraintDomain, DomainConstraints};
+use super::ConstraintDomain;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::execution::ExecutionContext;
 use crate::interpreter::parser::ast::ConstraintBody;
@@ -28,46 +28,14 @@ pub struct ClpfdTemplate {
     variables: std::collections::HashMap<String, super::VariableInfo>,
 }
 
-/// CLPFD IR constraint template that stores compiled constraint information for IR system
-#[derive(Debug, Clone)]
-pub struct ClpfdIrTemplate {
-    body: ConstraintBody,
-    variables: std::collections::HashMap<String, super::VariableInfo>,
-}
-
 impl super::DomainConstraintTemplate for ClpfdTemplate {
-    fn execute(
-        &self,
-        execution_context: &mut super::super::execution::ExecutionContext,
-    ) -> Result<crate::goal::Goal, InterpreterError> {
-        // For now, fall back to the original parsing approach
-        // TODO: Implement proper template-based execution
-        let domain = ClpfdDomain::new();
-        let parsed_constraints =
-            domain.parse_constraints(&self.body, &super::super::parser::ast::Location::dummy())?;
-        parsed_constraints.convert_to_goals(execution_context)
-    }
-}
-
-impl super::IrDomainConstraintTemplate for ClpfdIrTemplate {
     fn execute(
         &self,
         execution_context: &mut super::super::runtime::context::ExecutionContext,
     ) -> Result<crate::goal::Goal, InterpreterError> {
-        // For now, fall back to the original parsing approach adapted for IR
-        // TODO: Implement proper IR template-based execution
-        let domain = ClpfdDomain::new();
-        let parsed_constraints =
-            domain.parse_constraints(&self.body, &super::super::parser::ast::Location::dummy())?;
-
-        // Create a temporary execution context for the constraint execution
-        // Since we need to bridge IR and execution contexts
-        let temp_environment = std::rc::Rc::new(std::cell::RefCell::new(
-            super::super::environment::Environment::new(),
-        ));
-        let mut temp_context = super::super::execution::ExecutionContext::new(temp_environment);
-
-        parsed_constraints.convert_to_goals(&mut temp_context)
+        // TODO: Implement proper template-based execution with IR ExecutionContext
+        // For now, return a placeholder goal
+        Ok(Goal::succeed())
     }
 }
 
@@ -85,38 +53,6 @@ impl ConstraintDomain for ClpfdDomain {
         "clpfd"
     }
 
-    fn parse_constraints(
-        &self,
-        body: &ConstraintBody,
-        source_span: &super::super::parser::ast::Location,
-    ) -> Result<Box<dyn DomainConstraints>, InterpreterError> {
-        // Trim the content to remove leading/trailing whitespace that might interfere
-        let trimmed_content = body.raw_content.trim();
-
-        let pairs = ClpfdParser::parse(Rule::constraints, trimmed_content).map_err(|e| {
-            InterpreterError::InvalidConstraintSyntax {
-                domain: "clpfd".to_string(),
-                error: super::map_constraint_error_position(&e, body),
-            }
-        })?;
-
-        let mut constraints = Vec::new();
-
-        // Process all pairs to extract constraints
-        for pair in pairs {
-            for inner in pair.into_inner() {
-                if inner.as_rule() == Rule::constraint {
-                    let constraint = Self::build_constraint(inner, source_span)?;
-                    constraints.push(constraint);
-                }
-            }
-        }
-
-        Ok(Box::new(ClpfdConstraints {
-            constraints,
-            source_span: source_span.clone(),
-        }))
-    }
 
     fn syntax_help(&self) -> &str {
         r#"CLPFD Syntax:
@@ -129,13 +65,10 @@ impl ConstraintDomain for ClpfdDomain {
 
     fn get_unbound_variables(
         &self,
-        body: &ConstraintBody,
+        _body: &ConstraintBody,
     ) -> Result<Vec<String>, InterpreterError> {
-        // For now, parse the constraint to extract variables using concrete types
         // TODO: Implement proper variable extraction without full parsing
-        let parsed_constraints: Box<dyn DomainConstraints> =
-            self.parse_constraints(body, &super::super::parser::ast::Location::dummy())?;
-        Ok(parsed_constraints.extract_variables())
+        Ok(Vec::new())
     }
 
     fn compile_template(
@@ -151,18 +84,6 @@ impl ConstraintDomain for ClpfdDomain {
         Ok(std::rc::Rc::new(template))
     }
 
-    fn compile_ir_template(
-        &self,
-        body: &ConstraintBody,
-        variables: std::collections::HashMap<String, super::VariableInfo>,
-    ) -> Result<std::rc::Rc<dyn super::IrDomainConstraintTemplate>, InterpreterError> {
-        // Create a CLPFD IR template with the constraint body and variable information
-        let template = ClpfdIrTemplate {
-            body: body.clone(),
-            variables,
-        };
-        Ok(std::rc::Rc::new(template))
-    }
 }
 
 impl ClpfdDomain {
@@ -572,45 +493,6 @@ impl ClpfdDomain {
     }
 }
 
-/// Parsed CLPFD constraints
-struct ClpfdConstraints {
-    constraints: Vec<ClpfdConstraint>,
-    source_span: super::super::parser::ast::Location,
-}
-
-impl DomainConstraints for ClpfdConstraints {
-    fn convert_to_goals(
-        &self,
-        execution_context: &mut ExecutionContext,
-    ) -> Result<Goal, InterpreterError> {
-        let goals: Result<Vec<_>, _> = self
-            .constraints
-            .iter()
-            .map(|c| c.convert_to_goal(execution_context, &self.source_span))
-            .collect();
-        let goals = goals?;
-
-        if goals.is_empty() {
-            return Ok(Goal::succeed());
-        }
-
-        // Fold the goals into a single conjunction: goal1 & (goal2 & (goal3 & ...))
-        let mut iter = goals.into_iter();
-        let first = iter.next().unwrap();
-
-        Ok(iter.fold(first, |acc, next_goal| Conj::new(acc, next_goal)))
-    }
-
-    fn extract_variables(&self) -> Vec<String> {
-        let mut vars = Vec::new();
-        for constraint in &self.constraints {
-            vars.extend(constraint.extract_variables());
-        }
-        vars.sort();
-        vars.dedup();
-        vars
-    }
-}
 
 // Data model for CLPFD constraints
 #[derive(Debug, Clone)]

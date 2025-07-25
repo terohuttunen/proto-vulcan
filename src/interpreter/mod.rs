@@ -227,6 +227,8 @@ impl std::error::Error for InterpreterError {}
 /// The main interpreter struct
 pub struct Interpreter {
     pub environment: Rc<RefCell<Environment>>,
+    /// Compiled IR program (None if no program has been loaded)
+    pub ir_program: Option<Rc<compiler::ir::Program>>,
 }
 
 impl Interpreter {
@@ -234,6 +236,7 @@ impl Interpreter {
     pub fn new() -> Self {
         Self {
             environment: Rc::new(RefCell::new(Environment::new())),
+            ir_program: None,
         }
     }
 
@@ -253,6 +256,11 @@ impl Interpreter {
     /// Get a reference to the environment
     pub fn environment(&self) -> std::cell::Ref<Environment> {
         self.environment.borrow()
+    }
+
+    /// Get a reference to the compiled IR program
+    pub fn ir_program(&self) -> Option<&Rc<compiler::ir::Program>> {
+        self.ir_program.as_ref()
     }
 
     /// Register core builtin relations
@@ -319,40 +327,15 @@ impl Interpreter {
     }
 
     /// Load a program into the interpreter
-    pub fn load_program(&mut self, mut program: ast::Program) -> Result<(), InterpreterError> {
-        // First pass: Load type definitions (enums, structs) into the environment
-        // This is needed so semantic analysis can resolve type names
-        let mut env = self.environment.borrow_mut();
-        for item in &program.items {
-            match item {
-                ast::Item::Enum(enum_def) => env.load_enum(enum_def.clone())?,
-                ast::Item::Struct(struct_def) => env.load_struct(struct_def.clone())?,
-                _ => {} // Skip other items in first pass
-            }
-        }
-        drop(env);
-
-        // Second pass: Perform semantic analysis to disambiguate enum variants
-        // Now that types are loaded, semantic analysis can resolve enum variants
-        semantic_analysis::analyze_program(&mut program, self.environment.clone())?;
-
-        // Third pass: Load the remaining items (relations, modules, etc.)
-        let mut env = self.environment.borrow_mut();
-        for item in program.items {
-            match item {
-                ast::Item::Predicate(rel) => env.load_predicate(rel)?,
-                ast::Item::Module(module) => env.load_module(module)?,
-                ast::Item::ModuleDeclaration(mod_decl) => {
-                    env.load_module_declaration(&mod_decl, None, "global")?
-                }
-                ast::Item::Use(use_stmt) => env.load_use_statement(use_stmt)?,
-                ast::Item::Impl(_) => {} // TODO: Handle impl blocks
-                ast::Item::Enum(_) | ast::Item::Struct(_) => {
-                    // Already loaded in first pass
-                }
-            }
-        }
-
+    pub fn load_program(&mut self, program: ast::Program) -> Result<(), InterpreterError> {
+        // Compile AST to IR using the IR compiler
+        let mut compiler = compiler::Compiler::new();
+        let ir_program = compiler.compile_from_ast(program)
+            .map_err(|e| InterpreterError::RuntimeError(format!("IR compilation failed: {:?}", e)))?;
+        
+        // Store the compiled IR program
+        self.ir_program = Some(Rc::new(ir_program));
+        
         Ok(())
     }
 
@@ -447,7 +430,13 @@ impl Interpreter {
             ..Default::default()
         };
 
-        query::execute_query(self.environment.clone(), query_goal, config)
+        // Use IR-based query execution if IR program is available
+        if let Some(ir_program) = &self.ir_program {
+            query::execute_query_ir(ir_program.clone(), self.environment.clone(), query_goal, config)
+        } else {
+            // Fall back to old AST-based execution if no IR program is loaded
+            query::execute_query(self.environment.clone(), query_goal, config)
+        }
     }
 
     /// Execute a query string with tracing enabled
@@ -477,7 +466,13 @@ impl Interpreter {
             ..Default::default()
         };
 
-        query::execute_query(self.environment.clone(), query_goal, config)
+        // Use IR-based query execution if IR program is available
+        if let Some(ir_program) = &self.ir_program {
+            query::execute_query_ir(ir_program.clone(), self.environment.clone(), query_goal, config)
+        } else {
+            // Fall back to old AST-based execution if no IR program is loaded
+            query::execute_query(self.environment.clone(), query_goal, config)
+        }
     }
 
     /// Execute a query string with unified configuration
@@ -491,7 +486,13 @@ impl Interpreter {
         // Apply semantic analysis to the query goal
         semantic_analysis::analyze_goal(&mut query_goal, &self.environment)?;
 
-        query::execute_query(self.environment.clone(), query_goal, config)
+        // Use IR-based query execution if IR program is available
+        if let Some(ir_program) = &self.ir_program {
+            query::execute_query_ir(ir_program.clone(), self.environment.clone(), query_goal, config)
+        } else {
+            // Fall back to old AST-based execution if no IR program is loaded
+            query::execute_query(self.environment.clone(), query_goal, config)
+        }
     }
 }
 

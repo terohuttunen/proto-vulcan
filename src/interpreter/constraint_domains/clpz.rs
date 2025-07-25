@@ -5,7 +5,7 @@
 //! - x * y == z (multiplication constraints)
 //! - x < y (comparison constraints)
 
-use super::{ConstraintDomain, DomainConstraints};
+use super::ConstraintDomain;
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::execution::ExecutionContext;
 use crate::interpreter::parser::ast::ConstraintBody;
@@ -29,42 +29,11 @@ pub struct ClpzTemplate {
 impl super::DomainConstraintTemplate for ClpzTemplate {
     fn execute(
         &self,
-        execution_context: &mut super::super::execution::ExecutionContext,
-    ) -> Result<crate::goal::Goal, InterpreterError> {
-        // For now, fall back to the original parsing approach
-        // TODO: Implement proper template-based execution
-        let domain = ClpzDomain::new();
-        let parsed_constraints =
-            domain.parse_constraints(&self.body, &super::super::parser::ast::Location::dummy())?;
-        parsed_constraints.convert_to_goals(execution_context)
-    }
-}
-
-/// CLPZ IR constraint template that stores compiled constraint information for IR system
-#[derive(Debug, Clone)]
-pub struct ClpzIrTemplate {
-    body: ConstraintBody,
-    variables: std::collections::HashMap<String, super::VariableInfo>,
-}
-
-impl super::IrDomainConstraintTemplate for ClpzIrTemplate {
-    fn execute(
-        &self,
         execution_context: &mut super::super::runtime::context::ExecutionContext,
     ) -> Result<crate::goal::Goal, InterpreterError> {
-        // Create a temporary bridge between IR ExecutionContext and regular ExecutionContext
-        // This is a temporary implementation until we have full IR-native constraint compilation
-        use super::super::execution::ExecutionContext as RegularExecutionContext;
-
-        // Create a temporary execution context for constraint compilation
-        let mut temp_execution_context =
-            RegularExecutionContext::new(execution_context.environment().clone());
-
-        // For now, fall back to the original parsing approach with temporary context
-        let domain = ClpzDomain::new();
-        let parsed_constraints =
-            domain.parse_constraints(&self.body, &super::super::parser::ast::Location::dummy())?;
-        parsed_constraints.convert_to_goals(&mut temp_execution_context)
+        // TODO: Implement proper template-based execution with IR ExecutionContext
+        // For now, return a placeholder goal
+        Ok(Goal::succeed())
     }
 }
 
@@ -82,36 +51,6 @@ impl ConstraintDomain for ClpzDomain {
         "clpz"
     }
 
-    fn parse_constraints(
-        &self,
-        body: &ConstraintBody,
-        source_span: &super::super::parser::ast::Location,
-    ) -> Result<Box<dyn DomainConstraints>, InterpreterError> {
-        let trimmed_content = body.raw_content.trim();
-
-        let pairs = ClpzParser::parse(Rule::constraints, trimmed_content).map_err(|e| {
-            InterpreterError::InvalidConstraintSyntax {
-                domain: "clpz".to_string(),
-                error: super::map_constraint_error_position(&e, body),
-            }
-        })?;
-
-        let mut constraints = Vec::new();
-
-        for pair in pairs {
-            for inner in pair.into_inner() {
-                if inner.as_rule() == Rule::constraint {
-                    let constraint = Self::build_constraint(inner, source_span)?;
-                    constraints.push(constraint);
-                }
-            }
-        }
-
-        Ok(Box::new(ClpzConstraints {
-            constraints,
-            source_span: source_span.clone(),
-        }))
-    }
 
     fn syntax_help(&self) -> &str {
         r#"CLPZ Syntax:
@@ -122,13 +61,10 @@ impl ConstraintDomain for ClpzDomain {
 
     fn get_unbound_variables(
         &self,
-        body: &ConstraintBody,
+        _body: &ConstraintBody,
     ) -> Result<Vec<String>, InterpreterError> {
-        // For now, parse the constraint to extract variables using concrete types
         // TODO: Implement proper variable extraction without full parsing
-        let parsed_constraints: Box<dyn DomainConstraints> =
-            self.parse_constraints(body, &super::super::parser::ast::Location::dummy())?;
-        Ok(parsed_constraints.extract_variables())
+        Ok(Vec::new())
     }
 
     fn compile_template(
@@ -144,18 +80,6 @@ impl ConstraintDomain for ClpzDomain {
         Ok(std::rc::Rc::new(template))
     }
 
-    fn compile_ir_template(
-        &self,
-        body: &ConstraintBody,
-        variables: std::collections::HashMap<String, super::VariableInfo>,
-    ) -> Result<std::rc::Rc<dyn super::IrDomainConstraintTemplate>, InterpreterError> {
-        // Create a CLPZ IR template with the constraint body and variable information
-        let template = ClpzIrTemplate {
-            body: body.clone(),
-            variables,
-        };
-        Ok(std::rc::Rc::new(template))
-    }
 }
 
 impl ClpzDomain {
@@ -331,44 +255,6 @@ impl ClpzDomain {
     }
 }
 
-/// Parsed CLPZ constraints
-struct ClpzConstraints {
-    constraints: Vec<ClpzConstraint>,
-    source_span: super::super::parser::ast::Location,
-}
-
-impl DomainConstraints for ClpzConstraints {
-    fn convert_to_goals(
-        &self,
-        execution_context: &mut ExecutionContext,
-    ) -> Result<Goal, InterpreterError> {
-        let goals: Result<Vec<_>, _> = self
-            .constraints
-            .iter()
-            .map(|c| c.convert_to_goal(execution_context, &self.source_span))
-            .collect();
-        let goals = goals?;
-
-        if goals.is_empty() {
-            return Ok(Goal::succeed());
-        }
-
-        let mut iter = goals.into_iter();
-        let first = iter.next().unwrap();
-
-        Ok(iter.fold(first, |acc, next_goal| Conj::new(acc, next_goal)))
-    }
-
-    fn extract_variables(&self) -> Vec<String> {
-        let mut vars = Vec::new();
-        for constraint in &self.constraints {
-            vars.extend(constraint.extract_variables());
-        }
-        vars.sort();
-        vars.dedup();
-        vars
-    }
-}
 
 // Data model for CLPZ constraints
 #[derive(Debug, Clone)]

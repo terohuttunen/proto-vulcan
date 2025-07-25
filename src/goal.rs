@@ -31,6 +31,9 @@ use std::rc::Rc;
 
 pub use crate::GoalCast;
 
+// Import PredicateClosure for lazy macro expansion
+use crate::interpreter::runtime::context::PredicateClosure;
+
 pub trait AnyGoal: std::fmt::Debug + std::clone::Clone + 'static {
     fn succeed() -> Self
     where
@@ -48,11 +51,17 @@ pub trait AnyGoal: std::fmt::Debug + std::clone::Clone + 'static {
     where
         Self: Sized;
 
+    fn lazy_macro(closure: Rc<PredicateClosure>) -> Self
+    where
+        Self: Sized;
+
     fn is_succeed(&self) -> bool;
 
     fn is_fail(&self) -> bool;
 
     fn is_breakpoint(&self) -> bool;
+
+    fn is_lazy_macro(&self) -> bool;
 
     fn solve(&self, solver: &Solver, state: State) -> Stream;
 }
@@ -64,6 +73,7 @@ pub enum Goal {
     Fail,
     Breakpoint(&'static str),
     Dynamic(Rc<dyn Solve>),
+    LazyMacro(Rc<PredicateClosure>),
 }
 
 impl AnyGoal for Goal {
@@ -81,6 +91,10 @@ impl AnyGoal for Goal {
 
     fn dynamic(u: Rc<dyn Solve>) -> Goal {
         Goal::Dynamic(u)
+    }
+
+    fn lazy_macro(closure: Rc<PredicateClosure>) -> Goal {
+        Goal::LazyMacro(closure)
     }
 
     fn is_succeed(&self) -> bool {
@@ -104,12 +118,20 @@ impl AnyGoal for Goal {
         }
     }
 
+    fn is_lazy_macro(&self) -> bool {
+        match self {
+            Goal::LazyMacro(_) => true,
+            _ => false,
+        }
+    }
+
     fn solve(&self, solver: &Solver, state: State) -> Stream {
         match self {
             Goal::Succeed => Stream::unit(Box::new(state)),
             Goal::Fail => Stream::empty(),
             Goal::Breakpoint(_) => Stream::unit(Box::new(state)),
             Goal::Dynamic(dynamic) => dynamic.solve(solver, state),
+            Goal::LazyMacro(closure) => closure.expand_and_solve(solver, state),
         }
     }
 }
@@ -121,6 +143,7 @@ pub enum DFSGoal {
     Fail,
     Breakpoint(&'static str),
     Dynamic(Rc<dyn Solve>),
+    LazyMacro(Rc<PredicateClosure>),
 }
 
 impl AnyGoal for DFSGoal {
@@ -138,6 +161,10 @@ impl AnyGoal for DFSGoal {
 
     fn dynamic(u: Rc<dyn Solve>) -> DFSGoal {
         DFSGoal::Dynamic(u)
+    }
+
+    fn lazy_macro(closure: Rc<PredicateClosure>) -> DFSGoal {
+        DFSGoal::LazyMacro(closure)
     }
 
     fn is_succeed(&self) -> bool {
@@ -161,12 +188,20 @@ impl AnyGoal for DFSGoal {
         }
     }
 
+    fn is_lazy_macro(&self) -> bool {
+        match self {
+            DFSGoal::LazyMacro(_) => true,
+            _ => false,
+        }
+    }
+
     fn solve(&self, solver: &Solver, state: State) -> Stream {
         match self {
             DFSGoal::Succeed => Stream::unit(Box::new(state)),
             DFSGoal::Fail => Stream::empty(),
             DFSGoal::Breakpoint(_) => Stream::unit(Box::new(state)),
             DFSGoal::Dynamic(dynamic) => dynamic.solve(solver, state),
+            DFSGoal::LazyMacro(closure) => closure.expand_and_solve(solver, state),
         }
     }
 }
@@ -178,6 +213,7 @@ impl Into<Goal> for DFSGoal {
             DFSGoal::Fail => Goal::Fail,
             DFSGoal::Breakpoint(id) => Goal::Breakpoint(id),
             DFSGoal::Dynamic(dynamic) => Goal::Dynamic(dynamic),
+            DFSGoal::LazyMacro(closure) => Goal::LazyMacro(closure),
         }
     }
 }

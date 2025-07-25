@@ -9,5 +9,6 @@ pub fn dfs<G: AnyGoal>(param: OperatorParam<DFSGoal>) -> InferredGoal<G> {
         DFSGoal::Fail => InferredGoal::new(G::fail()),
         DFSGoal::Breakpoint(id) => InferredGoal::new(G::breakpoint(id)),
         DFSGoal::Dynamic(dynamic) => InferredGoal::new(G::dynamic(dynamic)),
+        DFSGoal::LazyMacro(closure) => InferredGoal::new(G::lazy_macro(closure)),
     }
 }

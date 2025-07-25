@@ -4,7 +4,6 @@
 //! their own parsers and converters. Each domain (like clpfd, clpr, clpb) can
 //! define its own syntax and semantics.
 
-use super::execution::ExecutionContext;
 use super::parser::ast::ConstraintBody;
 use super::InterpreterError;
 use crate::goal::Goal;
@@ -59,17 +58,8 @@ pub enum VariableType {
     Meta,
 }
 
-/// Non-generic trait for compiled constraint templates that execute to produce Goals
+/// Trait for compiled constraint templates that work with IR ExecutionContext
 pub trait DomainConstraintTemplate: std::fmt::Debug {
-    /// Execute the template with the given execution context to produce a Goal
-    fn execute(
-        &self,
-        execution_context: &mut super::execution::ExecutionContext,
-    ) -> Result<Goal, InterpreterError>;
-}
-
-/// IR-specific trait for compiled constraint templates that work with IR ExecutionContext
-pub trait IrDomainConstraintTemplate: std::fmt::Debug {
     /// Execute the template with the IR execution context to produce a Goal
     fn execute(
         &self,
@@ -77,17 +67,33 @@ pub trait IrDomainConstraintTemplate: std::fmt::Debug {
     ) -> Result<Goal, InterpreterError>;
 }
 
+/// Deprecated trait for parsed domain-specific constraints (kept for legacy compatibility)
+pub trait DomainConstraints {
+    /// Convert parsed constraints to runtime goals
+    fn convert_to_goals(
+        &self,
+        execution_context: &mut super::execution::ExecutionContext,
+    ) -> Result<crate::goal::Goal, InterpreterError>;
+
+    /// Extract variable names for query processing
+    fn extract_variables(&self) -> Vec<String>;
+}
+
 /// Trait that all constraint domains must implement
 pub trait ConstraintDomain {
     /// Domain name (e.g., "clpfd", "clpr", "clpb")
     fn name(&self) -> &str;
 
-    /// Parse raw constraint body into domain-specific representation
+    /// Parse raw constraint body into domain-specific representation (deprecated - kept for legacy compatibility)
     fn parse_constraints(
         &self,
-        body: &ConstraintBody,
-        source_span: &super::parser::ast::Location,
-    ) -> Result<Box<dyn DomainConstraints>, InterpreterError>;
+        _body: &ConstraintBody,
+        _source_span: &super::parser::ast::Location,
+    ) -> Result<Box<dyn DomainConstraints>, InterpreterError> {
+        Err(InterpreterError::RuntimeError(
+            "Constraint parsing is deprecated - use IR-based compilation instead".to_string()
+        ))
+    }
 
     /// Get description of supported syntax for error messages
     fn syntax_help(&self) -> &str;
@@ -102,26 +108,8 @@ pub trait ConstraintDomain {
         body: &ConstraintBody,
         variables: HashMap<String, VariableInfo>,
     ) -> Result<Rc<dyn DomainConstraintTemplate>, InterpreterError>;
-
-    /// Compile constraint block for IR system with resolved variable information into an IR template
-    fn compile_ir_template(
-        &self,
-        body: &ConstraintBody,
-        variables: HashMap<String, VariableInfo>,
-    ) -> Result<Rc<dyn IrDomainConstraintTemplate>, InterpreterError>;
 }
 
-/// Trait for parsed domain-specific constraints
-pub trait DomainConstraints {
-    /// Convert parsed constraints to runtime goals
-    fn convert_to_goals(
-        &self,
-        execution_context: &mut ExecutionContext,
-    ) -> Result<Goal, InterpreterError>;
-
-    /// Extract variable names for query processing
-    fn extract_variables(&self) -> Vec<String>;
-}
 
 /// Registry for constraint domains
 pub struct ConstraintDomainRegistry {
@@ -147,23 +135,6 @@ impl ConstraintDomainRegistry {
         self.domains.keys().map(|s| s.as_str()).collect()
     }
 
-    pub fn convert_constraint_block(
-        &self,
-        execution_context: &mut ExecutionContext,
-        domain_name: &str,
-        body: &ConstraintBody,
-        source_span: &super::parser::ast::Location,
-    ) -> Result<Goal, InterpreterError> {
-        let domain = self.get_domain(domain_name).ok_or_else(|| {
-            InterpreterError::InvalidConstraintSyntax {
-                domain: domain_name.to_string(),
-                error: format!("Unknown constraint domain: {}", domain_name),
-            }
-        })?;
-
-        let parsed_constraints = domain.parse_constraints(body, source_span)?;
-        parsed_constraints.convert_to_goals(execution_context)
-    }
 }
 
 impl Default for ConstraintDomainRegistry {

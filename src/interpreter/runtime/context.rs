@@ -7,14 +7,121 @@ use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::compiler::ir;
 use crate::interpreter::compiler::CompileError;
 use crate::interpreter::environment::Environment;
-use crate::interpreter::metaprogramming::MetaValue;
+use crate::interpreter::compiler::ir::MetaValue;
 use crate::interpreter::parser::ast::SearchStrategy;
 use crate::interpreter::symbol_table::InternedSymbol;
 use crate::interpreter::trace::TraceConfig;
 use crate::lterm::LTerm;
+use crate::solver::Solver;
+use crate::state::State;
+use crate::stream::Stream;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+
+/// Represents a captured argument value for lazy predicate closure expansion
+#[derive(Debug, Clone)]
+pub enum ArgumentValue {
+    /// Meta value for template expansion (integers, strings, booleans)
+    Meta(MetaValue),
+    /// Relational value for logic computation (LTerms)
+    Relational(LTerm),
+}
+
+impl ArgumentValue {
+    /// Convert to LTerm if possible
+    pub fn to_lterm(&self) -> Option<LTerm> {
+        match self {
+            ArgumentValue::Relational(lterm) => Some(lterm.clone()),
+            ArgumentValue::Meta(meta) => {
+                // Convert meta values to LTerms when necessary
+                match meta {
+                    MetaValue::Integer(i) => Some(LTerm::from(*i as isize)),
+                    MetaValue::String(s) => Some(LTerm::from(s.as_ref())),
+                    MetaValue::Boolean(b) => Some(LTerm::from(*b)),
+                }
+            }
+        }
+    }
+
+    /// Get as meta value if possible
+    pub fn as_meta(&self) -> Option<&MetaValue> {
+        match self {
+            ArgumentValue::Meta(meta) => Some(meta),
+            ArgumentValue::Relational(_) => None,
+        }
+    }
+}
+
+/// Self-contained predicate closure for lazy macro expansion
+///
+/// Contains all the information needed to expand a predicate call lazily,
+/// including captured arguments and shared environment for consistent behavior.
+pub struct PredicateClosure {
+    /// The predicate IR to expand
+    predicate_ir: Rc<ir::Predicate>,
+    /// Captured arguments (both meta and relational)
+    captured_args: Vec<ArgumentValue>,
+    /// Shared program for registry access
+    program: Rc<ir::Program>,
+    /// Shared environment for builtins and modules
+    environment: Rc<RefCell<Environment>>,
+}
+
+impl PredicateClosure {
+    /// Create a new predicate closure
+    pub fn new(
+        predicate_ir: Rc<ir::Predicate>,
+        captured_args: Vec<ArgumentValue>,
+        program: Rc<ir::Program>,
+        environment: Rc<RefCell<Environment>>,
+    ) -> Self {
+        Self {
+            predicate_ir,
+            captured_args,
+            program,
+            environment,
+        }
+    }
+
+    /// Expand the closure lazily and solve the resulting goals
+    pub fn expand_and_solve(&self, solver: &Solver, state: State) -> Stream {
+        // Create temporary execution context with shared environment
+        let mut temp_context = ExecutionContext::new(
+            self.program.clone(), 
+            self.environment.clone()  // Same environment = same builtins
+        );
+        
+        // Bind captured arguments to predicate parameters
+        for (param, arg) in self.predicate_ir.parameters.iter().zip(&self.captured_args) {
+            match arg {
+                ArgumentValue::Meta(meta) => {
+                    temp_context.bind_meta_var(param.name.clone(), meta.clone());
+                }
+                ArgumentValue::Relational(lterm) => {
+                    temp_context.bind_var(param.name.clone(), lterm.clone());
+                }
+            }
+        }
+        
+        // Convert predicate body to runtime goals
+        match temp_context.ir_predicate_body_to_runtime(&self.predicate_ir) {
+            Ok(goal) => solver.start(&goal, state),
+            Err(err) => Stream::error(format!("Closure expansion error: {}", err)),
+        }
+    }
+}
+
+impl std::fmt::Debug for PredicateClosure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PredicateClosure")
+            .field("predicate_ir", &self.predicate_ir)
+            .field("captured_args", &self.captured_args)
+            .field("program", &"<ir::Program>")
+            .field("environment", &"<Rc<RefCell<Environment>>>")
+            .finish()
+    }
+}
 
 /// Represents a variable value that can be either relational (for logic computation)
 /// or non-relational (for meta programming)
@@ -60,7 +167,7 @@ impl VariableValue {
                 // Convert meta values to LTerms when necessary
                 match meta {
                     MetaValue::Integer(i) => Some(LTerm::from(*i as isize)),
-                    MetaValue::String(s) => Some(LTerm::from(s.clone())),
+                    MetaValue::String(s) => Some(LTerm::from(s.as_ref())),
                     MetaValue::Boolean(b) => Some(LTerm::from(*b)),
                 }
             }
@@ -72,7 +179,7 @@ impl VariableValue {
 ///
 /// This converts IR goals and terms to runtime goals for execution,
 /// with all symbol resolution already completed.
-pub struct ExecutionContext<'a> {
+pub struct ExecutionContext {
     /// The compiled IR program (immutable)
     program: Rc<ir::Program>,
 
@@ -82,30 +189,22 @@ pub struct ExecutionContext<'a> {
     /// Variable scoping stack for execution - supports both relational and meta variables
     variable_scopes: Vec<HashMap<InternedSymbol, VariableValue>>,
 
-    /// Deferred goals that need to be executed
-    deferred_goals: Vec<Goal>,
-
     /// Search strategy stack for tracking current search context
     search_strategy_stack: Vec<SearchStrategy>,
 
     /// Trace configuration for debugging execution
     trace_config: Option<TraceConfig>,
-
-    /// Lifetime marker
-    _phantom: std::marker::PhantomData<&'a ()>,
 }
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext {
     /// Create a new IR execution context
     pub fn new(program: Rc<ir::Program>, environment: Rc<RefCell<Environment>>) -> Self {
         Self {
             program,
             environment,
             variable_scopes: vec![HashMap::new()], // Start with global scope
-            deferred_goals: Vec::new(),
             search_strategy_stack: vec![SearchStrategy::Bfs], // Default to BFS
             trace_config: None,                               // No tracing by default
-            _phantom: std::marker::PhantomData,
         }
     }
 
@@ -166,20 +265,17 @@ impl<'a> ExecutionContext<'a> {
             ir::Goal::Constraint(constraint_block) => {
                 self.ir_constraint_to_runtime(constraint_block)
             }
-            ir::Goal::MetaLet(_meta_let) => {
-                // Meta constructs should be expanded before runtime execution
-                // For now, return success (true)
-                Ok(Goal::succeed())
+            ir::Goal::MetaLet(meta_let) => {
+                // Meta constructs should be expanded eagerly during runtime execution
+                self.ir_meta_let_to_runtime(meta_let)
             }
-            ir::Goal::MetaIf(_meta_if) => {
-                // Meta constructs should be expanded before runtime execution
-                // For now, return success (true)
-                Ok(Goal::succeed())
+            ir::Goal::MetaIf(meta_if) => {
+                // Meta constructs should be expanded eagerly during runtime execution
+                self.ir_meta_if_to_runtime(meta_if)
             }
-            ir::Goal::MetaFor(_meta_for) => {
-                // Meta constructs should be expanded before runtime execution
-                // For now, return success (true)
-                Ok(Goal::succeed())
+            ir::Goal::MetaFor(meta_for) => {
+                // Meta constructs should be expanded eagerly during runtime execution
+                self.ir_meta_for_to_runtime(meta_for)
             }
         };
 
@@ -345,12 +441,6 @@ impl<'a> ExecutionContext<'a> {
         &mut self,
         predicate_call: &ir::PredicateCall,
     ) -> Result<Goal, CompileError> {
-        // Convert arguments first
-        let mut runtime_args = Vec::new();
-        for arg in &predicate_call.arguments {
-            runtime_args.push(self.ir_term_to_runtime(arg)?);
-        }
-
         // Check arity using registry convenience method
         let expected_arity = self
             .program
@@ -361,40 +451,88 @@ impl<'a> ExecutionContext<'a> {
                 symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
             })?;
 
-        if runtime_args.len() != expected_arity {
+        if predicate_call.arguments.len() != expected_arity {
             return Err(CompileError::ArityMismatch {
                 predicate_item: predicate_call.predicate.clone(),
                 expected_arity,
-                actual_arity: runtime_args.len(),
+                actual_arity: predicate_call.arguments.len(),
                 symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
             });
         }
 
-        // Look up the predicate for actual goal creation
-        let predicate_item = self
-            .program
-            .registry
-            .get_item(&predicate_call.predicate)
-            .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: predicate_call.predicate.clone(),
-                symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
-            })?;
-
-        let predicate = match predicate_item {
-            ir::Item::Predicate(p) => p,
-            _ => {
-                return Err(CompileError::UnresolvedPredicate {
+        // Check if any arguments need meta evaluation
+        let has_meta_args = predicate_call.arguments.iter().any(|arg| {
+            matches!(arg, ir::Term::MetaInterpolation(_))
+        });
+        
+        if has_meta_args {
+            // Create lazy closure for meta arguments
+            let mut captured_args = Vec::new();
+            for arg in &predicate_call.arguments {
+                match arg {
+                    ir::Term::MetaInterpolation(meta_expr) => {
+                        let meta_value = self.evaluate_meta_expr(meta_expr)?;
+                        captured_args.push(ArgumentValue::Meta(meta_value));
+                    }
+                    _ => {
+                        let lterm = self.ir_term_to_runtime(arg)?;
+                        captured_args.push(ArgumentValue::Relational(lterm));
+                    }
+                }
+            }
+            
+            // Look up predicate and create closure
+            let predicate_item = self
+                .program
+                .registry
+                .get_item(&predicate_call.predicate)
+                .ok_or_else(|| CompileError::UnresolvedPredicate {
+                    attempted_item: predicate_call.predicate.clone(),
+                    symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
+                })?;
+                
+            if let ir::Item::Predicate(predicate) = predicate_item {
+                let closure = self.create_predicate_closure(Rc::new(predicate.clone()), captured_args);
+                Ok(Goal::lazy_macro(Rc::new(closure)))
+            } else {
+                Err(CompileError::UnresolvedPredicate {
                     attempted_item: predicate_call.predicate.clone(),
                     symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
                 })
             }
-        };
+        } else {
+            // No meta arguments - handle normally with immediate expansion
+            let mut runtime_args = Vec::new();
+            for arg in &predicate_call.arguments {
+                runtime_args.push(self.ir_term_to_runtime(arg)?);
+            }
 
-        // Clone the predicate to avoid borrowing issues (this is efficient with Rc sharing)
-        let predicate_owned = predicate.clone();
+            // Look up the predicate for actual goal creation
+            let predicate_item = self
+                .program
+                .registry
+                .get_item(&predicate_call.predicate)
+                .ok_or_else(|| CompileError::UnresolvedPredicate {
+                    attempted_item: predicate_call.predicate.clone(),
+                    symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
+                })?;
 
-        // Convert the predicate to runtime goal
-        self.ir_predicate_to_runtime(&predicate_owned, runtime_args)
+            let predicate = match predicate_item {
+                ir::Item::Predicate(p) => p,
+                _ => {
+                    return Err(CompileError::UnresolvedPredicate {
+                        attempted_item: predicate_call.predicate.clone(),
+                        symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
+                    })
+                }
+            };
+
+            // Clone the predicate to avoid borrowing issues (this is efficient with Rc sharing)
+            let predicate_owned = predicate.clone();
+
+            // Convert the predicate to runtime goal immediately
+            self.ir_predicate_to_runtime(&predicate_owned, runtime_args)
+        }
     }
 
     /// Convert an IR fresh goal to runtime
@@ -571,15 +709,6 @@ impl<'a> ExecutionContext<'a> {
         bindings
     }
 
-    /// Add a deferred goal to be executed later
-    pub fn add_deferred_goal(&mut self, goal: Goal) {
-        self.deferred_goals.push(goal);
-    }
-
-    /// Take all deferred goals (consuming them)
-    pub fn take_deferred_goals(&mut self) -> Vec<Goal> {
-        std::mem::take(&mut self.deferred_goals)
-    }
 
     /// Get current search strategy
     pub fn current_search_strategy(&self) -> SearchStrategy {
@@ -651,6 +780,29 @@ impl<'a> ExecutionContext<'a> {
 
         // Create conjunction of body goals
         Ok(self.build_conjunction(body_goals))
+    }
+
+    /// Convert IR predicate body to runtime goals (for closures)
+    pub fn ir_predicate_body_to_runtime(&mut self, predicate: &ir::Predicate) -> Result<Goal, CompileError> {
+        let mut body_goals = Vec::new();
+        for goal in predicate.body.iter() {
+            body_goals.push(self.ir_goal_to_runtime(goal)?);
+        }
+        Ok(self.build_conjunction(body_goals))
+    }
+
+    /// Create a self-contained predicate closure
+    pub fn create_predicate_closure(
+        &self,
+        predicate_ir: Rc<ir::Predicate>,
+        args: Vec<ArgumentValue>
+    ) -> PredicateClosure {
+        PredicateClosure::new(
+            predicate_ir,
+            args,
+            self.program.clone(),
+            self.environment.clone(),  // Share environment
+        )
     }
 
     /// Build conjunction from a list of goals
@@ -900,6 +1052,217 @@ impl<'a> ExecutionContext<'a> {
 
         Ok(self.build_conjunction(goals))
     }
+
+    /// CPS-based meta expression evaluation
+    ///
+    /// Uses continuation passing style to avoid recursion and handle control flow properly.
+    /// Continuations receive MetaValue results and produce Goals.
+    fn evaluate_meta_expr(&mut self, expr: &ir::MetaExpression) -> Result<MetaValue, CompileError> {
+        match expr {
+            ir::MetaExpression::Variable(var_name) => {
+                // Look up meta variable in current scope
+                if let Some(var_value) = self.lookup_variable_value(var_name) {
+                    if let Some(meta_value) = var_value.as_meta() {
+                        Ok(meta_value.clone())
+                    } else {
+                        Err(CompileError::SemanticError {
+                            message: format!(
+                                "Variable '{}' is not a meta variable",
+                                var_name
+                            ),
+                            symbol: var_name.clone(),
+                        })
+                    }
+                } else {
+                    Err(CompileError::SemanticError {
+                        message: format!("Unbound meta variable: {}", var_name),
+                        symbol: var_name.clone(),
+                    })
+                }
+            }
+            ir::MetaExpression::Literal(literal) => {
+                Ok(literal.clone())
+            }
+            ir::MetaExpression::BinaryOp(op, left, right) => {
+                // Evaluate left and right, then combine
+                let left_val = self.evaluate_meta_expr(left)?;
+                let right_val = self.evaluate_meta_expr(right)?;
+                self.evaluate_meta_binary_op(op.clone(), left_val, right_val)
+            }
+        }
+    }
+
+    /// Evaluate a meta binary operation
+    fn evaluate_meta_binary_op(
+        &self,
+        op: ir::MetaBinaryOp,
+        left: MetaValue,
+        right: MetaValue,
+    ) -> Result<MetaValue, CompileError> {
+        use ir::MetaBinaryOp::*;
+        match (op.clone(), left, right) {
+            // Arithmetic operations
+            (Add, MetaValue::Integer(a), MetaValue::Integer(b)) => Ok(MetaValue::Integer(a + b)),
+            (Subtract, MetaValue::Integer(a), MetaValue::Integer(b)) => Ok(MetaValue::Integer(a - b)),
+            (Multiply, MetaValue::Integer(a), MetaValue::Integer(b)) => Ok(MetaValue::Integer(a * b)),
+            (Divide, MetaValue::Integer(a), MetaValue::Integer(b)) => {
+                if b == 0 {
+                    Err(CompileError::SemanticError {
+                        message: "Division by zero in meta expression".to_string(),
+                        symbol: InternedSymbol::from_text("__meta_expr"),
+                    })
+                } else {
+                    Ok(MetaValue::Integer(a / b))
+                }
+            }
+            // Comparison operations
+            (LessThan, MetaValue::Integer(a), MetaValue::Integer(b)) => Ok(MetaValue::Boolean(a < b)),
+            (LessEqual, MetaValue::Integer(a), MetaValue::Integer(b)) => Ok(MetaValue::Boolean(a <= b)),
+            (GreaterThan, MetaValue::Integer(a), MetaValue::Integer(b)) => Ok(MetaValue::Boolean(a > b)),
+            (GreaterEqual, MetaValue::Integer(a), MetaValue::Integer(b)) => Ok(MetaValue::Boolean(a >= b)),
+            (Equal, a, b) => Ok(MetaValue::Boolean(a == b)),
+            (NotEqual, a, b) => Ok(MetaValue::Boolean(a != b)),
+            // String concatenation
+            (Add, MetaValue::String(a), MetaValue::String(b)) => Ok(MetaValue::String(format!("{}{}", a, b).into())),
+            // Type mismatches
+            _ => Err(CompileError::SemanticError {
+                message: format!("Invalid operand types for binary operation: {:?}", op),
+                symbol: InternedSymbol::from_text("__meta_expr"),
+            }),
+        }
+    }
+
+    /// Convert IR MetaLet to runtime using CPS
+    fn ir_meta_let_to_runtime(&mut self, meta_let: &ir::MetaLet) -> Result<Goal, CompileError> {
+        // Evaluate the meta expression directly
+        let value = self.evaluate_meta_expr(&meta_let.expression)?;
+        
+        // Bind the meta variable
+        self.bind_meta_var(meta_let.variable.clone(), value);
+        
+        // Meta let doesn't have a body in the current IR design, so return success
+        // In a more complete implementation, this might have a body to execute
+        Ok(Goal::succeed())
+    }
+
+    /// Convert IR MetaIf to runtime using CPS
+    fn ir_meta_if_to_runtime(&mut self, meta_if: &ir::MetaIf) -> Result<Goal, CompileError> {
+        // Evaluate the condition directly
+        let condition_value = self.evaluate_meta_expr(&meta_if.condition)?;
+        
+        match condition_value {
+            MetaValue::Boolean(true) => {
+                // Execute then branch
+                let mut then_goals = Vec::new();
+                for goal in meta_if.then_body.iter() {
+                    then_goals.push(self.ir_goal_to_runtime(goal)?);
+                }
+                Ok(self.build_conjunction(then_goals))
+            }
+            MetaValue::Boolean(false) => {
+                // Try else-if branches
+                self.evaluate_meta_elseif_branches(&meta_if.else_ifs, &meta_if.else_body)
+            }
+            _ => Err(CompileError::SemanticError {
+                message: "Meta if condition must evaluate to boolean".to_string(),
+                symbol: InternedSymbol::from_text("__meta_if"),
+            }),
+        }
+    }
+
+    /// Helper for evaluating else-if branches using CPS
+    fn evaluate_meta_elseif_branches(
+        &mut self,
+        else_ifs: &[(ir::MetaExpression, Rc<[ir::StructuralGoal]>)],
+        else_body: &Option<Rc<[ir::StructuralGoal]>>,
+    ) -> Result<Goal, CompileError> {
+        if let Some((condition, body)) = else_ifs.first() {
+            // Evaluate the first else-if condition directly
+            let condition_value = self.evaluate_meta_expr(condition)?;
+            
+            match condition_value {
+                MetaValue::Boolean(true) => {
+                    // Execute this else-if branch
+                    let mut branch_goals = Vec::new();
+                    for goal in body.iter() {
+                        branch_goals.push(self.ir_goal_to_runtime(goal)?);
+                    }
+                    Ok(self.build_conjunction(branch_goals))
+                }
+                MetaValue::Boolean(false) => {
+                    // Try remaining else-if branches
+                    self.evaluate_meta_elseif_branches(&else_ifs[1..], else_body)
+                }
+                _ => Err(CompileError::SemanticError {
+                    message: "Meta else-if condition must evaluate to boolean".to_string(),
+                    symbol: InternedSymbol::from_text("__meta_elseif"),
+                }),
+            }
+        } else if let Some(else_body) = else_body {
+            // Execute else branch
+            let mut else_goals = Vec::new();
+            for goal in else_body.iter() {
+                else_goals.push(self.ir_goal_to_runtime(goal)?);
+            }
+            Ok(self.build_conjunction(else_goals))
+        } else {
+            // No matching branch - return success (no-op)
+            Ok(Goal::succeed())
+        }
+    }
+
+    /// CPS-based meta expression evaluation to prevent stack overflow
+    ///
+    /// Uses continuation passing style to avoid recursion and handle control flow properly.
+    /// Continuations receive MetaValue results and produce Goals.
+    fn evaluate_meta_expr_cps<F, R>(
+        &mut self, 
+        expr: &ir::MetaExpression, 
+        continuation: F
+    ) -> Result<R, CompileError> 
+    where F: FnOnce(MetaValue) -> Result<R, CompileError>
+    {
+        // Evaluate the expression directly (no deep recursion expected in meta expressions)
+        let value = self.evaluate_meta_expr(expr)?;
+        // Apply the continuation
+        continuation(value)
+    }
+
+    /// Convert IR MetaFor to runtime using CPS
+    fn ir_meta_for_to_runtime(&mut self, meta_for: &ir::MetaFor) -> Result<Goal, CompileError> {
+        // Evaluate start and end expressions directly (avoiding nested closures)
+        let start_value = self.evaluate_meta_expr(&meta_for.start)?;
+        let end_value = self.evaluate_meta_expr(&meta_for.end)?;
+        
+        match (start_value, end_value) {
+            (MetaValue::Integer(start), MetaValue::Integer(end)) => {
+                // Execute loop iterations
+                let mut iteration_goals = Vec::new();
+                
+                for i in start..=end {
+                    // Push new scope for iteration
+                    self.push_scope();
+                    
+                    // Bind loop variable
+                    self.bind_meta_var(meta_for.variable.clone(), MetaValue::Integer(i));
+                    
+                    // Execute loop body
+                    for goal in meta_for.body.iter() {
+                        iteration_goals.push(self.ir_goal_to_runtime(goal)?);
+                    }
+                    
+                    // Pop iteration scope
+                    self.pop_scope();
+                }
+                
+                Ok(self.build_conjunction(iteration_goals))
+            }
+            _ => Err(CompileError::SemanticError {
+                message: "Meta for loop bounds must be integers".to_string(),
+                symbol: meta_for.variable.clone(),
+            }),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -908,7 +1271,7 @@ mod tests {
 
     use crate::interpreter::symbol_table::InternedSymbol;
 
-    type TestContext<'a> = ExecutionContext<'a>;
+    type TestContext = ExecutionContext;
     type TestEnvironment = Environment;
 
     fn create_test_program() -> ir::Program {

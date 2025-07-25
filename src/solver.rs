@@ -73,6 +73,7 @@ impl Solver {
                 Stream::unit(Box::new(state))
             }
             Goal::Dynamic(dynamic) => dynamic.solve(self, state),
+            Goal::LazyMacro(closure) => closure.expand_and_solve(self, state),
         }
     }
 
@@ -92,6 +93,7 @@ impl Solver {
                 }
                 dynamic.solve(self, state)
             }
+            DFSGoal::LazyMacro(closure) => closure.expand_and_solve(self, state),
         }
     }
 

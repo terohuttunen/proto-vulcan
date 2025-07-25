@@ -1226,7 +1226,7 @@ impl Compiler {
 
         // Compile the constraint into an IR template
         let template = domain
-            .compile_ir_template(&constraint_block.body, resolved_variables)
+            .compile_template(&constraint_block.body, resolved_variables)
             .map_err(|err| CompileError::SemanticError {
                 message: format!("Failed to compile constraint template: {}", err),
                 symbol: InternedSymbol::from_text(domain_name),
