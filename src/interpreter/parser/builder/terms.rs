@@ -79,7 +79,38 @@ impl<'a> AstBuilder<'a> {
                     ))
                 }
             }
-            Rule::path_term => Ok(Term::Variable(self.create_symbol_from_pair(&pair))),
+            Rule::path_term => {
+                // Extract the qualified path from the inner pair to get clean string without whitespace
+                let qualified_path_pair = pair.into_inner().next().unwrap(); // qualified_path
+                let qualified_path = self.build_qualified_path(qualified_path_pair)?;
+
+                // Semantic disambiguation: if this is a simple identifier (no ::) with no args,
+                // treat it as a variable instead of a compound construction
+                if let QualifiedPath::Relative(segments) = &qualified_path {
+                    if segments.len() == 1 {
+                        // Simple identifier - treat as variable
+                        Ok(Term::Variable(segments[0].clone()))
+                    } else {
+                        // Multi-segment qualified path - could be enum variant, treat as tuple struct construction
+                        Ok(Term::TupleStruct(
+                            TupleStructConstruction {
+                                name: qualified_path,
+                                args: vec![],
+                            },
+                            span,
+                        ))
+                    }
+                } else {
+                    // Non-relative qualified paths are always tuple struct constructions
+                    Ok(Term::TupleStruct(
+                        TupleStructConstruction {
+                            name: qualified_path,
+                            args: vec![],
+                        },
+                        span,
+                    ))
+                }
+            }
             Rule::parenthesized_term => Ok(Term::Parenthesized(
                 Box::new(self.build_term(pair.into_inner().next().unwrap())?),
                 span,

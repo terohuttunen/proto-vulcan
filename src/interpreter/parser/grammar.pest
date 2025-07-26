@@ -301,8 +301,8 @@ term = {
     named_variant_construction |
     tuple_struct_construction |
     parenthesized_term |
-    tuple_struct_construction_no_parens |
     path_term |
+    tuple_struct_construction_no_parens |
     variable
 }
 

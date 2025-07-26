@@ -164,7 +164,15 @@ impl<'a> SemanticAnalyzer<'a> {
     /// Analyze and potentially transform a term
     fn analyze_term(&mut self, term: &mut Term) -> Result<(), InterpreterError> {
         match term {
-            Term::Variable(_) | Term::Wildcard(_) | Term::Literal(_, _) => {
+            Term::Variable(name) => {
+                // Check if this Variable is actually a unit enum variant
+                if let Some(enum_variant) = self.try_disambiguate_variable_as_enum_variant(name)? {
+                    // Transform this Variable into an EnumVariant
+                    *term = Term::EnumVariant(enum_variant, name.span_ref().clone());
+                }
+                Ok(())
+            }
+            Term::Wildcard(_) | Term::Literal(_, _) => {
                 // These don't need disambiguation
                 Ok(())
             }
@@ -295,6 +303,45 @@ impl<'a> SemanticAnalyzer<'a> {
                 Ok(())
             }
         }
+    }
+
+    /// Try to disambiguate a Variable as a unit enum variant
+    /// Returns Some(EnumVariant) if the Variable should be a unit enum variant, None otherwise
+    fn try_disambiguate_variable_as_enum_variant(
+        &self,
+        variable_name: &InternedSymbol,
+    ) -> Result<Option<EnumVariantConstruction>, InterpreterError> {
+        // Check if the variable name contains "::" which indicates potential enum variant
+        if let Some((enum_name, variant_name)) = variable_name.to_string().rsplit_once("::") {
+            // Try to resolve the enum type
+            let env = self.environment.borrow();
+
+            // Try to lookup the enum type by name using the same approach as execution
+            // Drop the borrow before calling resolve_type_to_index to avoid borrow conflict
+            drop(env);
+            if let Ok(type_index) = self.resolve_type_to_index(enum_name) {
+                let env = self.environment.borrow();
+                if let Some(type_def) = env.get_type_by_index(type_index) {
+                    if let TypeDefinition::Enum(enum_def) = type_def {
+                        // Check if this variant exists in the enum and is a unit variant
+                        if let Some(variant_def) =
+                            enum_def.variants.iter().find(|v| v.name == variant_name)
+                        {
+                            // Only disambiguate unit variants (no arguments)
+                            if let VariantKind::Unit = &variant_def.kind {
+                                return Ok(Some(EnumVariantConstruction {
+                                    enum_name: InternedSymbol::from_text(enum_name),
+                                    variant_name: InternedSymbol::from_text(variant_name),
+                                    kind: EnumVariantConstructionKind::Unit,
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     /// Try to disambiguate a TupleStruct as an enum variant

@@ -501,35 +501,40 @@ mod interpreter_syntax_tests {
             struct Comment { post_id: Number, author: User, text: String }
             
             rel author_posted(user, post) {
-                Post {author: user, id: _, title: _} == post;
+                Post {author: user, id: _, title: _} == post
             }
             
             rel user_commented(user, comment) {
-                Comment {author: user, post_id: _, text: _} == comment;
+                Comment {author: user, post_id: _, text: _} == comment
             }
             
             rel same_author(post, comment) {
                 |author| {
-                    Post {author: author, id: _, title: _} == post,
-                    Comment {author: author, post_id: _, text: _} == comment
+                    author_posted(author, post),
+                    user_commented(author, comment)
                 }
             }
         "#;
 
         let parsed_program = parser::parse_str(program).expect("Failed to parse program");
         let mut interpreter = TestInterpreter::with_stdlib();
-        interpreter.load_program_ast(parsed_program).expect("Failed to load program");
+        match interpreter.load_program_ast(parsed_program) {
+            Ok(_) => {},
+            Err(e) => panic!("Failed to load program: {:?}", e)
+        }
         
         // Test complex pattern matching with nested structs
         let alice = r#"User {id: 1, name: "Alice"}"#;
         let post = format!(r#"Post {{id: 100, author: {}, title: "Hello World"}}"#, alice);
         let comment = format!(r#"Comment {{post_id: 100, author: {}, text: "Great post!"}}"#, alice);
         
-        let results1 = interpreter.query(&format!("author_posted({}, {})", alice, post), ExecutionConfig::default())
+        let query1 = format!("author_posted({}, {})", alice, post);
+        let results1 = interpreter.query(&query1, ExecutionConfig::default())
             .expect("Failed to execute author_posted query").collect_limited(100).unwrap_or_default();
         assert!(!results1.is_empty(), "Complex struct pattern matching should work");
         
-        let results2 = interpreter.query(&format!("same_author({}, {})", post, comment), ExecutionConfig::default())
+        let query2 = format!("same_author({}, {})", post, comment);
+        let results2 = interpreter.query(&query2, ExecutionConfig::default())
             .expect("Failed to execute same_author query").collect_limited(100).unwrap_or_default();
         assert!(!results2.is_empty(), "Complex struct unification should work");
     }

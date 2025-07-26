@@ -142,10 +142,12 @@ impl CompoundObject for RegistryNamedStruct {
     }
 
     fn children<'a>(&'a self) -> Box<dyn Iterator<Item = &'a dyn CompoundObject> + 'a> {
-        // Vec maintains definition order
+        // For named structs, sort fields by name to ensure consistent unification order
+        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
+        sorted_fields.sort_by_key(|(name, _)| name);
         Box::new(
-            self.fields
-                .iter()
+            sorted_fields
+                .into_iter()
                 .map(|(_, field)| field as &dyn CompoundObject),
         )
     }
@@ -185,7 +187,30 @@ impl CompoundWalkStar for RegistryNamedStruct {
 
 impl PartialEq for RegistryNamedStruct {
     fn eq(&self, other: &Self) -> bool {
-        self.type_id == other.type_id && self.fields == other.fields
+        // Type must match
+        if self.type_id != other.type_id {
+            return false;
+        }
+        
+        // Field count must match
+        if self.fields.len() != other.fields.len() {
+            return false;
+        }
+        
+        // For named structs, field order should not matter
+        // Check that all fields in self exist in other with same values
+        for (field_name, field_value) in &self.fields {
+            match other.fields.iter().find(|(name, _)| name == field_name) {
+                Some((_, other_value)) => {
+                    if field_value != other_value {
+                        return false;
+                    }
+                }
+                None => return false,
+            }
+        }
+        
+        true
     }
 }
 
@@ -194,8 +219,13 @@ impl Eq for RegistryNamedStruct {}
 impl Hash for RegistryNamedStruct {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.type_id.hash(state);
-        // Vec maintains definition order, hash in the same order
-        for (key, value) in &self.fields {
+        
+        // For named structs, field order should not matter in hash
+        // Sort fields by name to ensure consistent hash regardless of order
+        let mut sorted_fields: Vec<_> = self.fields.iter().collect();
+        sorted_fields.sort_by_key(|(name, _)| name);
+        
+        for (key, value) in sorted_fields {
             key.hash(state);
             value.hash(state);
         }

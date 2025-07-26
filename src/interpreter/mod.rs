@@ -25,6 +25,8 @@ mod runtime_value;
 mod semantic_analysis;
 #[cfg(test)]
 mod struct_tests;
+#[cfg(test)]
+mod debug_string_test;
 pub mod symbol_table;
 pub mod test_runner;
 pub mod trace;
