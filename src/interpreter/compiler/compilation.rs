@@ -503,7 +503,14 @@ impl Compiler {
     /// Compile an AST term to an IR term
     fn compile_term(&self, term: &ast::Term, ir_program: &ir::Program) -> Result<ir::Term, CompileError> {
         match term {
-            ast::Term::Variable(name) => Ok(ir::Term::Variable(name.clone())),
+            ast::Term::Variable(name) => {
+                // Check if this Variable is actually a unit enum variant
+                // This serves as a fallback for cases where semantic analysis wasn't performed
+                if let Some(enum_variant) = self.try_disambiguate_variable_as_enum_variant(name, ir_program)? {
+                    return self.compile_enum_variant_construction(&enum_variant, ir_program);
+                }
+                Ok(ir::Term::Variable(name.clone()))
+            }
 
             ast::Term::Wildcard(_span) => Ok(ir::Term::Wildcard),
 
@@ -731,24 +738,98 @@ impl Compiler {
             // Try to resolve the enum part as a type using IR registry
             if let Some(type_item_id) = self.resolve_local_symbol_with_kind(potential_enum_name, ir::ItemKind::Type, ir_program)
             {
-                // This is a type! Treat as enum variant with named fields
                 let enum_ref = ir::TypeId::new(type_item_id.path.clone());
                 
-                // Compile the fields as enum variant named fields
-                let mut ir_fields = Vec::new();
-                for field in &struct_construction.fields {
-                    let value = self.compile_term(&field.value, ir_program)?;
-                    ir_fields.push(ir::NamedFieldConstruction {
-                        name: field.name.clone(),
-                        value,
-                    });
+                // STRICT VALIDATION: Look up the actual enum definition to validate syntax
+                let type_def = ir_program.registry.get_type(&enum_ref)
+                    .ok_or_else(|| CompileError::UnresolvedType {
+                        attempted_item: enum_ref.clone(),
+                        symbol: InternedSymbol::from_text(potential_enum_name),
+                    })?;
+
+                // Extract enum definition and find the specific variant
+                let enum_def = match &type_def.kind {
+                    ir::TypeKind::Enum(enum_def) => enum_def,
+                    _ => return Err(CompileError::SemanticError {
+                        message: format!("'{}' is not an enum type", potential_enum_name),
+                        symbol: InternedSymbol::from_text(potential_enum_name),
+                    }),
+                };
+
+                let variant_def = enum_def.variants.iter()
+                    .find(|v| v.name.to_string() == potential_variant_name)
+                    .ok_or_else(|| CompileError::UnresolvedType {
+                        attempted_item: ir::TypeId::new(format!("{}::{}", potential_enum_name, potential_variant_name)),
+                        symbol: InternedSymbol::from_text(potential_variant_name),
+                    })?;
+
+                // STRICT VALIDATION: Ensure named syntax matches variant definition
+                match &variant_def.kind {
+                    // Unit variant: wrong syntax! Should use unit syntax
+                    ir::EnumVariantKind::Unit => {
+                        return Err(CompileError::SemanticError {
+                            message: format!(
+                                "Enum variant '{}::{}' is a unit variant and cannot use named field syntax. Correct syntax: '{}::{}'",
+                                potential_enum_name, potential_variant_name, potential_enum_name, potential_variant_name
+                            ),
+                            symbol: InternedSymbol::from_text(potential_variant_name),
+                        });
+                    }
+
+                    // Tuple variant: wrong syntax! Should use tuple syntax
+                    ir::EnumVariantKind::Tuple(expected_types) => {
+                        return Err(CompileError::SemanticError {
+                            message: format!(
+                                "Enum variant '{}::{}' is a tuple variant and requires tuple syntax with {} arguments. Correct syntax: '{}::{}(...)'",
+                                potential_enum_name, potential_variant_name, expected_types.len(), potential_enum_name, potential_variant_name
+                            ),
+                            symbol: InternedSymbol::from_text(potential_variant_name),
+                        });
+                    }
+
+                    // Named variant: correct syntax, validate fields
+                    ir::EnumVariantKind::Named(expected_fields) => {
+                        // Validate field count
+                        if struct_construction.fields.len() != expected_fields.len() {
+                            return Err(CompileError::SemanticError {
+                                message: format!(
+                                    "Enum variant '{}::{}' expects {} fields, found {}",
+                                    potential_enum_name, potential_variant_name, expected_fields.len(), struct_construction.fields.len()
+                                ),
+                                symbol: InternedSymbol::from_text(potential_variant_name),
+                            });
+                        }
+
+                        // Validate field names exist
+                        for field in &struct_construction.fields {
+                            if !expected_fields.iter().any(|ef| ef.name.to_string() == field.name.to_string()) {
+                                return Err(CompileError::SemanticError {
+                                    message: format!(
+                                        "Enum variant '{}::{}' has no field named '{}'", 
+                                        potential_enum_name, potential_variant_name, field.name.to_string()
+                                    ),
+                                    symbol: field.name.clone(),
+                                });
+                            }
+                        }
+
+                        // Compile the fields as enum variant named fields
+                        let mut ir_fields = Vec::new();
+                        for field in &struct_construction.fields {
+                            let value = self.compile_term(&field.value, ir_program)?;
+                            ir_fields.push(ir::NamedFieldConstruction {
+                                name: field.name.clone(),
+                                value,
+                            });
+                        }
+                        
+                        return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
+                            enum_ref,
+                            variant_name: InternedSymbol::from_text(potential_variant_name),
+                            kind: ir::EnumVariantConstructionKind::Named(ir_fields),
+                        }));
+                    }
                 }
-                
-                return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
-                    enum_ref,
-                    variant_name: InternedSymbol::from_text(potential_variant_name),
-                    kind: ir::EnumVariantConstructionKind::Named(ir_fields),
-                }));
             }
         }
         
@@ -799,27 +880,77 @@ impl Compiler {
                 // Try semantic disambiguation: look up the enum type in the IR registry
                 if let Some(enum_type_item) = ir_program.registry.get_type(&potential_enum_type_id) {
                     // Found the enum type! Check if it's actually an enum
-                    if matches!(enum_type_item.kind, ir::TypeKind::Enum(_)) {
-                        // This is an enum variant like Color::Red
-                        let enum_ref = potential_enum_type_id;
+                    if let ir::TypeKind::Enum(enum_def) = &enum_type_item.kind {
+                        // This is an enum type like Color - validate that the variant exists
+                        let variant_name_str = potential_variant_name.to_string();
                         
-                        // Compile the arguments as enum variant fields
-                        let mut ir_fields = Vec::new();
-                        for arg in &struct_construction.args {
-                            ir_fields.push(self.compile_term(arg, ir_program)?);
-                        }
-                        
-                        let kind = if ir_fields.is_empty() {
-                            ir::EnumVariantConstructionKind::Unit
-                        } else {
-                            ir::EnumVariantConstructionKind::Tuple(ir_fields)
-                        };
+                        // Check if this variant exists in the enum
+                        if let Some(variant_def) = enum_def.variants.iter().find(|v| v.name.to_string() == variant_name_str) {
+                            // STRICT VALIDATION: Ensure tuple syntax matches variant definition
+                            match &variant_def.kind {
+                                // Unit variant: must not have arguments
+                                ir::EnumVariantKind::Unit => {
+                                    if !struct_construction.args.is_empty() {
+                                        return Err(CompileError::SemanticError {
+                                            message: format!(
+                                                "Enum variant '{}::{}' is a unit variant and cannot take arguments. Found {} arguments, expected 0. Correct syntax: '{}::{}'",
+                                                enum_name_str, variant_name_str, struct_construction.args.len(), enum_name_str, variant_name_str
+                                            ),
+                                            symbol: potential_variant_name.clone(),
+                                        });
+                                    }
+                                    return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
+                                        enum_ref: potential_enum_type_id,
+                                        variant_name: potential_variant_name.clone(),
+                                        kind: ir::EnumVariantConstructionKind::Unit,
+                                    }));
+                                }
 
-                        return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
-                            enum_ref,
-                            variant_name: potential_variant_name.clone(),
-                            kind,
-                        }));
+                                // Tuple variant: correct syntax, validate arity
+                                ir::EnumVariantKind::Tuple(expected_types) => {
+                                    if struct_construction.args.len() != expected_types.len() {
+                                        return Err(CompileError::SemanticError {
+                                            message: format!(
+                                                "Enum variant '{}::{}' expects {} arguments, found {}",
+                                                enum_name_str, variant_name_str, expected_types.len(), struct_construction.args.len()
+                                            ),
+                                            symbol: potential_variant_name.clone(),
+                                        });
+                                    }
+
+                                    // Compile the arguments
+                                    let mut ir_fields = Vec::new();
+                                    for arg in &struct_construction.args {
+                                        ir_fields.push(self.compile_term(arg, ir_program)?);
+                                    }
+
+                                    return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
+                                        enum_ref: potential_enum_type_id,
+                                        variant_name: potential_variant_name.clone(),
+                                        kind: ir::EnumVariantConstructionKind::Tuple(ir_fields),
+                                    }));
+                                }
+
+                                // Named variant: wrong syntax! Should use named field syntax
+                                ir::EnumVariantKind::Named(expected_fields) => {
+                                    let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+                                    return Err(CompileError::SemanticError {
+                                        message: format!(
+                                            "Enum variant '{}::{}' is a named variant and requires named field syntax, not tuple syntax. Correct syntax: '{}::{} {{ {} }}'",
+                                            enum_name_str, variant_name_str, enum_name_str, variant_name_str,
+                                            field_names.iter().map(|name| format!("{}: ...", name)).collect::<Vec<_>>().join(", ")
+                                        ),
+                                        symbol: potential_variant_name.clone(),
+                                    });
+                                }
+                            }
+                        } else {
+                            // Found the enum but variant doesn't exist - this is an error
+                            return Err(CompileError::UnresolvedType {
+                                attempted_item: ir::TypeId::new(format!("{}::{}", enum_name_str, variant_name_str)),
+                                symbol: potential_variant_name.clone(),
+                            });
+                        }
                     } else {
                         // Found type but it's not an enum, continue to regular struct compilation
                     }
@@ -858,10 +989,66 @@ impl Compiler {
         let enum_ref = ir::TypeId::new(type_item_id.path.clone());
         let variant_name = enum_construction.variant_name.clone();
 
-        let kind = match &enum_construction.kind {
-            ast::EnumVariantConstructionKind::Unit => ir::EnumVariantConstructionKind::Unit,
+        // STRICT SEMANTIC VALIDATION: Look up the actual enum definition to validate syntax
+        let type_def = ir_program.registry.get_type(&enum_ref)
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: enum_ref.clone(),
+                symbol: enum_construction.enum_name.clone(),
+            })?;
 
-            ast::EnumVariantConstructionKind::Tuple(tuple_fields) => {
+        // Extract enum definition and find the specific variant
+        let enum_def = match &type_def.kind {
+            ir::TypeKind::Enum(enum_def) => enum_def,
+            _ => return Err(CompileError::SemanticError {
+                message: format!("'{enum_name}' is not an enum type"),
+                symbol: enum_construction.enum_name.clone(),
+            }),
+        };
+
+        let variant_def = enum_def.variants.iter()
+            .find(|v| v.name.to_string() == variant_name.to_string())
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: ir::TypeId::new(format!("{}::{}", enum_name, variant_name.to_string())),
+                symbol: variant_name.clone(),
+            })?;
+
+        // STRICT VALIDATION: Ensure construction syntax matches variant definition
+        let kind = match (&enum_construction.kind, &variant_def.kind) {
+            // Unit variant: must use unit syntax
+            (ast::EnumVariantConstructionKind::Unit, ir::EnumVariantKind::Unit) => {
+                ir::EnumVariantConstructionKind::Unit
+            }
+
+            // Unit variant with arguments: ERROR
+            (ast::EnumVariantConstructionKind::Tuple(_), ir::EnumVariantKind::Unit) |
+            (ast::EnumVariantConstructionKind::Named(_), ir::EnumVariantKind::Unit) => {
+                let args_count = match &enum_construction.kind {
+                    ast::EnumVariantConstructionKind::Tuple(args) => args.len(),
+                    ast::EnumVariantConstructionKind::Named(args) => args.len(),
+                    _ => 0,
+                };
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a unit variant and cannot take arguments. Found {} arguments, expected 0. Correct syntax: '{}::{}'",
+                        enum_name, variant_name.to_string(), args_count, enum_name, variant_name.to_string()
+                    ),
+                    symbol: variant_name.clone(),
+                });
+            }
+
+            // Tuple variant: must use tuple syntax
+            (ast::EnumVariantConstructionKind::Tuple(tuple_fields), ir::EnumVariantKind::Tuple(expected_types)) => {
+                // Validate arity
+                if tuple_fields.len() != expected_types.len() {
+                    return Err(CompileError::SemanticError {
+                        message: format!(
+                            "Enum variant '{}::{}' expects {} arguments, found {}",
+                            enum_name, variant_name.to_string(), expected_types.len(), tuple_fields.len()
+                        ),
+                        symbol: variant_name.clone(),
+                    });
+                }
+
                 let mut ir_fields = Vec::new();
                 for field in tuple_fields {
                     ir_fields.push(self.compile_term(field, ir_program)?);
@@ -869,7 +1056,53 @@ impl Compiler {
                 ir::EnumVariantConstructionKind::Tuple(ir_fields)
             }
 
-            ast::EnumVariantConstructionKind::Named(named_fields) => {
+            // Tuple variant with wrong syntax: ERROR
+            (ast::EnumVariantConstructionKind::Unit, ir::EnumVariantKind::Tuple(expected_types)) => {
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a tuple variant and requires {} arguments. Correct syntax: '{}::{}(...)'",
+                        enum_name, variant_name.to_string(), expected_types.len(), enum_name, variant_name.to_string()
+                    ),
+                    symbol: variant_name.clone(),
+                });
+            }
+
+            (ast::EnumVariantConstructionKind::Named(_), ir::EnumVariantKind::Tuple(expected_types)) => {
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a tuple variant and requires tuple syntax with {} arguments. Correct syntax: '{}::{}(...)'",
+                        enum_name, variant_name.to_string(), expected_types.len(), enum_name, variant_name.to_string()
+                    ),
+                    symbol: variant_name.clone(),
+                });
+            }
+
+            // Named variant: must use named syntax
+            (ast::EnumVariantConstructionKind::Named(named_fields), ir::EnumVariantKind::Named(expected_fields)) => {
+                // Validate field count
+                if named_fields.len() != expected_fields.len() {
+                    return Err(CompileError::SemanticError {
+                        message: format!(
+                            "Enum variant '{}::{}' expects {} fields, found {}",
+                            enum_name, variant_name.to_string(), expected_fields.len(), named_fields.len()
+                        ),
+                        symbol: variant_name.clone(),
+                    });
+                }
+
+                // Validate field names exist
+                for field in named_fields {
+                    if !expected_fields.iter().any(|ef| ef.name.to_string() == field.name.to_string()) {
+                        return Err(CompileError::SemanticError {
+                            message: format!(
+                                "Enum variant '{}::{}' has no field named '{}'", 
+                                enum_name, variant_name.to_string(), field.name.to_string()
+                            ),
+                            symbol: field.name.clone(),
+                        });
+                    }
+                }
+
                 let mut ir_fields = Vec::new();
                 for field in named_fields {
                     let value = self.compile_term(&field.value, ir_program)?;
@@ -879,6 +1112,31 @@ impl Compiler {
                     });
                 }
                 ir::EnumVariantConstructionKind::Named(ir_fields)
+            }
+
+            // Named variant with wrong syntax: ERROR
+            (ast::EnumVariantConstructionKind::Unit, ir::EnumVariantKind::Named(expected_fields)) => {
+                let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a named variant and requires named field syntax. Correct syntax: '{}::{} {{ {} }}'",
+                        enum_name, variant_name.to_string(), enum_name, variant_name.to_string(),
+                        field_names.iter().map(|name| format!("{}: ...", name)).collect::<Vec<_>>().join(", ")
+                    ),
+                    symbol: variant_name.clone(),
+                });
+            }
+
+            (ast::EnumVariantConstructionKind::Tuple(_), ir::EnumVariantKind::Named(expected_fields)) => {
+                let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a named variant and requires named field syntax, not tuple syntax. Correct syntax: '{}::{} {{ {} }}'",
+                        enum_name, variant_name.to_string(), enum_name, variant_name.to_string(),
+                        field_names.iter().map(|name| format!("{}: ...", name)).collect::<Vec<_>>().join(", ")
+                    ),
+                    symbol: variant_name.clone(),
+                });
             }
         };
 
@@ -1074,10 +1332,66 @@ impl Compiler {
         let enum_ref = ir::TypeId::new(type_item_id.path.clone());
         let variant_name = enum_pattern.variant_name.clone();
 
-        let kind = match &enum_pattern.kind {
-            ast::EnumVariantPatternKind::Unit => ir::EnumVariantPatternKind::Unit,
+        // STRICT SEMANTIC VALIDATION: Look up the actual enum definition to validate pattern syntax
+        let type_def = ir_program.registry.get_type(&enum_ref)
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: enum_ref.clone(),
+                symbol: enum_pattern.enum_name.clone(),
+            })?;
 
-            ast::EnumVariantPatternKind::Tuple(tuple_patterns) => {
+        // Extract enum definition and find the specific variant
+        let enum_def = match &type_def.kind {
+            ir::TypeKind::Enum(enum_def) => enum_def,
+            _ => return Err(CompileError::SemanticError {
+                message: format!("'{enum_name}' is not an enum type"),
+                symbol: enum_pattern.enum_name.clone(),
+            }),
+        };
+
+        let variant_def = enum_def.variants.iter()
+            .find(|v| v.name.to_string() == variant_name.to_string())
+            .ok_or_else(|| CompileError::UnresolvedType {
+                attempted_item: ir::TypeId::new(format!("{}::{}", enum_name, variant_name.to_string())),
+                symbol: variant_name.clone(),
+            })?;
+
+        // STRICT VALIDATION: Ensure pattern syntax matches variant definition
+        let kind = match (&enum_pattern.kind, &variant_def.kind) {
+            // Unit variant: must use unit pattern syntax
+            (ast::EnumVariantPatternKind::Unit, ir::EnumVariantKind::Unit) => {
+                ir::EnumVariantPatternKind::Unit
+            }
+
+            // Unit variant with pattern arguments: ERROR
+            (ast::EnumVariantPatternKind::Tuple(_), ir::EnumVariantKind::Unit) |
+            (ast::EnumVariantPatternKind::Named(_), ir::EnumVariantKind::Unit) => {
+                let patterns_count = match &enum_pattern.kind {
+                    ast::EnumVariantPatternKind::Tuple(patterns) => patterns.len(),
+                    ast::EnumVariantPatternKind::Named(patterns) => patterns.len(),
+                    _ => 0,
+                };
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a unit variant and cannot take pattern arguments. Found {} patterns, expected 0. Correct syntax: '{}::{}'",
+                        enum_name, variant_name.to_string(), patterns_count, enum_name, variant_name.to_string()
+                    ),
+                    symbol: variant_name.clone(),
+                });
+            }
+
+            // Tuple variant: must use tuple pattern syntax
+            (ast::EnumVariantPatternKind::Tuple(tuple_patterns), ir::EnumVariantKind::Tuple(expected_types)) => {
+                // Validate arity
+                if tuple_patterns.len() != expected_types.len() {
+                    return Err(CompileError::SemanticError {
+                        message: format!(
+                            "Enum variant '{}::{}' expects {} pattern arguments, found {}",
+                            enum_name, variant_name.to_string(), expected_types.len(), tuple_patterns.len()
+                        ),
+                        symbol: variant_name.clone(),
+                    });
+                }
+
                 let mut ir_patterns = Vec::new();
                 for pattern in tuple_patterns {
                     ir_patterns.push(self.compile_pattern(pattern, ir_program)?);
@@ -1085,7 +1399,53 @@ impl Compiler {
                 ir::EnumVariantPatternKind::Tuple(ir_patterns)
             }
 
-            ast::EnumVariantPatternKind::Named(named_patterns) => {
+            // Tuple variant with wrong pattern syntax: ERROR
+            (ast::EnumVariantPatternKind::Unit, ir::EnumVariantKind::Tuple(expected_types)) => {
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a tuple variant and requires {} pattern arguments. Correct syntax: '{}::{}(...)'",
+                        enum_name, variant_name.to_string(), expected_types.len(), enum_name, variant_name.to_string()
+                    ),
+                    symbol: variant_name.clone(),
+                });
+            }
+
+            (ast::EnumVariantPatternKind::Named(_), ir::EnumVariantKind::Tuple(expected_types)) => {
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a tuple variant and requires tuple pattern syntax with {} arguments. Correct syntax: '{}::{}(...)'",
+                        enum_name, variant_name.to_string(), expected_types.len(), enum_name, variant_name.to_string()
+                    ),
+                    symbol: variant_name.clone(),
+                });
+            }
+
+            // Named variant: must use named pattern syntax
+            (ast::EnumVariantPatternKind::Named(named_patterns), ir::EnumVariantKind::Named(expected_fields)) => {
+                // Validate field count
+                if named_patterns.len() != expected_fields.len() {
+                    return Err(CompileError::SemanticError {
+                        message: format!(
+                            "Enum variant '{}::{}' expects {} field patterns, found {}",
+                            enum_name, variant_name.to_string(), expected_fields.len(), named_patterns.len()
+                        ),
+                        symbol: variant_name.clone(),
+                    });
+                }
+
+                // Validate field names exist
+                for field_pattern in named_patterns {
+                    if !expected_fields.iter().any(|ef| ef.name.to_string() == field_pattern.name.to_string()) {
+                        return Err(CompileError::SemanticError {
+                            message: format!(
+                                "Enum variant '{}::{}' has no field named '{}'", 
+                                enum_name, variant_name.to_string(), field_pattern.name.to_string()
+                            ),
+                            symbol: field_pattern.name.clone(),
+                        });
+                    }
+                }
+
                 let mut ir_patterns = Vec::new();
                 for field_pattern in named_patterns {
                     let pattern = self.compile_pattern(&field_pattern.pattern, ir_program)?;
@@ -1095,6 +1455,31 @@ impl Compiler {
                     });
                 }
                 ir::EnumVariantPatternKind::Named(ir_patterns)
+            }
+
+            // Named variant with wrong pattern syntax: ERROR
+            (ast::EnumVariantPatternKind::Unit, ir::EnumVariantKind::Named(expected_fields)) => {
+                let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a named variant and requires named field pattern syntax. Correct syntax: '{}::{} {{ {} }}'",
+                        enum_name, variant_name.to_string(), enum_name, variant_name.to_string(),
+                        field_names.iter().map(|name| format!("{}: ...", name)).collect::<Vec<_>>().join(", ")
+                    ),
+                    symbol: variant_name.clone(),
+                });
+            }
+
+            (ast::EnumVariantPatternKind::Tuple(_), ir::EnumVariantKind::Named(expected_fields)) => {
+                let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+                return Err(CompileError::SemanticError {
+                    message: format!(
+                        "Enum variant '{}::{}' is a named variant and requires named field pattern syntax, not tuple syntax. Correct syntax: '{}::{} {{ {} }}'",
+                        enum_name, variant_name.to_string(), enum_name, variant_name.to_string(),
+                        field_names.iter().map(|name| format!("{}: ...", name)).collect::<Vec<_>>().join(", ")
+                    ),
+                    symbol: variant_name.clone(),
+                });
             }
         };
 
@@ -1306,5 +1691,46 @@ impl Compiler {
     /// These types are handled internally by the compiler and not registered in the IR registry
     fn is_builtin_type(type_name: &str) -> bool {
         matches!(type_name, "Bool" | "Number" | "Char" | "String")
+    }
+
+    /// Try to disambiguate a Variable as a unit enum variant (IR compiler fallback)
+    /// Returns Some(EnumVariantConstruction) if the Variable should be a unit enum variant, None otherwise
+    fn try_disambiguate_variable_as_enum_variant(
+        &self,
+        variable_name: &InternedSymbol,
+        ir_program: &ir::Program,
+    ) -> Result<Option<ast::EnumVariantConstruction>, CompileError> {
+        // Check if the variable name contains "::" which indicates potential enum variant
+        if let Some((enum_name, variant_name)) = variable_name.to_string().rsplit_once("::") {
+            // Try to resolve the enum type using IR registry
+            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(enum_name, ir::ItemKind::Type, ir_program) {
+                let type_id = ir::TypeId::new(type_item_id.path.clone());
+                
+                // Check if this type exists and is an enum
+                if let Some(type_def) = ir_program.registry.get_type(&type_id) {
+                    if let ir::TypeKind::Enum(enum_def) = &type_def.kind {
+                        // Check if this variant exists in the enum and is a unit variant
+                        if let Some(variant_def) = enum_def.variants.iter().find(|v| v.name.to_string() == variant_name) {
+                            // Only disambiguate unit variants (no arguments)
+                            if let ir::EnumVariantKind::Unit = &variant_def.kind {
+                                return Ok(Some(ast::EnumVariantConstruction {
+                                    enum_name: InternedSymbol::from_text(enum_name),
+                                    variant_name: InternedSymbol::from_text(variant_name),
+                                    kind: ast::EnumVariantConstructionKind::Unit,
+                                }));
+                            }
+                        } else {
+                            // Found the enum but variant doesn't exist - this is an error
+                            return Err(CompileError::UnresolvedType {
+                                attempted_item: ir::TypeId::new(format!("{}::{}", enum_name, variant_name)),
+                                symbol: InternedSymbol::from_text(variant_name),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(None)
     }
 }
