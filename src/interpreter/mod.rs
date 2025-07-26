@@ -246,9 +246,8 @@ impl From<compiler::errors::CompileError> for InterpreterError {
 /// The main interpreter struct
 pub struct Interpreter {
     pub environment: Rc<RefCell<Environment>>,
-    /// Base program stored for query execution (cloned for each execution)
-    /// This is never accessed at runtime - always cloned first
-    pub base_program: Option<compiler::ir::Program>,
+    /// Base program stored for query execution using copy-on-write semantics
+    pub base_program: Option<Rc<compiler::ir::Program>>,
 }
 
 impl Interpreter {
@@ -279,7 +278,7 @@ impl Interpreter {
     }
 
     /// Get a reference to the base program
-    pub fn base_program(&self) -> Option<&compiler::ir::Program> {
+    pub fn base_program(&self) -> Option<&Rc<compiler::ir::Program>> {
         self.base_program.as_ref()
     }
 
@@ -442,8 +441,8 @@ impl Interpreter {
         let predicate_count = 0; // TODO: Get actual count from ir_program.registry  
         let type_count = 0; // TODO: Get actual count from ir_program.registry
         
-        // Store as base program
-        self.base_program = Some(ir_program);
+        // Store as base program wrapped in Rc for copy-on-write semantics
+        self.base_program = Some(Rc::new(ir_program));
         
         Ok(LoadResult {
             compilation_time,
@@ -487,8 +486,8 @@ impl Interpreter {
         let ir_program = self.compile_program_with_config(program_ast, &config)?;
         let compilation_time = start_time.elapsed();
         
-        // Store as base program
-        self.base_program = Some(ir_program);
+        // Store as base program wrapped in Rc for copy-on-write semantics
+        self.base_program = Some(Rc::new(ir_program));
         
         Ok(LoadResult {
             compilation_time,
@@ -567,17 +566,22 @@ impl Interpreter {
         let base_program = self.base_program.as_ref()
             .ok_or_else(|| InterpreterError::RuntimeError("No base program loaded. Call load_program() first.".to_string()))?;
 
-        // Clone base program for this execution (cheap due to Rc/im-rc)
-        let mut runtime_program = base_program.clone();
-
         // Parse query
         let query_goal = query::parse_query(query)?;
 
-        // Compile query into the runtime program
-        self.compile_query_into_runtime_program(&mut runtime_program, query_goal, &config)?;
+        // Convert ExecutionConfig to QueryConfig
+        let query_config = query::QueryConfig {
+            timeout: config.timeout,
+            trace: config.trace,
+        };
 
-        // Execute with runtime program
-        self.execute_with_runtime_program(runtime_program, "__query__", config)
+        // Use unified execute_query_ir with reification
+        query::execute_query_ir(
+            base_program.clone(),
+            self.environment.clone(),
+            query_goal,
+            query_config,
+        )
     }
 
     /// Execute a program with a specific query (no pre-loading required)
@@ -593,13 +597,21 @@ impl Interpreter {
         let query_goal = query::parse_query(query)?;
 
         // Compile program
-        let mut runtime_program = self.compile_program_with_config(program_ast, &config)?;
+        let runtime_program = self.compile_program_with_config(program_ast, &config)?;
 
-        // Compile query into the program
-        self.compile_query_into_runtime_program(&mut runtime_program, query_goal, &config)?;
+        // Convert ExecutionConfig to QueryConfig
+        let query_config = query::QueryConfig {
+            timeout: config.timeout,
+            trace: config.trace,
+        };
 
-        // Execute
-        self.execute_with_runtime_program(runtime_program, "__query__", config)
+        // Use unified execute_query_ir with reification
+        query::execute_query_ir(
+            Rc::new(runtime_program),
+            self.environment.clone(),
+            query_goal,
+            query_config,
+        )
     }
 
     /// Execute a program's @main relation
@@ -622,13 +634,21 @@ impl Interpreter {
         let main_query_goal = query::parse_query(&main_query_str)?;
 
         // Compile program
-        let mut runtime_program = self.compile_program_with_config(program_ast, &config)?;
+        let runtime_program = self.compile_program_with_config(program_ast, &config)?;
 
-        // Compile main query into the program
-        self.compile_query_into_runtime_program(&mut runtime_program, main_query_goal, &config)?;
+        // Convert ExecutionConfig to QueryConfig
+        let query_config = query::QueryConfig {
+            timeout: config.timeout,
+            trace: config.trace,
+        };
 
-        // Execute
-        self.execute_with_runtime_program(runtime_program, "__query__", config)
+        // Use unified execute_query_ir with reification
+        query::execute_query_ir(
+            Rc::new(runtime_program),
+            self.environment.clone(),
+            main_query_goal,
+            query_config,
+        )
     }
 
     /// Execute tests in a program
@@ -743,78 +763,7 @@ impl Interpreter {
             .map_err(|e| InterpreterError::RuntimeError(format!("Compilation failed: {:?}", e)))
     }
 
-    /// Internal method to compile a query into a runtime program
-    fn compile_query_into_runtime_program(
-        &self,
-        runtime_program: &mut compiler::ir::Program,
-        query_goal: ast::Goal,
-        _config: &ExecutionConfig,
-    ) -> Result<(), InterpreterError> {
-        // Compile the query into the runtime program
-        
-        // Use the improved add_query_to_program method that doesn't require AST conversion
-        let final_program = compiler::Compiler::add_query_to_program(
-            runtime_program.clone(), 
-            query_goal
-        ).map_err(|e| InterpreterError::RuntimeError(format!("Query compilation failed: {:?}", e)))?;
-        
-        *runtime_program = final_program;
-        Ok(())
-    }
 
-    /// Internal method to execute with a runtime program
-    fn execute_with_runtime_program(
-        &self,
-        runtime_program: compiler::ir::Program,
-        query_predicate_name: &str,
-        config: ExecutionConfig,
-    ) -> Result<QueryResultIterator, InterpreterError> {
-        // Create execution context with runtime program
-        let mut execution_context = runtime::context::ExecutionContext::new(
-            Rc::new(runtime_program), 
-            self.environment.clone()
-        );
-
-        // Extract query predicate
-        let query_predicate_id = compiler::ir::PredicateId::new(format!("::{}", query_predicate_name));
-        let query_predicate = execution_context.program().registry.get_predicate(&query_predicate_id)
-            .ok_or_else(|| InterpreterError::RuntimeError(format!("Query predicate '{}' not found", query_predicate_name)))?
-            .clone();
-
-        // Create solver
-        let user_state = DefaultUser::default();
-        let user_globals = <DefaultUser as crate::user::User>::UserContext::default();
-        let mut solver = crate::solver::Solver::new(user_globals, false);
-
-        // Set timeout if configured
-        if let Some(timeout_ms) = config.timeout {
-            solver.set_timeout(std::time::Instant::now(), timeout_ms);
-        }
-
-        // Create initial state and stream
-        let initial_state = crate::state::State::new(user_state);
-        
-        // Create captured arguments for query predicate parameters
-        let captured_args: Vec<runtime::context::ArgumentValue> = query_predicate.parameters.iter()
-            .map(|param| {
-                let named_var = execution_context.create_named_fresh_var(&param.name);
-                execution_context.bind_var(param.name.clone(), named_var.clone());
-                runtime::context::ArgumentValue::Relational(named_var)
-            })
-            .collect();
-
-        // Create predicate closure and execute
-        let predicate_closure = runtime::context::PredicateClosure::new(
-            Rc::new(query_predicate),
-            captured_args,
-            Rc::new(execution_context.program().clone()),
-            self.environment.clone(),
-        );
-
-        let stream = predicate_closure.expand_and_solve(&solver, initial_state);
-
-        Ok(QueryResultIterator::new(solver, stream, config))
-    }
 
     // ===== BACKWARD COMPATIBILITY METHODS =====
 

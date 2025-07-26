@@ -70,166 +70,29 @@ pub fn execute_query_ir(
     environment: Rc<RefCell<Environment>>,
     query: Goal,
     config: QueryConfig,
-) -> Result<Vec<QueryResult>, InterpreterError> {
-    use super::parser::ast;
-    use super::compiler::Compiler;
-    use super::runtime::context::{PredicateClosure, ArgumentValue};
-    use crate::interpreter::symbol_table::InternedSymbol;
-    
-    // Step 1: Extract variables from the query for later result collection
-    let query_vars = extract_variables_from_goal(&query);
-    
-    // Step 2: Create a temporary AST program with the query as a predicate body
-    // Note: We need to import the existing program so the query can reference its predicates
-    let query_predicate_name = InternedSymbol::from("__query__".to_string());
-    let query_parameters: Vec<ast::Parameter> = query_vars.iter()
-        .map(|var_name| ast::Parameter {
-            name: InternedSymbol::from(var_name.clone()),
-            type_annotation: None,
-        })
-        .collect();
-    
-    let query_predicate = ast::PredicateDefinition {
-        visibility: ast::Visibility::Private,
-        predicate_kind: ast::PredicateKind::Relation,
-        attributes: vec![],
-        name: query_predicate_name.clone(),
-        parameters: query_parameters,
-        search_strategy: None,
-        body: vec![query.clone()],
-        span: ast::Location::dummy(),
+) -> Result<super::iterator::QueryResultIterator, InterpreterError> {
+    // Convert QueryConfig to ExecutionConfig
+    let debug_enabled = config.trace.is_some();
+    let execution_config = super::ExecutionConfig {
+        timeout: config.timeout,
+        trace: config.trace,
+        debug_enabled,
+        ..Default::default()
     };
     
-    // Step 3: Add the query directly to the existing IR program without AST conversion
-    let query_ir_program = Compiler::add_query_to_program(
-        (*ir_program).clone(), // Clone the base program  
-        query.clone()
-    ).map_err(|e| {
-        InterpreterError::RuntimeError(format!("Query compilation failed: {:?}", e))
-    })?;
-    
-    // Step 4: Extract the query predicate from the compiled IR program
-    let query_predicate_id = super::compiler::ir::PredicateId::new("::__query__");
-    let query_ir_predicate = query_ir_program.registry.get_predicate(&query_predicate_id)
-        .ok_or_else(|| InterpreterError::RuntimeError("Failed to find compiled query predicate".to_string()))?
-        .clone();
-    
-    // Step 5: Create argument values for the query variables (all relational, no meta)
-    let mut execution_context = ExecutionContext::new(Rc::new(query_ir_program), environment.clone());
-    
-    // Provide base program access for predicate resolution during closure execution
-    execution_context.set_base_program(ir_program.clone());
-    let captured_args: Vec<ArgumentValue> = query_vars.iter()
-        .map(|var_name| {
-            let fresh_var = execution_context.create_fresh_var();
-            let symbol = InternedSymbol::from(var_name.clone());
-            execution_context.bind_var(symbol, fresh_var.clone());
-            ArgumentValue::Relational(fresh_var)
-        })
-        .collect();
-    
-    // Step 6: Create predicate closure for the query
-    // Use the original IR program as context for predicate resolution
-    let query_closure = PredicateClosure::new(
-        Rc::new(query_ir_predicate),
-        captured_args,
-        ir_program.clone(),
+    // Use the new reification-aware iterator constructor
+    super::iterator::QueryResultIterator::new_ir_reified(
+        ir_program,
         environment,
-    );
-    
-    // Step 7: Create solver and execute the query closure
-    let user_state = DefaultUser::default();
-    let user_globals = <DefaultUser as User>::UserContext::default();
-    let mut solver = crate::solver::Solver::new(user_globals, false);
-    
-    // Set timeout if provided
-    if let Some(timeout_ms) = config.timeout {
-        let start_time = std::time::Instant::now();
-        solver.set_timeout(start_time, timeout_ms);
-    }
-    
-    // Set the IR program in the solver for deferred relation calls
-    solver.set_program(ir_program);
-    
-    let initial_state = crate::state::State::new(user_state);
-    
-    // Get variable bindings for reification
-    let variable_bindings = execution_context.get_variable_bindings();
-    
-    // Execute the query closure with reification (like macro does)
-    // First get the original query stream
-    let original_stream = query_closure.expand_and_solve(&solver, initial_state);
-    
-    // For now, we'll implement a simpler approach by adding reification to each solution
-    // rather than trying to modify the goal structure before execution
-    // TODO: This can be optimized later by creating a compound goal
-    let mut results = Vec::new();
-    let mut stream = original_stream;
-    
-    // Collect up to 100 results (to prevent infinite loops)
-    let max_results = 100;
-    let mut result_count = 0;
-    
-    while result_count < max_results {
-        match solver.next(&mut stream) {
-            crate::solver::SolverResult::Solution(state_box) => {
-                let state = &*state_box;
-                
-                // Apply reification to each query variable (like macro does)
-                use crate::state::reify;
-                use crate::goal::AnyGoal;
-                
-                for (var_name, var_term) in &variable_bindings {
-                    // Create reification goal for this variable
-                    let reify_goal = reify(var_term.clone());
-                    let reified_stream = reify_goal.solve(&solver, (*state_box).clone());
-                    
-                    // Process reified solutions for this variable
-                    let mut reified_stream = reified_stream;
-                    
-                    // Collect reified solutions for this variable
-                    while let Some(reified_state_box) = {
-                        match solver.next(&mut reified_stream) {
-                            crate::solver::SolverResult::Solution(s) => Some(s),
-                            _ => None,
-                        }
-                    } {
-                        let reified_state = &*reified_state_box;
-                        let reified_smap = reified_state.smap_ref();
-                        let reified_resolved_term = reified_smap.walk_star(var_term);
-                        let reified_purified_cstore = reified_state.cstore_ref().clone().purify(reified_smap);
-                        let reified_reified_cstore = Rc::new(reified_purified_cstore.walk_star(reified_smap));
-                        let reified_result_with_constraints = LResult(reified_resolved_term, Rc::clone(&reified_reified_cstore));
-                        
-                        // Create a result for each reified solution
-                        let mut variable_query_result = QueryResult::new();
-                        variable_query_result.bindings.insert(var_name.clone(), reified_result_with_constraints);
-                        results.push(variable_query_result);
-                        result_count += 1;
-                        
-                        if result_count >= max_results {
-                            break;
-                        }
-                    }
-                    
-                    if result_count >= max_results {
-                        break;
-                    }
-                }
-            }
-            crate::solver::SolverResult::NoMoreSolutions => break,
-            crate::solver::SolverResult::Timeout => break,
-            crate::solver::SolverResult::Error(_) => break,
-        }
-    }
-    
-    Ok(results)
+        query,
+        execution_config,
+    )
 }
 
 
 
 /// Extract variable names from a goal AST
-fn extract_variables_from_goal(goal: &Goal) -> Vec<String> {
+pub fn extract_variables_from_goal(goal: &Goal) -> Vec<String> {
     let mut vars = Vec::new();
     extract_variables_from_goal_recursive(goal, &mut vars);
     vars.sort();

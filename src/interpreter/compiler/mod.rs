@@ -108,9 +108,9 @@ impl Compiler {
     
     /// Add a query directly to an existing IR program without AST conversion
     pub fn add_query_to_program(
-        mut base_program: ir::Program, 
+        mut base_program: std::rc::Rc<ir::Program>, 
         query: ast::Goal
-    ) -> Result<ir::Program, CompileError> {
+    ) -> Result<std::rc::Rc<ir::Program>, CompileError> {
         use crate::interpreter::symbol_table::InternedSymbol;
         
         // Create a temporary compiler for goal compilation with base program context
@@ -141,7 +141,9 @@ impl Compiler {
         };
         
         // Add the query predicate directly to the existing IR program
-        let registry = base_program.registry_mut();
+        // Use Rc::make_mut to get mutable access (only clones if there are other references)
+        let program_mut = std::rc::Rc::make_mut(&mut base_program);
+        let registry = program_mut.registry_mut();
         registry.add_predicate(query_predicate);
         
         Ok(base_program)

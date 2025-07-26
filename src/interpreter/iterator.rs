@@ -45,6 +45,106 @@ impl QueryResultIterator {
         }
     }
 
+    /// Create a new query result iterator for IR-based queries with reification
+    pub fn new_ir_reified(
+        ir_program: std::rc::Rc<super::compiler::ir::Program>,
+        environment: std::rc::Rc<std::cell::RefCell<super::environment::Environment>>,
+        query: super::parser::ast::Goal,
+        config: ExecutionConfig,
+    ) -> Result<Self, InterpreterError> {
+        use super::parser::ast;
+        use super::compiler::Compiler;
+        use super::runtime::context::{PredicateClosure, ArgumentValue, ExecutionContext};
+        use crate::interpreter::symbol_table::InternedSymbol;
+        use crate::user::{DefaultUser, User};
+
+        // Step 1: Extract variables from the query for later result collection
+        let query_vars = super::query::extract_variables_from_goal(&query);
+        
+        // Step 2: Add the query directly to the existing IR program without AST conversion
+        // Use Rc clone for copy-on-write behavior (only clones if there are other references in add_query_to_program)
+        let query_ir_program_rc = Compiler::add_query_to_program(
+            ir_program.clone(),
+            query.clone()
+        ).map_err(|e| {
+            InterpreterError::RuntimeError(format!("Query compilation failed: {:?}", e))
+        })?;
+        let query_predicate_id = super::compiler::ir::PredicateId::new("::__query__");
+        let query_ir_predicate = query_ir_program_rc.registry.get_predicate(&query_predicate_id)
+            .ok_or_else(|| InterpreterError::RuntimeError("Failed to find compiled query predicate".to_string()))?
+            .clone();
+        
+        // Step 4: Create argument values for the query variables (all relational, no meta)
+        let mut execution_context = ExecutionContext::new(query_ir_program_rc.clone(), environment.clone());
+        
+        // The query_ir_program already contains the base program, so use it for predicate resolution
+        execution_context.set_base_program(query_ir_program_rc.clone());
+        let captured_args: Vec<ArgumentValue> = query_vars.iter()
+            .map(|var_name| {
+                let fresh_var = execution_context.create_named_fresh_var(var_name);
+                let symbol = InternedSymbol::from(var_name.clone());
+                execution_context.bind_var(symbol, fresh_var.clone());
+                ArgumentValue::Relational(fresh_var)
+            })
+            .collect();
+        
+        // Step 5: Create predicate closure for the query
+        let query_closure = PredicateClosure::new(
+            std::rc::Rc::new(query_ir_predicate),
+            captured_args,
+            query_ir_program_rc.clone(),
+            environment,
+        );
+        
+        // Step 6: Create final goal from query closure first
+        use crate::goal::{Goal, AnyGoal};
+        use crate::operator::conj::Conj;
+        let mut final_goal: Goal = Goal::LazyMacro(std::rc::Rc::new(query_closure));
+        
+        // Step 7: Build conj-pair list of reification goals directly
+        let variable_bindings = execution_context.get_all_variable_bindings();
+        
+        for var_name in &query_vars {
+            let symbol = InternedSymbol::from(var_name.clone());
+            if let Some(variable_value) = variable_bindings.get(&symbol) {
+                if let super::runtime::context::VariableValue::Relational(var_term) = variable_value {
+                    use crate::state::reify;
+                    let reify_goal = reify(var_term.clone());
+                    // Build conj pair: current_goal AND reify_goal 
+                    final_goal = Conj::new(reify_goal, final_goal);
+                }
+            }
+        }
+        
+        // Step 8: Create solver and execute the combined goal
+        let user_state = DefaultUser::default();
+        let user_globals = <DefaultUser as User>::UserContext::default();
+        let mut solver = crate::solver::Solver::new(user_globals, false);
+        
+        // Set timeout if provided
+        if let Some(timeout_ms) = config.timeout {
+            let start_time = std::time::Instant::now();
+            solver.set_timeout(start_time, timeout_ms);
+        }
+        
+        // Set the IR program in the solver for deferred relation calls
+        solver.set_program(query_ir_program_rc.clone());
+        
+        let initial_state = crate::state::State::new(user_state);
+        
+        // Execute the combined goal (query + reification)
+        let stream = final_goal.solve(&solver, initial_state);
+        
+        // Create iterator 
+        Ok(Self {
+            solver,
+            stream,
+            config,
+            result_count: 0,
+            start_time: std::time::Instant::now(),
+        })
+    }
+
     /// Get the current number of results yielded
     pub fn result_count(&self) -> usize {
         self.result_count
