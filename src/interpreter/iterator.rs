@@ -77,6 +77,14 @@ impl QueryResultIterator {
         // Step 4: Create argument values for the query variables (all relational, no meta)
         let mut execution_context = ExecutionContext::new(query_ir_program_rc.clone(), environment.clone());
         
+        // Debug: Show what predicates are available in the query IR program (disabled)
+        // println!("DEBUG: Query IR program has {} items", query_ir_program_rc.registry.all_items().count());
+        // for item in query_ir_program_rc.registry.all_items() {
+        //     if let super::compiler::ir::Item::Predicate(predicate) = item {
+        //         println!("DEBUG: Available predicate: {}", predicate.id.as_ref().path);
+        //     }
+        // }
+        
         // The query_ir_program already contains the base program, so use it for predicate resolution
         execution_context.set_base_program(query_ir_program_rc.clone());
         let captured_args: Vec<ArgumentValue> = query_vars.iter()

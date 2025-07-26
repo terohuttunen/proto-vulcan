@@ -233,17 +233,22 @@ impl ExecutionContext {
 
     /// Lookup a predicate in current program, base program, or builtins
     fn lookup_predicate(&self, predicate_id: &ir::PredicateId) -> Result<PredicateLocation, CompileError> {
+        // println!("DEBUG: Looking up predicate: {}", predicate_id.as_ref().path);
+        
         // Try current program first
         if let Some(predicate_item) = self.program.registry.get_item(predicate_id) {
             if let ir::Item::Predicate(predicate) = predicate_item {
+                // println!("DEBUG: Found predicate '{}' in current program", predicate_id.as_ref().path);
                 return Ok(PredicateLocation::IR(predicate.clone(), self.program.clone()));
             }
         }
         
         // Try base program if available  
         if let Some(base_program) = &self.base_program {
+            // println!("DEBUG: Trying base program with {} items", base_program.registry.all_items().count());
             if let Some(predicate_item) = base_program.registry.get_item(predicate_id) {
                 if let ir::Item::Predicate(predicate) = predicate_item {
+                    // println!("DEBUG: Found predicate '{}' in base program", predicate_id.as_ref().path);
                     return Ok(PredicateLocation::IR(predicate.clone(), base_program.clone()));
                 }
             }
@@ -254,6 +259,7 @@ impl ExecutionContext {
         let env = self.environment.borrow();
         if let Some(runtime_value) = env.lookup(&predicate_name) {
             if let crate::interpreter::runtime_value::RuntimeValue::BuiltinRelation { func, arity } = runtime_value {
+                // println!("DEBUG: Found predicate '{}' as builtin", predicate_name);
                 return Ok(PredicateLocation::Builtin(func.clone(), *arity));
             }
         }
@@ -998,43 +1004,58 @@ impl ExecutionContext {
         term: LTerm,
     ) -> Result<Goal, CompileError> {
         let mut goals = Vec::new();
-
+        
+        // If this is an empty list pattern [], just unify with empty list
+        if list_pattern.elements.is_empty() && list_pattern.tail.is_none() {
+            goals.push(crate::relation::eq::eq(term, LTerm::empty_list()).cast_into());
+            return Ok(self.build_conjunction(goals));
+        }
+        
         // Create fresh variables for list elements
         let mut element_vars = Vec::new();
         for _ in &list_pattern.elements {
             element_vars.push(self.create_fresh_var());
         }
-
+        
         // Handle tail if present
         let tail_var = if list_pattern.tail.is_some() {
             Some(self.create_fresh_var())
         } else {
             None
         };
-
-        // Create list construction term to match against
+        
+        // Create proper cons cell structure for pattern matching
         let list_term = if let Some(tail) = &tail_var {
-            // List with tail - for now create regular list (TODO: proper tail support)
-            LTerm::from_vec(element_vars.clone())
+            // Build cons structure: [a, b | rest] becomes cons(a, cons(b, rest))
+            let mut result = tail.clone();
+            for element_var in element_vars.iter().rev() {
+                result = LTerm::cons(element_var.clone(), result);
+            }
+            result
         } else {
-            LTerm::from_vec(element_vars.clone())
+            // Build cons structure ending with empty list: [a, b] becomes cons(a, cons(b, []))
+            let mut result = LTerm::empty_list();
+            for element_var in element_vars.iter().rev() {
+                result = LTerm::cons(element_var.clone(), result);
+            }
+            result
         };
-
-        // Unify the term with the constructed list
+        
+        // Unify the term with the constructed cons structure
         goals.push(crate::relation::eq::eq(term, list_term).cast_into());
-
+        
         // Recursively compile element patterns
         for (i, element_pattern) in list_pattern.elements.iter().enumerate() {
             let element_goal = self.compile_pattern(element_pattern, element_vars[i].clone())?;
             goals.push(element_goal);
         }
-
+        
         // Handle tail pattern if present
         if let (Some(tail_pattern), Some(tail_var)) = (&list_pattern.tail, &tail_var) {
             let tail_goal = self.compile_pattern(tail_pattern, tail_var.clone())?;
             goals.push(tail_goal);
         }
-
+        
         Ok(self.build_conjunction(goals))
     }
 
