@@ -8,6 +8,8 @@ use crate::interpreter::compiler::ir;
 use crate::interpreter::compiler::CompileError;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::compiler::ir::MetaValue;
+use crate::interpreter::constraint_domains::ResolvedValue;
+use std::collections::HashMap;
 use crate::interpreter::parser::ast::SearchStrategy;
 use crate::interpreter::symbol_table::InternedSymbol;
 use crate::interpreter::trace::TraceConfig;
@@ -25,7 +27,6 @@ use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::Stream;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Represents a captured argument value for lazy predicate closure expansion
@@ -647,14 +648,14 @@ impl ExecutionContext {
             self.bind_var(var.clone(), fresh_var);
         }
 
-        // Convert body goals
+        // Convert body goals - this is where constraint templates are resolved with actual runtime values
         let mut body_goals = Vec::new();
         for goal in fresh.body.iter() {
             body_goals.push(self.ir_goal_to_runtime(goal)?);
         }
         let body_goal = self.build_conjunction(body_goals);
 
-        // Pop scope
+        // Pop scope after all goals are compiled (including constraint templates)
         self.pop_scope();
 
         Ok(body_goal)
@@ -719,16 +720,30 @@ impl ExecutionContext {
         &mut self,
         constraint_block: &ir::ConstraintBlock,
     ) -> Result<Goal, CompileError> {
-        // Execute the template using this IR execution context directly
-        // The template can access variables and state from the IR execution
-        constraint_block
-            .template
-            .execute(self)
+        // Create a lookup closure that resolves variables from the current context
+        let lookup = |var_name: &str| -> Option<ResolvedValue> {
+            let symbol = InternedSymbol::from(var_name.to_string());
+            
+            // Look up variable in current scope
+            if let Some(var_value) = self.lookup_variable_value(&symbol) {
+                // Check if it's a relational or meta variable
+                if let Some(lterm) = var_value.to_lterm() {
+                    Some(ResolvedValue::Relational(lterm))
+                } else if let Some(meta_value) = var_value.as_meta() {
+                    Some(ResolvedValue::Meta(meta_value.clone()))
+                } else {
+                    None // Unsupported type
+                }
+            } else {
+                None // Variable not found
+            }
+        };
+
+        // Execute template with lookup closure
+        constraint_block.template.execute(&lookup)
             .map_err(|err| CompileError::SemanticError {
                 message: format!("Failed to execute constraint template: {}", err),
-                symbol: crate::interpreter::symbol_table::InternedSymbol::from_text(
-                    &constraint_block.domain,
-                ),
+                symbol: InternedSymbol::from_text(&constraint_block.domain),
             })
     }
 

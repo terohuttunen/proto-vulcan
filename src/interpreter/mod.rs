@@ -813,10 +813,7 @@ impl Interpreter {
 
         let stream = predicate_closure.expand_and_solve(&solver, initial_state);
 
-        // Get variable bindings from execution context
-        let variable_bindings = execution_context.get_variable_bindings();
-
-        Ok(QueryResultIterator::new(solver, stream, variable_bindings, config))
+        Ok(QueryResultIterator::new(solver, stream, config))
     }
 
     // ===== BACKWARD COMPATIBILITY METHODS =====

@@ -130,7 +130,7 @@ impl Compiler {
         // Compile the query goal to IR using the base program for symbol resolution
         let compiled_goal = compiler.compile_goal(&query, &base_program)?;
         
-        // Create the query predicate directly in IR
+        // Create the query predicate directly in IR (without reification - that's added in Rust)
         let query_predicate_id = ir::PredicateId::new("::__query__");
         let query_predicate = ir::Predicate {
             id: query_predicate_id,

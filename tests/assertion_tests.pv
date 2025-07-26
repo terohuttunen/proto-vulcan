@@ -110,11 +110,11 @@ rel test_assert_domain_size_correct() {
 // Test that assert_domain_size fails with incorrect size
 @test(should_fail)
 rel test_assert_domain_size_incorrect() {
-    constraint(domain="clpfd") {
-        |x| {
-            x in 1..1,
-            assert_domain_size(x, 5)  // Should fail, domain size is 1, not 5
-        }
+    |x| {
+        constraint(domain="clpfd") {
+            x in 1..1
+        },
+        assert_domain_size(x, 5)  // Should fail, domain size is 1, not 5
     }
 }
 

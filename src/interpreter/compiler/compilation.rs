@@ -1278,29 +1278,19 @@ impl Compiler {
                 symbol: InternedSymbol::from_text(domain_name),
             })?;
 
-        // Get list of unbound variables that this constraint needs
-        let unbound_variables = domain
-            .get_unbound_variables(&constraint_block.body)
-            .map_err(|err| CompileError::SemanticError {
-                message: format!("Failed to get unbound variables for constraint: {}", err),
-                symbol: InternedSymbol::from_text(domain_name),
-            })?;
-
-        // Look up variables in the current symbol context
-        let mut resolved_variables = HashMap::new();
-        for var_name in unbound_variables {
+        // Create a binder closure that validates variables in the current context
+        let binder = |var_name: &str| -> Option<VariableInfo> {
             // For now, assume all variables are relational
             // TODO: Add proper type inference/annotation to determine variable types
-            let var_info = VariableInfo {
-                name: var_name.clone(),
+            Some(VariableInfo {
+                name: var_name.to_string(),
                 var_type: VariableType::Relational,
-            };
-            resolved_variables.insert(var_name, var_info);
-        }
+            })
+        };
 
-        // Compile the constraint into an IR template
+        // Compile the constraint into an IR template using the new API
         let template = domain
-            .compile_template(&constraint_block.body, resolved_variables)
+            .compile(&constraint_block.body, &binder)
             .map_err(|err| CompileError::SemanticError {
                 message: format!("Failed to compile constraint template: {}", err),
                 symbol: InternedSymbol::from_text(domain_name),

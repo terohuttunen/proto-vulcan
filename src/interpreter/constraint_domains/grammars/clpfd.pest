@@ -57,8 +57,11 @@ alldiff_constraint = { alldiff_kw ~ "[" ~ var_or_const_list ~ "]" }
 // `arith_constraint` is the most general. This ordering prevents ambiguity.
 constraint_expr = _{ fresh_constraint | distinct_constraint | alldiff_constraint | list_domain_constraint | domain_constraint | arith_constraint }
 
-// Fresh variable block
-fresh_constraint = { "|" ~ var_list? ~ "|" ~ "{" ~ constraints ~ "}" }
+// Fresh variable block  
+fresh_constraint = { "|" ~ var_list? ~ "|" ~ "{" ~ constraint_list ~ "}" }
+
+// List of constraints without SOI/EOI markers (for use inside fresh blocks)
+constraint_list = { constraint ~ ("," ~ constraint)* ~ ","? }
 
 // The rule for parsing a single, complete constraint expression, used by the list parser.
 constraint = { constraint_expr }

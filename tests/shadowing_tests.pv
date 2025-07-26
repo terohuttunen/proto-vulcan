@@ -258,13 +258,13 @@ rel test_simulated_shadowing_bug() {
         outer_x == 42,
         
         // Simulate the old buggy behavior by testing what shouldn't happen
-        constraint(domain="clpfd") {
-            |inner_x| {
-                inner_x in 1..1,
-                // With the old bug, inner_x would be bound to outer_x (42)
-                // So this assertion would fail because 42 is not in domain 1..1
-                assert_eq(inner_x, 42)  // This should fail with our fix
-            }
+        |inner_x| {
+            constraint(domain="clpfd") {
+                inner_x in 1..1
+            },
+            // With the old bug, inner_x would be bound to outer_x (42)
+            // So this assertion would fail because 42 is not in domain 1..1
+            assert_eq(inner_x, 42)  // This should fail with our fix
         }
     }
 }
@@ -329,14 +329,14 @@ rel test_consistent_constraints() {
 // Test inconsistent constraint set using should_fail
 @test(should_fail)
 rel test_inconsistent_constraints() {
-    constraint(domain="clpfd") {
-        |x| {
+    |x| {
+        constraint(domain="clpfd") {
             x in 1..1,
-            x == 100,  // Impossible: x can't be both 1 and 100
-            
-            // This should fail because the constraint is inconsistent
-            assert_bound(x)
-        }
+            x == 100  // Impossible: x can't be both 1 and 100
+        },
+        
+        // This should fail because the constraint is inconsistent
+        assert_bound(x)
     }
 }
 

@@ -58,25 +58,22 @@ pub enum VariableType {
     Meta,
 }
 
-/// Trait for compiled constraint templates that work with IR ExecutionContext
+/// Trait for compiled constraint templates that execute with variable lookup
 pub trait DomainConstraintTemplate: std::fmt::Debug {
-    /// Execute the template with the IR execution context to produce a Goal
+    /// Execute the template with variable value lookup to produce a Goal
     fn execute(
         &self,
-        execution_context: &mut super::runtime::context::ExecutionContext,
+        resolver: &dyn Fn(&str) -> Option<ResolvedValue>,
     ) -> Result<Goal, InterpreterError>;
 }
 
-/// Deprecated trait for parsed domain-specific constraints (kept for legacy compatibility)
-pub trait DomainConstraints {
-    /// Convert parsed constraints to runtime goals
-    fn convert_to_goals(
-        &self,
-        execution_context: &mut super::runtime::context::ExecutionContext,
-    ) -> Result<crate::goal::Goal, InterpreterError>;
-
-    /// Extract variable names for query processing
-    fn extract_variables(&self) -> Vec<String>;
+/// Represents a resolved variable value for constraint template execution
+#[derive(Debug, Clone)]
+pub enum ResolvedValue {
+    /// Relational variable resolved to LTerm
+    Relational(crate::lterm::LTerm),
+    /// Meta variable resolved to runtime value
+    Meta(crate::interpreter::compiler::ir::MetaValue),
 }
 
 /// Trait that all constraint domains must implement
@@ -84,32 +81,16 @@ pub trait ConstraintDomain {
     /// Domain name (e.g., "clpfd", "clpr", "clpb")
     fn name(&self) -> &str;
 
-    /// Parse raw constraint body into domain-specific representation (deprecated - kept for legacy compatibility)
-    fn parse_constraints(
-        &self,
-        _body: &ConstraintBody,
-        _source_span: &super::parser::ast::Location,
-    ) -> Result<Box<dyn DomainConstraints>, InterpreterError> {
-        Err(InterpreterError::RuntimeError(
-            "Constraint parsing is deprecated - use IR-based compilation instead".to_string()
-        ))
-    }
-
     /// Get description of supported syntax for error messages
     fn syntax_help(&self) -> &str;
 
-    /// Get list of unbound variable names that this constraint block requires
-    fn get_unbound_variables(&self, body: &ConstraintBody)
-        -> Result<Vec<String>, InterpreterError>;
-
-    /// Compile constraint block with resolved variable information into a template
-    fn compile_template(
+    /// Compile constraint block with variable binding validation
+    fn compile(
         &self,
         body: &ConstraintBody,
-        variables: HashMap<String, VariableInfo>,
+        binder: &dyn Fn(&str) -> Option<VariableInfo>,
     ) -> Result<Rc<dyn DomainConstraintTemplate>, InterpreterError>;
 }
-
 
 /// Registry for constraint domains
 pub struct ConstraintDomainRegistry {
@@ -134,7 +115,6 @@ impl ConstraintDomainRegistry {
     pub fn list_domains(&self) -> Vec<&str> {
         self.domains.keys().map(|s| s.as_str()).collect()
     }
-
 }
 
 impl Default for ConstraintDomainRegistry {

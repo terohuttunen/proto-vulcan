@@ -8,9 +8,9 @@
 
 use super::ConstraintDomain;
 use crate::goal::{AnyGoal, Goal, GoalCast};
-use crate::interpreter::runtime::context::ExecutionContext;
 use crate::interpreter::parser::ast::ConstraintBody;
 use crate::interpreter::parser::meta_parser;
+use crate::interpreter::runtime::context::ExecutionContext;
 use crate::interpreter::InterpreterError;
 use crate::lterm::LTerm;
 use crate::operator::conj::Conj;
@@ -25,21 +25,47 @@ pub struct ClpfdParser;
 #[derive(Debug, Clone)]
 pub struct ClpfdTemplate {
     body: ConstraintBody,
-    variables: std::collections::HashMap<String, super::VariableInfo>,
+    required_variables: Vec<String>,
+    constraints: Vec<ClpfdConstraint>,
+}
+
+impl ClpfdTemplate {
+    /// Execute constraints with resolved variables
+    fn execute_constraints_with_resolved_vars(
+        &self,
+        resolved_vars: std::collections::HashMap<String, super::ResolvedValue>,
+    ) -> Result<Goal, InterpreterError> {
+        // Start with succeed and chain all constraints
+        let mut result = Goal::succeed();
+
+        // Build conjunction chain directly
+        for constraint in &self.constraints {
+            let goal = constraint.convert_to_goal_with_resolved_vars(
+                resolved_vars.clone(),
+                &std::collections::HashMap::new(),
+            )?;
+            result = Conj::new(result, goal).cast_into();
+        }
+
+        Ok(result)
+    }
 }
 
 impl super::DomainConstraintTemplate for ClpfdTemplate {
     fn execute(
         &self,
-        execution_context: &mut super::super::runtime::context::ExecutionContext,
+        lookup: &dyn Fn(&str) -> Option<super::ResolvedValue>,
     ) -> Result<crate::goal::Goal, InterpreterError> {
-        // Parse the constraint body using the template's compiled information
-        let domain = ClpfdDomain::new();
-        let constraint = domain.parse_individual_constraint(&self.body.raw_content)?;
-        
-        // Convert the parsed constraint to a goal using the IR execution context
-        // The variables map in the template provides the variable type information
-        constraint.convert_to_goal_ir(execution_context, &self.variables)
+        // Resolve all required variables using the lookup closure
+        let mut resolved_vars = std::collections::HashMap::new();
+        for var_name in &self.required_variables {
+            let resolved_value = lookup(var_name)
+                .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))?;
+            resolved_vars.insert(var_name.clone(), resolved_value);
+        }
+
+        // Execute constraints with resolved variables
+        self.execute_constraints_with_resolved_vars(resolved_vars)
     }
 }
 
@@ -57,7 +83,6 @@ impl ConstraintDomain for ClpfdDomain {
         "clpfd"
     }
 
-
     fn syntax_help(&self) -> &str {
         r#"CLPFD Syntax:
 - Domain constraints: x in 1..10, x in [1,2,3], [x, y, z] in 0..2
@@ -67,30 +92,108 @@ impl ConstraintDomain for ClpfdDomain {
 - Fresh: |x, y| { x < y, x in 1..10 }"#
     }
 
-    fn get_unbound_variables(
-        &self,
-        _body: &ConstraintBody,
-    ) -> Result<Vec<String>, InterpreterError> {
-        // TODO: Implement proper variable extraction without full parsing
-        Ok(Vec::new())
-    }
-
-    fn compile_template(
+    fn compile(
         &self,
         body: &ConstraintBody,
-        variables: std::collections::HashMap<String, super::VariableInfo>,
+        binder: &dyn Fn(&str) -> Option<super::VariableInfo>,
     ) -> Result<std::rc::Rc<dyn super::DomainConstraintTemplate>, InterpreterError> {
-        // Create a CLPFD template with the constraint body and variable information
+        // Parse constraints and validate variables using binder
+        let constraints = self.parse_constraints_with_binder(&body.raw_content, binder)?;
+
+        // Extract required variables
+        let mut required_variables = Vec::new();
+        for constraint in &constraints {
+            required_variables.extend(constraint.extract_variables());
+        }
+        // Remove duplicates
+        required_variables.sort();
+        required_variables.dedup();
+
+        // Create template with parsed constraints and required variables
         let template = ClpfdTemplate {
             body: body.clone(),
-            variables,
+            required_variables,
+            constraints,
         };
         Ok(std::rc::Rc::new(template))
     }
-
 }
 
 impl ClpfdDomain {
+    /// Parse constraints with binder validation for the new compile API
+    fn parse_constraints_with_binder(
+        &self,
+        content: &str,
+        binder: &dyn Fn(&str) -> Option<super::VariableInfo>,
+    ) -> Result<Vec<ClpfdConstraint>, InterpreterError> {
+        // First parse constraints normally
+        let constraints = self.parse_constraints_block(content)?;
+
+        // Validate all variables using the binder
+        for constraint in &constraints {
+            let variables = constraint.extract_variables();
+            for var_name in variables {
+                // Skip variables that look like constants (numeric)
+                if var_name.parse::<i32>().is_ok() {
+                    continue;
+                }
+
+                // Check if variable can be bound
+                binder(&var_name)
+                    .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))?;
+            }
+        }
+
+        Ok(constraints)
+    }
+
+    /// Strip line comments (// ...) from constraint content
+    fn strip_comments(&self, content: &str) -> String {
+        content
+            .lines()
+            .map(|line| {
+                // Find the position of "//" that's not inside a string
+                if let Some(comment_start) = line.find("//") {
+                    &line[..comment_start]
+                } else {
+                    line
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Parse multiple constraints from constraint body (like "x in 1..2, y in 1..2")
+    fn parse_constraints_block(
+        &self,
+        content: &str,
+    ) -> Result<Vec<ClpfdConstraint>, InterpreterError> {
+        // Strip comments from the content before parsing
+        let cleaned_content = self.strip_comments(content);
+        let pairs = ClpfdParser::parse(Rule::constraints, cleaned_content.trim()).map_err(|e| {
+            InterpreterError::InvalidConstraintSyntax {
+                domain: "clpfd".to_string(),
+                error: format!("Parse error: {}", e),
+            }
+        })?;
+
+        let mut constraints = Vec::new();
+        let dummy_span = super::super::parser::ast::Location::dummy();
+
+        for pair in pairs {
+            if pair.as_rule() == Rule::constraints {
+                // Parse each constraint in the constraints list
+                for constraint_pair in pair.into_inner() {
+                    if constraint_pair.as_rule() == Rule::constraint {
+                        constraints.push(Self::build_constraint(constraint_pair, &dummy_span)?);
+                    }
+                }
+            }
+        }
+
+        Ok(constraints)
+    }
+
     fn parse_individual_constraint(
         &self,
         content: &str,
@@ -148,7 +251,7 @@ impl ClpfdDomain {
                 Rule::var_list => {
                     vars = part.into_inner().map(|v| v.as_str().to_string()).collect();
                 }
-                Rule::constraints => {
+                Rule::constraints | Rule::constraint_list => {
                     for constraint_pair in part.into_inner() {
                         if constraint_pair.as_rule() == Rule::constraint {
                             constraints.push(Self::build_constraint(constraint_pair, source_span)?);
@@ -497,7 +600,6 @@ impl ClpfdDomain {
     }
 }
 
-
 // Data model for CLPFD constraints
 #[derive(Debug, Clone)]
 pub enum ClpfdConstraint {
@@ -581,25 +683,27 @@ impl ClpfdConstraint {
                 domain_spec,
             } => {
                 // Look up variable using template variable information
-                let var_info = variables.get(variable).ok_or_else(|| {
-                    InterpreterError::UnknownVariable(variable.clone())
-                })?;
-                
+                let var_info = variables
+                    .get(variable)
+                    .ok_or_else(|| InterpreterError::UnknownVariable(variable.clone()))?;
+
                 // Get the variable as an LTerm
                 let var_term = match var_info.var_type {
                     super::VariableType::Relational => {
-                        let symbol = crate::interpreter::symbol_table::InternedSymbol::from(variable.clone());
-                        execution_context.lookup_var(&symbol).ok_or_else(|| {
-                            InterpreterError::UnknownVariable(variable.clone())
-                        })?
+                        let symbol = crate::interpreter::symbol_table::InternedSymbol::from(
+                            variable.clone(),
+                        );
+                        execution_context
+                            .lookup_var(&symbol)
+                            .ok_or_else(|| InterpreterError::UnknownVariable(variable.clone()))?
                     }
                     super::VariableType::Meta => {
                         return Err(InterpreterError::RuntimeError(
-                            "Meta variables not yet supported in domain constraints".to_string()
+                            "Meta variables not yet supported in domain constraints".to_string(),
                         ));
                     }
                 };
-                
+
                 match domain_spec {
                     DomainSpec::Range(start, end) => {
                         use crate::relation::clpfd::infd::infdrange;
@@ -613,33 +717,42 @@ impl ClpfdConstraint {
                         Ok(infd(var_term, &domain_values).cast_into())
                     }
                     _ => Err(InterpreterError::RuntimeError(
-                        "Interpolated domain specs not yet supported in IR mode".to_string()
+                        "Interpolated domain specs not yet supported in IR mode".to_string(),
                     )),
                 }
             }
             _ => Err(InterpreterError::RuntimeError(
-                "Only domain constraints are implemented in IR mode".to_string()
+                "Only domain constraints are implemented in IR mode".to_string(),
             )),
         }
     }
 
-    /// Converts a single constraint into a goal (legacy AST-based method).
-    /// This will require accessing the execution context to resolve variables.
-    fn convert_to_goal(
+    /// Convert constraint to goal using pre-resolved variables (new API)
+    fn convert_to_goal_with_resolved_vars(
         &self,
-        execution_context: &mut ExecutionContext,
-        source_span: &super::super::parser::ast::Location,
+        resolved_variables: std::collections::HashMap<String, super::ResolvedValue>,
+        _variables: &std::collections::HashMap<String, super::VariableInfo>,
     ) -> Result<Goal, InterpreterError> {
         match self {
             ClpfdConstraint::Domain {
                 variable,
                 domain_spec,
             } => {
-                // Look up variable by name, converting string to InternedSymbol
-                let symbol = crate::interpreter::symbol_table::InternedSymbol::from(variable.clone());
-                let var_term = execution_context.lookup_var(&symbol).ok_or_else(|| {
-                    InterpreterError::UnknownVariable(variable.clone())
-                })?;
+                // Get pre-resolved variable value
+                let resolved_value = resolved_variables
+                    .get(variable)
+                    .ok_or_else(|| InterpreterError::UnknownVariable(variable.clone()))?;
+
+                // Extract LTerm based on resolved value type
+                let var_term = match resolved_value {
+                    super::ResolvedValue::Relational(lterm) => lterm.clone(),
+                    super::ResolvedValue::Meta(_) => {
+                        return Err(InterpreterError::RuntimeError(
+                            "Meta variables not yet supported in domain constraints".to_string(),
+                        ));
+                    }
+                };
+
                 match domain_spec {
                     DomainSpec::Range(start, end) => {
                         use crate::relation::clpfd::infd::infdrange;
@@ -652,160 +765,205 @@ impl ClpfdConstraint {
                             values.iter().map(|&v| v as isize).collect();
                         Ok(infd(var_term, &domain_values).cast_into())
                     }
-                    DomainSpec::InterpolatedRange(start, end) => {
-                        let start_val = eval_domain_bound(start, execution_context, source_span)?;
-                        let end_val = eval_domain_bound(end, execution_context, source_span)?;
-                        use crate::relation::clpfd::infd::infdrange;
-                        let range = start_val..=end_val;
-                        Ok(infdrange(var_term, &range).cast_into())
+                    _ => Err(InterpreterError::RuntimeError(
+                        "Interpolated domain specs not yet supported with resolved variables"
+                            .to_string(),
+                    )),
+                }
+            }
+            ClpfdConstraint::Expression { left, op, right } => {
+                // Evaluate both sides of the expression to LTerms
+                let left_term =
+                    self.eval_arith_expr_with_resolved_vars(left, &resolved_variables)?;
+                let right_term =
+                    self.eval_arith_expr_with_resolved_vars(right, &resolved_variables)?;
+
+                // Build the appropriate comparison goal
+                match op {
+                    CompOp::Equal => {
+                        use crate::relation::eq::eq;
+                        Ok(eq(left_term, right_term).cast_into())
                     }
-                    DomainSpec::InterpolatedSet(values) => {
-                        let domain_values: Result<Vec<isize>, InterpreterError> = values
-                            .iter()
-                            .map(|bound| eval_domain_bound(bound, execution_context, source_span))
-                            .collect();
-                        use crate::relation::clpfd::infd::infd;
-                        Ok(infd(var_term, &domain_values?).cast_into())
+                    CompOp::NotEqual => {
+                        use crate::relation::clpfd::diseqfd::diseqfd;
+                        Ok(diseqfd(left_term, right_term).cast_into())
                     }
+                    CompOp::LessThan => {
+                        use crate::relation::clpfd::ltfd::ltfd;
+                        Ok(ltfd(left_term, right_term).cast_into())
+                    }
+                    CompOp::LessEqual => {
+                        use crate::relation::clpfd::ltefd::ltefd;
+                        Ok(ltefd(left_term, right_term).cast_into())
+                    }
+                    CompOp::GreaterThan => {
+                        use crate::relation::clpfd::ltfd::ltfd;
+                        Ok(ltfd(right_term, left_term).cast_into())
+                    }
+                    CompOp::GreaterEqual => {
+                        use crate::relation::clpfd::ltefd::ltefd;
+                        Ok(ltefd(right_term, left_term).cast_into())
+                    }
+                }
+            }
+            ClpfdConstraint::Global { name, args } => {
+                // Resolve all argument variables to LTerms
+                let mut resolved_args = Vec::new();
+                for arg_name in args {
+                    let resolved_value = resolved_variables
+                        .get(arg_name)
+                        .ok_or_else(|| InterpreterError::UnknownVariable(arg_name.clone()))?;
+
+                    match resolved_value {
+                        super::ResolvedValue::Relational(lterm) => {
+                            resolved_args.push(lterm.clone())
+                        }
+                        super::ResolvedValue::Meta(_) => {
+                            return Err(InterpreterError::RuntimeError(
+                                "Meta variables not yet supported in global constraints"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                }
+
+                // Build the appropriate global constraint goal
+                match name.as_str() {
+                    "distinct" | "alldiff" => {
+                        use crate::relation::clpfd::distinctfd::distinctfd;
+                        // Convert vector of LTerms to a list LTerm
+                        let mut list_term = LTerm::empty_list();
+                        for arg in resolved_args.into_iter().rev() {
+                            list_term = LTerm::cons(arg, list_term);
+                        }
+                        Ok(distinctfd(list_term).cast_into())
+                    }
+                    _ => Err(InterpreterError::RuntimeError(format!(
+                        "Unknown global constraint: {}",
+                        name
+                    ))),
                 }
             }
             ClpfdConstraint::ListDomain {
                 variables,
                 domain_spec,
             } => {
-                // Convert variable names to LTerms
-                let var_terms: Result<Vec<_>, _> = variables
-                    .iter()
-                    .map(|var| {
-                        let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var.clone());
-                        execution_context.lookup_var(&symbol).ok_or_else(|| {
-                            InterpreterError::UnknownVariable(var.clone())
-                        })
-                    })
-                    .collect();
-                let var_terms = var_terms?;
+                // Handle list domain constraints like [x, y, z] in 1..3
+                // Start with succeed and chain all variable domain constraints
+                let mut result = Goal::succeed();
 
-                // Create a list from the variables
-                let mut var_list = LTerm::empty_list();
-                for var in var_terms.into_iter().rev() {
-                    var_list = LTerm::cons(var, var_list);
-                }
+                // Helper function to create domain goal for a variable
+                let create_domain_goal = |var_name: &String| -> Result<Goal, InterpreterError> {
+                    // Get pre-resolved variable value
+                    let resolved_value = resolved_variables
+                        .get(var_name)
+                        .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))?;
 
-                // Use infdrange with the list (like the working macro approach)
-                match domain_spec {
-                    DomainSpec::Range(start, end) => {
-                        use crate::relation::clpfd::infd::infdrange;
-                        let range = *start as isize..=*end as isize;
-                        Ok(infdrange(var_list, &range).cast_into())
-                    }
-                    DomainSpec::Set(values) => {
-                        use crate::relation::clpfd::infd::infd;
-                        let domain_values: Vec<isize> =
-                            values.iter().map(|&v| v as isize).collect();
-                        Ok(infd(var_list, &domain_values).cast_into())
-                    }
-                    DomainSpec::InterpolatedRange(start, end) => {
-                        let start_val = eval_domain_bound(start, execution_context, source_span)?;
-                        let end_val = eval_domain_bound(end, execution_context, source_span)?;
-                        use crate::relation::clpfd::infd::infdrange;
-                        let range = start_val..=end_val;
-                        Ok(infdrange(var_list, &range).cast_into())
-                    }
-                    DomainSpec::InterpolatedSet(values) => {
-                        let domain_values: Result<Vec<isize>, InterpreterError> = values
-                            .iter()
-                            .map(|bound| eval_domain_bound(bound, execution_context, source_span))
-                            .collect();
-                        use crate::relation::clpfd::infd::infd;
-                        Ok(infd(var_list, &domain_values?).cast_into())
-                    }
-                }
-            }
-            ClpfdConstraint::Expression { left, op, right } => {
-                // Check for arithmetic equality patterns that should use specialized CLPFD constraints
-                if *op == CompOp::Equal {
-                    // Try to detect patterns like: arith_expr == value or value == arith_expr
-                    if let Some(goal) =
-                        try_build_arithmetic_constraint(left, right, execution_context)?
-                    {
-                        return Ok(goal);
-                    }
-                    if let Some(goal) =
-                        try_build_arithmetic_constraint(right, left, execution_context)?
-                    {
-                        return Ok(goal);
-                    }
-                }
-
-                // Fall back to generic constraint handling
-                let left_term = eval_arith_expr(left, execution_context)?;
-                let right_term = eval_arith_expr(right, execution_context)?;
-                build_comparison_goal(left_term, *op, right_term)
-            }
-            ClpfdConstraint::Global { name, args } => {
-                // Handle both variables and constants in the arguments
-                let var_terms: Result<Vec<_>, _> = args
-                    .iter()
-                    .map(|arg| {
-                        // Try to parse as integer first, then as variable
-                        if let Ok(int_val) = arg.parse::<i32>() {
-                            Ok(LTerm::from(int_val as isize))
-                        } else {
-                            let symbol = crate::interpreter::symbol_table::InternedSymbol::from(arg.clone());
-                            execution_context.lookup_var(&symbol).ok_or_else(|| {
-                                InterpreterError::UnknownVariable(arg.clone())
-                            })
+                    // Extract LTerm based on resolved value type
+                    let var_term = match resolved_value {
+                        super::ResolvedValue::Relational(lterm) => lterm.clone(),
+                        super::ResolvedValue::Meta(_) => {
+                            return Err(InterpreterError::RuntimeError(
+                                "Meta variables not yet supported in list domain constraints".to_string(),
+                            ));
                         }
-                    })
-                    .collect();
-                let var_terms = var_terms?;
+                    };
 
-                match name.as_str() {
-                    "distinct" => {
-                        use crate::relation::clpfd::distinctfd::distinctfd;
-                        // Convert Vec<LTerm> to LTerm (list) in correct order
-                        let mut list_term = LTerm::empty_list();
-                        for var in var_terms.into_iter().rev() {
-                            list_term = LTerm::cons(var, list_term);
+                    // Create domain constraint for this variable
+                    match domain_spec {
+                        DomainSpec::Range(start, end) => {
+                            use crate::relation::clpfd::infd::infdrange;
+                            let range = *start as isize..=*end as isize;
+                            Ok(infdrange(var_term, &range).cast_into())
                         }
-                        Ok(distinctfd(list_term).cast_into())
-                    }
-                    "alldiff" => {
-                        use crate::relation::clpfd::distinctfd::distinctfd;
-                        // Convert Vec<LTerm> to LTerm (list) in correct order
-                        let mut list_term = LTerm::empty_list();
-                        for var in var_terms.into_iter().rev() {
-                            list_term = LTerm::cons(var, list_term);
+                        DomainSpec::Set(values) => {
+                            use crate::relation::clpfd::infd::infd;
+                            let domain_values: Vec<isize> =
+                                values.iter().map(|&v| v as isize).collect();
+                            Ok(infd(var_term, &domain_values).cast_into())
                         }
-                        Ok(distinctfd(list_term).cast_into())
+                        _ => {
+                            Err(InterpreterError::RuntimeError(
+                                "Interpolated domain specs not yet supported in list domain constraints"
+                                    .to_string(),
+                            ))
+                        }
                     }
-                    _ => Err(InterpreterError::UnknownGlobalConstraint(name.clone())),
+                };
+
+                // Build conjunction chain directly
+                for var_name in variables {
+                    let goal = create_domain_goal(var_name)?;
+                    result = Conj::new(result, goal).cast_into();
                 }
+
+                Ok(result)
             }
             ClpfdConstraint::Fresh { vars, constraints } => {
-                // Create a new scope for the fresh variables
-                execution_context.push_scope();
-                for var in vars {
-                    let fresh_var = execution_context.create_fresh_var();
-                    let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var.clone());
-                    execution_context.bind_var(symbol, fresh_var);
+                // Create fresh variables using the Fresh operator
+                // Convert variable names to LTerms
+                let fresh_vars: Vec<LTerm> =
+                    vars.iter().map(|var_name| LTerm::var(var_name)).collect();
+
+                // Create a new resolved variables map that includes the fresh variables
+                let mut extended_resolved_vars = resolved_variables.clone();
+                for var_name in vars {
+                    // Add the fresh variables to the resolved map as relational variables
+                    extended_resolved_vars.insert(
+                        var_name.clone(),
+                        super::ResolvedValue::Relational(LTerm::var(var_name)),
+                    );
                 }
 
-                let mut goals = vec![];
+                // Convert all sub-constraints using the extended variable map
+                // Start with succeed and chain all constraints
+                let mut body_goal = Goal::succeed();
+
+                // Build conjunction chain directly
                 for constraint in constraints {
-                    goals.push(constraint.convert_to_goal(execution_context, source_span)?);
+                    let goal = constraint.convert_to_goal_with_resolved_vars(
+                        extended_resolved_vars.clone(),
+                        _variables,
+                    )?;
+                    body_goal = Conj::new(body_goal, goal).cast_into();
                 }
 
-                // Pop the scope after building the goals
-                execution_context.pop_scope();
+                // Wrap the body in a Fresh operator
+                use crate::operator::fresh::Fresh;
+                Ok(Fresh::new(fresh_vars, body_goal).cast_into())
+            }
+        }
+    }
 
-                if goals.is_empty() {
-                    Ok(Goal::succeed())
-                } else {
-                    let mut iter = goals.into_iter();
-                    let first = iter.next().unwrap();
-                    Ok(iter.fold(first, |acc, next| Conj::new(acc, next)))
+    /// Evaluate arithmetic expression using resolved variables (new API)
+    fn eval_arith_expr_with_resolved_vars(
+        &self,
+        expr: &ArithExpr,
+        resolved_variables: &std::collections::HashMap<String, super::ResolvedValue>,
+    ) -> Result<LTerm, InterpreterError> {
+        match expr {
+            ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
+            ArithExpr::Variable(name) => {
+                let resolved_value = resolved_variables
+                    .get(name)
+                    .ok_or_else(|| InterpreterError::UnknownVariable(name.clone()))?;
+
+                match resolved_value {
+                    super::ResolvedValue::Relational(lterm) => Ok(lterm.clone()),
+                    super::ResolvedValue::Meta(_) => Err(InterpreterError::RuntimeError(
+                        "Meta variables not yet supported in arithmetic expressions".to_string(),
+                    )),
                 }
+            }
+            ArithExpr::Interpolation(_) => Err(InterpreterError::RuntimeError(
+                "Interpolation expressions not yet supported in resolved variables API".to_string(),
+            )),
+            ArithExpr::BinaryOp { left, op, right } => {
+                // For arithmetic operations, we need to create intermediate goals
+                // For now, we'll return an error since this requires more complex goal composition
+                Err(InterpreterError::RuntimeError(
+                    "Complex arithmetic expressions not yet supported - use simple comparisons like 'x == 5'".to_string(),
+                ))
             }
         }
     }
@@ -853,7 +1011,6 @@ impl ClpfdConstraint {
         }
         vars
     }
-
 }
 
 /// Evaluates an arithmetic expression, creating temporary variables for intermediate results.
@@ -865,16 +1022,17 @@ fn eval_arith_expr(
         ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
         ArithExpr::Variable(name) => {
             let symbol = crate::interpreter::symbol_table::InternedSymbol::from(name.clone());
-            execution_context.lookup_var(&symbol).ok_or_else(|| {
-                InterpreterError::UnknownVariable(name.clone())
-            })
+            execution_context
+                .lookup_var(&symbol)
+                .ok_or_else(|| InterpreterError::UnknownVariable(name.clone()))
         }
         ArithExpr::Interpolation(meta_expr) => {
             // For simple variable interpolations, directly access the execution context
             match meta_expr {
                 crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
                     // Directly look up the variable in the execution context
-                    let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
+                    let symbol =
+                        crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
                     execution_context.lookup_var(&symbol).ok_or_else(|| {
                         InterpreterError::RuntimeError(format!(
                             "Interpolation variable '{}' not found in constraint context",
@@ -950,7 +1108,8 @@ fn eval_arith_expr(
             // For now, we'll have to restructure this to return the goal along with the term
             // This is a limitation of the current arithmetic evaluation design
             Err(InterpreterError::RuntimeError(
-                "Complex arithmetic expressions with constraints not yet supported in IR mode".to_string()
+                "Complex arithmetic expressions with constraints not yet supported in IR mode"
+                    .to_string(),
             ))
         }
     }
@@ -968,7 +1127,8 @@ fn eval_domain_bound(
             match meta_expr {
                 crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
                     // Directly look up the variable in the execution context
-                    let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
+                    let symbol =
+                        crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
                     let var_term = execution_context.lookup_var(&symbol).ok_or_else(|| {
                         InterpreterError::RuntimeError(format!(
                             "Interpolation variable '{}' not found in constraint context",

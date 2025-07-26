@@ -153,13 +153,18 @@ pub fn execute_query_ir(
     
     let initial_state = crate::state::State::new(user_state);
     
-    // Execute the query closure
-    let stream = query_closure.expand_and_solve(&solver, initial_state);
-    let mut results = Vec::new();
-    let mut stream = stream;
-    
-    // Get variable bindings for result collection
+    // Get variable bindings for reification
     let variable_bindings = execution_context.get_variable_bindings();
+    
+    // Execute the query closure with reification (like macro does)
+    // First get the original query stream
+    let original_stream = query_closure.expand_and_solve(&solver, initial_state);
+    
+    // For now, we'll implement a simpler approach by adding reification to each solution
+    // rather than trying to modify the goal structure before execution
+    // TODO: This can be optimized later by creating a compound goal
+    let mut results = Vec::new();
+    let mut stream = original_stream;
     
     // Collect up to 100 results (to prevent infinite loops)
     let max_results = 100;
@@ -169,22 +174,48 @@ pub fn execute_query_ir(
         match solver.next(&mut stream) {
             crate::solver::SolverResult::Solution(state_box) => {
                 let state = &*state_box;
-                let mut query_result = QueryResult::new();
                 
-                // Process the constraint store
-                let smap = state.smap_ref();
-                let purified_cstore = state.cstore_ref().clone().purify(smap);
-                let reified_cstore = Rc::new(purified_cstore.walk_star(smap));
+                // Apply reification to each query variable (like macro does)
+                use crate::state::reify;
+                use crate::goal::AnyGoal;
                 
-                // Get resolved values for each variable
                 for (var_name, var_term) in &variable_bindings {
-                    let resolved_term = smap.walk_star(var_term);
-                    let result_with_constraints = LResult(resolved_term, Rc::clone(&reified_cstore));
-                    query_result.bindings.insert(var_name.clone(), result_with_constraints);
+                    // Create reification goal for this variable
+                    let reify_goal = reify(var_term.clone());
+                    let reified_stream = reify_goal.solve(&solver, (*state_box).clone());
+                    
+                    // Process reified solutions for this variable
+                    let mut reified_stream = reified_stream;
+                    
+                    // Collect reified solutions for this variable
+                    while let Some(reified_state_box) = {
+                        match solver.next(&mut reified_stream) {
+                            crate::solver::SolverResult::Solution(s) => Some(s),
+                            _ => None,
+                        }
+                    } {
+                        let reified_state = &*reified_state_box;
+                        let reified_smap = reified_state.smap_ref();
+                        let reified_resolved_term = reified_smap.walk_star(var_term);
+                        let reified_purified_cstore = reified_state.cstore_ref().clone().purify(reified_smap);
+                        let reified_reified_cstore = Rc::new(reified_purified_cstore.walk_star(reified_smap));
+                        let reified_result_with_constraints = LResult(reified_resolved_term, Rc::clone(&reified_reified_cstore));
+                        
+                        // Create a result for each reified solution
+                        let mut variable_query_result = QueryResult::new();
+                        variable_query_result.bindings.insert(var_name.clone(), reified_result_with_constraints);
+                        results.push(variable_query_result);
+                        result_count += 1;
+                        
+                        if result_count >= max_results {
+                            break;
+                        }
+                    }
+                    
+                    if result_count >= max_results {
+                        break;
+                    }
                 }
-                
-                results.push(query_result);
-                result_count += 1;
             }
             crate::solver::SolverResult::NoMoreSolutions => break,
             crate::solver::SolverResult::Timeout => break,
