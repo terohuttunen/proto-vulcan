@@ -147,10 +147,8 @@ fn test_constraint_block_fresh_variables() {
 
 #[test]
 fn test_constraint_block_multiple_domains() {
-    // This test requires a second constraint domain to be registered.
-    // For now, we'll just test that the parser can handle the syntax.
-    // The actual execution would fail until a "clp_test" domain is added.
-    let mut interpreter = TestInterpreter::with_stdlib();
+    // This test only verifies that the parser can handle syntax with multiple domains.
+    // The actual execution would fail until a "clp_test" domain is registered.
     let program_str = r#"
     rel solve() {
         constraint(domain="clpfd") {
@@ -162,7 +160,8 @@ fn test_constraint_block_multiple_domains() {
     }
     "#;
     let program = parser::parse_str(program_str).unwrap();
-    interpreter.load_program_ast(program).unwrap();
-    // We can't query this because the "clp_test" domain doesn't exist.
-    // The fact that it parses is the test.
+    // Verify that parsing succeeded and we have a valid AST
+    assert_eq!(program.items.len(), 1);
+    // The fact that it parses without error is the test.
+    // Loading/compilation would fail because "clp_test" domain doesn't exist.
 }

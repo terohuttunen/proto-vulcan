@@ -772,37 +772,116 @@ impl ClpfdConstraint {
                 }
             }
             ClpfdConstraint::Expression { left, op, right } => {
-                // Evaluate both sides of the expression to LTerms
-                let left_term =
-                    self.eval_arith_expr_with_resolved_vars(left, &resolved_variables)?;
-                let right_term =
-                    self.eval_arith_expr_with_resolved_vars(right, &resolved_variables)?;
+                // Handle arithmetic expressions specially for constraint programming
+                match (left, op, right) {
+                    // Handle binary arithmetic operations like x + y == z or x - y != w
+                    (ArithExpr::BinaryOp { left: arith_left, op: arith_op, right: arith_right }, comp_op, right_expr) => {
+                        // Evaluate the variables in the arithmetic expression
+                        let left_term = self.eval_arith_expr_with_resolved_vars(arith_left, &resolved_variables)?;
+                        let right_term = self.eval_arith_expr_with_resolved_vars(arith_right, &resolved_variables)?;
+                        let result_term = self.eval_arith_expr_with_resolved_vars(right_expr, &resolved_variables)?;
+                        
+                        // Create the appropriate constraint goal based on the arithmetic operation
+                        let arith_goal = match arith_op {
+                            ArithOp::Add => {
+                                use crate::relation::clpfd::plusfd::plusfd;
+                                plusfd(left_term.clone(), right_term.clone(), result_term.clone()).cast_into()
+                            }
+                            ArithOp::Subtract => {
+                                use crate::relation::clpfd::minusfd::minusfd;
+                                minusfd(left_term.clone(), right_term.clone(), result_term.clone()).cast_into()
+                            }
+                            ArithOp::Multiply => {
+                                use crate::relation::clpfd::timesfd::timesfd;
+                                timesfd(left_term.clone(), right_term.clone(), result_term.clone()).cast_into()
+                            }
+                            ArithOp::Divide => {
+                                // Division in CLP(FD) is more complex, fall back to general case
+                                return Err(InterpreterError::RuntimeError(
+                                    "Division constraints not yet supported".to_string()
+                                ));
+                            }
+                        };
 
-                // Build the appropriate comparison goal
-                match op {
-                    CompOp::Equal => {
-                        use crate::relation::eq::eq;
-                        Ok(eq(left_term, right_term).cast_into())
+                        // For equality, just return the arithmetic constraint
+                        // For inequality, we need to negate the result
+                        match comp_op {
+                            CompOp::Equal => Ok(arith_goal),
+                            CompOp::NotEqual => {
+                                use crate::operator::fresh::Fresh;
+                                use crate::operator::conj::Conj;
+                                use crate::relation::clpfd::diseqfd::diseqfd;
+                                
+                                // For x - y != z, create fresh variable for arithmetic result
+                                // then constrain: arith_result == (x op y) AND arith_result != z
+                                let arith_result = LTerm::var("_arith_temp");
+                                let arith_constraint = match arith_op {
+                                    ArithOp::Add => {
+                                        use crate::relation::clpfd::plusfd::plusfd;
+                                        plusfd(left_term.clone(), right_term.clone(), arith_result.clone()).cast_into()
+                                    }
+                                    ArithOp::Subtract => {
+                                        use crate::relation::clpfd::minusfd::minusfd;
+                                        minusfd(left_term.clone(), right_term.clone(), arith_result.clone()).cast_into()
+                                    }
+                                    ArithOp::Multiply => {
+                                        use crate::relation::clpfd::timesfd::timesfd;
+                                        timesfd(left_term.clone(), right_term.clone(), arith_result.clone()).cast_into()
+                                    }
+                                    ArithOp::Divide => unreachable!(), // Already handled above
+                                };
+                                
+                                // Add disequality constraint: arith_result != result_term
+                                let inequality = diseqfd(arith_result.clone(), result_term).cast_into();
+                                
+                                // Combine arithmetic constraint with inequality
+                                let combined = Conj::new(arith_constraint, inequality).cast_into();
+                                
+                                // Wrap in Fresh to scope the temporary variable
+                                Ok(Fresh::new(vec![arith_result], combined).cast_into())
+                            }
+                            _ => {
+                                // For other comparison operations (LT, GT, etc.), fall back to general case
+                                return Err(InterpreterError::RuntimeError(
+                                    format!("Arithmetic expressions with {:?} not yet supported", comp_op)
+                                ));
+                            }
+                        }
                     }
-                    CompOp::NotEqual => {
-                        use crate::relation::clpfd::diseqfd::diseqfd;
-                        Ok(diseqfd(left_term, right_term).cast_into())
-                    }
-                    CompOp::LessThan => {
-                        use crate::relation::clpfd::ltfd::ltfd;
-                        Ok(ltfd(left_term, right_term).cast_into())
-                    }
-                    CompOp::LessEqual => {
-                        use crate::relation::clpfd::ltefd::ltefd;
-                        Ok(ltefd(left_term, right_term).cast_into())
-                    }
-                    CompOp::GreaterThan => {
-                        use crate::relation::clpfd::ltfd::ltfd;
-                        Ok(ltfd(right_term, left_term).cast_into())
-                    }
-                    CompOp::GreaterEqual => {
-                        use crate::relation::clpfd::ltefd::ltefd;
-                        Ok(ltefd(right_term, left_term).cast_into())
+                    // Handle general case: evaluate both sides and compare
+                    _ => {
+                        let left_term =
+                            self.eval_arith_expr_with_resolved_vars(left, &resolved_variables)?;
+                        let right_term =
+                            self.eval_arith_expr_with_resolved_vars(right, &resolved_variables)?;
+
+                        // Build the appropriate comparison goal
+                        match op {
+                            CompOp::Equal => {
+                                use crate::relation::eq::eq;
+                                Ok(eq(left_term, right_term).cast_into())
+                            }
+                            CompOp::NotEqual => {
+                                use crate::relation::clpfd::diseqfd::diseqfd;
+                                Ok(diseqfd(left_term, right_term).cast_into())
+                            }
+                            CompOp::LessThan => {
+                                use crate::relation::clpfd::ltfd::ltfd;
+                                Ok(ltfd(left_term, right_term).cast_into())
+                            }
+                            CompOp::LessEqual => {
+                                use crate::relation::clpfd::ltefd::ltefd;
+                                Ok(ltefd(left_term, right_term).cast_into())
+                            }
+                            CompOp::GreaterThan => {
+                                use crate::relation::clpfd::ltfd::ltfd;
+                                Ok(ltfd(right_term, left_term).cast_into())
+                            }
+                            CompOp::GreaterEqual => {
+                                use crate::relation::clpfd::ltefd::ltefd;
+                                Ok(ltefd(right_term, left_term).cast_into())
+                            }
+                        }
                     }
                 }
             }
@@ -959,11 +1038,27 @@ impl ClpfdConstraint {
                 "Interpolation expressions not yet supported in resolved variables API".to_string(),
             )),
             ArithExpr::BinaryOp { left, op, right } => {
-                // For arithmetic operations, we need to create intermediate goals
-                // For now, we'll return an error since this requires more complex goal composition
-                Err(InterpreterError::RuntimeError(
-                    "Complex arithmetic expressions not yet supported - use simple comparisons like 'x == 5'".to_string(),
-                ))
+                // Handle simple constant arithmetic
+                match (left.as_ref(), right.as_ref()) {
+                    (ArithExpr::Integer(left_val), ArithExpr::Integer(right_val)) => {
+                        let result = match op {
+                            ArithOp::Add => left_val + right_val,
+                            ArithOp::Subtract => left_val - right_val,
+                            ArithOp::Multiply => left_val * right_val,
+                            ArithOp::Divide => {
+                                if *right_val == 0 {
+                                    return Err(InterpreterError::RuntimeError("Division by zero".to_string()));
+                                }
+                                left_val / right_val
+                            }
+                        };
+                        Ok(LTerm::from(result as isize))
+                    }
+                    // For cases involving variables, this should be handled at the constraint level
+                    _ => Err(InterpreterError::RuntimeError(
+                        "Arithmetic expressions with variables should be handled as constraints, not direct evaluation".to_string(),
+                    ))
+                }
             }
         }
     }
