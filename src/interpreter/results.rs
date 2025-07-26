@@ -165,3 +165,21 @@ impl Default for QueryResult {
         Self::new()
     }
 }
+
+// Implement the QueryResult trait from src/query.rs to enable ResultIterator wrapping
+impl crate::query::QueryResult for QueryResult {
+    fn from_vec(v: Vec<LResult>) -> Self {
+        // For the IR-based interpreter, we need to map the vector of LResults
+        // to our HashMap-based structure. Since the macro-based system uses
+        // positional variables and we use named variables, we'll create
+        // generic names for now.
+        let mut bindings = HashMap::new();
+        for (index, lresult) in v.into_iter().enumerate() {
+            // Create variable names like "v0", "v1", etc. for positional results
+            // This matches the pattern used in macro-generated queries
+            let var_name = format!("v{}", index);
+            bindings.insert(var_name, lresult);
+        }
+        Self { bindings }
+    }
+}

@@ -411,9 +411,12 @@ impl ExecutionContext {
 
         let result = if let Some(tail_term) = &list.tail {
             let tail = self.ir_term_to_runtime(tail_term)?;
-            // Create list with tail (use regular list construction for now)
-            // TODO: Implement proper list with tail construction in LTerm
-            LTerm::from_vec(elements)
+            // Create proper cons cell structure: [a, b | tail] becomes cons(a, cons(b, tail))
+            let mut result = tail;
+            for element in elements.into_iter().rev() {
+                result = LTerm::cons(element, result);
+            }
+            result
         } else {
             // Create regular list
             LTerm::from_vec(elements)
@@ -974,9 +977,27 @@ impl ExecutionContext {
     ) -> Result<Goal, CompileError> {
         match pattern {
             ir::Pattern::Variable(var_name) => {
-                // Pattern variables bind to the matched term
-                self.bind_var(var_name.clone(), term.clone());
-                Ok(Goal::succeed())
+                // Pattern variables should create unification goals
+                // Check if this pattern variable already exists in scope, if not create it
+                let pattern_var = if let Some(existing_var_value) = self.lookup_variable_value(var_name) {
+                    // Use existing variable if it's relational
+                    if let Some(lterm) = existing_var_value.to_lterm() {
+                        lterm
+                    } else {
+                        // Create a fresh variable if existing one is not relational
+                        let fresh_var = self.create_named_fresh_var(&var_name.to_string());
+                        self.bind_var(var_name.clone(), fresh_var.clone());
+                        fresh_var
+                    }
+                } else {
+                    // Create a new variable and bind it
+                    let fresh_var = self.create_named_fresh_var(&var_name.to_string());
+                    self.bind_var(var_name.clone(), fresh_var.clone());
+                    fresh_var
+                };
+                
+                // Create unification goal
+                Ok(crate::relation::eq::eq(pattern_var, term).cast_into())
             }
             ir::Pattern::Wildcard => {
                 // Wildcards always match
