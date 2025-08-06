@@ -137,8 +137,8 @@ impl Compiler {
     fn resolve_use_clause_path(
         &self,
         qualified_path: &ast::QualifiedPath,
-        context_module: &ModuleId,
-        symbol_name: &str,
+        _context_module: &ModuleId,
+        _symbol_name: &str,
         ir_program: &Program,
     ) -> Result<ResolvedPath, ResolutionError> {
         // Use the modern resolution function that returns ResolvedPath
@@ -157,7 +157,7 @@ impl Compiler {
         let resolved_path =
             match self.resolve_qualified_path_and_item(qualified_path, name, ir_program) {
                 Ok(path) => path,
-                Err(e) => return Ok(None),
+                Err(_e) => return Ok(None),
             };
 
         let mut resolved_imports = vec![];
@@ -260,8 +260,8 @@ impl Compiler {
     /// Check if a target module is accessible from the importing module
     fn is_module_accessible(
         &self,
-        importing_module: &ModuleId,
-        target_module: &ModuleId,
+        _importing_module: &ModuleId,
+        _target_module: &ModuleId,
         _ir_program: &Program,
     ) -> bool {
         // For now, all public modules are accessible
@@ -370,8 +370,8 @@ impl Compiler {
     /// Try to resolve a list import (use path::{item1, item2})
     fn try_resolve_list_import(
         &self,
-        pending_import: &PendingImport,
-        ir_program: &mut Program,
+        _pending_import: &PendingImport,
+        _ir_program: &mut Program,
     ) -> Result<Option<Vec<ResolvedImport>>, CompileError> {
         unimplemented!();
     }

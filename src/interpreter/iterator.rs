@@ -7,9 +7,7 @@ use super::compiler;
 use super::results::QueryResult;
 use super::{ExecutionConfig, InterpreterError};
 use crate::goal::Goal;
-use crate::interpreter::compiler::ir;
 use crate::interpreter::runtime::context::{ArgumentValue, PredicateClosure};
-use crate::interpreter::symbol_table::InternedSymbol;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
 use crate::solver::{Solver, SolverResult};
@@ -43,7 +41,7 @@ pub struct QueryResultIterator {
 impl QueryResultIterator {
     /// Create a new query result iterator from solver components
     pub fn new(
-        mut solver: Solver,
+        solver: Solver,
         variables: Vec<LTerm>,
         variable_names: Vec<String>,
         goal: crate::goal::Goal,

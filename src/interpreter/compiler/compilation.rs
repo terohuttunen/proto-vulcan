@@ -2137,7 +2137,7 @@ impl Compiler {
         constraint_block: &ast::ConstraintBlock,
     ) -> Result<ir::Goal, CompileError> {
         use crate::interpreter::constraint_domains::{
-            ConstraintDomain, VariableInfo, VariableType,
+            VariableInfo, VariableType,
         };
 
         let domain_name = constraint_block.domain.as_str();

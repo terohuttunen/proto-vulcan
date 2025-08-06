@@ -11,7 +11,6 @@
 
 use crate::interpreter::constraint_domains::DomainConstraintTemplate;
 use crate::interpreter::symbol_table::InternedSymbol;
-use im_rc::HashMap as ImRcHashMap;
 use std::borrow::Borrow;
 use std::fmt::{self, Display};
 use std::rc::Rc;
@@ -1572,11 +1571,11 @@ fn hash_goal_content(goal: &Goal, hasher: &mut impl Hasher) {
             meta_let.variable.hash(hasher);
             // Note: Full meta expression hashing would be implemented here
         }
-        Goal::MetaIf(meta_if) => {
+        Goal::MetaIf(_meta_if) => {
             "meta_if".hash(hasher);
             // Note: Full meta construct hashing would be implemented here
         }
-        Goal::MetaFor(meta_for) => {
+        Goal::MetaFor(_meta_for) => {
             "meta_for".hash(hasher);
             // Note: Full meta construct hashing would be implemented here
         }

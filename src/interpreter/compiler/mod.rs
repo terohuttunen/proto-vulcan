@@ -1232,7 +1232,7 @@ impl Compiler {
                     )
                 }
             }
-            ast::QualifiedPath::Super(levels, segments) => {
+            ast::QualifiedPath::Super(_levels, segments) => {
                 // Get current module from registry to find parent
                 // This is a simplified implementation - full implementation would use Module.parent
                 let current_path = &self.current_module_id().id.to_string();

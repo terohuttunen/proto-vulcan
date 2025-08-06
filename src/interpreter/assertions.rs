@@ -1,7 +1,7 @@
 //! This module provides built-in assertion relations for the test framework.
 
 use crate::goal::{AnyGoal, Goal, GoalCast};
-use crate::lterm::{LTerm, LTermInner, LValue};
+use crate::lterm::LTerm;
 use crate::relation::{diseq, eq, fail, succeed};
 use crate::solver::{Solve, Solver};
 use crate::state::State;

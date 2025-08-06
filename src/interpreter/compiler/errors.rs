@@ -39,7 +39,7 @@ impl std::fmt::Display for CompileWarning {
                 symbol_name,
                 import_source,
                 local_symbol,
-                import_symbol,
+                import_symbol: _,
             } => {
                 write!(
                     f,

@@ -693,7 +693,7 @@ fn eval_arith_expr(
 
                     // Create dummy term and expand it
                     let dummy_term = Term::Interpolation(meta_expr.clone(), Default::default());
-                    let expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
+                    let _expanded_term = expand_term(&dummy_term, &context).map_err(|e| {
                         InterpreterError::RuntimeError(format!(
                             "Meta expression expansion error in CLPZ arithmetic: {}",
                             e
@@ -712,7 +712,7 @@ fn eval_arith_expr(
             let right_term = eval_arith_expr(right, execution_context)?;
             let result_term = execution_context.create_fresh_var();
 
-            let goal: Goal = match op {
+            let _goal: Goal = match op {
                 ArithOp::Add => {
                     use crate::relation::clpz::plusz::plusz;
                     plusz::<Goal>(left_term, right_term, result_term.clone()).cast_into()

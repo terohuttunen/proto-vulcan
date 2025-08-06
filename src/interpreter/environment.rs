@@ -946,7 +946,7 @@ impl Environment {
     /// Get accessibility of symbols from a specific module
     pub fn get_accessible_symbols(
         &self,
-        module_path: &str,
+        _module_path: &str,
         _importing_context: Option<&str>,
     ) -> Result<super::import::AccessibleSymbols, InterpreterError> {
         // For now, return empty accessible symbols until we expose the visibility checker properly

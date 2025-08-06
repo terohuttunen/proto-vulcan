@@ -227,7 +227,7 @@ impl ItemRegistry {
     /// Add a module to the registry
     /// Add a module to the registry
     pub fn add_module(&mut self, module: Module) -> bool {
-        let module_id = module.id.clone();
+        let _module_id = module.id.clone();
         let result = self.add_item(Item::Module(module));
         /*
         if result {
@@ -375,7 +375,7 @@ impl ItemRegistry {
     /// Add a type to the registry
     /// Automatically maintains parent-child relationships
     pub fn add_type(&mut self, type_def: TypeDefinition) -> bool {
-        let type_id = type_def.id.clone();
+        let _type_id = type_def.id.clone();
         let result = self.add_item(Item::Type(type_def));
         /*
         if result {
@@ -389,7 +389,7 @@ impl ItemRegistry {
     /// Add a predicate to the registry
     /// Automatically maintains parent-child relationships  
     pub fn add_predicate(&mut self, predicate: Predicate) -> bool {
-        let predicate_id = predicate.id.clone();
+        let _predicate_id = predicate.id.clone();
         let result = self.add_item(Item::Predicate(predicate));
         /*
         if result {
@@ -413,7 +413,7 @@ impl ItemRegistry {
         let mut new_items = self.items.clone();
         let previous = new_items.insert(id.clone(), Rc::new(item));
 
-        let mut new_registry = Self {
+        let new_registry = Self {
             items: new_items,
             re_exports: self.re_exports.clone(),
         };
@@ -435,7 +435,7 @@ impl ItemRegistry {
         let mut new_items = self.items.clone();
         let removed = new_items.remove(id_ref);
 
-        let mut new_registry = Self {
+        let new_registry = Self {
             items: new_items,
             re_exports: self.re_exports.clone(),
         };
@@ -448,7 +448,7 @@ impl ItemRegistry {
 
     /// Create a new registry with a module added (immutable operation)
     /// Automatically handles parent reference consistency
-    pub fn with_module(&self, mut module: Module) -> (Self, bool) {
+    pub fn with_module(&self, module: Module) -> (Self, bool) {
         self.with_item(Item::Module(module))
     }
 
@@ -712,7 +712,6 @@ impl ItemRegistry {
     /// Returns all modules that are transitively re-exported by the given module.
     /// The `visited` set is used for cycle detection and should be empty on the initial call.
     pub fn resolve_re_export_chain(&self, module_id: &ModuleId, visited: &mut std::collections::HashSet<ModuleId>) -> Vec<ModuleId> {
-        use std::collections::HashSet;
         
         let mut result = Vec::new();
         

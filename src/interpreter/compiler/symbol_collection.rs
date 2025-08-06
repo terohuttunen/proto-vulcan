@@ -3,12 +3,11 @@
 //! This module handles the first phase of compilation: collecting all type, predicate,
 //! and module declarations into symbol tables and processing use statements.
 
-use super::errors::{CompileError, CompileWarning};
+use super::errors::CompileError;
 use super::ir;
 use super::Compiler;
 use crate::interpreter::ast;
 use crate::interpreter::symbol_table::InternedSymbol;
-use std::collections::HashMap;
 
 /// Compilation phase tracking
 #[derive(Debug, Clone, PartialEq)]
@@ -549,8 +548,8 @@ impl Compiler {
         let current_module = &self.current_module_id();
 
         match &use_statement.path {
-            ast::UsePath::Simple(qualified_path, symbol) => {
-                let symbol_name = symbol.to_string();
+            ast::UsePath::Simple(_qualified_path, _symbol) => {
+                let _symbol_name = _symbol.to_string();
                 let pending_import = PendingImport {
                     use_statement: use_statement.clone(),
                     importing_module: current_module.clone(),
@@ -559,7 +558,7 @@ impl Compiler {
 
                 self.pending_imports.push(pending_import);
             }
-            ast::UsePath::Glob(qualified_path) => {
+            ast::UsePath::Glob(_qualified_path) => {
                 let pending_import = PendingImport {
                     use_statement: use_statement.clone(),
                     importing_module: current_module.clone(),
@@ -568,9 +567,9 @@ impl Compiler {
 
                 self.pending_imports.push(pending_import);
             }
-            ast::UsePath::List(qualified_path, items) => {
+            ast::UsePath::List(_qualified_path, items) => {
                 for (symbol, alias) in items {
-                    let symbol_name = symbol.to_string();
+                    let _symbol_name = symbol.to_string();
                     let alias_name = alias.as_ref().map(|a| a.to_string());
                     let pending_import = PendingImport {
                         use_statement: use_statement.clone(),

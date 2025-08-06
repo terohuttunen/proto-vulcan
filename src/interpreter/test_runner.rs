@@ -720,7 +720,7 @@ impl TestRunner {
             {
                 // Check if this TupleStruct might actually be an enum variant like Color::Red
                 // The tuple struct name should be in the form "EnumName::VariantName"
-                if let Some((enum_name, variant_name)) =
+                if let Some((_enum_name, variant_name)) =
                     tuple_struct.name.to_string().rsplit_once("::")
                 {
                     // Check that the variant name matches
@@ -883,7 +883,7 @@ impl TestRunner {
         // - Err(e): Query failed during execution (goal resolution error)
         //   * If should_fail = true, this is expected behavior (TestResult::Pass)
         //   * If should_fail = false, this is an unexpected error (TestResult::Error)
-        let test_timeout_info = timeout_ms.map(|ms| (test_start_time, ms));
+        let _test_timeout_info = timeout_ms.map(|ms| (test_start_time, ms));
 
         // Use the same query path as CLI to ensure proper variable resolution
         let config = ExecutionConfig {

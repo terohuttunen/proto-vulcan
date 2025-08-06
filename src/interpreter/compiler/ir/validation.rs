@@ -85,8 +85,8 @@ impl Validator {
     /// Validate a module
     fn validate_module(
         &mut self,
-        module: &Module,
-        program: &Program,
+        _module: &Module,
+        _program: &Program,
     ) -> Result<(), super::super::CompileError> {
         // Validate all child items exist and are accessible
         /*
@@ -261,7 +261,7 @@ impl Validator {
         }
 
         // Check that the type exists
-        let type_item = program.registry.get_type(type_ref).ok_or_else(|| {
+        let _type_item = program.registry.get_type(type_ref).ok_or_else(|| {
             super::super::CompileError::UnresolvedType {
                 attempted_item: TypeId::new(
                     type_ref.module_path.clone(),

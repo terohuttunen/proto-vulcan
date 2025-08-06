@@ -608,11 +608,11 @@ impl Interpreter {
         };
 
         // Compile the new items and add them to the program
-        let new_ir_items =
+        let _new_ir_items =
             self.compile_program_with_config(ast_program, &ExecutionConfig::default())?;
 
         // Add the new items to the current program using CoW
-        let registry_mut = current_program.registry_mut();
+        let _registry_mut = current_program.registry_mut();
 
         // Add all items from the new program to the current program
         // Use proper registry methods instead of accessing private fields
@@ -778,7 +778,7 @@ impl Interpreter {
     pub fn run_tests(
         &mut self,
         program_source: &str,
-        config: ExecutionConfig,
+        _config: ExecutionConfig,
     ) -> Result<TestResults, InterpreterError> {
         // For now, return a placeholder implementation
         // TODO: Implement proper test discovery and execution
@@ -882,7 +882,7 @@ impl Interpreter {
     fn compile_program_with_config(
         &self,
         program_ast: ast::Program,
-        config: &ExecutionConfig,
+        _config: &ExecutionConfig,
     ) -> Result<compiler::ir::Program, InterpreterError> {
         let mut compiler = compiler::Compiler::new();
 
