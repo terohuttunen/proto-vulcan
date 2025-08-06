@@ -238,7 +238,9 @@ impl Iterator for QueryResultIterator {
                 }
                 None
             }
-            SolverResult::Timeout => None,
+            SolverResult::Timeout => Some(Err(crate::interpreter::InterpreterError::QueryExecutionError(
+                "Query execution timed out".to_string()
+            ))),
             SolverResult::Error(_) => None,
         }
     }

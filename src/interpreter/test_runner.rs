@@ -893,7 +893,7 @@ impl TestRunner {
 
         match interpreter
             .query(&query_string, config)
-            .map(|iter| iter.collect_limited(100).unwrap_or_default())
+            .and_then(|iter| iter.collect_limited(100))
         {
             Ok(results) => {
                 if let Some(expected) = &item.expected {

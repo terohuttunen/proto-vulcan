@@ -1,9 +1,11 @@
-// Test file demonstrating timeout functionality
+use std::list::member;
 
-// Test that should timeout and pass (infinite recursion with short timeout)
+// Test that should timeout and pass (infinite loop with short timeout)
 @test(should_timeout, timeout="100ms")
 rel test_infinite_recursion() {
-    test_infinite_recursion()  // This will recurse infinitely and timeout
+    // Create infinite solutions by repeatedly finding members of a large list
+    member(_, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+    test_infinite_recursion()
 }
 
 // Test with a custom timeout (this should pass normally)  
@@ -12,9 +14,10 @@ rel test_with_custom_timeout() {
     assert_eq(1, 1)
 }
 
-
 // Test with millisecond timeout (should also timeout)
 @test(should_timeout, timeout="500ms")
 rel test_millisecond_timeout() {
-    test_millisecond_timeout()  // Infinite recursion with very short timeout
+    // Create infinite solutions using member
+    member(_, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+    test_millisecond_timeout()
 } 
