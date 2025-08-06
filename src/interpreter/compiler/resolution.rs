@@ -370,10 +370,77 @@ impl Compiler {
     /// Try to resolve a list import (use path::{item1, item2})
     fn try_resolve_list_import(
         &self,
-        _pending_import: &PendingImport,
-        _ir_program: &mut Program,
+        pending_import: &PendingImport,
+        ir_program: &mut Program,
     ) -> Result<Option<Vec<ResolvedImport>>, CompileError> {
-        unimplemented!();
+        let (qualified_path, imports) = match &pending_import.use_statement.path {
+            ast::UsePath::List(path, imports) => (path, imports),
+            _ => return Err(CompileError::UnresolvedImports { 
+                imports: vec![pending_import.clone()]
+            }),
+        };
+
+        let mut all_resolved_imports = vec![];
+        let mut _missing_items = vec![];
+
+        // Resolve each item in the list
+        for (item_name, alias) in imports {
+            // Try to resolve this individual item
+            match self.resolve_qualified_path_and_item(qualified_path, item_name, ir_program) {
+                Ok(resolved_path) => {
+                    // For each resolved item, create alias with the specified local name
+                    let local_name = alias.as_ref().unwrap_or(item_name);
+                    
+                    // Add all matching item kinds (same pattern as simple imports)
+                    if let Some(type_id) = resolved_path.as_type {
+                        let import_name = ir::ItemName::new(&**local_name, ir::ItemKind::Type)
+                            .map_err(|_| CompileError::UnresolvedImports { 
+                                imports: vec![pending_import.clone()]
+                            })?;
+                        all_resolved_imports.push(ResolvedImport {
+                            importing_module: self.current_module_id(),
+                            imported_item: type_id.clone().into(),
+                            import_name,
+                        });
+                    }
+
+                    if let Some(predicate_id) = resolved_path.as_predicate {
+                        let import_name = ir::ItemName::new(&**local_name, ir::ItemKind::Predicate)
+                            .map_err(|_| CompileError::UnresolvedImports { 
+                                imports: vec![pending_import.clone()]
+                            })?;
+                        all_resolved_imports.push(ResolvedImport {
+                            importing_module: self.current_module_id(),
+                            imported_item: predicate_id.clone().into(),
+                            import_name,
+                        });
+                    }
+
+                    if let Some(module_id) = resolved_path.as_module {
+                        let import_name = ir::ItemName::new(&**local_name, ir::ItemKind::Module)
+                            .map_err(|_| CompileError::UnresolvedImports { 
+                                imports: vec![pending_import.clone()]
+                            })?;
+                        all_resolved_imports.push(ResolvedImport {
+                            importing_module: self.current_module_id(),
+                            imported_item: module_id.clone().into(),
+                            import_name,
+                        });
+                    }
+                }
+                Err(_) => {
+                    _missing_items.push(item_name.to_string());
+                }
+            }
+        }
+
+        // If no items were resolved, return None
+        if all_resolved_imports.is_empty() {
+            return Ok(None);
+        }
+
+        // Return what we found (even if some items were missing)
+        Ok(Some(all_resolved_imports))
     }
 }
 
