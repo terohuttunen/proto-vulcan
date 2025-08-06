@@ -101,11 +101,19 @@ impl QueryResultIterator {
         // Set the IR program in the solver for deferred relation calls
         solver.set_program(ir_program.clone());
 
-        let query_goal = Goal::LazyMacro(Rc::new(predicate_closure));
+        // Create the base query goal from predicate closure
+        let base_query_goal = Goal::LazyMacro(Rc::new(predicate_closure));
+        
+        // Create reify goal for query variables (following macro pattern)
+        let query_vars_term = LTerm::from_array(&query_vars);
+        let reify_goal = crate::state::reify(query_vars_term);
+        
+        // Combine query goal and reification in a conjunction (like macro system does)
+        let query_goal = crate::operator::conj::Conj::new(base_query_goal, reify_goal).into();
 
         let initial_state = crate::state::State::new(user_state);
 
-        // Start the stream with the goal and initial state
+        // Start the stream with the reified query goal and initial state
         let stream = solver.start(&query_goal, initial_state);
 
         // Create iterator with variable names preserved

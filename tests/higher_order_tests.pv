@@ -3,12 +3,56 @@
 
 use std::list::*;
 use std::higher_order::*;
-use tests::common::*;
 
 // =============================================================================
 // HELPER PREDICATES FOR TESTS
 // =============================================================================
-// (Basic arithmetic relations are imported from tests::common)
+
+// Check if a number is positive (greater than 0)
+rel positive(n) {
+    constraint(domain="clpz") {
+        n > 0
+    }
+}
+
+// Add one to a number
+rel add_one(x, result) {
+    constraint(domain="clpz") { 
+        result == x + 1 
+    }
+}
+
+// Add two numbers together
+rel add_numbers(x, y, sum) {
+    constraint(domain="clpz") { 
+        sum == x + y 
+    }
+}
+
+// Double a number (for map_transform tests)
+rel double(x, doubled) {
+    constraint(domain="clpz") {
+        doubled == x * 2
+    }
+}
+
+// Check if a number is even
+rel even(n) {
+    |half| {
+        constraint(domain="clpz") {
+            n == half * 2
+        }
+    }
+}
+
+// Check if a number is odd
+rel odd(n) {
+    |half| {
+        constraint(domain="clpz") {
+            n == half * 2 + 1
+        }
+    }
+}
 
 // Helper for constraint domain tests
 rel in_range_1_to_9(x) {
