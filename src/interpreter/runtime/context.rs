@@ -1878,26 +1878,33 @@ impl ExecutionContext {
 
         match (start_value, end_value) {
             (MetaValue::Integer(start), MetaValue::Integer(end)) => {
-                // Execute loop iterations
-                let mut iteration_goals = Vec::new();
+                // Build disjunction directly with Disj pairs
+                let mut result = Goal::fail();
 
-                for i in start..=end {
+                for i in (start..end).rev() {
                     // Push new scope for iteration
                     self.push_scope();
 
                     // Bind loop variable
                     self.bind_meta_var(meta_for.variable.clone(), MetaValue::Integer(i));
 
-                    // Execute loop body
+                    // Execute loop body - collect goals for this iteration
+                    let mut iteration_goals = Vec::new();
                     for goal in meta_for.body.iter() {
                         iteration_goals.push(self.ir_goal_to_runtime(goal)?);
                     }
 
                     // Pop iteration scope
                     self.pop_scope();
+
+                    // Each iteration becomes a conjunction of its goals
+                    let iteration_conjunction = self.build_conjunction(iteration_goals);
+                    
+                    // Build disjunction with proper order (reverse iteration to get correct order)
+                    result = crate::operator::disj::Disj::new(iteration_conjunction, result);
                 }
 
-                Ok(self.build_conjunction(iteration_goals))
+                Ok(result)
             }
             _ => Err(RuntimeError::SemanticError {
                 message: "Meta for loop bounds must be integers".to_string(),
