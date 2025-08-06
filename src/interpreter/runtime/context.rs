@@ -6,7 +6,7 @@
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::compiler::ir;
 use crate::interpreter::compiler::ir::MetaValue;
-use crate::interpreter::compiler::CompileError;
+use crate::interpreter::compiler::errors::RuntimeError;
 use crate::interpreter::constraint_domains::ResolvedValue;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::runtime_value::RuntimeValue;
@@ -245,16 +245,16 @@ impl ExecutionContext {
     fn lookup_predicate_target(
         &self,
         target: &ir::PredicateCallTarget,
-    ) -> Result<PredicateLocation, CompileError> {
+    ) -> Result<PredicateLocation, RuntimeError> {
         match target {
             ir::PredicateCallTarget::Predicate(predicate_id) => {
                 self.lookup_predicate_by_id(predicate_id)
             }
             ir::PredicateCallTarget::Variable(var_name) => {
                 // Higher-order predicates not yet implemented
-                Err(CompileError::SemanticError {
+                Err(RuntimeError::SemanticError {
                     message: format!("Higher-order predicate calls not yet implemented: {}", var_name),
-                    symbol: var_name.clone(),
+                    context: "predicate call resolution".to_string(),
                 })
             }
             ir::PredicateCallTarget::Builtin(builtin_name) => {
@@ -264,18 +264,15 @@ impl ExecutionContext {
                         RuntimeValue::BuiltinRelation { func, arity } => {
                             Ok(PredicateLocation::Builtin(func.clone(), *arity))
                         }
-                        _ => Err(CompileError::SemanticError {
+                        _ => Err(RuntimeError::SemanticError {
                             message: format!("Expected builtin relation but found {:?}", runtime_value),
-                            symbol: InternedSymbol::from_text(builtin_name),
+                            context: "builtin lookup".to_string(),
                         })
                     }
                 } else {
-                    Err(CompileError::UnresolvedReference {
-                        attempted_item: ir::ItemId::with_parent(
-                            ir::ModulePath::root().into(), 
-                            ir::ItemName::new_unchecked(builtin_name.clone(), ir::ItemKind::Predicate)
-                        ),
-                        symbol: InternedSymbol::from_text(builtin_name),
+                    Err(RuntimeError::UnresolvedReference {
+                        reference_name: builtin_name.clone(),
+                        context: "builtin lookup".to_string(),
                     })
                 }
             }
@@ -285,7 +282,7 @@ impl ExecutionContext {
     fn lookup_predicate_by_id(
         &self,
         predicate_id: &ir::PredicateId,
-    ) -> Result<PredicateLocation, CompileError> {
+    ) -> Result<PredicateLocation, RuntimeError> {
         // Try current program first
         if let Some(predicate_item) = self.program.registry.get_item(predicate_id) {
             if let ir::Item::Predicate(predicate) = predicate_item.as_ref() {
@@ -329,14 +326,14 @@ impl ExecutionContext {
         }
 
         // Not found
-        Err(CompileError::UnresolvedPredicate {
-            attempted_item: predicate_id.clone(),
-            symbol: InternedSymbol::from_text(&predicate_id.as_ref().to_string()),
+        Err(RuntimeError::UnresolvedPredicate {
+            predicate_name: predicate_id.as_ref().to_string(),
+            context: "predicate lookup".to_string(),
         })
     }
 
     /// Convert an IR goal to a runtime goal
-    pub fn ir_goal_to_runtime(&mut self, ir_goal: &ir::Goal) -> Result<Goal, CompileError> {
+    pub fn ir_goal_to_runtime(&mut self, ir_goal: &ir::Goal) -> Result<Goal, RuntimeError> {
         // Add tracing if enabled
         if let Some(trace_config) = &self.trace_config {
             if trace_config.enabled {
@@ -418,7 +415,7 @@ impl ExecutionContext {
     }
 
     /// Convert an IR term to a runtime LTerm
-    pub fn ir_term_to_runtime(&mut self, ir_term: &ir::Term) -> Result<LTerm, CompileError> {
+    pub fn ir_term_to_runtime(&mut self, ir_term: &ir::Term) -> Result<LTerm, RuntimeError> {
         match ir_term {
             ir::Term::Variable(name) => {
                 // Look up variable in current scopes
@@ -426,19 +423,18 @@ impl ExecutionContext {
                     if let Some(lterm) = var_value.to_lterm() {
                         return Ok(lterm);
                     } else {
-                        return Err(CompileError::SemanticError {
-                            message: format!(
-                                "Variable '{}' is a meta variable, not a relational variable",
-                                name
-                            ),
-                            symbol: name.clone(),
+                        return Err(RuntimeError::VariableTypeMismatch {
+                            variable_name: name.to_string(),
+                            expected_type: "relational".to_string(),
+                            actual_type: "meta".to_string(),
+                            context: "term conversion".to_string(),
                         });
                     }
                 }
                 // Variable not found - this should be an error, not automatic variable creation
-                Err(CompileError::SemanticError {
-                    message: format!("Unbound variable: {}", name),
-                    symbol: name.clone(),
+                Err(RuntimeError::UnboundVariable {
+                    variable_name: name.to_string(),
+                    context: "term conversion".to_string(),
                 })
             }
             ir::Term::Wildcard => Ok(self.create_fresh_var()),
@@ -461,7 +457,7 @@ impl ExecutionContext {
     }
 
     /// Convert an IR literal to a runtime LTerm
-    fn ir_literal_to_runtime(&self, ir_literal: &ir::Literal) -> Result<LTerm, CompileError> {
+    fn ir_literal_to_runtime(&self, ir_literal: &ir::Literal) -> Result<LTerm, RuntimeError> {
         match ir_literal {
             ir::Literal::Boolean(b) => Ok(LTerm::from(*b)),
             ir::Literal::Integer(i) => Ok(LTerm::from(*i as isize)),
@@ -471,7 +467,7 @@ impl ExecutionContext {
     }
 
     /// Convert an IR list to a runtime LTerm
-    fn ir_list_to_runtime(&mut self, list: &ir::List) -> Result<LTerm, CompileError> {
+    fn ir_list_to_runtime(&mut self, list: &ir::List) -> Result<LTerm, RuntimeError> {
         let mut elements = Vec::new();
         for element in &list.elements {
             elements.push(self.ir_term_to_runtime(element)?);
@@ -497,17 +493,15 @@ impl ExecutionContext {
     fn ir_struct_to_runtime(
         &mut self,
         struct_construction: &ir::StructConstruction,
-    ) -> Result<LTerm, CompileError> {
+    ) -> Result<LTerm, RuntimeError> {
         // Look up the struct definition
         let struct_def = self
             .program
             .registry
             .get_type(&struct_construction.type_ref)
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: struct_construction.type_ref.clone(),
-                symbol: InternedSymbol::from_text(
-                    &struct_construction.type_ref.as_ref().to_string(),
-                ),
+            .ok_or_else(|| RuntimeError::UnresolvedType {
+                type_name: struct_construction.type_ref.as_ref().to_string(),
+                context: "struct construction".to_string(),
             })?
             .clone(); // Clone early to avoid borrowing issues
 
@@ -555,15 +549,15 @@ impl ExecutionContext {
     fn ir_enum_variant_to_runtime(
         &mut self,
         enum_construction: &ir::EnumVariantConstruction,
-    ) -> Result<LTerm, CompileError> {
+    ) -> Result<LTerm, RuntimeError> {
         // Look up the enum definition
         let enum_def = self
             .program
             .registry
             .get_type(&enum_construction.enum_ref)
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: enum_construction.enum_ref.clone(),
-                symbol: InternedSymbol::from_text(&enum_construction.enum_ref.as_ref().to_string()),
+            .ok_or_else(|| RuntimeError::UnresolvedType {
+                type_name: enum_construction.enum_ref.as_ref().to_string(),
+                context: "enum variant construction".to_string(),
             })?
             .clone();
 
@@ -637,7 +631,7 @@ impl ExecutionContext {
     fn ir_predicate_call_to_runtime(
         &mut self,
         predicate_call: &ir::PredicateCall,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         // Arity validation should happen at compile time, not runtime
         // Skip runtime arity check and proceed directly to predicate resolution
 
@@ -664,9 +658,9 @@ impl ExecutionContext {
                             }
                         }
                     } else {
-                        return Err(CompileError::SemanticError {
-                            message: format!("Unbound variable in predicate call: {}", name),
-                            symbol: name.clone(),
+                        return Err(RuntimeError::UnboundVariable {
+                            variable_name: name.to_string(),
+                            context: "predicate call".to_string(),
                         });
                     }
                 }
@@ -701,16 +695,11 @@ impl ExecutionContext {
                         ir::PredicateCallTarget::Builtin(name) => name.clone(),
                         ir::PredicateCallTarget::Variable(var) => var.to_string(),
                     };
-                    return Err(CompileError::ArityMismatch {
-                        predicate_item: ir::PredicateId {
-                            id: ir::ItemId::with_parent(
-                                ir::ModulePath::root().into(),
-                                ir::ItemName::new_unchecked(predicate_name.clone(), ir::ItemKind::Predicate)
-                            )
-                        },
+                    return Err(RuntimeError::ArityMismatch {
+                        predicate_name: predicate_name.clone(),
                         expected_arity,
                         actual_arity: captured_args.len(),
-                        symbol: InternedSymbol::from_text(&predicate_name),
+                        context: "builtin predicate call".to_string(),
                     });
                 }
 
@@ -734,7 +723,7 @@ impl ExecutionContext {
     }
 
     /// Convert an IR fresh goal to runtime
-    fn ir_fresh_to_runtime(&mut self, fresh: &ir::Fresh) -> Result<Goal, CompileError> {
+    fn ir_fresh_to_runtime(&mut self, fresh: &ir::Fresh) -> Result<Goal, RuntimeError> {
         // Push new scope
         self.push_scope();
 
@@ -758,7 +747,7 @@ impl ExecutionContext {
     }
 
     /// Convert an IR let goal to runtime
-    fn ir_let_to_runtime(&mut self, let_binding: &ir::Let) -> Result<Goal, CompileError> {
+    fn ir_let_to_runtime(&mut self, let_binding: &ir::Let) -> Result<Goal, RuntimeError> {
         // Push new scope
         self.push_scope();
 
@@ -789,7 +778,7 @@ impl ExecutionContext {
     fn ir_pattern_match_to_runtime(
         &mut self,
         pattern_match: &ir::PatternMatch,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         let match_term = self.ir_term_to_runtime(&pattern_match.term)?;
 
         // Build conjunctions for each arm (like macro-based matche operator)
@@ -834,7 +823,7 @@ impl ExecutionContext {
     fn ir_constraint_to_runtime(
         &mut self,
         constraint_block: &ir::ConstraintBlock,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         // Create a lookup closure that resolves variables from the current context
         let lookup = |var_name: &str| -> Option<ResolvedValue> {
             let symbol = InternedSymbol::from(var_name.to_string());
@@ -858,9 +847,9 @@ impl ExecutionContext {
         constraint_block
             .template
             .execute(&lookup)
-            .map_err(|err| CompileError::SemanticError {
+            .map_err(|err| RuntimeError::ConstraintError {
                 message: format!("Failed to execute constraint template: {}", err),
-                symbol: InternedSymbol::from_text(&constraint_block.domain),
+                context: format!("constraint domain '{}'", constraint_block.domain),
             })
     }
 
@@ -1000,7 +989,7 @@ impl ExecutionContext {
         &mut self,
         predicate: &ir::Predicate,
         args: Vec<LTerm>,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         // Push new scope for predicate execution
         self.push_scope();
 
@@ -1026,7 +1015,7 @@ impl ExecutionContext {
     pub fn ir_predicate_body_to_runtime(
         &mut self,
         predicate: &ir::Predicate,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         let mut body_goals = Vec::new();
         for goal in predicate.body.iter() {
             body_goals.push(self.ir_goal_to_runtime(goal)?);
@@ -1082,7 +1071,7 @@ impl ExecutionContext {
         &mut self,
         pattern: &ir::Pattern,
         term: LTerm,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         match pattern {
             ir::Pattern::Variable(var_name) => {
                 // Pattern variables should create unification goals
@@ -1132,7 +1121,7 @@ impl ExecutionContext {
         &mut self,
         pattern: &ir::Pattern,
         pattern_vars: &mut std::collections::HashMap<InternedSymbol, LTerm>,
-    ) -> Result<LTerm, CompileError> {
+    ) -> Result<LTerm, RuntimeError> {
         match pattern {
             ir::Pattern::Variable(var_name) => {
                 // Check if we've already created this variable in this pattern
@@ -1167,7 +1156,7 @@ impl ExecutionContext {
     }
 
     /// Build a pattern term as an LTerm, adding pattern variables to scope (legacy method)
-    fn build_pattern_term(&mut self, pattern: &ir::Pattern) -> Result<LTerm, CompileError> {
+    fn build_pattern_term(&mut self, pattern: &ir::Pattern) -> Result<LTerm, RuntimeError> {
         let mut pattern_vars = std::collections::HashMap::new();
         self.build_pattern_term_with_vars(pattern, &mut pattern_vars)
     }
@@ -1177,7 +1166,7 @@ impl ExecutionContext {
         &mut self,
         list_pattern: &ir::ListPattern,
         pattern_vars: &mut std::collections::HashMap<InternedSymbol, LTerm>,
-    ) -> Result<LTerm, CompileError> {
+    ) -> Result<LTerm, RuntimeError> {
         // Build list structure with pattern variables
         let mut result = if let Some(tail_pattern) = &list_pattern.tail {
             // If there's a tail, build the tail pattern term
@@ -1201,14 +1190,14 @@ impl ExecutionContext {
         &mut self,
         struct_pattern: &ir::StructPattern,
         pattern_vars: &mut std::collections::HashMap<InternedSymbol, LTerm>,
-    ) -> Result<LTerm, CompileError> {
+    ) -> Result<LTerm, RuntimeError> {
         // Convert TypeReference to TypeId
         let type_id = match &struct_pattern.type_ref {
             ir::TypeReference::UserDefined(type_id) => type_id.clone(),
             ir::TypeReference::Builtin(_) => {
-                return Err(CompileError::SemanticError {
+                return Err(RuntimeError::SemanticError {
                     message: "Cannot pattern match on builtin types".to_string(),
-                    symbol: InternedSymbol::from_text(&struct_pattern.type_ref.to_string()),
+                    context: "struct pattern matching".to_string(),
                 });
             }
         };
@@ -1218,9 +1207,9 @@ impl ExecutionContext {
             .program
             .registry
             .get_type(&type_id)
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: type_id.clone(),
-                symbol: InternedSymbol::from_text(&struct_pattern.type_ref.to_string()),
+            .ok_or_else(|| RuntimeError::UnresolvedType {
+                type_name: type_id.to_string(),
+                context: "struct pattern matching".to_string(),
             })?
             .clone();
 
@@ -1270,14 +1259,14 @@ impl ExecutionContext {
         &mut self,
         enum_pattern: &ir::EnumVariantPattern,
         pattern_vars: &mut std::collections::HashMap<InternedSymbol, LTerm>,
-    ) -> Result<LTerm, CompileError> {
+    ) -> Result<LTerm, RuntimeError> {
         // Convert TypeReference to TypeId
         let enum_type_id = match &enum_pattern.enum_ref {
             ir::TypeReference::UserDefined(type_id) => type_id.clone(),
             ir::TypeReference::Builtin(_) => {
-                return Err(CompileError::SemanticError {
+                return Err(RuntimeError::SemanticError {
                     message: "Cannot pattern match on builtin types".to_string(),
-                    symbol: InternedSymbol::from_text(&enum_pattern.enum_ref.to_string()),
+                    context: "enum pattern matching".to_string(),
                 });
             }
         };
@@ -1287,9 +1276,9 @@ impl ExecutionContext {
             .program
             .registry
             .get_type(&enum_type_id)
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: enum_type_id.clone(),
-                symbol: InternedSymbol::from_text(&enum_pattern.enum_ref.to_string()),
+            .ok_or_else(|| RuntimeError::UnresolvedType {
+                type_name: enum_type_id.to_string(),
+                context: "enum pattern matching".to_string(),
             })?
             .clone();
 
@@ -1358,7 +1347,7 @@ impl ExecutionContext {
         &mut self,
         list_pattern: &ir::ListPattern,
         term: LTerm,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         let mut goals = Vec::new();
 
         // If this is an empty list pattern [], just unify with empty list
@@ -1420,24 +1409,24 @@ impl ExecutionContext {
         &mut self,
         struct_pattern: &ir::StructPattern,
         term: LTerm,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         let mut goals = Vec::new();
 
         // Look up the struct definition - only user-defined types have definitions in registry
         let struct_def = match &struct_pattern.type_ref {
             ir::TypeReference::Builtin(_) => {
-                return Err(CompileError::SemanticError {
+                return Err(RuntimeError::SemanticError {
                     message: "Cannot pattern match on built-in types as structs".to_string(),
-                    symbol: InternedSymbol::from_text("builtin_struct_pattern"),
+                    context: "struct pattern compilation".to_string(),
                 });
             }
             ir::TypeReference::UserDefined(type_id) => self
                 .program
                 .registry
                 .get_type(type_id)
-                .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: type_id.clone(),
-                    symbol: InternedSymbol::from_text(&type_id.to_string()),
+                .ok_or_else(|| RuntimeError::UnresolvedType {
+                    type_name: type_id.to_string(),
+                    context: "struct pattern compilation".to_string(),
                 })?
                 .clone(),
         };
@@ -1517,24 +1506,24 @@ impl ExecutionContext {
         &mut self,
         enum_pattern: &ir::EnumVariantPattern,
         term: LTerm,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         let mut goals = Vec::new();
 
         // Look up the enum definition - only user-defined types have definitions in registry
         let enum_def = match &enum_pattern.enum_ref {
             ir::TypeReference::Builtin(_) => {
-                return Err(CompileError::SemanticError {
+                return Err(RuntimeError::SemanticError {
                     message: "Cannot pattern match on built-in types as enums".to_string(),
-                    symbol: InternedSymbol::from_text("builtin_enum_pattern"),
+                    context: "enum pattern compilation".to_string(),
                 });
             }
             ir::TypeReference::UserDefined(type_id) => self
                 .program
                 .registry
                 .get_type(type_id)
-                .ok_or_else(|| CompileError::UnresolvedType {
-                    attempted_item: type_id.clone(),
-                    symbol: InternedSymbol::from_text(&type_id.to_string()),
+                .ok_or_else(|| RuntimeError::UnresolvedType {
+                    type_name: type_id.to_string(),
+                    context: "enum pattern compilation".to_string(),
                 })?
                 .clone(),
         };
@@ -1658,7 +1647,7 @@ impl ExecutionContext {
     ///
     /// Uses continuation passing style to avoid recursion and handle control flow properly.
     /// Continuations receive MetaValue results and produce Goals.
-    fn evaluate_meta_expr(&mut self, expr: &ir::MetaExpression) -> Result<MetaValue, CompileError> {
+    fn evaluate_meta_expr(&mut self, expr: &ir::MetaExpression) -> Result<MetaValue, RuntimeError> {
         match expr {
             ir::MetaExpression::Variable(var_name) => {
                 // Look up meta variable in current scope
@@ -1666,15 +1655,17 @@ impl ExecutionContext {
                     if let Some(meta_value) = var_value.as_meta() {
                         Ok(meta_value.clone())
                     } else {
-                        Err(CompileError::SemanticError {
-                            message: format!("Variable '{}' is not a meta variable", var_name),
-                            symbol: var_name.clone(),
+                        Err(RuntimeError::VariableTypeMismatch {
+                            variable_name: var_name.to_string(),
+                            expected_type: "meta".to_string(),
+                            actual_type: "relational".to_string(),
+                            context: "meta expression evaluation".to_string(),
                         })
                     }
                 } else {
-                    Err(CompileError::SemanticError {
-                        message: format!("Unbound meta variable: {}", var_name),
-                        symbol: var_name.clone(),
+                    Err(RuntimeError::UnboundVariable {
+                        variable_name: var_name.to_string(),
+                        context: "meta expression evaluation".to_string(),
                     })
                 }
             }
@@ -1710,7 +1701,7 @@ impl ExecutionContext {
         op: ir::MetaBinaryOp,
         left: MetaValue,
         right: MetaValue,
-    ) -> Result<MetaValue, CompileError> {
+    ) -> Result<MetaValue, RuntimeError> {
         use ir::MetaBinaryOp::*;
         match (op.clone(), left, right) {
             // Arithmetic operations
@@ -1723,9 +1714,9 @@ impl ExecutionContext {
             }
             (Divide, MetaValue::Integer(a), MetaValue::Integer(b)) => {
                 if b == 0 {
-                    Err(CompileError::SemanticError {
+                    Err(RuntimeError::SemanticError {
                         message: "Division by zero in meta expression".to_string(),
-                        symbol: InternedSymbol::from_text("__meta_expr"),
+                        context: "meta expression evaluation".to_string(),
                     })
                 } else {
                     Ok(MetaValue::Integer(a / b))
@@ -1751,15 +1742,15 @@ impl ExecutionContext {
                 Ok(MetaValue::String(format!("{}{}", a, b).into()))
             }
             // Type mismatches
-            _ => Err(CompileError::SemanticError {
+            _ => Err(RuntimeError::SemanticError {
                 message: format!("Invalid operand types for binary operation: {:?}", op),
-                symbol: InternedSymbol::from_text("__meta_expr"),
+                context: "meta expression evaluation".to_string(),
             }),
         }
     }
 
     /// Convert IR MetaLet to runtime using CPS
-    fn ir_meta_let_to_runtime(&mut self, meta_let: &ir::MetaLet) -> Result<Goal, CompileError> {
+    fn ir_meta_let_to_runtime(&mut self, meta_let: &ir::MetaLet) -> Result<Goal, RuntimeError> {
         // Evaluate the meta expression directly
         let value = self.evaluate_meta_expr(&meta_let.expression)?;
 
@@ -1772,7 +1763,7 @@ impl ExecutionContext {
     }
 
     /// Convert IR MetaIf to runtime using CPS
-    fn ir_meta_if_to_runtime(&mut self, meta_if: &ir::MetaIf) -> Result<Goal, CompileError> {
+    fn ir_meta_if_to_runtime(&mut self, meta_if: &ir::MetaIf) -> Result<Goal, RuntimeError> {
         // Evaluate the condition directly
         let condition_value = self.evaluate_meta_expr(&meta_if.condition)?;
 
@@ -1790,9 +1781,9 @@ impl ExecutionContext {
                 // Try else-if branches
                 self.evaluate_meta_elseif_branches(&meta_if.else_ifs, &meta_if.else_body)
             }
-            _ => Err(CompileError::SemanticError {
+            _ => Err(RuntimeError::SemanticError {
                 message: "Meta if condition must evaluate to boolean".to_string(),
-                symbol: InternedSymbol::from_text("__meta_if"),
+                context: "meta if evaluation".to_string(),
             }),
         }
     }
@@ -1802,7 +1793,7 @@ impl ExecutionContext {
         &mut self,
         else_ifs: &[(ir::MetaExpression, Rc<[ir::StructuralGoal]>)],
         else_body: &Option<Rc<[ir::StructuralGoal]>>,
-    ) -> Result<Goal, CompileError> {
+    ) -> Result<Goal, RuntimeError> {
         if let Some((condition, body)) = else_ifs.first() {
             // Evaluate the first else-if condition directly
             let condition_value = self.evaluate_meta_expr(condition)?;
@@ -1820,9 +1811,9 @@ impl ExecutionContext {
                     // Try remaining else-if branches
                     self.evaluate_meta_elseif_branches(&else_ifs[1..], else_body)
                 }
-                _ => Err(CompileError::SemanticError {
+                _ => Err(RuntimeError::SemanticError {
                     message: "Meta else-if condition must evaluate to boolean".to_string(),
-                    symbol: InternedSymbol::from_text("__meta_elseif"),
+                    context: "meta else-if evaluation".to_string(),
                 }),
             }
         } else if let Some(else_body) = else_body {
@@ -1846,9 +1837,9 @@ impl ExecutionContext {
         &mut self,
         expr: &ir::MetaExpression,
         continuation: F,
-    ) -> Result<R, CompileError>
+    ) -> Result<R, RuntimeError>
     where
-        F: FnOnce(MetaValue) -> Result<R, CompileError>,
+        F: FnOnce(MetaValue) -> Result<R, RuntimeError>,
     {
         // Evaluate the expression directly (no deep recursion expected in meta expressions)
         let value = self.evaluate_meta_expr(expr)?;
@@ -1857,7 +1848,7 @@ impl ExecutionContext {
     }
 
     /// Convert IR MetaFor to runtime using CPS
-    fn ir_meta_for_to_runtime(&mut self, meta_for: &ir::MetaFor) -> Result<Goal, CompileError> {
+    fn ir_meta_for_to_runtime(&mut self, meta_for: &ir::MetaFor) -> Result<Goal, RuntimeError> {
         // Evaluate start and end expressions directly (avoiding nested closures)
         let start_value = self.evaluate_meta_expr(&meta_for.start)?;
         let end_value = self.evaluate_meta_expr(&meta_for.end)?;
@@ -1885,9 +1876,9 @@ impl ExecutionContext {
 
                 Ok(self.build_conjunction(iteration_goals))
             }
-            _ => Err(CompileError::SemanticError {
+            _ => Err(RuntimeError::SemanticError {
                 message: "Meta for loop bounds must be integers".to_string(),
-                symbol: meta_for.variable.clone(),
+                context: "meta for loop evaluation".to_string(),
             }),
         }
     }
@@ -1897,7 +1888,7 @@ impl ExecutionContext {
         &self,
         predicate: &ir::Predicate,
         captured_args: &[ArgumentValue],
-    ) -> Result<(), CompileError> {
+    ) -> Result<(), RuntimeError> {
         // Only validate if predicate has type annotations
         for (i, param) in predicate.parameters.iter().enumerate() {
             if let Some(type_annotation) = &param.type_annotation {
@@ -1966,11 +1957,11 @@ impl ExecutionContext {
                             }
                         };
 
-                        return Err(CompileError::InvalidParameterType {
+                        return Err(RuntimeError::InvalidParameterType {
                             parameter_name: param.name.to_string(),
                             expected_type: expected_type_desc.to_string(),
                             actual_type: arg_type_desc.to_string(),
-                            symbol: param.name.clone(),
+                            context: "parameter type validation".to_string(),
                         });
                     }
                 }

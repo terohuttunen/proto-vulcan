@@ -212,6 +212,70 @@ impl From<CompileError> for CompileWarning {
     }
 }
 
+/// Errors that occur during runtime execution
+#[derive(Debug, Error, Clone)]
+pub enum RuntimeError {
+    #[error("Cannot resolve type '{type_name}' in {context}")]
+    UnresolvedType {
+        type_name: String,
+        context: String,
+    },
+
+    #[error("Cannot resolve predicate '{predicate_name}' in {context}")]
+    UnresolvedPredicate {
+        predicate_name: String,
+        context: String,
+    },
+
+    #[error("Cannot resolve reference '{reference_name}' in {context}")]
+    UnresolvedReference {
+        reference_name: String,
+        context: String,
+    },
+
+    #[error("Semantic error in {context}: {message}")]
+    SemanticError {
+        message: String,
+        context: String,
+    },
+
+    #[error("Invalid parameter type for '{parameter_name}' in {context}: expected {expected_type}, got {actual_type}")]
+    InvalidParameterType {
+        parameter_name: String,
+        expected_type: String,
+        actual_type: String,
+        context: String,
+    },
+
+    #[error("Arity mismatch for predicate '{predicate_name}' in {context}: expected {expected_arity} arguments, found {actual_arity}")]
+    ArityMismatch {
+        predicate_name: String,
+        expected_arity: usize,
+        actual_arity: usize,
+        context: String,
+    },
+
+    #[error("Unbound variable '{variable_name}' in {context}")]
+    UnboundVariable {
+        variable_name: String,
+        context: String,
+    },
+
+    #[error("Variable '{variable_name}' type mismatch in {context}: expected {expected_type}, got {actual_type}")]
+    VariableTypeMismatch {
+        variable_name: String,
+        expected_type: String,
+        actual_type: String,
+        context: String,
+    },
+
+    #[error("Constraint execution error in {context}: {message}")]
+    ConstraintError {
+        message: String,
+        context: String,
+    },
+}
+
 /// Errors that can occur during IR compilation
 #[derive(Debug, Error, Clone)]
 pub enum CompileError {
