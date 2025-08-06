@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 // use std::collections::HashMap; // Not used in this module
 use std::time::Duration;
-use crate::user::DefaultUser;
 
 mod assertions;
 pub mod compiler;
@@ -22,24 +21,21 @@ pub mod parser;
 pub mod query;
 pub mod runtime;
 mod runtime_value;
-mod semantic_analysis;
 #[cfg(test)]
 mod struct_tests;
-#[cfg(test)]
-mod debug_string_test;
 pub mod symbol_table;
 pub mod test_runner;
 pub mod trace;
 
 // New streaming API modules
 mod config;
-mod results;
 mod iterator;
+mod results;
 
 // Re-export new API types
 pub use config::*;
-pub use results::*;
 pub use iterator::*;
+pub use results::*;
 
 /// Validation functions for @main relations
 pub fn find_main_relation(
@@ -85,6 +81,11 @@ pub fn validate_main_relation(rel_def: &ast::PredicateDefinition) -> Result<(), 
                 metaprogramming::TypeAnnotation::Int => "int".to_string(),
                 metaprogramming::TypeAnnotation::String => "string".to_string(),
                 metaprogramming::TypeAnnotation::Bool => "bool".to_string(),
+                metaprogramming::TypeAnnotation::RelInt => "Int".to_string(),
+                metaprogramming::TypeAnnotation::RelString => "String".to_string(),
+                metaprogramming::TypeAnnotation::RelBool => "Bool".to_string(),
+                metaprogramming::TypeAnnotation::RelChar => "Char".to_string(),
+                metaprogramming::TypeAnnotation::LTerm => "LTerm".to_string(),
                 metaprogramming::TypeAnnotation::Relation(arity) => format!("rel({})", arity),
                 metaprogramming::TypeAnnotation::Custom(name) => name.to_string(),
             };
@@ -261,16 +262,16 @@ impl Interpreter {
         }
     }
 
-    /// Creates a new interpreter and loads the standard library.
+    /// Creates a new interpreter with core builtins registered.
+    /// Note: Standard library is now loaded automatically via import resolution when needed.
     pub fn with_stdlib() -> Self {
         let mut interpreter = Self::new();
 
         // Register core builtin relations
         interpreter.register_core_builtins();
 
-        if let Err(e) = interpreter.load_stdlib() {
-            eprintln!("Fatal: Failed to load standard library: {:?}", e);
-        }
+        // Note: No longer loading stdlib here - it will be loaded automatically
+        // via the new IR-based import resolution when std predicates are imported
         interpreter
     }
 
@@ -287,7 +288,10 @@ impl Interpreter {
     /// Check if a predicate exists in the loaded program (IR-based)
     pub fn has_predicate(&self, name: &str) -> bool {
         if let Some(program) = &self.base_program {
-            let predicate_id = compiler::ir::PredicateId::new(format!("::{}", name));
+            let predicate_id = compiler::ir::PredicateId::with_parent(
+                std::rc::Rc::new(compiler::ir::ModulePath::root()),
+                name,
+            );
             program.registry.get_predicate(&predicate_id).is_some()
         } else {
             false
@@ -297,7 +301,8 @@ impl Interpreter {
     /// Check if a type exists in the loaded program (IR-based)
     pub fn has_type(&self, name: &str) -> bool {
         if let Some(program) = &self.base_program {
-            let type_id = compiler::ir::TypeId::new(format!("::{}", name));
+            let type_id =
+                compiler::ir::TypeId::with_parent(std::rc::Rc::new(compiler::ir::ModulePath::root()), name);
             program.registry.get_type(&type_id).is_some()
         } else {
             false
@@ -307,17 +312,16 @@ impl Interpreter {
     /// Get struct field information (IR-based)
     pub fn get_struct_fields(&self, name: &str) -> Option<Vec<String>> {
         if let Some(program) = &self.base_program {
-            let type_id = compiler::ir::TypeId::new(format!("::{}", name));
+            let type_id =
+                compiler::ir::TypeId::with_parent(std::rc::Rc::new(compiler::ir::ModulePath::root()), name);
             if let Some(type_def) = program.registry.get_type(&type_id) {
                 match &type_def.kind {
-                    compiler::ir::TypeKind::Struct(struct_def) => {
-                        match &struct_def.fields {
-                            compiler::ir::StructFields::Named(fields) => {
-                                Some(fields.iter().map(|f| f.name.to_string()).collect())
-                            }
-                            compiler::ir::StructFields::Tuple(_) => Some(Vec::new()),
+                    compiler::ir::TypeKind::Struct(struct_def) => match &struct_def.fields {
+                        compiler::ir::StructFields::Named(fields) => {
+                            Some(fields.iter().map(|f| f.name.to_string()).collect())
                         }
-                    }
+                        compiler::ir::StructFields::Tuple(_) => Some(Vec::new()),
+                    },
                     _ => None,
                 }
             } else {
@@ -331,7 +335,10 @@ impl Interpreter {
     /// Get predicate arity (IR-based)
     pub fn get_predicate_arity(&self, name: &str) -> Option<usize> {
         if let Some(program) = &self.base_program {
-            let predicate_id = compiler::ir::PredicateId::new(format!("::{}", name));
+            let predicate_id = compiler::ir::PredicateId::with_parent(
+                std::rc::Rc::new(compiler::ir::ModulePath::root()),
+                name,
+            );
             if let Some(predicate) = program.registry.get_predicate(&predicate_id) {
                 Some(predicate.parameters.len())
             } else {
@@ -407,16 +414,16 @@ impl Interpreter {
 
     /// Load a program as the base program for subsequent queries
     pub fn load_program(
-        &mut self, 
-        program_source: &str, 
-        config: ExecutionConfig
+        &mut self,
+        program_source: &str,
+        config: ExecutionConfig,
     ) -> Result<LoadResult, InterpreterError> {
         let start_time = std::time::Instant::now();
-        
+
         // Parse program
         let program_ast = parser::parse_str(program_source)
             .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
-        
+
         if config.check_only {
             return Ok(LoadResult {
                 compilation_time: Duration::default(),
@@ -428,24 +435,28 @@ impl Interpreter {
                     is_valid: true,
                     errors: Vec::new(),
                     warnings: Vec::new(),
-                    ast: if config.show_ast { Some(program_ast) } else { None },
+                    ast: if config.show_ast {
+                        Some(program_ast)
+                    } else {
+                        None
+                    },
                     parse_time: start_time.elapsed(),
                 }),
             });
         }
-        
+
         // Compile program
         let ir_program = self.compile_program_with_config(program_ast, &config)?;
         let compilation_time = start_time.elapsed();
-        
+
         // Count items in the program (simplified - actual count methods need to be implemented)
         let module_count = 1; // TODO: Get actual count from ir_program.registry
-        let predicate_count = 0; // TODO: Get actual count from ir_program.registry  
+        let predicate_count = 0; // TODO: Get actual count from ir_program.registry
         let type_count = 0; // TODO: Get actual count from ir_program.registry
-        
+
         // Store as base program wrapped in Rc for copy-on-write semantics
         self.base_program = Some(Rc::new(ir_program));
-        
+
         Ok(LoadResult {
             compilation_time,
             warnings: Vec::new(), // TODO: Get from compiler
@@ -458,15 +469,19 @@ impl Interpreter {
 
     /// Load a program from AST (for backward compatibility)
     pub fn load_program_ast(&mut self, program: ast::Program) -> Result<(), InterpreterError> {
-        // Use the new API with default config
+        // Always use the standard loading method - don't try to merge programs
         self.load_program_from_ast_with_config(program, ExecutionConfig::default())?;
         Ok(())
     }
-    
+
     /// Load a program from AST with configuration
-    pub fn load_program_from_ast_with_config(&mut self, program_ast: ast::Program, config: ExecutionConfig) -> Result<LoadResult, InterpreterError> {
+    pub fn load_program_from_ast_with_config(
+        &mut self,
+        program_ast: ast::Program,
+        config: ExecutionConfig,
+    ) -> Result<LoadResult, InterpreterError> {
         let start_time = std::time::Instant::now();
-        
+
         if config.check_only {
             return Ok(LoadResult {
                 compilation_time: Duration::default(),
@@ -478,19 +493,23 @@ impl Interpreter {
                     is_valid: true,
                     errors: Vec::new(),
                     warnings: Vec::new(),
-                    ast: if config.show_ast { Some(program_ast) } else { None },
+                    ast: if config.show_ast {
+                        Some(program_ast)
+                    } else {
+                        None
+                    },
                     parse_time: start_time.elapsed(),
                 }),
             });
         }
-        
+
         // Compile program
         let ir_program = self.compile_program_with_config(program_ast, &config)?;
         let compilation_time = start_time.elapsed();
-        
+
         // Store as base program wrapped in Rc for copy-on-write semantics
         self.base_program = Some(Rc::new(ir_program));
-        
+
         Ok(LoadResult {
             compilation_time,
             warnings: Vec::new(),
@@ -514,6 +533,105 @@ impl Interpreter {
         // Use the environment's load_std_library method
         let mut env = self.environment.borrow_mut();
         env.load_std_library()
+    }
+
+    /// Load the standard library as the base program for import resolution
+    pub fn load_stdlib_as_base_program(&mut self) -> Result<(), InterpreterError> {
+        use crate::interpreter::parser;
+        use std::fs;
+
+        // Load std/mod.pv as the base
+        let std_mod_path = PathBuf::from("std/mod.pv");
+        if !std_mod_path.exists() {
+            return Err(InterpreterError::IoError(
+                "Standard library std/mod.pv not found".to_string(),
+            ));
+        }
+
+        let std_mod_source = fs::read_to_string(&std_mod_path)
+            .map_err(|e| InterpreterError::IoError(e.to_string()))?;
+
+        let std_mod_ast = parser::parse_str(&std_mod_source).map_err(|e| {
+            InterpreterError::RuntimeError(format!("Failed to parse std/mod.pv: {:?}", e))
+        })?;
+
+        // Create a wrapper program that declares std as a module
+        let wrapper_program = self.create_stdlib_wrapper_program(std_mod_ast)?;
+
+        // Load wrapper program as base program - this puts stdlib in ::std namespace
+        self.load_program_from_ast_with_config(wrapper_program, ExecutionConfig::default())?;
+
+        Ok(())
+    }
+
+    /// Create a wrapper program that loads stdlib into the ::std namespace
+    fn create_stdlib_wrapper_program(
+        &self,
+        std_mod_ast: ast::Program,
+    ) -> Result<ast::Program, InterpreterError> {
+        use crate::interpreter::parser::ast;
+
+        // Create a module declaration for std that contains the std/mod.pv content
+        let std_module = ast::Item::Module(ast::ModuleDefinition {
+            name: symbol_table::InternedSymbol::from_text("std"),
+            visibility: ast::Visibility::Public,
+            search_strategy: None,
+            items: std_mod_ast.items,
+            span: ast::Location::dummy(),
+        });
+
+        // Create the wrapper program with just the std module
+        Ok(ast::Program {
+            items: vec![std_module],
+            span: ast::Location::dummy(),
+        })
+    }
+
+    /// Generic method to append AST items to the current base program using CoW
+    pub fn append_items_to_base_program(
+        &mut self,
+        items: Vec<ast::Item>,
+    ) -> Result<(), InterpreterError> {
+        // Get the current base program, or create empty one if none exists
+        let mut current_program = if let Some(base) = &self.base_program {
+            // Clone the program for CoW modification
+            (**base).clone()
+        } else {
+            // Create new empty program
+            compiler::ir::Program::new()
+        };
+
+        // Create an AST program with the new items
+        let ast_program = ast::Program {
+            items,
+            span: ast::Location::dummy(),
+        };
+
+        // Compile the new items and add them to the program
+        let new_ir_items =
+            self.compile_program_with_config(ast_program, &ExecutionConfig::default())?;
+
+        // Add the new items to the current program using CoW
+        let registry_mut = current_program.registry_mut();
+
+        // Add all items from the new program to the current program
+        // Use proper registry methods instead of accessing private fields
+        // For now, this method is deprecated - use compile_items_into instead
+        // TODO: Remove this method and use compile_items_into for incremental compilation
+
+        // Update the base program
+        self.base_program = Some(Rc::new(current_program));
+
+        Ok(())
+    }
+
+    /// Append individual predicate to base program using CoW
+    pub fn append_predicate_to_base_program(
+        &mut self,
+        predicate: ast::PredicateDefinition,
+    ) -> Result<(), InterpreterError> {
+        let predicate_item = ast::Item::Predicate(predicate);
+        self.append_items_to_base_program(vec![predicate_item])
     }
 
     /// Find the standard library path by trying different locations
@@ -560,13 +678,16 @@ impl Interpreter {
 
     /// Execute a query against the loaded base program
     pub fn query(
-        &mut self, 
-        query: &str, 
-        config: ExecutionConfig
+        &mut self,
+        query: &str,
+        config: ExecutionConfig,
     ) -> Result<QueryResultIterator, InterpreterError> {
         // Require loaded base program
-        let base_program = self.base_program.as_ref()
-            .ok_or_else(|| InterpreterError::RuntimeError("No base program loaded. Call load_program() first.".to_string()))?;
+        let base_program = self.base_program.as_ref().ok_or_else(|| {
+            InterpreterError::RuntimeError(
+                "No base program loaded. Call load_program() first.".to_string(),
+            )
+        })?;
 
         // Parse query
         let query_goal = query::parse_query(query)?;
@@ -591,7 +712,7 @@ impl Interpreter {
         &mut self,
         program_source: &str,
         query: &str,
-        config: ExecutionConfig
+        config: ExecutionConfig,
     ) -> Result<QueryResultIterator, InterpreterError> {
         // Parse program and query
         let program_ast = parser::parse_str(program_source)
@@ -618,9 +739,9 @@ impl Interpreter {
 
     /// Execute a program's @main relation
     pub fn run_main(
-        &mut self, 
-        program_source: &str, 
-        config: ExecutionConfig
+        &mut self,
+        program_source: &str,
+        config: ExecutionConfig,
     ) -> Result<QueryResultIterator, InterpreterError> {
         // Parse program
         let program_ast = parser::parse_str(program_source)
@@ -655,14 +776,14 @@ impl Interpreter {
 
     /// Execute tests in a program
     pub fn run_tests(
-        &mut self, 
-        program_source: &str, 
-        config: ExecutionConfig
+        &mut self,
+        program_source: &str,
+        config: ExecutionConfig,
     ) -> Result<TestResults, InterpreterError> {
         // For now, return a placeholder implementation
         // TODO: Implement proper test discovery and execution
         let start_time = std::time::Instant::now();
-        
+
         // Parse program to validate it
         let _program_ast = parser::parse_str(program_source)
             .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
@@ -680,12 +801,12 @@ impl Interpreter {
 
     /// Check program syntax and compilation without execution
     pub fn check_program(
-        &mut self, 
-        program_source: &str, 
-        config: ExecutionConfig
+        &mut self,
+        program_source: &str,
+        config: ExecutionConfig,
     ) -> Result<CheckResult, InterpreterError> {
         let start_time = std::time::Instant::now();
-        
+
         // Parse
         let program_ast = match parser::parse_str(program_source) {
             Ok(ast) => ast,
@@ -708,20 +829,28 @@ impl Interpreter {
         // Compile
         let mut compiler = compiler::Compiler::new();
         let compile_result = compiler.compile_from_ast(program_ast.clone());
-        
+
         match compile_result {
             Ok(_) => Ok(CheckResult {
                 is_valid: true,
                 errors: Vec::new(),
                 warnings: compiler.get_warnings().to_vec(),
-                ast: if config.show_ast { Some(program_ast) } else { None },
+                ast: if config.show_ast {
+                    Some(program_ast)
+                } else {
+                    None
+                },
                 parse_time,
             }),
             Err(e) => Ok(CheckResult {
                 is_valid: false,
                 errors: vec![e],
                 warnings: compiler.get_warnings().to_vec(),
-                ast: if config.show_ast { Some(program_ast) } else { None },
+                ast: if config.show_ast {
+                    Some(program_ast)
+                } else {
+                    None
+                },
                 parse_time,
             }),
         }
@@ -729,9 +858,9 @@ impl Interpreter {
 
     /// Compile program to IR without execution
     pub fn compile_program(
-        &mut self, 
-        program_source: &str, 
-        config: ExecutionConfig
+        &mut self,
+        program_source: &str,
+        config: ExecutionConfig,
     ) -> Result<CompileResult, InterpreterError> {
         let program_ast = parser::parse_str(program_source)
             .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
@@ -751,58 +880,20 @@ impl Interpreter {
 
     /// Internal method to compile a program with configuration
     fn compile_program_with_config(
-        &self, 
-        program_ast: ast::Program, 
-        config: &ExecutionConfig
+        &self,
+        program_ast: ast::Program,
+        config: &ExecutionConfig,
     ) -> Result<compiler::ir::Program, InterpreterError> {
         let mut compiler = compiler::Compiler::new();
-        
+
         // Set compilation options based on config
         // TODO: Set compilation options from config when available
         // For now, use default options
-        
-        compiler.compile_from_ast(program_ast)
+
+        compiler
+            .compile_from_ast(program_ast)
             .map_err(|e| InterpreterError::RuntimeError(format!("Compilation failed: {:?}", e)))
     }
-
-
-
-    // ===== BACKWARD COMPATIBILITY METHODS =====
-
-    /// Execute a program with a query (legacy method for backward compatibility)
-    pub fn execute_program_with_query(
-        &mut self,
-        program_source: &str,
-        query_str: &str,
-    ) -> Result<Vec<QueryResult>, InterpreterError> {
-        // Use the new streaming API but collect results to Vec
-        let config = ExecutionConfig::default();
-        let results = self.run_program(program_source, query_str, config)?;
-        results.collect_limited(100)
-    }
-
-    /// Execute a query with test timeout (legacy method for backward compatibility)
-    pub fn query_with_test_timeout(
-        &mut self,
-        query_str: &str,
-        timeout_ms: Option<u64>,
-        test_timeout_info: Option<(std::time::Instant, u64)>,
-    ) -> Result<Vec<QueryResult>, InterpreterError> {
-        // Create config from parameters
-        let timeout = test_timeout_info
-            .map(|(_, timeout_ms)| timeout_ms)
-            .or(timeout_ms);
-        
-        let config = ExecutionConfig {
-            timeout,
-            ..Default::default()
-        };
-        
-        // Use the new streaming API
-        let results = self.query(query_str, config)?;
-        results.collect_limited(100)
-    }
-    
 }
 
 impl Default for Interpreter {

@@ -10,16 +10,7 @@ use crate::interpreter::symbol_table::InternedSymbol;
 /// Import resolution methods for the IR compiler
 impl Compiler {
     /// Phase 2: Resolve imports using simplified fixpoint algorithm with global pending list
-    /// TODO: Reimplement import resolution for IR-only architecture
     pub(super) fn resolve_imports(&mut self, ir_program: &mut Program) -> Result<(), CompileError> {
-        // Temporarily disabled - imports not yet supported in IR-only architecture
-        // For basic enum disambiguation, we don't need import resolution since we're 
-        // compiling enums and queries in the same module
-        let _ = ir_program; // Suppress unused parameter warning
-        return Ok(());
-        
-        // TODO: Reimplement the following import resolution logic for IR-only architecture
-        #[allow(unreachable_code)]
         loop {
             // Use std::mem::replace to take current pending imports, leaving empty list
             let current_pending = std::mem::replace(&mut self.pending_imports, Vec::new());
@@ -30,29 +21,20 @@ impl Compiler {
 
             let mut resolved_count = 0;
 
-            // Try to resolve each import directly
+            // Try to resolve each import
             for pending_import in current_pending {
                 match self.try_resolve_import(&pending_import, ir_program)? {
-                    Some(resolved_item_id) => {
-                        // Check if this is a glob import (identified by the special marker format)
-                        let is_glob_import =
-                            matches!(&pending_import.use_statement.path, ast::UsePath::Glob(_));
-
-                        if is_glob_import {
-                            // Glob imports handle symbol addition internally, no need to add the marker
-                            // The resolved_item_id is just a tracking marker for successful glob processing
-                        } else {
-                            // Regular import - TODO: Handle imports in new IR-only architecture  
-                            // For now, skip adding to symbol maps since we're using IR registry directly
-                            let _local_name = pending_import
-                                .alias
-                                .clone()
-                                .unwrap_or_else(|| pending_import.symbol_name.clone());
-                            
-                            // Items are already in the IR registry, imports are resolved during compilation
-                            // by querying the registry directly with full paths
+                    Some(resolved_imports) => {
+                        for resolved_import in &resolved_imports {
+                            ir_program.registry_mut().add_alias(ir::Alias {
+                                id: ItemId::with_parent(
+                                    resolved_import.importing_module.full_path(),
+                                    resolved_import.import_name.clone(),
+                                ),
+                                target: resolved_import.imported_item.clone(),
+                            });
                         }
-                        resolved_count += 1;
+                        resolved_count += resolved_imports.len();
                     }
                     None => {
                         // Import not yet resolved - add back to pending list
@@ -69,314 +51,331 @@ impl Compiler {
 
         // Check for any remaining unresolved imports
         if !self.pending_imports.is_empty() {
-            let first_unresolved = &self.pending_imports[0];
-            let attempted_path = format!(
-                "{}::{}",
-                first_unresolved.target_module, first_unresolved.symbol_name
-            );
-            return Err(CompileError::UnresolvedReference {
-                attempted_item: ItemId::new(attempted_path, ItemKind::Module), // Default to Module since type is unknown
-                symbol: InternedSymbol::from_text(&first_unresolved.symbol_name),
+            return Err(CompileError::UnresolvedImports {
+                imports: std::mem::replace(&mut self.pending_imports, Vec::new()),
             });
         }
 
+        //println!("Import resolution complete: {}", ir_program);
+
         Ok(())
+    }
+
+    /// Extract the module path from an import statement
+    fn extract_module_path_from_import<'a>(
+        &self,
+        import: &'a PendingImport,
+    ) -> Option<&'a ast::QualifiedPath> {
+        match &import.use_statement.path {
+            ast::UsePath::Simple(qualified_path, _) => {
+                // For simple imports, we would need to extract the module part, but for now
+                // we can return the full path and let the resolver handle it
+                Some(qualified_path)
+            }
+            ast::UsePath::Glob(qualified_path) => {
+                // For glob imports, the entire qualified path is the module
+                Some(qualified_path)
+            }
+            ast::UsePath::List(qualified_path, _) => {
+                // For list imports, the qualified path is the module
+                Some(qualified_path)
+            }
+        }
+    }
+
+    /// Check if an import references a specific crate
+    fn import_references_crate(&self, import: &PendingImport, crate_name: &str) -> bool {
+        match &import.use_statement.path {
+            ast::UsePath::Simple(qualified_path, _)
+            | ast::UsePath::Glob(qualified_path)
+            | ast::UsePath::List(qualified_path, _) => {
+                self.qualified_path_references_crate(qualified_path, crate_name)
+            }
+        }
+    }
+
+    /// Check if a qualified path references a specific crate
+    fn qualified_path_references_crate(
+        &self,
+        qualified_path: &ast::QualifiedPath,
+        crate_name: &str,
+    ) -> bool {
+        match qualified_path {
+            ast::QualifiedPath::Global(segments) | ast::QualifiedPath::Absolute(segments) => {
+                segments.first().map(|s| s.as_ref()) == Some(crate_name)
+            }
+            ast::QualifiedPath::External(external_crate, _) => {
+                external_crate.as_ref() == crate_name
+            }
+            _ => false, // Relative paths don't reference external crates
+        }
     }
 
     /// Try to resolve a single import, returning the resolved ItemId if successful
     fn try_resolve_import(
         &mut self,
         pending_import: &PendingImport,
-        ir_program: &Program,
-    ) -> Result<Option<ItemId>, CompileError> {
-        match &pending_import.use_statement.path {
-            ast::UsePath::Simple(_, _) => {
-                self.try_resolve_simple_import(pending_import, ir_program)
+        ir_program: &mut Program,
+    ) -> Result<Option<Vec<ResolvedImport>>, CompileError> {
+        self.module_path_stack
+            .push(pending_import.importing_module.full_path());
+
+        let result = match &pending_import.use_statement.path {
+            ast::UsePath::Simple(qualified_path, name) => {
+                self.try_resolve_simple_import(qualified_path, name, ir_program)
             }
             ast::UsePath::Glob(_) => self.try_resolve_glob_import(pending_import, ir_program),
             ast::UsePath::List(_, _) => self.try_resolve_list_import(pending_import, ir_program),
-        }
+        };
+
+        self.module_path_stack.pop();
+
+        result
     }
 
-    /// Resolve a qualified path from a use statement to canonical module tree path
+    /// Resolve a qualified path from a use statement to resolved path
     fn resolve_use_clause_path(
         &self,
         qualified_path: &ast::QualifiedPath,
         context_module: &ModuleId,
         symbol_name: &str,
         ir_program: &Program,
-    ) -> Result<CanonicalPath, ResolutionError> {
-        match qualified_path {
-            ast::QualifiedPath::Global(segments) | ast::QualifiedPath::Absolute(segments) => {
-                self.resolve_absolute_path(segments, symbol_name)
-            }
-            ast::QualifiedPath::Relative(segments) => {
-                self.resolve_relative_path(segments, context_module, symbol_name)
-            }
-            ast::QualifiedPath::Self_(segments) => {
-                self.resolve_self_path(segments, context_module, symbol_name)
-            }
-            ast::QualifiedPath::Super(levels, segments) => {
-                self.resolve_super_path(*levels, segments, context_module, symbol_name, ir_program)
-            }
-            ast::QualifiedPath::External(crate_name, segments) => {
-                self.resolve_external_path(crate_name, segments, symbol_name)
-            }
-        }
-    }
-
-    /// Resolve an absolute path starting from root (::foo::bar::Item)
-    fn resolve_absolute_path(
-        &self,
-        segments: &[InternedSymbol],
-        symbol_name: &str,
-    ) -> Result<CanonicalPath, ResolutionError> {
-        let root_module = ModuleId::new("::");
-        self.resolve_segments_from_module(segments, &root_module, symbol_name)
-    }
-
-    /// Resolve a relative path from the given context module  
-    fn resolve_relative_path(
-        &self,
-        segments: &[InternedSymbol],
-        context_module: &ModuleId,
-        symbol_name: &str,
-    ) -> Result<CanonicalPath, ResolutionError> {
-        self.resolve_segments_from_module(segments, context_module, symbol_name)
-    }
-
-    /// Resolve a self path (self::foo::Item)
-    fn resolve_self_path(
-        &self,
-        segments: &[InternedSymbol],
-        context_module: &ModuleId,
-        symbol_name: &str,
-    ) -> Result<CanonicalPath, ResolutionError> {
-        // self:: paths start from the current module
-        self.resolve_segments_from_module(segments, context_module, symbol_name)
-    }
-
-    /// Resolve a super path (super::foo::Item)
-    fn resolve_super_path(
-        &self,
-        levels: usize,
-        segments: &[InternedSymbol],
-        context_module: &ModuleId,
-        symbol_name: &str,
-        ir_program: &Program,
-    ) -> Result<CanonicalPath, ResolutionError> {
-        let mut current_module = context_module.clone();
-
-        // Go up 'levels' number of parent modules using direct parent references
-        for _ in 0..levels {
-            if let Some(module) = ir_program.registry.get_module(&current_module) {
-                if let Some(parent_id) = &module.parent {
-                    current_module = parent_id.clone(); // Cheap clone as noted by user
-                } else {
-                    // At root, can't go up further
-                    return Err(ResolutionError::Failed(CompileError::UnresolvedModule {
-                        attempted_item: ModuleId::new("super"),
-                        symbol: InternedSymbol::from_text("super"),
-                    }));
-                }
-            } else {
-                // Module doesn't exist in registry
-                return Err(ResolutionError::Failed(CompileError::UnresolvedModule {
-                    attempted_item: current_module.clone(),
-                    symbol: InternedSymbol::from_text(current_module.as_ref().path.as_ref()),
-                }));
-            }
-        }
-
-        self.resolve_segments_from_module(segments, &current_module, symbol_name)
-    }
-
-    /// Resolve an external path (external_crate::foo::Item)
-    fn resolve_external_path(
-        &self,
-        crate_name: &InternedSymbol,
-        segments: &[InternedSymbol],
-        symbol_name: &str,
-    ) -> Result<CanonicalPath, ResolutionError> {
-        // External crates are resolved from root with crate name as first segment
-        let mut full_segments = vec![crate_name.clone()];
-        full_segments.extend_from_slice(segments);
-
-        let root_module = ModuleId::new("::");
-        self.resolve_segments_from_module(&full_segments, &root_module, symbol_name)
-    }
-
-    /// Resolve path segments starting from a specific module
-    fn resolve_segments_from_module(
-        &self,
-        segments: &[InternedSymbol],
-        start_module: &ModuleId,
-        symbol_name: &str,
-    ) -> Result<CanonicalPath, ResolutionError> {
-        let mut current_module = start_module.clone();
-
-        // Walk through all segments to find the target module
-        for segment in segments {
-            match self.resolve_segment_in_module(&segment.to_string(), &current_module)? {
-                Some(resolved_module) => {
-                    current_module = resolved_module;
-                }
-                None => {
-                    // Segment couldn't be resolved yet - blocked
-                    return Err(ResolutionError::Blocked);
-                }
-            }
-        }
-
-        // All segments resolved - return canonical path
-        Ok(CanonicalPath {
-            module_path: current_module.id.path.to_string(),
-            symbol_name: symbol_name.to_string(),
-        })
-    }
-
-    /// Resolve a single segment within a module, following no-shadowing rules
-    /// TODO: Reimplement for IR-only architecture
-    fn resolve_segment_in_module(
-        &self,
-        _segment: &str,
-        _module: &ModuleId,
-    ) -> Result<Option<ModuleId>, ResolutionError> {
-        // Temporarily disabled - return None to indicate not found
-        Ok(None)
+    ) -> Result<ResolvedPath, ResolutionError> {
+        // Use the modern resolution function that returns ResolvedPath
+        self.resolve_qualified_path_all(qualified_path, ir_program)
+            .map_err(ResolutionError::Failed)
     }
 
     /// Try to resolve a simple import (use path::item)
     fn try_resolve_simple_import(
         &self,
-        pending_import: &PendingImport,
-        ir_program: &Program,
-    ) -> Result<Option<ItemId>, CompileError> {
-        // Extract the qualified path from the use statement
-        let (qualified_path, symbol_name) = match &pending_import.use_statement.path {
-            ast::UsePath::Simple(qualified_path, symbol) => (qualified_path, symbol.to_string()),
-            _ => {
-                // Not a simple import, fall back to old method for now
-                let target_module = &pending_import.target_module;
-                let symbol_name = &pending_import.symbol_name;
-
-                // TODO: Replace with IR registry lookup
-                let _ = (target_module, symbol_name); // Suppress unused warnings
-                return Ok(None); // Temporarily return None (not resolved)
-            }
-        };
-
+        qualified_path: &ast::QualifiedPath,
+        name: &InternedSymbol,
+        ir_program: &mut Program,
+    ) -> Result<Option<Vec<ResolvedImport>>, CompileError> {
         // Use new path resolution
-        match self.resolve_use_clause_path(
-            qualified_path,
-            &pending_import.importing_module,
-            &symbol_name,
-            ir_program,
-        ) {
-            Ok(canonical_path) => {
-                // TODO: Look up the symbol in the resolved canonical module using IR registry
-                let _module_id = ModuleId::new(canonical_path.module_path);
-                let _ = canonical_path.symbol_name; // Suppress unused warning
-                Ok(None) // Temporarily return None (not resolved)
-            }
-            Err(ResolutionError::Blocked) => {
-                // Path couldn't be fully resolved yet - try again later
-                Ok(None)
-            }
-            Err(ResolutionError::Failed(err)) => {
-                // Permanent resolution failure
-                Err(err)
-            }
+        let resolved_path =
+            match self.resolve_qualified_path_and_item(qualified_path, name, ir_program) {
+                Ok(path) => path,
+                Err(e) => return Ok(None),
+            };
+
+        let mut resolved_imports = vec![];
+        // Add all item kinds that match with the given name. Imports do not
+        // specify the namespace of the imported item, so we must import from
+        // all namespaces.
+        if let Some(type_id) = resolved_path.as_type {
+            resolved_imports.push(ResolvedImport {
+                importing_module: self.current_module_id(),
+                imported_item: type_id.clone().into(),
+                import_name: type_id.id.name.clone(),
+            });
+        }
+
+        if let Some(predicate_id) = resolved_path.as_predicate {
+            resolved_imports.push(ResolvedImport {
+                importing_module: self.current_module_id(),
+                imported_item: predicate_id.clone().into(),
+                import_name: predicate_id.id.name.clone(),
+            });
+        }
+
+        if let Some(module_id) = resolved_path.as_module {
+            resolved_imports.push(ResolvedImport {
+                importing_module: self.current_module_id(),
+                imported_item: module_id.clone().into(),
+                import_name: module_id.id.name.clone(),
+            });
+        }
+
+        if resolved_imports.is_empty() {
+            Ok(None) // Symbol not found
+        } else {
+            Ok(Some(resolved_imports))
         }
     }
 
-    /// Try to resolve a glob import (use path::*)
-    /// TODO: Reimplement for IR-only architecture
+    /// Try to resolve a glob import (use path::*) with incremental compilation support
+    ///
+    /// This validates the glob import at compile time but defers actual symbol resolution
+    /// to runtime, allowing incremental changes to be picked up automatically.
     fn try_resolve_glob_import(
         &mut self,
-        _pending_import: &PendingImport,
+        pending_import: &PendingImport,
+        ir_program: &mut Program,
+    ) -> Result<Option<Vec<ResolvedImport>>, CompileError> {
+        // Extract the qualified path from the glob import
+        let qualified_path = match &pending_import.use_statement.path {
+            ast::UsePath::Glob(qualified_path) => qualified_path,
+            _ => unreachable!("try_resolve_glob_import called on non-glob import"),
+        };
+
+        // 1. VALIDATION: Resolve target module and check accessibility
+        let target_module = match self.resolve_qualified_path_as_module(qualified_path, ir_program)
+        {
+            Ok(module_id) => module_id,
+            Err(_) => {
+                // Module not found yet - import cannot be resolved
+                return Ok(None);
+            }
+        };
+
+        // 2. VALIDATION: Check module accessibility
+        if !self.is_module_accessible(&pending_import.importing_module, &target_module, ir_program)
+        {
+            return Err(CompileError::ModuleNotAccessible {
+                target: target_module,
+                from: pending_import.importing_module.clone(),
+            });
+        }
+
+        // 3. VALIDATION: Check for immediate conflicts with existing symbols
+        // We validate current conflicts but allow runtime resolution for incremental changes
+        if let Err(conflict) = self.validate_glob_conflicts(
+            &pending_import.importing_module,
+            &target_module,
+            ir_program,
+        ) {
+            return Err(conflict);
+        }
+
+        // 4. RECORD RE-EXPORT: Add the re-export relationship for runtime resolution
+        ir_program.registry_mut().add_re_export(
+            pending_import.importing_module.clone(),
+            target_module.clone(),
+        );
+
+        // 5. Record as resolved glob import for tracking
+        self.resolved_glob_imports.push(super::ResolvedGlobImport {
+            importing_module: pending_import.importing_module.clone(),
+            target_module,
+        });
+
+
+        // Return empty resolved imports - actual resolution happens at runtime
+        // This allows incremental changes to be picked up automatically
+        Ok(Some(Vec::new()))
+    }
+
+    /// Check if a target module is accessible from the importing module
+    fn is_module_accessible(
+        &self,
+        importing_module: &ModuleId,
+        target_module: &ModuleId,
         _ir_program: &Program,
-    ) -> Result<Option<ItemId>, CompileError> {
-        // Temporarily disabled - return None to indicate not resolved
-        Ok(None)
+    ) -> bool {
+        // For now, all public modules are accessible
+        // In the future, this could check:
+        // - Crate boundaries
+        // - pub(crate) visibility rules
+        // - pub(super) visibility rules
+        true
+    }
+
+    /// Validate that a glob import doesn't create immediate conflicts
+    fn validate_glob_conflicts(
+        &self,
+        importing_module: &ModuleId,
+        target_module: &ModuleId,
+        ir_program: &Program,
+    ) -> Result<(), CompileError> {
+        // Get symbols that would be imported
+        let target_symbols = ir_program.registry().get_all_visible_items(target_module);
+
+        // Check each symbol for conflicts with existing symbols in the importing module
+        for (item_name, _item_id) in target_symbols {
+            // Check for conflicts with direct items
+            if let Some(_existing) =
+                self.find_existing_direct_symbol(importing_module, &item_name, ir_program)
+            {
+                // Direct items take precedence over glob imports - no conflict
+                continue;
+            }
+
+            // Check for conflicts with explicit imports
+            if let Some(_existing) =
+                self.find_existing_explicit_import(importing_module, &item_name, ir_program)
+            {
+                // Explicit imports take precedence over glob imports - no conflict
+                continue;
+            }
+
+            // Check for conflicts with other glob imports (same precedence level)
+            if let Some(existing_glob) =
+                self.find_existing_glob_import(importing_module, &item_name, ir_program)
+            {
+                if existing_glob != *target_module {
+                    return Err(CompileError::AmbiguousGlobImport {
+                        symbol: item_name,
+                        source1: existing_glob,
+                        source2: target_module.clone(),
+                        importing_module: importing_module.clone(),
+                    });
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Find an existing direct symbol in a module
+    fn find_existing_direct_symbol(
+        &self,
+        module_id: &ModuleId,
+        item_name: &ItemName,
+        ir_program: &Program,
+    ) -> Option<ItemId> {
+        let direct_items = ir_program.registry().find_direct_items(
+            module_id,
+            item_name.name.as_ref(),
+            item_name.kind,
+        );
+        direct_items.into_iter().next()
+    }
+
+    /// Find an existing explicit import in a module
+    fn find_existing_explicit_import(
+        &self,
+        module_id: &ModuleId,
+        item_name: &ItemName,
+        ir_program: &Program,
+    ) -> Option<ItemId> {
+        let explicit_imports = ir_program.registry().find_explicit_imports(
+            module_id,
+            item_name.name.as_ref(),
+            item_name.kind,
+        );
+        explicit_imports.into_iter().next()
+    }
+
+    /// Find an existing glob import that provides a symbol
+    fn find_existing_glob_import(
+        &self,
+        module_id: &ModuleId,
+        item_name: &ItemName,
+        ir_program: &Program,
+    ) -> Option<ModuleId> {
+        // Check all re-exported modules for this symbol
+        if let Some(re_exported_modules) = ir_program.registry().get_re_exports(module_id) {
+            for re_exported in re_exported_modules {
+                let symbols = ir_program.registry().get_all_visible_items(re_exported);
+                if symbols.contains_key(item_name) {
+                    return Some(re_exported.clone());
+                }
+            }
+        }
+        None
     }
 
     /// Try to resolve a list import (use path::{item1, item2})
     fn try_resolve_list_import(
         &self,
         pending_import: &PendingImport,
-        ir_program: &Program,
-    ) -> Result<Option<ItemId>, CompileError> {
-        // List imports are handled the same as simple imports since we break them down
-        // into individual PendingImport entries during collection
-        self.try_resolve_simple_import(pending_import, ir_program)
-    }
-
-    /// Extract the target module path from a qualified path (removes the last segment which is the item name)
-    fn extract_target_module_from_path(&self, qualified_path: &ast::QualifiedPath) -> String {
-        match qualified_path {
-            ast::QualifiedPath::Global(segments) => {
-                if segments.len() > 1 {
-                    format!(
-                        "::{}",
-                        segments[..segments.len() - 1]
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>()
-                            .join("::")
-                    )
-                } else {
-                    "::".to_string()
-                }
-            }
-            ast::QualifiedPath::Absolute(segments) => {
-                if segments.len() > 1 {
-                    format!(
-                        "::{}",
-                        segments[..segments.len() - 1]
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>()
-                            .join("::")
-                    )
-                } else {
-                    "::".to_string()
-                }
-            }
-            ast::QualifiedPath::Relative(segments) => {
-                if segments.len() > 1 {
-                    segments[..segments.len() - 1]
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect::<Vec<_>>()
-                        .join("::")
-                } else {
-                    self.symbol_context.current_module.id.path.to_string() // Current module for relative single-segment paths
-                }
-            }
-            ast::QualifiedPath::Super(levels, segments) => {
-                // TODO: Handle super paths properly - for now just use current module
-                self.symbol_context.current_module.id.path.to_string()
-            }
-            ast::QualifiedPath::Self_(segments) => {
-                // self:: paths target the current module
-                self.symbol_context.current_module.id.path.to_string()
-            }
-            ast::QualifiedPath::External(crate_name, segments) => {
-                if segments.len() > 1 {
-                    format!(
-                        "{}::{}",
-                        crate_name.to_string(),
-                        segments[..segments.len() - 1]
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect::<Vec<_>>()
-                            .join("::")
-                    )
-                } else {
-                    crate_name.to_string()
-                }
-            }
-        }
+        ir_program: &mut Program,
+    ) -> Result<Option<Vec<ResolvedImport>>, CompileError> {
+        unimplemented!();
     }
 }
+
+#[cfg(test)]
+mod resolution_tests;

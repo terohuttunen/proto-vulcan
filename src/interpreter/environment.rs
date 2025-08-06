@@ -339,6 +339,9 @@ impl Environment {
         // Phase 2: Process all other items (imports can now resolve sibling modules)
         for item in program.items {
             match item {
+                Item::ExternCrate(_) => {
+                    // Skip extern crate statements
+                }
                 Item::Predicate(rel) => {
                     let name = rel.name.clone();
                     let is_public = matches!(rel.visibility, Visibility::Public);
@@ -452,6 +455,7 @@ impl Environment {
                 self.load_module_declaration(&mod_decl, None, "global")
             }
             Item::Use(use_stmt) => self.load_use_statement(use_stmt),
+            Item::ExternCrate(_) => Ok(()), // TODO: Handle extern crate statements
             Item::Impl(_) => Ok(()), // TODO: Handle impl blocks
         }
     }
@@ -849,26 +853,6 @@ impl Environment {
         Ok(())
     }
 
-    /// Load a specific standard library module
-    fn load_std_module(&mut self, module_name: &str) -> Result<(), InterpreterError> {
-        let std_path = format!("std/{}.pv", module_name);
-        let full_module_name = format!("std::{}", module_name);
-
-        if Path::new(&std_path).exists() {
-            // Use the new module loading system
-            self.load_module_from_path(&PathBuf::from(std_path), &full_module_name)?;
-
-            // Do NOT automatically import symbols into global scope
-            // This preserves namespace boundaries and requires explicit imports
-        } else {
-            return Err(InterpreterError::RuntimeError(format!(
-                "Standard library module '{}' not found",
-                module_name
-            )));
-        }
-
-        Ok(())
-    }
 
     /// Enhanced glob import with full visibility support and comprehensive error handling
     pub fn import_glob_enhanced(

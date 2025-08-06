@@ -309,7 +309,13 @@ impl<'a> AstBuilder<'a> {
 
         for part in inner {
             match part.as_rule() {
-                Rule::ident => vars.push(self.create_symbol_from_pair(&part)),
+                Rule::ident => {
+                    let symbol = self.create_symbol_from_pair(&part);
+                    vars.push(Parameter {
+                        name: symbol,
+                        type_annotation: None, // No type annotation support in grammar yet
+                    });
+                },
                 Rule::goal_body => body = Some(self.build_goal_body(part)?),
                 _ => (),
             }

@@ -1,5 +1,6 @@
 use crate::compound::CompoundObject;
 use crate::user::{DefaultUser, User};
+use crate::interpreter::compiler::ir::PredicateId;
 use std::borrow::Borrow;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -55,8 +56,8 @@ pub enum LTermInner {
     // Compound object
     Compound(Rc<dyn CompoundObject>),
 
-    // Relation reference for higher-order predicates (registry index)
-    RelationRef(usize),
+    // Relation reference for higher-order predicates
+    RelationRef(PredicateId),
 }
 
 #[derive(Clone)]
@@ -92,9 +93,9 @@ impl LTerm {
     }
 
     /// Constructs a relation reference for higher-order predicates
-    pub fn relation_ref(registry_index: usize) -> LTerm {
+    pub fn relation_ref(predicate_id: PredicateId) -> LTerm {
         LTerm {
-            inner: Rc::new(LTermInner::RelationRef(registry_index)),
+            inner: Rc::new(LTermInner::RelationRef(predicate_id)),
         }
     }
 
@@ -277,9 +278,9 @@ impl LTerm {
         }
     }
 
-    pub fn get_relation_ref(&self) -> Option<usize> {
+    pub fn get_relation_ref(&self) -> Option<&PredicateId> {
         match self.as_ref() {
-            LTermInner::RelationRef(index) => Some(*index),
+            LTermInner::RelationRef(predicate_id) => Some(predicate_id),
             _ => None,
         }
     }
@@ -481,7 +482,7 @@ impl fmt::Debug for LTerm {
             LTermInner::Empty => write!(f, "Empty"),
             LTermInner::Cons(head, tail) => write!(f, "({:?}, {:?})", head, tail),
             LTermInner::Compound(cf) => write!(f, "{:?}", cf),
-            LTermInner::RelationRef(index) => write!(f, "RelationRef({})", index),
+            LTermInner::RelationRef(predicate_id) => write!(f, "RelationRef({})", predicate_id),
         }
     }
 }
@@ -530,7 +531,7 @@ impl fmt::Display for LTerm {
                 // Use the display_string method from CompoundObject trait
                 write!(f, "{}", compound_term.display_string())
             }
-            LTermInner::RelationRef(index) => write!(f, "rel_ref_{}", index),
+            LTermInner::RelationRef(predicate_id) => write!(f, "rel_ref_{}", predicate_id.as_ref()),
         }
     }
 }
@@ -548,7 +549,7 @@ impl Hash for LTerm {
                 tail.hash(state);
             }
             LTermInner::Compound(cf) => cf.compound_hash(state),
-            LTermInner::RelationRef(index) => index.hash(state),
+            LTermInner::RelationRef(predicate_id) => predicate_id.hash(state),
         }
     }
 }

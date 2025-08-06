@@ -1,4 +1,3 @@
-
 use crate::goal::Goal;
 use crate::lresult::LResult;
 use crate::lterm::LTerm;
@@ -11,8 +10,7 @@ use std::iter::FusedIterator;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-pub trait QueryResult
-{
+pub trait QueryResult {
     fn from_vec(v: Vec<LResult>) -> Self;
 }
 
@@ -65,9 +63,7 @@ where
                 let results = self
                     .variables
                     .iter()
-                    .map(|v| {
-                        LResult(state.smap_ref().walk_star(v), Rc::clone(&reified_cstore))
-                    })
+                    .map(|v| LResult(state.smap_ref().walk_star(v), Rc::clone(&reified_cstore)))
                     .collect();
 
                 Some(R::from_vec(results))
@@ -81,11 +77,7 @@ where
 
 /* ResultIterator is fused because uncons() will always keep returning None on empty stream */
 #[doc(hidden)]
-impl<R> FusedIterator for ResultIterator<R>
-where
-    R: QueryResult,
-{
-}
+impl<R> FusedIterator for ResultIterator<R> where R: QueryResult {}
 
 #[derive(Derivative)]
 #[derivative(Debug)]

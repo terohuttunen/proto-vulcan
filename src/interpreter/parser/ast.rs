@@ -316,9 +316,24 @@ impl Spanned for Program {
     }
 }
 
+/// External crate declaration: extern crate std;
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExternCrateStatement {
+    pub crate_name: InternedSymbol,
+    pub alias: Option<InternedSymbol>, // For extern crate foo as bar;
+    pub span: Location,
+}
+
+impl Spanned for ExternCrateStatement {
+    fn span(&self) -> &Location {
+        &self.span
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Use(UseStatement),
+    ExternCrate(ExternCrateStatement),
     ModuleDeclaration(ModuleDeclaration),
     Module(ModuleDefinition),
     Struct(StructDefinition),
@@ -331,6 +346,7 @@ impl Spanned for Item {
     fn span(&self) -> &Location {
         match self {
             Item::Use(use_stmt) => use_stmt.span(),
+            Item::ExternCrate(extern_stmt) => extern_stmt.span(),
             Item::ModuleDeclaration(mod_decl) => mod_decl.span(),
             Item::Module(module) => module.span(),
             Item::Struct(struct_def) => struct_def.span(),
@@ -768,7 +784,7 @@ pub struct LetDeclaration {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FreshVariables {
-    pub vars: Vec<InternedSymbol>,
+    pub vars: Vec<Parameter>,
     pub body: GoalBody,
 }
 
@@ -1059,6 +1075,7 @@ impl Display for Item {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Item::Use(u) => write!(f, "{}", u),
+            Item::ExternCrate(e) => write!(f, "extern crate {};", e.crate_name),
             Item::ModuleDeclaration(md) => write!(f, "{}", md),
             Item::Module(m) => write!(f, "{}", m),
             Item::Struct(s) => write!(f, "{}", s),
@@ -1317,7 +1334,15 @@ impl Display for LetDeclaration {
 
 impl Display for FreshVariables {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "|{}| {{", self.vars.join(", "))?;
+        write!(f, "|")?;
+        for (i, param) in self.vars.iter().enumerate() {
+            if i > 0 { write!(f, ", ")?; }
+            write!(f, "{}", param.name)?;
+            if let Some(type_annotation) = &param.type_annotation {
+                write!(f, ": {}", type_annotation)?;
+            }
+        }
+        write!(f, "| {{")?;
         for goal in &self.body {
             write!(f, "{}, ", goal)?;
         }

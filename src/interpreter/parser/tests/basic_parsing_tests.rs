@@ -460,7 +460,16 @@ fn test_parse_fresh_variables() {
             search_strategy: None,
             body: vec![Goal::Fresh(
                 FreshVariables {
-                    vars: vec![InternedSymbol::from_text("x"), InternedSymbol::from_text("y")],
+                    vars: vec![
+                        ast::Parameter {
+                            name: InternedSymbol::from_text("x"),
+                            type_annotation: None,
+                        },
+                        ast::Parameter {
+                            name: InternedSymbol::from_text("y"),
+                            type_annotation: None,
+                        }
+                    ],
                     body: vec![Goal::Equality(
                         Term::Variable(InternedSymbol::from_text("x")),
                         Term::Variable(InternedSymbol::from_text("y")),

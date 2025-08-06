@@ -11,6 +11,7 @@
 
 use crate::interpreter::constraint_domains::DomainConstraintTemplate;
 use crate::interpreter::symbol_table::InternedSymbol;
+use im_rc::HashMap as ImRcHashMap;
 use std::borrow::Borrow;
 use std::fmt::{self, Display};
 use std::rc::Rc;
@@ -20,40 +21,150 @@ pub mod normalizer;
 pub mod registry;
 pub mod validation;
 
+/// Structured module path using functional-style nested pairs
+/// Hides internal Rc<str> implementation and ensures type safety
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ModulePath {
+    /// Current segment name (internal representation)
+    head: Rc<str>,
+    /// Rest of the path (recursive structure for efficient sharing)
+    tail: Option<Rc<ModulePath>>,
+}
+
+impl ModulePath {
+    /// Create root module path (empty)
+    pub fn root() -> Self {
+        ModulePath {
+            head: "".into(),
+            tail: None,
+        }
+    }
+
+    /// Extend this path with a child segment (safe constructor)
+    /// Used by IR registry to build validated paths incrementally
+    pub fn extend(&self, child_name: impl Into<Rc<str>>) -> Self {
+        let c = child_name.into();
+        assert!(!c.is_empty());
+        ModulePath {
+            head: c,
+            tail: Some(Rc::new(self.clone())),
+        }
+    }
+
+    /// Check if this is the root path
+    pub fn is_root(&self) -> bool {
+        self.head.is_empty() && self.tail.is_none()
+    }
+
+    /// Get parent path (returns Rc for sharing)
+    pub fn parent(&self) -> Option<Rc<ModulePath>> {
+        self.tail.clone()
+    }
+
+    /// Get the current segment name
+    pub fn head(&self) -> &str {
+        &self.head
+    }
+
+    /// Convert this ModulePath to a ModuleId
+    pub fn to_module_id(&self) -> ModuleId {
+        match (&self.head, &self.tail) {
+            // Root case: empty head, no tail -> create root module
+            (head, None) if head.is_empty() => ModuleId::root(),
+            // Normal case: head is module name, tail is parent path
+            (head, tail) => {
+                let parent_path = tail.clone().unwrap_or_else(|| Rc::new(ModulePath::root()));
+                ModuleId::with_parent(parent_path, head.clone())
+            }
+        }
+    }
+}
+
+impl Display for ModulePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_root() {
+            Ok(()) // Don't print anything for root
+        } else {
+            // Build path by walking the structure
+            let mut segments = Vec::new();
+            let mut current = self;
+
+            loop {
+                segments.push(current.head.as_ref());
+                if let Some(ref tail) = current.tail {
+                    current = tail;
+                } else {
+                    break;
+                }
+            }
+
+            segments.reverse();
+
+            // Remove the root module (last segment after reversing becomes first)
+            if !segments.is_empty() {
+                segments.remove(0);
+            }
+
+            write!(f, "::{}", segments.join("::"))
+        }
+    }
+}
+
 /// Stable identifier for any item in the IR (Module, Type, or Predicate)
-/// Uses path-based identification with separate namespaces by kind
+/// Uses structured path identification with separate namespaces by kind
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ItemId {
-    /// Absolute path to the item (e.g., "::std::collections::HashMap")
-    pub path: Rc<str>,
-    /// Item kind for namespace separation
-    pub kind: ItemKind,
+    /// Structured module path to the item (shared for efficiency)
+    /// None for global items without parent module
+    pub module_path: Option<Rc<ModulePath>>,
+    /// Local name with kind for namespace separation
+    pub name: ItemName,
 }
 
 impl ItemId {
-    /// Create a new ItemId
-    pub fn new(path: impl Into<Rc<str>>, kind: ItemKind) -> Self {
-        Self {
-            path: path.into(),
-            kind,
-        }
+    /// Create a new ItemId from module path and name
+    pub fn new(module_path: Option<Rc<ModulePath>>, name: ItemName) -> Self {
+        Self { module_path, name }
+    }
+
+    /// Helper: Create ItemId with parent path (for migration compatibility)
+    pub fn with_parent(module_path: Rc<ModulePath>, name: ItemName) -> Self {
+        Self::new(Some(module_path), name)
     }
 
     /// Create a global ItemId (no module prefix)
     pub fn global(name: &str, kind: ItemKind) -> Self {
-        Self::new(format!("::{}", name), kind)
+        let item_name = ItemName::new(name, kind).expect("Invalid global item name");
+        Self::new(None, item_name)
     }
 
-    /// Create an ItemId from path segments
-    pub fn from_segments(segments: &[&str], kind: ItemKind) -> Self {
-        let path = format!("::{}", segments.join("::"));
-        Self::new(path, kind)
+    /// Split this ItemId into parent module path and local name
+    /// Direct field access, no string parsing
+    /// Returns (parent_module_path, local_name) where parent is None for root items
+    pub fn split(&self) -> (Option<Rc<ModulePath>>, ItemName) {
+        (self.module_path.clone(), self.name.clone())
+    }
+
+    /// Get the item kind
+    pub fn kind(&self) -> ItemKind {
+        self.name.kind
+    }
+
+    /// Get the ModuleId for this item's parent module (None if no parent)
+    pub fn parent_module_id(&self) -> Option<ModuleId> {
+        self.module_path.as_ref().map(|p| p.to_module_id())
     }
 }
 
 impl Display for ItemId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.path)
+        if self.module_path.is_none() {
+            // Root case: just show ::name
+            write!(f, "::{}", self.name)
+        } else {
+            // Non-root case: show full path
+            write!(f, "{}::{}", self.module_path.as_ref().unwrap(), self.name)
+        }
     }
 }
 
@@ -71,6 +182,91 @@ pub enum ItemKind {
     Predicate,
 }
 
+/// Local name identifier - single identifier only, no :: paths
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ItemName {
+    /// Single identifier name (no :: allowed)
+    pub name: Rc<str>,
+    /// Item kind for namespace separation  
+    pub kind: ItemKind,
+}
+
+impl ItemName {
+    /// Create new ItemName with validation
+    pub fn new(name: impl Into<Rc<str>>, kind: ItemKind) -> Result<Self, ItemNameError> {
+        let name = name.into();
+
+        // Validate: no path separators allowed
+        if name.contains("::") {
+            return Err(ItemNameError::ContainsPathSeparator(name));
+        }
+
+        // Validate: non-empty
+        if name.is_empty() {
+            return Err(ItemNameError::Empty);
+        }
+
+        Ok(Self { name, kind })
+    }
+
+    /// Create from validated string (for internal use)
+    pub(crate) fn new_unchecked(name: impl Into<Rc<str>>, kind: ItemKind) -> Self {
+        let name = name.into();
+        debug_assert!(!name.contains("::"));
+        Self { name, kind }
+    }
+
+    /// Get the simple name
+    pub fn as_str(&self) -> &str {
+        &self.name
+    }
+
+    /// Convenience constructor for predicates
+    pub fn predicate(name: impl Into<Rc<str>>) -> Result<Self, ItemNameError> {
+        Self::new(name, ItemKind::Predicate)
+    }
+
+    /// Convenience constructor for types
+    pub fn type_name(name: impl Into<Rc<str>>) -> Result<Self, ItemNameError> {
+        Self::new(name, ItemKind::Type)
+    }
+
+    /// Convenience constructor for modules
+    pub fn module(name: impl Into<Rc<str>>) -> Result<Self, ItemNameError> {
+        Self::new(name, ItemKind::Module)
+    }
+}
+
+impl AsRef<ItemName> for ItemName {
+    fn as_ref(&self) -> &ItemName {
+        self
+    }
+}
+
+impl Into<Rc<str>> for ItemName {
+    fn into(self) -> Rc<str> {
+        self.name
+    }
+}
+
+impl Into<Rc<str>> for &ItemName {
+    fn into(self) -> Rc<str> {
+        self.name.clone()
+    }
+}
+
+impl Display for ItemName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ItemNameError {
+    ContainsPathSeparator(Rc<str>),
+    Empty,
+}
+
 /// Identifier for a type in the registry
 ///
 /// Implements both `Borrow<ItemId>` for efficient HashMap lookups and
@@ -83,15 +279,61 @@ pub struct TypeId {
 }
 
 impl TypeId {
-    pub fn new(path: impl Into<Rc<str>>) -> Self {
+    pub fn new(parent_path: Option<Rc<ModulePath>>, name: impl Into<Rc<str>>) -> Self {
+        let item_name = ItemName::new(name, ItemKind::Type).expect("Invalid type name");
         Self {
-            id: ItemId::new(path, ItemKind::Type),
+            id: ItemId::new(parent_path, item_name),
         }
+    }
+
+    /// Helper: Create TypeId with parent path (for migration compatibility)
+    pub fn with_parent(parent_path: Rc<ModulePath>, name: impl Into<Rc<str>>) -> Self {
+        Self::new(Some(parent_path), name)
     }
 
     /// Convert to ItemId (cleaner than .as_ref().clone())
     pub fn to_item_id(&self) -> ItemId {
         self.id.clone()
+    }
+
+    pub fn name(&self) -> &ItemName {
+        &self.id.name
+    }
+
+    pub fn parent_module_id(&self) -> Option<ModuleId> {
+        self.id.module_path.as_ref().map(|path| path.to_module_id())
+    }
+
+    /// Split this TypeId into parent module path and type name
+    pub fn split(&self) -> (Option<Rc<ModulePath>>, TypeName) {
+        let (parent_module_path, item_name) = self.id.split();
+        let type_name = TypeName { name: item_name };
+        (parent_module_path, type_name)
+    }
+
+    /// Test helper: Create TypeId from path string (for testing only)
+    #[cfg(test)]
+    pub fn from_path(path: &str) -> Self {
+        let path = path.strip_prefix("::").unwrap_or(path);
+        let segments: Vec<&str> = if path.is_empty() {
+            vec![]
+        } else {
+            path.split("::").collect()
+        };
+
+        if segments.is_empty() {
+            panic!("Invalid type path: {}", path);
+        }
+
+        let name = segments.last().unwrap().to_string();
+        let parent_segments = &segments[..segments.len().saturating_sub(1)];
+
+        let mut current_path = Rc::new(ModulePath::root());
+        for segment in parent_segments {
+            current_path = current_path.extend(*segment).into();
+        }
+
+        Self::new(Some(current_path), name)
     }
 }
 
@@ -131,15 +373,61 @@ pub struct PredicateId {
 }
 
 impl PredicateId {
-    pub fn new(path: impl Into<Rc<str>>) -> Self {
+    pub fn new(parent_path: Option<Rc<ModulePath>>, name: impl Into<Rc<str>>) -> Self {
+        let item_name = ItemName::new(name, ItemKind::Predicate).expect("Invalid predicate name");
         Self {
-            id: ItemId::new(path, ItemKind::Predicate),
+            id: ItemId::new(parent_path, item_name),
         }
+    }
+
+    /// Helper: Create PredicateId with parent path (for migration compatibility)
+    pub fn with_parent(parent_path: Rc<ModulePath>, name: impl Into<Rc<str>>) -> Self {
+        Self::new(Some(parent_path), name)
     }
 
     /// Convert to ItemId (cleaner than .as_ref().clone())
     pub fn to_item_id(&self) -> ItemId {
         self.id.clone()
+    }
+
+    pub fn name(&self) -> &ItemName {
+        &self.id.name
+    }
+
+    pub fn parent_module_id(&self) -> Option<ModuleId> {
+        self.id.module_path.as_ref().map(|path| path.to_module_id())
+    }
+
+    /// Split this PredicateId into parent module path and predicate name
+    pub fn split(&self) -> (Option<Rc<ModulePath>>, PredicateName) {
+        let (parent_module_path, item_name) = self.id.split();
+        let predicate_name = PredicateName { name: item_name };
+        (parent_module_path, predicate_name)
+    }
+
+    /// Test helper: Create PredicateId from path string (for testing only)
+    #[cfg(test)]
+    pub fn from_path(path: &str) -> Self {
+        let path = path.strip_prefix("::").unwrap_or(path);
+        let segments: Vec<&str> = if path.is_empty() {
+            vec![]
+        } else {
+            path.split("::").collect()
+        };
+
+        if segments.is_empty() {
+            panic!("Invalid predicate path: {}", path);
+        }
+
+        let name = segments.last().unwrap().to_string();
+        let parent_segments = &segments[..segments.len().saturating_sub(1)];
+
+        let mut current_path = Rc::new(ModulePath::root());
+        for segment in parent_segments {
+            current_path = current_path.extend(*segment).into();
+        }
+
+        Self::new(Some(current_path), name)
     }
 }
 
@@ -179,15 +467,99 @@ pub struct ModuleId {
 }
 
 impl ModuleId {
-    pub fn new(path: impl Into<Rc<str>>) -> Self {
+    pub fn new(parent_path: Option<Rc<ModulePath>>, name: impl Into<Rc<str>>) -> Self {
+        let item_name = ItemName::new(name, ItemKind::Module).expect("Invalid module name");
         Self {
-            id: ItemId::new(path, ItemKind::Module),
+            id: ItemId::new(parent_path, item_name),
+        }
+    }
+
+    /// Helper: Create ModuleId with parent path (for migration compatibility)
+    pub fn with_parent(parent_path: Rc<ModulePath>, name: impl Into<Rc<str>>) -> Self {
+        Self::new(Some(parent_path), name)
+    }
+
+    pub fn root() -> Self {
+        // Special case for root module - no parent path
+        let root_name = ItemName::new_unchecked("", ItemKind::Module);
+        Self {
+            id: ItemId::new(None, root_name),
+        }
+    }
+
+    /// Create a global module with a specific name (for crates)
+    /// These modules have no parent (module_path = None) but have a name
+    pub fn root_with_name(name: impl Into<Rc<str>>) -> Self {
+        let item_name = ItemName::new(name, ItemKind::Module).expect("Invalid crate name");
+        Self {
+            id: ItemId::new(None, item_name),
+        }
+    }
+
+    /// Get the parent module path for creating child items
+    pub fn parent_path(&self) -> Option<Rc<ModulePath>> {
+        self.id.module_path.clone()
+    }
+
+    /// Convert this ModuleId to a full ModulePath that includes this module's name
+    pub fn full_path(&self) -> Rc<ModulePath> {
+        match &self.id.module_path {
+            None => {
+                // Root module case: create path with just the module name
+                // For root module with empty name, return root path
+                if self.id.name.name.is_empty() {
+                    Rc::new(ModulePath::root())
+                } else {
+                    Rc::new(ModulePath::root().extend(self.id.name.name.clone()))
+                }
+            }
+            Some(parent_path) => {
+                // Normal case: extend parent path with this module's name
+                Rc::new(parent_path.extend(self.id.name.name.clone()))
+            }
         }
     }
 
     /// Convert to ItemId (cleaner than .as_ref().clone())
     pub fn to_item_id(&self) -> ItemId {
         self.id.clone()
+    }
+
+    pub fn name(&self) -> &ItemName {
+        &self.id.name
+    }
+
+    pub fn parent_module_id(&self) -> Option<ModuleId> {
+        self.id.module_path.as_ref().map(|path| path.to_module_id())
+    }
+
+    /// Test helper: Create ModuleId from path string (for testing only)
+    #[cfg(test)]
+    pub fn from_path(path: &str) -> Self {
+        if path == "::" || path.is_empty() {
+            return Self::root();
+        }
+
+        let path = path.strip_prefix("::").unwrap_or(path);
+        let segments: Vec<&str> = if path.is_empty() {
+            vec![]
+        } else {
+            path.split("::").collect()
+        };
+
+        if segments.is_empty() {
+            return Self::root();
+        }
+
+        let name = segments.last().unwrap().to_string();
+        let parent_segments = &segments[..segments.len().saturating_sub(1)];
+
+        let mut current_path = Rc::new(ModulePath::root());
+        for segment in parent_segments {
+            current_path = current_path.extend(*segment).into();
+        }
+
+        Self::new(Some(current_path), name)
     }
 }
 
@@ -215,38 +587,107 @@ impl Into<ItemId> for &ModuleId {
     }
 }
 
-impl Borrow<str> for ModuleId {
-    fn borrow(&self) -> &str {
-        self.id.path.as_ref()
+// TODO: Fix lifetime issue - temporarily commented out
+// impl Borrow<str> for ModuleId {
+//     fn borrow(&self) -> &str {
+//         self.id.to_string().as_ref()
+//     }
+// }
+
+/// Identifier for a predicate name in local scope
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PredicateName {
+    pub name: ItemName,
+}
+
+impl PredicateName {
+    pub fn new(name: impl Into<Rc<str>>) -> Result<Self, ItemNameError> {
+        Ok(Self {
+            name: ItemName::new(name, ItemKind::Predicate)?,
+        })
+    }
+
+    pub fn to_item_name(&self) -> ItemName {
+        self.name.clone()
     }
 }
 
-/// Represents an import in the IR
-#[derive(Debug, Clone, PartialEq)]
-pub struct Import {
-    /// Unique identifier for this import
-    pub id: ItemId,
-    /// Local name of the imported symbol in the importing module
-    pub local_name: String,
-    /// Reference to the actual item being imported
-    pub source_ref: ItemId,
-    /// Visibility of this import (pub use vs private use)
-    pub visibility: Visibility,
-    /// Optional alias (Some("alias") for "use item as alias", None for "use item")
-    pub alias: Option<String>,
-    /// Kind of import (simple, glob, list)
-    pub import_kind: ImportKind,
+impl AsRef<ItemName> for PredicateName {
+    fn as_ref(&self) -> &ItemName {
+        &self.name
+    }
 }
 
-/// Different kinds of import statements
+impl Borrow<ItemName> for PredicateName {
+    fn borrow(&self) -> &ItemName {
+        &self.name
+    }
+}
+
+/// Identifier for a type name in local scope
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TypeName {
+    pub name: ItemName,
+}
+
+impl TypeName {
+    pub fn new(name: impl Into<Rc<str>>) -> Result<Self, ItemNameError> {
+        Ok(Self {
+            name: ItemName::new(name, ItemKind::Type)?,
+        })
+    }
+
+    pub fn to_item_name(&self) -> ItemName {
+        self.name.clone()
+    }
+}
+
+impl AsRef<ItemName> for TypeName {
+    fn as_ref(&self) -> &ItemName {
+        &self.name
+    }
+}
+
+impl Borrow<ItemName> for TypeName {
+    fn borrow(&self) -> &ItemName {
+        &self.name
+    }
+}
+
+/// Identifier for a module name in local scope
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ModuleName {
+    pub name: ItemName,
+}
+
+impl ModuleName {
+    pub fn new(name: impl Into<Rc<str>>) -> Result<Self, ItemNameError> {
+        Ok(Self {
+            name: ItemName::new(name, ItemKind::Module)?,
+        })
+    }
+
+    pub fn to_item_name(&self) -> ItemName {
+        self.name.clone()
+    }
+}
+
+impl AsRef<ItemName> for ModuleName {
+    fn as_ref(&self) -> &ItemName {
+        &self.name
+    }
+}
+
+impl Borrow<ItemName> for ModuleName {
+    fn borrow(&self) -> &ItemName {
+        &self.name
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub enum ImportKind {
-    /// Simple import: use path::item;
-    Simple,
-    /// Glob import: use path::*;
-    Glob,
-    /// List import: use path::{item1, item2 as alias};
-    List,
+pub struct Alias {
+    pub id: ItemId,
+    pub target: ItemId,
 }
 
 /// Any item in the IR - unified storage for all item types
@@ -255,7 +696,7 @@ pub enum Item {
     Module(Module),
     Type(TypeDefinition),
     Predicate(Predicate),
-    Import(Import),
+    Alias(Alias),
 }
 
 impl Item {
@@ -265,14 +706,13 @@ impl Item {
             Item::Module(m) => &m.id.id,
             Item::Type(t) => &t.id.id,
             Item::Predicate(p) => &p.id.id,
-            Item::Import(i) => &i.id,
+            Item::Alias(i) => &i.id,
         }
     }
 
-    /// Get the name of this item (last segment of the path)
+    /// Get the name of this item (local name only)
     pub fn name(&self) -> &str {
-        let path = &self.id().path;
-        path.split("::").last().unwrap_or(path)
+        &self.id().name.name
     }
 }
 
@@ -286,18 +726,208 @@ pub struct Program {
 }
 
 impl Program {
-    /// Create a new empty program
+    /// Create a new empty program with root module
     pub fn new() -> Self {
+        let mut registry = ItemRegistry::new();
+
+        // Always create the root module
+        let root_module = Module {
+            id: ModuleId::root(),
+            //items: im_rc::HashMap::new(),
+            //imports: im_rc::HashMap::new(),
+            visibility: Visibility::Public,
+        };
+
+        // Add root module to registry (this should never fail since it's the first item)
+        registry.add_module(root_module);
+
         Self {
-            registry: Rc::new(ItemRegistry::new()),
+            registry: Rc::new(registry),
             symbol_table: Rc::new(crate::interpreter::symbol_table::SymbolTable::new()),
         }
+    }
+
+    pub fn registry(&self) -> &ItemRegistry {
+        &self.registry
     }
 
     /// Get a mutable reference to the registry using copy-on-write
     pub fn registry_mut(&mut self) -> &mut ItemRegistry {
         Rc::make_mut(&mut self.registry)
     }
+
+    /// Get the root module from the registry (always exists)
+    pub fn get_root_module(&self) -> &Module {
+        let root_module_id = ModuleId::root();
+        self.registry
+            .get_module(&root_module_id)
+            .expect("Root module should always exist in program")
+    }
+
+    /// Get the root module's ModulePath from the registry (always exists)
+    pub fn get_root_module_path(&self) -> Rc<ModulePath> {
+        // Root module has module_path = None, so return the root path
+        match &self.get_root_module().id.id.module_path {
+            None => Rc::new(ModulePath::root()),
+            Some(path) => path.clone(),
+        }
+    }
+
+    /*
+    /// Resolve symbol in specific module
+    pub fn resolve_symbol_in_module(
+        &self,
+        module_id: &ModuleId,
+        name: &str,
+        kind: ItemKind,
+    ) -> Option<&ItemId> {
+        let module = self.registry.get_module(module_id)?;
+        let item_name = ItemName::new(name, kind).ok()?;
+        module.items.get(&item_name)
+    }
+
+    /// Resolve public symbol in specific module
+    pub fn resolve_public_symbol_in_module(
+        &self,
+        module_id: &ModuleId,
+        name: &str,
+        kind: ItemKind,
+    ) -> Option<&ItemId> {
+        let item_id = self.resolve_symbol_in_module(module_id, name, kind)?;
+
+        // Check visibility using registry
+        match kind {
+            ItemKind::Predicate => {
+                let predicate = self.registry.get_predicate(item_id)?;
+                (predicate.visibility == Visibility::Public).then_some(item_id)
+            }
+            ItemKind::Type => {
+                let type_def = self.registry.get_type(item_id)?;
+                (type_def.visibility == Visibility::Public).then_some(item_id)
+            }
+            ItemKind::Module => {
+                let module = self.registry.get_module(item_id)?;
+                (module.visibility == Visibility::Public).then_some(item_id)
+            }
+        }
+    }
+
+    /// Get all items in a module
+    pub fn items_in_module(&self, module_id: &ModuleId) -> Option<impl Iterator<Item = &ItemId>> {
+        let module = self.registry.get_module(module_id)?;
+        Some(module.items.values())
+    }
+
+    /// Get all public items in a module
+    pub fn public_items_in_module(&self, module_id: &ModuleId) -> Option<Vec<&ItemId>> {
+        let module = self.registry.get_module(module_id)?;
+        let public_items: Vec<&ItemId> = module
+            .items
+            .iter()
+            .filter(|(_, item_id)| self.is_item_public(item_id))
+            .map(|(_, item_id)| item_id)
+            .collect();
+        Some(public_items)
+    }
+
+    /// Get predicates in a module
+    pub fn predicates_in_module(
+        &self,
+        module_id: &ModuleId,
+    ) -> Option<impl Iterator<Item = &ItemId>> {
+        let module = self.registry.get_module(module_id)?;
+        Some(
+            module
+                .items
+                .iter()
+                .filter(|(name, _)| name.kind == ItemKind::Predicate)
+                .map(|(_, item_id)| item_id),
+        )
+    }
+
+    /// Get public predicates in a module
+    pub fn public_predicates_in_module(&self, module_id: &ModuleId) -> Option<Vec<&ItemId>> {
+        let module = self.registry.get_module(module_id)?;
+        let public_predicates: Vec<&ItemId> = module
+            .items
+            .iter()
+            .filter(|(name, item_id)| {
+                name.kind == ItemKind::Predicate && self.is_item_public(item_id)
+            })
+            .map(|(_, item_id)| item_id)
+            .collect();
+        Some(public_predicates)
+    }
+
+    /// Get types in a module
+    pub fn types_in_module(&self, module_id: &ModuleId) -> Option<impl Iterator<Item = &ItemId>> {
+        let module = self.registry.get_module(module_id)?;
+        Some(
+            module
+                .items
+                .iter()
+                .filter(|(name, _)| name.kind == ItemKind::Type)
+                .map(|(_, item_id)| item_id),
+        )
+    }
+
+    /// Get public types in a module
+    pub fn public_types_in_module(&self, module_id: &ModuleId) -> Option<Vec<&ItemId>> {
+        let module = self.registry.get_module(module_id)?;
+        let public_types: Vec<&ItemId> = module
+            .items
+            .iter()
+            .filter(|(name, item_id)| name.kind == ItemKind::Type && self.is_item_public(item_id))
+            .map(|(_, item_id)| item_id)
+            .collect();
+        Some(public_types)
+    }
+
+    /// Get submodules in a module
+    pub fn modules_in_module(&self, module_id: &ModuleId) -> Option<impl Iterator<Item = &ItemId>> {
+        let module = self.registry.get_module(module_id)?;
+        Some(
+            module
+                .items
+                .iter()
+                .filter(|(name, _)| name.kind == ItemKind::Module)
+                .map(|(_, item_id)| item_id),
+        )
+    }
+
+    /// Get public submodules in a module
+    pub fn public_modules_in_module(&self, module_id: &ModuleId) -> Option<Vec<&ItemId>> {
+        let module = self.registry.get_module(module_id)?;
+        let public_modules: Vec<&ItemId> = module
+            .items
+            .iter()
+            .filter(|(name, item_id)| name.kind == ItemKind::Module && self.is_item_public(item_id))
+            .map(|(_, item_id)| item_id)
+            .collect();
+        Some(public_modules)
+    }
+
+    /// Check if an item is public by looking it up in the registry
+    fn is_item_public(&self, item_id: &ItemId) -> bool {
+        match item_id.kind() {
+            ItemKind::Predicate => self
+                .registry
+                .get_predicate(item_id)
+                .map(|p| p.visibility == Visibility::Public)
+                .unwrap_or(false),
+            ItemKind::Type => self
+                .registry
+                .get_type(item_id)
+                .map(|t| t.visibility == Visibility::Public)
+                .unwrap_or(false),
+            ItemKind::Module => self
+                .registry
+                .get_module(item_id)
+                .map(|m| m.visibility == Visibility::Public)
+                .unwrap_or(false),
+        }
+    }
+    */
 }
 
 /// Module definition
@@ -305,10 +935,10 @@ impl Program {
 pub struct Module {
     /// Module identifier
     pub id: ModuleId,
-    /// Parent module reference (None for root module)
-    pub parent: Option<ModuleId>,
-    /// Child items in this module
-    pub items: Vec<ItemId>,
+    // Maps local names to global ItemIds for all items in this module
+    //pub items: ImRcHashMap<ItemName, ItemId>,
+    // Imported items from other modules
+    //pub imports: ImRcHashMap<ItemName, ItemId>,
     /// Module visibility
     pub visibility: Visibility,
 }
@@ -351,13 +981,23 @@ pub struct Parameter {
 /// Type annotation for parameters
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeAnnotation {
-    /// Integer type for meta programming
+    /// Integer type for meta programming (non-relational)
     Int,
-    /// String type for meta programming
+    /// String type for meta programming (non-relational)
     String,
-    /// Boolean type for meta programming
+    /// Boolean type for meta programming (non-relational)
     Bool,
-    /// Relation type with arity
+    /// Relational integer type (Int)
+    RelInt,
+    /// Relational string type (String)
+    RelString,
+    /// Relational boolean type (Bool)
+    RelBool,
+    /// Relational character type (Char)
+    RelChar,
+    /// Base logic term type (LTerm)
+    LTerm,
+    /// Relation type with arity (rel(n))
     Relation(usize),
     /// Custom type reference
     Custom(TypeId),
@@ -390,6 +1030,74 @@ pub enum TypeKind {
     Enum(EnumDefinition),
 }
 
+/// Built-in primitive types
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BuiltinType {
+    Bool,
+    Number,
+    Char,
+    String,
+    Relation(usize), // rel(n) where n is the arity
+    LTerm,           // Base type that all other types can be converted to
+}
+
+impl BuiltinType {
+    /// Parse a built-in type from string
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "Bool" => Some(BuiltinType::Bool),
+            "Number" => Some(BuiltinType::Number),
+            "Char" => Some(BuiltinType::Char),
+            "String" => Some(BuiltinType::String),
+            "LTerm" => Some(BuiltinType::LTerm),
+            _ => {
+                // Check for rel(n) pattern
+                if s.starts_with("rel(") && s.ends_with(")") {
+                    let arity_str = &s[4..s.len() - 1];
+                    if let Ok(arity) = arity_str.parse::<usize>() {
+                        return Some(BuiltinType::Relation(arity));
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    /// Get the string representation of a built-in type
+    pub fn as_str(&self) -> String {
+        match self {
+            BuiltinType::Bool => "Bool".to_string(),
+            BuiltinType::Number => "Number".to_string(),
+            BuiltinType::Char => "Char".to_string(),
+            BuiltinType::String => "String".to_string(),
+            BuiltinType::Relation(arity) => format!("rel({})", arity),
+            BuiltinType::LTerm => "LTerm".to_string(),
+        }
+    }
+}
+
+impl Display for BuiltinType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+/// Type reference that can be either a built-in type or a user-defined type
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypeReference {
+    Builtin(BuiltinType),
+    UserDefined(TypeId),
+}
+
+impl Display for TypeReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TypeReference::Builtin(builtin) => write!(f, "{}", builtin),
+            TypeReference::UserDefined(type_id) => write!(f, "{}", type_id),
+        }
+    }
+}
+
 /// Struct definition
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructDefinition {
@@ -401,14 +1109,14 @@ pub struct StructDefinition {
 #[derive(Debug, Clone, PartialEq)]
 pub enum StructFields {
     Named(Vec<NamedField>),
-    Tuple(Vec<TypeId>),
+    Tuple(Vec<TypeReference>),
 }
 
 /// Named field in a struct
 #[derive(Debug, Clone, PartialEq)]
 pub struct NamedField {
     pub name: InternedSymbol,
-    pub type_ref: TypeId,
+    pub type_ref: TypeReference,
     pub visibility: Visibility,
 }
 
@@ -430,7 +1138,7 @@ pub struct EnumVariant {
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnumVariantKind {
     Unit,
-    Tuple(Vec<TypeId>),
+    Tuple(Vec<TypeReference>),
     Named(Vec<NamedField>),
 }
 
@@ -790,7 +1498,17 @@ fn hash_goal_content(goal: &Goal, hasher: &mut impl Hasher) {
         }
         Goal::PredicateCall(call) => {
             "predicate_call".hash(hasher);
-            call.predicate.id.path.hash(hasher);
+            match &call.target {
+                PredicateCallTarget::Predicate(predicate_id) => {
+                    predicate_id.id.to_string().hash(hasher);
+                }
+                PredicateCallTarget::Variable(var) => {
+                    var.to_string().hash(hasher);
+                }
+                PredicateCallTarget::Builtin(name) => {
+                    name.hash(hasher);
+                }
+            }
             call.arguments.len().hash(hasher);
             for arg in &call.arguments {
                 hash_term_content(arg, hasher);
@@ -895,12 +1613,12 @@ fn hash_term_content(term: &Term, hasher: &mut impl Hasher) {
         }
         Term::Struct(struct_construction) => {
             "struct".hash(hasher);
-            struct_construction.type_ref.id.path.hash(hasher);
+            struct_construction.type_ref.id.to_string().hash(hasher);
             // Note: Full struct field hashing would be implemented here
         }
         Term::EnumVariant(enum_construction) => {
             "enum_variant".hash(hasher);
-            enum_construction.enum_ref.id.path.hash(hasher);
+            enum_construction.enum_ref.id.to_string().hash(hasher);
             enum_construction.variant_name.hash(hasher);
             // Note: Full enum variant hashing would be implemented here
         }
@@ -908,13 +1626,17 @@ fn hash_term_content(term: &Term, hasher: &mut impl Hasher) {
             "meta_interpolation".hash(hasher);
             // Note: Full meta expression hashing would be implemented here
         }
+        Term::Predicate(predicate_id) => {
+            "predicate".hash(hasher);
+            predicate_id.hash(hasher);
+        }
     }
 }
 
 /// Hash the exact content of a type definition (including field names)
 fn hash_type_content(type_def: &TypeDefinition, hasher: &mut impl Hasher) {
     // Hash the type ID path
-    type_def.id.id.path.hash(hasher);
+    type_def.id.id.to_string().hash(hasher);
 
     // Hash the visibility
     hash_visibility(&type_def.visibility, hasher);
@@ -941,7 +1663,10 @@ fn hash_struct_definition(struct_def: &StructDefinition, hasher: &mut impl Hashe
             named_fields.len().hash(hasher);
             for field in named_fields {
                 field.name.hash(hasher);
-                field.type_ref.id.path.hash(hasher);
+                match &field.type_ref {
+                    TypeReference::Builtin(builtin_type) => builtin_type.as_str().hash(hasher),
+                    TypeReference::UserDefined(type_id) => type_id.id.to_string().hash(hasher),
+                }
                 hash_visibility(&field.visibility, hasher);
             }
         }
@@ -949,7 +1674,10 @@ fn hash_struct_definition(struct_def: &StructDefinition, hasher: &mut impl Hashe
             "tuple_fields".hash(hasher);
             type_refs.len().hash(hasher);
             for type_ref in type_refs {
-                type_ref.id.path.hash(hasher);
+                match type_ref {
+                    TypeReference::Builtin(builtin_type) => builtin_type.as_str().hash(hasher),
+                    TypeReference::UserDefined(type_id) => type_id.id.to_string().hash(hasher),
+                }
             }
         }
     }
@@ -969,7 +1697,10 @@ fn hash_enum_definition(enum_def: &EnumDefinition, hasher: &mut impl Hasher) {
                 "tuple".hash(hasher);
                 type_refs.len().hash(hasher);
                 for type_ref in type_refs {
-                    type_ref.id.path.hash(hasher);
+                    match type_ref {
+                        TypeReference::Builtin(builtin_type) => builtin_type.as_str().hash(hasher),
+                        TypeReference::UserDefined(type_id) => type_id.id.to_string().hash(hasher),
+                    }
                 }
             }
             EnumVariantKind::Named(named_fields) => {
@@ -977,7 +1708,10 @@ fn hash_enum_definition(enum_def: &EnumDefinition, hasher: &mut impl Hasher) {
                 named_fields.len().hash(hasher);
                 for field in named_fields {
                     field.name.hash(hasher);
-                    field.type_ref.id.path.hash(hasher);
+                    match &field.type_ref {
+                        TypeReference::Builtin(builtin_type) => builtin_type.as_str().hash(hasher),
+                        TypeReference::UserDefined(type_id) => type_id.id.to_string().hash(hasher),
+                    }
                     hash_visibility(&field.visibility, hasher);
                 }
             }
@@ -995,7 +1729,7 @@ fn hash_visibility(visibility: &Visibility, hasher: &mut impl Hasher) {
         Visibility::SelfModule => "self".hash(hasher),
         Visibility::Restricted(item_id) => {
             "restricted".hash(hasher);
-            item_id.path.hash(hasher);
+            item_id.to_string().hash(hasher);
         }
     }
 }
@@ -1019,6 +1753,8 @@ pub enum Term {
     EnumVariant(EnumVariantConstruction),
     /// Meta expression interpolation
     MetaInterpolation(MetaExpression),
+    /// Predicate reference for higher-order predicates
+    Predicate(PredicateId),
 }
 
 /// Literal values
@@ -1030,11 +1766,57 @@ pub enum Literal {
     Char(char),
 }
 
+/// Target of a predicate call - can be a concrete predicate, a variable, or a builtin
+#[derive(Debug, Clone, PartialEq)]
+pub enum PredicateCallTarget {
+    /// Direct call to a named predicate in the IR registry
+    Predicate(PredicateId),
+    /// Call to a predicate stored in a variable (higher-order predicate)
+    Variable(InternedSymbol),
+    /// Call to a builtin predicate (resolved at runtime)
+    Builtin(String),
+}
+
 /// Predicate call with resolved reference
 #[derive(Debug, Clone, PartialEq)]
 pub struct PredicateCall {
-    pub predicate: PredicateId,
+    pub target: PredicateCallTarget,
     pub arguments: Vec<Term>,
+}
+
+impl PredicateCall {
+    /// Create a predicate call to a named predicate (for backwards compatibility)
+    pub fn to_predicate(predicate: PredicateId, arguments: Vec<Term>) -> Self {
+        Self {
+            target: PredicateCallTarget::Predicate(predicate),
+            arguments,
+        }
+    }
+    
+    /// Create a predicate call to a predicate variable
+    pub fn to_variable(variable: InternedSymbol, arguments: Vec<Term>) -> Self {
+        Self {
+            target: PredicateCallTarget::Variable(variable),
+            arguments,
+        }
+    }
+    
+    /// Create a predicate call to a builtin
+    pub fn to_builtin(name: String, arguments: Vec<Term>) -> Self {
+        Self {
+            target: PredicateCallTarget::Builtin(name),
+            arguments,
+        }
+    }
+    
+    /// Get the predicate ID if this is a direct predicate call
+    pub fn predicate(&self) -> Option<&PredicateId> {
+        match &self.target {
+            PredicateCallTarget::Predicate(id) => Some(id),
+            PredicateCallTarget::Variable(_) => None,
+            PredicateCallTarget::Builtin(_) => None,
+        }
+    }
 }
 
 /// Pattern matching
@@ -1072,7 +1854,7 @@ pub struct ListPattern {
 /// Struct pattern
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructPattern {
-    pub type_ref: TypeId,
+    pub type_ref: TypeReference,
     pub fields: StructPatternFields,
 }
 
@@ -1093,7 +1875,7 @@ pub struct NamedFieldPattern {
 /// Enum variant pattern
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumVariantPattern {
-    pub enum_ref: TypeId,
+    pub enum_ref: TypeReference,
     pub variant_name: InternedSymbol,
     pub kind: EnumVariantPatternKind,
 }

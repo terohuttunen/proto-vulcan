@@ -41,6 +41,7 @@ impl<'a> SemanticAnalyzer<'a> {
             | Item::Struct(_)
             | Item::Module(_)
             | Item::Use(_)
+            | Item::ExternCrate(_)
             | Item::ModuleDeclaration(_)
             | Item::Impl(_) => {
                 // Type definitions and module items don't need term disambiguation

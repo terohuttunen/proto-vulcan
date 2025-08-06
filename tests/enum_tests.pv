@@ -72,17 +72,17 @@ rel test_multiple_enums(result) {
 
 // Complex enums with tuple and named variants
 enum Shape {
-    Circle(radius),
+    Circle(Number),
     Rectangle { width: Number, height: Number },
-    Triangle(side1, side2, side3),
+    Triangle(Number, Number, Number),
     Point,
 }
 
 enum Container {
     Empty,
-    Single(value),
+    Single(LTerm),
     Pair { first: Number, second: Number },
-    Triple(a, b, c),
+    Triple(LTerm, LTerm, LTerm),
 }
 
 // Test tuple variant construction and equality

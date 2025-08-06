@@ -1,6 +1,7 @@
 //! Error types for IR compilation
 
 use super::ir::{ItemId, ModuleId, PredicateId, TypeId};
+use crate::interpreter::compiler::PendingImport;
 use crate::interpreter::symbol_table::InternedSymbol;
 use crate::interpreter::InterpreterError;
 use thiserror::Error;
@@ -238,6 +239,9 @@ pub enum CompileError {
         symbol: InternedSymbol,
     },
 
+    #[error("Cannot resolve imports  '{imports:?}' ")]
+    UnresolvedImports { imports: Vec<PendingImport> },
+
     #[error("Arity mismatch for predicate '{predicate_item}' at {}:{}: expected {expected_arity} arguments, found {actual_arity}", symbol.file_path().display(), symbol.span())]
     ArityMismatch {
         /// The predicate being called
@@ -341,6 +345,38 @@ pub enum CompileError {
         /// Related symbols involved in the conflict
         related_symbols: Vec<InternedSymbol>,
     },
+
+    #[error("Invalid parameter type for '{parameter_name}' at {}:{}: expected {expected_type}, got {actual_type}", symbol.file_path().display(), symbol.span())]
+    InvalidParameterType {
+        /// The parameter name with invalid type
+        parameter_name: String,
+        /// The expected type annotation
+        expected_type: String,
+        /// The actual type provided
+        actual_type: String,
+        /// Symbol with precise source location
+        symbol: InternedSymbol,
+    },
+
+    #[error("Module '{target}' is not accessible from module '{from}'")]
+    ModuleNotAccessible {
+        /// The target module that cannot be accessed
+        target: ModuleId,
+        /// The module attempting to access the target
+        from: ModuleId,
+    },
+
+    #[error("Ambiguous glob import in module '{importing_module}': symbol '{symbol}' is available from both '{source1}' and '{source2}'")]
+    AmbiguousGlobImport {
+        /// The ambiguous symbol name
+        symbol: super::ir::ItemName,
+        /// First source module
+        source1: ModuleId,
+        /// Second source module  
+        source2: ModuleId,
+        /// Module where the glob import is located
+        importing_module: ModuleId,
+    },
 }
 
 /// Result of path resolution during use-clause resolution
@@ -379,6 +415,7 @@ impl CompileError {
             CompileError::UnresolvedModule { symbol, .. } => {
                 Some((symbol.file_path().clone(), symbol.span()))
             }
+            CompileError::UnresolvedImports { .. } => None,
             CompileError::ArityMismatch { symbol, .. } => {
                 Some((symbol.file_path().clone(), symbol.span()))
             }
@@ -412,6 +449,11 @@ impl CompileError {
             CompileError::ConflictingSymbol { symbol, .. } => {
                 Some((symbol.file_path().clone(), symbol.span()))
             }
+            CompileError::InvalidParameterType { symbol, .. } => {
+                Some((symbol.file_path().clone(), symbol.span()))
+            }
+            CompileError::ModuleNotAccessible { .. } => None,
+            CompileError::AmbiguousGlobImport { .. } => None,
             CompileError::Environment(_) => None,
         }
     }
@@ -422,6 +464,7 @@ impl CompileError {
             CompileError::UnresolvedType { symbol, .. } => Some(symbol),
             CompileError::UnresolvedPredicate { symbol, .. } => Some(symbol),
             CompileError::UnresolvedModule { symbol, .. } => Some(symbol),
+            CompileError::UnresolvedImports { .. } => None,
             CompileError::ArityMismatch { symbol, .. } => Some(symbol),
             CompileError::SemanticError { symbol, .. } => Some(symbol),
             CompileError::DuplicateItem { symbol, .. } => Some(symbol),
@@ -433,6 +476,9 @@ impl CompileError {
             CompileError::ShadowingError { import_symbol, .. } => Some(import_symbol),
             CompileError::AmbiguousImport { symbol, .. } => Some(symbol),
             CompileError::ConflictingSymbol { symbol, .. } => Some(symbol),
+            CompileError::InvalidParameterType { symbol, .. } => Some(symbol),
+            CompileError::ModuleNotAccessible { .. } => None,
+            CompileError::AmbiguousGlobImport { .. } => None,
             CompileError::Environment(_) => None,
         }
     }

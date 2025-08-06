@@ -53,10 +53,10 @@ pub fn unify_rec(mut state: State, extension: &mut SMap, u: &LTerm, v: &LTerm) -
         (LTermInner::Compound(ucf), LTermInner::Compound(vcf)) => {
             unify_rec_compound(state, extension, ucf.as_ref(), vcf.as_ref())
         }
-        (LTermInner::RelationRef(u_index), LTermInner::RelationRef(v_index))
-            if u_index == v_index =>
+        (LTermInner::RelationRef(u_predicate_id), LTermInner::RelationRef(v_predicate_id))
+            if u_predicate_id == v_predicate_id =>
         {
-            // Two relation references unify if they refer to the same relation in the registry
+            // Two relation references unify if they refer to the same predicate
             Ok(state)
         }
         _ => Err(()),

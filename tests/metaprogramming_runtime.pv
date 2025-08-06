@@ -184,7 +184,7 @@ rel test_nested_if_statements(result) {
 
 // Test enum variant expansion in metaprogramming
 enum Color { Red, Green, Blue }
-enum Container { Empty, Single(value), Pair(first, second) }
+enum Container { Empty, Single(LTerm), Pair(LTerm, LTerm) }
 enum Person { Anonymous, Named { name: String, age: Number } }
 
 // Test enum variants with interpolated values

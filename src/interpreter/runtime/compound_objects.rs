@@ -18,7 +18,7 @@ impl std::fmt::Debug for RegistryTupleStruct {
         write!(
             f,
             "RegistryTupleStruct(type_id={}, args=",
-            self.type_id.id.path
+            self.type_id.id.to_string()
         )?;
         for (i, arg) in self.args.iter().enumerate() {
             if i > 0 {
@@ -113,7 +113,7 @@ impl std::fmt::Debug for RegistryNamedStruct {
         write!(
             f,
             "RegistryNamedStruct(type_id={}, fields={{",
-            self.type_id.id.path
+            self.type_id.id.to_string()
         )?;
         let mut first = true;
         for (field_name, field_value) in &self.fields {
@@ -273,7 +273,7 @@ impl std::fmt::Debug for RegistryEnumVariant {
         write!(
             f,
             "RegistryEnumVariant(enum_type_id={}, variant_name={}, data=",
-            self.enum_type_id.id.path, self.variant_name
+            self.enum_type_id.id.to_string(), self.variant_name
         )?;
         match &self.variant_data {
             VariantData::Unit => write!(f, "Unit"),

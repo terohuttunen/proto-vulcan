@@ -4,11 +4,9 @@
 //! It supports both the new IR-based execution and legacy AST-based execution.
 
 use super::environment::Environment;
-use super::InterpreterError;
 use super::parser::ast::{Goal, Term};
-use super::runtime::context::ExecutionContext;
+use super::InterpreterError;
 use crate::lresult::LResult;
-use crate::user::{DefaultUser, User};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -51,7 +49,7 @@ pub fn parse_query(query_str: &str) -> Result<Goal, InterpreterError> {
     let dummy_program = format!("rel __query__() {{ {} }}", stripped);
     let program = super::parser::parse_str(&dummy_program)
         .map_err(|e| InterpreterError::ParseError(e.to_string()))?;
-    
+
     // Extract the goal from the dummy relation
     if let Some(item) = program.items.first() {
         if let super::parser::ast::Item::Predicate(rel) = item {
@@ -60,8 +58,10 @@ pub fn parse_query(query_str: &str) -> Result<Goal, InterpreterError> {
             }
         }
     }
-    
-    Err(InterpreterError::ParseError("Failed to parse query".to_string()))
+
+    Err(InterpreterError::ParseError(
+        "Failed to parse query".to_string(),
+    ))
 }
 
 /// Execute a query using the IR-based execution system with compiler infrastructure
@@ -79,7 +79,7 @@ pub fn execute_query_ir(
         debug_enabled,
         ..Default::default()
     };
-    
+
     // Use the new reification-aware iterator constructor
     super::iterator::QueryResultIterator::new_ir_reified(
         ir_program,
@@ -89,60 +89,76 @@ pub fn execute_query_ir(
     )
 }
 
-
-
 /// Extract variable names from a goal AST
 pub fn extract_variables_from_goal(goal: &Goal) -> Vec<String> {
     let mut vars = Vec::new();
-    extract_variables_from_goal_recursive(goal, &mut vars);
+    let mut bound_vars_stack = Vec::new();
+    extract_variables_from_goal_recursive(goal, &mut vars, &mut bound_vars_stack);
     vars.sort();
     vars.dedup();
     vars
 }
 
-fn extract_variables_from_goal_recursive(goal: &Goal, vars: &mut Vec<String>) {
-    use crate::interpreter::parser::ast::{Goal as AstGoal};
+fn extract_variables_from_goal_recursive(
+    goal: &Goal,
+    vars: &mut Vec<String>,
+    bound_vars_stack: &mut Vec<std::collections::HashSet<String>>,
+) {
+    use crate::interpreter::parser::ast::Goal as AstGoal;
 
     match goal {
         AstGoal::Equality(left, right, _) => {
-            extract_variables_from_term(left, vars);
-            extract_variables_from_term(right, vars);
+            extract_variables_from_term(left, vars, bound_vars_stack);
+            extract_variables_from_term(right, vars, bound_vars_stack);
         }
         AstGoal::Disequality(left, right, _) => {
-            extract_variables_from_term(left, vars);
-            extract_variables_from_term(right, vars);
+            extract_variables_from_term(left, vars, bound_vars_stack);
+            extract_variables_from_term(right, vars, bound_vars_stack);
         }
         AstGoal::RelationCall(rel_call, _) => {
             for arg in &rel_call.args {
                 match arg {
-                    super::parser::ast::CallArgument::Term(term) => extract_variables_from_term(term, vars),
-                    super::parser::ast::CallArgument::MetaExpression(_) => {}, // Skip meta expressions
+                    super::parser::ast::CallArgument::Term(term) => {
+                        extract_variables_from_term(term, vars, bound_vars_stack)
+                    }
+                    super::parser::ast::CallArgument::MetaExpression(_) => {} // Skip meta expressions
                 }
             }
         }
         AstGoal::Conjunction(goals, _) => {
             for goal in &goals.body {
-                extract_variables_from_goal_recursive(goal, vars);
+                extract_variables_from_goal_recursive(goal, vars, bound_vars_stack);
             }
         }
         AstGoal::Disjunction(goals, _) => {
             for goal in &goals.body {
-                extract_variables_from_goal_recursive(goal, vars);
+                extract_variables_from_goal_recursive(goal, vars, bound_vars_stack);
             }
         }
         AstGoal::Fresh(fresh_goal, _) => {
-            for goal in &fresh_goal.body {
-                extract_variables_from_goal_recursive(goal, vars);
+            // Push a new scope with the fresh variables
+            let mut fresh_vars = std::collections::HashSet::new();
+            for var in &fresh_goal.vars {
+                fresh_vars.insert(var.to_string());
             }
+            bound_vars_stack.push(fresh_vars);
+
+            // Process goals within the fresh scope
+            for goal in &fresh_goal.body {
+                extract_variables_from_goal_recursive(goal, vars, bound_vars_stack);
+            }
+
+            // Pop the fresh scope
+            bound_vars_stack.pop();
         }
         AstGoal::ConstraintBlock(_cb, _) => {
             // ConstraintBlocks have raw content, not parsed goals, so no variables to extract directly
         }
         AstGoal::PatternMatch(match_goal, _) => {
-            extract_variables_from_term(&match_goal.term, vars);
+            extract_variables_from_term(&match_goal.term, vars, bound_vars_stack);
             for clause in &match_goal.arms {
                 for goal in &clause.body {
-                    extract_variables_from_goal_recursive(goal, vars);
+                    extract_variables_from_goal_recursive(goal, vars, bound_vars_stack);
                 }
             }
         }
@@ -150,48 +166,57 @@ fn extract_variables_from_goal_recursive(goal: &Goal, vars: &mut Vec<String>) {
     }
 }
 
-fn extract_variables_from_term(term: &Term, vars: &mut Vec<String>) {
+fn extract_variables_from_term(
+    term: &Term,
+    vars: &mut Vec<String>,
+    bound_vars_stack: &mut Vec<std::collections::HashSet<String>>,
+) {
     use crate::interpreter::parser::ast::Term;
 
     match term {
         Term::Variable(name) => {
-            vars.push(name.to_string());
+            // Only add variable if it's not bound in any fresh scope
+            let var_name = name.to_string();
+            let is_bound = bound_vars_stack
+                .iter()
+                .any(|bound_set| bound_set.contains(&var_name));
+            if !is_bound {
+                vars.push(var_name);
+            }
         }
         Term::NamedStruct(named_struct, _) => {
             for field in &named_struct.fields {
-                extract_variables_from_term(&field.value, vars);
+                extract_variables_from_term(&field.value, vars, bound_vars_stack);
             }
         }
         Term::TupleStruct(tuple_struct, _) => {
             for field in &tuple_struct.args {
-                extract_variables_from_term(field, vars);
+                extract_variables_from_term(field, vars, bound_vars_stack);
             }
         }
-        Term::EnumVariant(enum_variant, _) => {
-            match &enum_variant.kind {
-                super::parser::ast::EnumVariantConstructionKind::Unit => {},
-                super::parser::ast::EnumVariantConstructionKind::Tuple(fields) => {
-                    for field in fields {
-                        extract_variables_from_term(field, vars);
-                    }
-                },
-                super::parser::ast::EnumVariantConstructionKind::Named(fields) => {
-                    for field in fields {
-                        extract_variables_from_term(&field.value, vars);
-                    }
-                },
+        Term::EnumVariant(enum_variant, _) => match &enum_variant.kind {
+            super::parser::ast::EnumVariantConstructionKind::Unit => {}
+            super::parser::ast::EnumVariantConstructionKind::Tuple(fields) => {
+                for field in fields {
+                    extract_variables_from_term(field, vars, bound_vars_stack);
+                }
             }
-        }
+            super::parser::ast::EnumVariantConstructionKind::Named(fields) => {
+                for field in fields {
+                    extract_variables_from_term(&field.value, vars, bound_vars_stack);
+                }
+            }
+        },
         Term::List(list_term, _) => {
             for element in &list_term.elements {
-                extract_variables_from_term(element, vars);
+                extract_variables_from_term(element, vars, bound_vars_stack);
             }
             if let Some(tail) = &list_term.tail {
-                extract_variables_from_term(tail, vars);
+                extract_variables_from_term(tail, vars, bound_vars_stack);
             }
         }
         Term::Parenthesized(inner, _) => {
-            extract_variables_from_term(inner, vars);
+            extract_variables_from_term(inner, vars, bound_vars_stack);
         }
         // Other term types (integers, strings, etc.) don't contain variables
         _ => {}

@@ -19,46 +19,27 @@ impl Display for Item {
             Item::Predicate(pred) => write!(f, "predicate {}", pred),
             Item::Type(type_def) => write!(f, "type {}", type_def),
             Item::Module(module) => write!(f, "module {}", module),
-            Item::Import(import) => write!(f, "import {}", import),
+            Item::Alias(alias) => write!(f, "alias {}", alias),
         }
-    }
-}
-
-impl Display for Import {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.visibility)?;
-        write!(f, "use ")?;
-        
-        match &self.import_kind {
-            ImportKind::Simple => {
-                write!(f, "{}", self.source_ref.path)?;
-                if let Some(alias) = &self.alias {
-                    write!(f, " as {}", alias)?;
-                }
-            }
-            ImportKind::Glob => {
-                write!(f, "{}::*", self.source_ref.path)?;
-            }
-            ImportKind::List => {
-                write!(f, "{}::{{{}}}", self.source_ref.path, self.local_name)?;
-                if let Some(alias) = &self.alias {
-                    write!(f, " as {}", alias)?;
-                }
-            }
-        }
-        
-        Ok(())
     }
 }
 
 impl Display for Predicate {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}(", self.kind, self.id.id.path)?;
+        write!(f, "{} {}(", self.kind, self.id.id.to_string())?;
         for (i, param) in self.parameters.iter().enumerate() {
-            if i > 0 { write!(f, ", ")?; }
+            if i > 0 {
+                write!(f, ", ")?;
+            }
             write!(f, "{}", param)?;
         }
         write!(f, ") {{ {} goals }}", self.body.len())
+    }
+}
+
+impl Display for Alias {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "alias {} = {}", self.id.to_string(), self.target)
     }
 }
 
@@ -78,6 +59,11 @@ impl Display for TypeAnnotation {
             TypeAnnotation::Int => write!(f, "int"),
             TypeAnnotation::String => write!(f, "string"),
             TypeAnnotation::Bool => write!(f, "bool"),
+            TypeAnnotation::RelInt => write!(f, "Int"),
+            TypeAnnotation::RelString => write!(f, "String"),
+            TypeAnnotation::RelBool => write!(f, "Bool"),
+            TypeAnnotation::RelChar => write!(f, "Char"),
+            TypeAnnotation::LTerm => write!(f, "LTerm"),
             TypeAnnotation::Relation(arity) => write!(f, "rel({})", arity),
             TypeAnnotation::Custom(type_ref) => write!(f, "{}", type_ref),
         }
@@ -86,19 +72,19 @@ impl Display for TypeAnnotation {
 
 impl Display for TypeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.id.path)
+        write!(f, "{}", self.id.to_string())
     }
 }
 
 impl Display for PredicateId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.id.path)
+        write!(f, "{}", self.id.to_string())
     }
 }
 
 impl Display for ModuleId {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.id.path)
+        write!(f, "{}", self.id.to_string())
     }
 }
 
@@ -113,7 +99,7 @@ impl Display for PredicateKind {
 
 impl Display for TypeDefinition {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}", self.visibility, self.id.id.path)?;
+        write!(f, "{} {}", self.visibility, self.id.id.to_string())?;
         match &self.kind {
             TypeKind::Struct(struct_def) => write!(f, " struct {{ {} }}", struct_def),
             TypeKind::Enum(enum_def) => write!(f, " enum {{ {} }}", enum_def),
@@ -142,7 +128,8 @@ impl Display for EnumDefinition {
 
 impl Display for Module {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {} {{ {} items }}", self.visibility, self.id.id.path, self.items.len())
+        //write!(f, "{} {} {{ {} items }}", self.visibility, self.id.id.to_string(), self.items.len())
+        write!(f, "{} {}", self.visibility, self.id.id.to_string())
     }
 }
 
@@ -154,7 +141,7 @@ impl Display for Visibility {
             Visibility::Crate => write!(f, "pub(crate)"),
             Visibility::Super => write!(f, "pub(super)"),
             Visibility::SelfModule => write!(f, "pub(self)"),
-            Visibility::Restricted(item_id) => write!(f, "pub({})", item_id.path),
+            Visibility::Restricted(item_id) => write!(f, "pub({})", item_id.to_string()),
         }
     }
 }
@@ -175,9 +162,17 @@ impl Display for Goal {
                 write!(f, "match {} {{ {} arms }}", pm.term, pm.arms.len())
             }
             Goal::Fresh(fresh) => {
-                write!(f, "|{}| {{ {} goals }}", 
-                       fresh.variables.iter().map(|v| v.as_ref()).collect::<Vec<_>>().join(", "),
-                       fresh.body.len())
+                write!(
+                    f,
+                    "|{}| {{ {} goals }}",
+                    fresh
+                        .variables
+                        .iter()
+                        .map(|v| v.as_ref())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    fresh.body.len()
+                )
             }
             Goal::Let(let_goal) => {
                 write!(f, "let {}", let_goal.variable)?;
@@ -191,15 +186,30 @@ impl Display for Goal {
                 write!(f, "constraint({}) {{ ... }}", constraint.domain)
             }
             Goal::MetaLet(meta_let) => {
-                write!(f, "meta let {}: {} = {}", meta_let.variable, meta_let.variable_type, meta_let.expression)
+                write!(
+                    f,
+                    "meta let {}: {} = {}",
+                    meta_let.variable, meta_let.variable_type, meta_let.expression
+                )
             }
             Goal::MetaIf(meta_if) => {
-                write!(f, "meta if {} {{ {} goals }}", meta_if.condition, meta_if.then_body.len())
+                write!(
+                    f,
+                    "meta if {} {{ {} goals }}",
+                    meta_if.condition,
+                    meta_if.then_body.len()
+                )
             }
             Goal::MetaFor(meta_for) => {
-                write!(f, "meta for {}: {} in {}..{} {{ {} goals }}", 
-                       meta_for.variable, meta_for.variable_type, 
-                       meta_for.start, meta_for.end, meta_for.body.len())
+                write!(
+                    f,
+                    "meta for {}: {} in {}..{} {{ {} goals }}",
+                    meta_for.variable,
+                    meta_for.variable_type,
+                    meta_for.start,
+                    meta_for.end,
+                    meta_for.body.len()
+                )
             }
         }
     }
@@ -214,7 +224,9 @@ impl Display for Term {
             Term::List(list) => {
                 write!(f, "[")?;
                 for (i, elem) in list.elements.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", elem)?;
                 }
                 if let Some(tail) = &list.tail {
@@ -223,13 +235,21 @@ impl Display for Term {
                 write!(f, "]")
             }
             Term::Struct(struct_construction) => {
-                write!(f, "struct@{}", struct_construction.type_ref.id.path)
+                write!(f, "struct@{}", struct_construction.type_ref.id.to_string())
             }
             Term::EnumVariant(enum_construction) => {
-                write!(f, "{}::{}", enum_construction.enum_ref.id.path, enum_construction.variant_name)
+                write!(
+                    f,
+                    "{}::{}",
+                    enum_construction.enum_ref.id.to_string(),
+                    enum_construction.variant_name
+                )
             }
             Term::MetaInterpolation(meta_expr) => {
                 write!(f, "#{{{}}}", meta_expr)
+            }
+            Term::Predicate(predicate_id) => {
+                write!(f, "pred@{}", predicate_id)
             }
         }
     }
@@ -248,9 +268,21 @@ impl Display for Literal {
 
 impl Display for PredicateCall {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}(", self.predicate.id.path)?;
+        match &self.target {
+            PredicateCallTarget::Predicate(predicate_id) => {
+                write!(f, "{}(", predicate_id.id.to_string())?;
+            }
+            PredicateCallTarget::Variable(var) => {
+                write!(f, "{}(", var.to_string())?;
+            }
+            PredicateCallTarget::Builtin(name) => {
+                write!(f, "{}(", name)?;
+            }
+        }
         for (i, arg) in self.arguments.iter().enumerate() {
-            if i > 0 { write!(f, ", ")?; }
+            if i > 0 {
+                write!(f, ", ")?;
+            }
             write!(f, "{}", arg)?;
         }
         write!(f, ")")

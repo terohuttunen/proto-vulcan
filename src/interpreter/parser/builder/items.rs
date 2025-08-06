@@ -42,6 +42,7 @@ impl<'a> AstBuilder<'a> {
     pub fn build_item(&mut self, pair: Pair<Rule>) -> ParseResult<Item> {
         match pair.as_rule() {
             Rule::use_statement => Ok(Item::Use(self.build_use_statement(pair)?)),
+            Rule::extern_crate_statement => Ok(Item::ExternCrate(self.build_extern_crate_statement(pair)?)),
             Rule::mod_declaration => {
                 // Handle both simple declarations and body definitions
                 let inner = pair.clone().into_inner().next().unwrap();

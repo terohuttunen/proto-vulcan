@@ -4,6 +4,38 @@ use crate::interpreter::parser::ast::*;
 use crate::interpreter::symbol_table::InternedSymbol;
 
 impl<'a> AstBuilder<'a> {
+    pub fn build_extern_crate_statement(&mut self, pair: Pair<Rule>) -> ParseResult<ExternCrateStatement> {
+        let span = self.pair_to_span(&pair);
+        let mut inner = pair.into_inner();
+        let _extern_keyword = inner.next().unwrap(); // Skip "extern"
+        let _crate_keyword = inner.next().unwrap(); // Skip "crate"
+        
+        let crate_name_pair = inner.next().unwrap();
+        let crate_name = InternedSymbol::from(crate_name_pair.as_str());
+        
+        // Check for optional alias
+        let alias = if let Some(as_pair) = inner.next() {
+            if as_pair.as_rule() == Rule::as_keyword {
+                // Next should be the alias name
+                if let Some(alias_pair) = inner.next() {
+                    Some(InternedSymbol::from(alias_pair.as_str()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        
+        Ok(ExternCrateStatement {
+            crate_name,
+            alias,
+            span,
+        })
+    }
+
     pub fn build_use_statement(&mut self, pair: Pair<Rule>) -> ParseResult<UseStatement> {
         let span = self.pair_to_span(&pair);
         let mut inner = pair.into_inner();

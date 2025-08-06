@@ -1,5 +1,4 @@
 use super::parser::ast::{Literal, PredicateDefinition, StructDefinition, Term};
-use super::symbol_table::InternedSymbol;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use std::rc::Rc;
@@ -175,6 +174,7 @@ mod tests {
     use super::*;
 
     use crate::interpreter::parser::ast::*;
+    use crate::interpreter::symbol_table::InternedSymbol;
 
     type TestRuntimeValue = RuntimeValue;
 

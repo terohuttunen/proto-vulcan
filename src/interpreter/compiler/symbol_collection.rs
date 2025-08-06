@@ -10,13 +10,6 @@ use crate::interpreter::ast;
 use crate::interpreter::symbol_table::InternedSymbol;
 use std::collections::HashMap;
 
-/// Symbol resolution context during compilation
-#[derive(Debug, Clone)]
-pub struct SymbolContext {
-    /// Current module being compiled
-    pub current_module: ir::ModuleId,
-}
-
 /// Compilation phase tracking
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompilationPhase {
@@ -26,15 +19,6 @@ pub enum CompilationPhase {
     Validation,
 }
 
-/// Fast symbol lookup map for a single module during compilation
-#[derive(Debug, Clone)]
-pub struct ModuleSymbolMap {
-    /// Local symbols defined in this module (types, predicates, submodules)
-    pub local_symbols: HashMap<String, ir::ItemId>,
-    /// Imports symbols in this module
-    pub imported_symbols: HashMap<String, ir::ItemId>,
-}
-
 /// A pending import during compilation
 #[derive(Debug, Clone)]
 pub struct PendingImport {
@@ -42,144 +26,16 @@ pub struct PendingImport {
     pub use_statement: ast::UseStatement,
     /// Module path where this import is located
     pub importing_module: ir::ModuleId,
-    /// Target module path being imported from
-    pub target_module: String,
-    /// Symbol name being imported
-    pub symbol_name: String,
     /// Optional alias
     pub alias: Option<String>,
 }
 
-impl ModuleSymbolMap {
-    pub fn new() -> Self {
-        Self {
-            local_symbols: HashMap::new(),
-            imported_symbols: HashMap::new(),
-        }
-    }
-
-    /// Check if this module has a symbol (either local or imported)
-    pub fn has_symbol(&self, name: &str) -> Option<&ir::ItemId> {
-        self.local_symbols
-            .get(name)
-            .or_else(|| self.imported_symbols.get(name))
-    }
-
-    /// Add a local symbol to this module
-    pub fn add_local_symbol(&mut self, name: String, item: impl Into<ir::ItemId>) {
-        self.local_symbols.insert(name, item.into());
-    }
-
-    /// Get a local module (not imported) - enforces no-shadowing rule
-    pub fn get_local_module(&self, name: &str) -> Option<&ir::ItemId> {
-        // Only return if it's a local module (local symbol)
-        self.local_symbols
-            .get(name)
-            .filter(|item| item.kind == ir::ItemKind::Module)
-    }
-
-    /// Get a imported symbol item
-    pub fn get_imported_symbol(&self, name: &str) -> Option<&ir::ItemId> {
-        self.imported_symbols.get(name)
-    }
-
-    /// Get all local symbols in this module (for glob imports)
-    pub fn get_all_local_symbols(&self) -> impl Iterator<Item = (&String, &ir::ItemId)> {
-        self.local_symbols.iter()
-    }
-
-    /// Get all imported symbols in this module (for glob imports)
-    pub fn get_all_imported_symbols(&self) -> impl Iterator<Item = (&String, &ir::ItemId)> {
-        self.imported_symbols.iter()
-    }
-
-    /// Get all symbols (both local and imported) in this module (for glob imports)
-    pub fn get_all_symbols(&self) -> impl Iterator<Item = (&String, &ir::ItemId)> {
-        self.local_symbols
-            .iter()
-            .chain(self.imported_symbols.iter())
-    }
-
-    /// Try to add a symbol from a glob import - silently skips if symbol already exists
-    /// Glob imports are shadowed by both local symbols and explicit imports
-    pub fn try_add_glob_imported_symbol(
-        &mut self,
-        local_name: String,
-        source_item: impl Into<ir::ItemId>,
-        import_source: &str,
-    ) -> Result<bool, CompileError> {
-        let source_item_id = source_item.into();
-
-        // Check if this symbol already exists (either local or imported)
-        if self.has_symbol(&local_name).is_some() {
-            // Symbol already exists - glob import is shadowed, skip silently
-            return Ok(false);
-        }
-
-        // No existing symbol, add the glob import
-        self.imported_symbols.insert(local_name, source_item_id);
-        Ok(true)
-    }
-
-    /// Try to add an imported symbol with module shadowing prevention and other shadowing warnings
-    pub fn try_add_imported_symbol(
-        &mut self,
-        local_name: String,
-        source_item: impl Into<ir::ItemId>,
-        import_source: &str,
-        import_symbol: &InternedSymbol,
-    ) -> Result<Option<CompileWarning>, CompileError> {
-        let source_item_id = source_item.into();
-        let mut warning = None;
-
-        // Check if this import would shadow a local symbol
-        if let Some(local_item_id) = self.local_symbols.get(&local_name) {
-            // HARD ERROR: Never allow shadowing of local modules (breaks path resolution)
-            if local_item_id.kind == ir::ItemKind::Module {
-                let local_symbol = InternedSymbol::from_text(&local_item_id.path);
-                return Err(CompileError::ShadowingError {
-                    symbol_name: local_name,
-                    import_source: import_source.to_string(),
-                    local_symbol,
-                    import_symbol: import_symbol.clone(),
-                });
-            }
-
-            // WARNING: Allow shadowing of non-module symbols but warn
-            let local_symbol = InternedSymbol::from_text(&local_item_id.path);
-            warning = Some(CompileWarning::ShadowingWarning {
-                symbol_name: local_name.clone(),
-                import_source: import_source.to_string(),
-                local_symbol,
-                import_symbol: import_symbol.clone(),
-            });
-        }
-
-        // Check if this import conflicts with an existing import
-        if let Some(existing_import) = self.imported_symbols.get(&local_name) {
-            if existing_import.path != source_item_id.path {
-                // WARNING: Allow ambiguous imports but warn
-                let ambiguous_warning = CompileWarning::AmbiguousImportWarning {
-                    symbol_name: local_name.clone(),
-                    sources: vec![
-                        existing_import.path.to_string(),
-                        source_item_id.path.to_string(),
-                    ],
-                    symbol: import_symbol.clone(),
-                };
-
-                // If we already have a shadowing warning, prefer the ambiguous import warning
-                warning = Some(ambiguous_warning);
-            } else {
-                // Same import source - this is OK (idempotent)
-                return Ok(None);
-            }
-        }
-
-        // Add the import (even if it causes warnings)
-        self.imported_symbols.insert(local_name, source_item_id);
-        Ok(warning)
-    }
+/// A resolved import during compilation
+#[derive(Debug, Clone)]
+pub struct ResolvedImport {
+    pub importing_module: ir::ModuleId,
+    pub imported_item: ir::ItemId,
+    pub import_name: ir::ItemName,
 }
 
 /// Symbol collection methods for the IR compiler
@@ -191,6 +47,18 @@ impl Compiler {
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         for item in &program.items {
+            self.collect_item_symbols(item, ir_program)?;
+        }
+        Ok(())
+    }
+
+    /// Collect symbols from individual AST items (for incremental compilation)
+    pub(super) fn collect_symbols_from_items(
+        &mut self,
+        items: &[ast::Item],
+        ir_program: &mut ir::Program,
+    ) -> Result<(), CompileError> {
+        for item in items {
             self.collect_item_symbols(item, ir_program)?;
         }
         Ok(())
@@ -219,8 +87,12 @@ impl Compiler {
                 // Process use statements to populate pending imports
                 self.collect_use_statement(use_statement)?;
             }
-            ast::Item::ModuleDeclaration(_) => {
-                // These are processed during import resolution
+            ast::Item::ExternCrate(extern_crate) => {
+                // Process extern crate declarations by loading entire crate tree
+                self.collect_extern_crate_symbols(extern_crate, ir_program)?;
+            }
+            ast::Item::ModuleDeclaration(module_decl) => {
+                self.collect_module_declaration_symbols(module_decl, ir_program)?;
             }
             ast::Item::Impl(impl_block) => {
                 self.collect_impl_symbols(impl_block, ir_program)?;
@@ -235,23 +107,14 @@ impl Compiler {
         module: &ast::ModuleDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
-        let module_path = self.resolve_item_path(&module.name.to_string());
-
-        // Register module in symbol context
-        let module_id = ir::ModuleId::new(module_path);
-
-        // Determine parent module (None only for root "::" itself, otherwise current_module)
-        let parent = if module_id.id.path.as_ref() == "::" {
-            None // Only root module has no parent
-        } else {
-            Some(self.symbol_context.current_module.clone())
-        };
+        // Create module ID directly from current context - no parsing needed
+        let module_id = ir::ModuleId::with_parent(self.current_module_path(), module.name.to_string());
 
         // Create module item
         let ir_module = ir::Module {
             id: module_id.clone(),
-            parent,
-            items: vec![], // Will be populated in phase 2
+            //items: im_rc::HashMap::new(), // Will be populated during compilation
+            //imports: im_rc::HashMap::new(),
             visibility: self.convert_visibility(&module.visibility)?,
         };
 
@@ -264,12 +127,16 @@ impl Compiler {
             });
         }
 
-        // Module is already added to the IR registry above, no need for symbol maps
+        // Add to module map
+        self.module_map.add_module(module_id.clone());
+        self.module_map.add_item(
+            self.current_module_id(),
+            module_id.id.name.clone(),
+            module_id.id.clone(),
+        );
 
         // Push module onto path stack and process children
-        self.module_path_stack.push(module.name.to_string());
-        let old_current = self.symbol_context.current_module.clone();
-        self.symbol_context.current_module = module_id.clone();
+        self.module_path_stack.push(module_id.full_path());
 
         for child_item in &module.items {
             self.collect_item_symbols(child_item, ir_program)?;
@@ -277,7 +144,6 @@ impl Compiler {
 
         // Restore context
         self.module_path_stack.pop();
-        self.symbol_context.current_module = old_current;
 
         Ok(())
     }
@@ -288,10 +154,8 @@ impl Compiler {
         struct_def: &ast::StructDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
-        let type_path = self.resolve_item_path(&struct_def.name.to_string());
-
-        // Register type in symbol context
-        let type_id = ir::TypeId::new(type_path);
+        // Create type ID directly from current context - no parsing needed
+        let type_id = ir::TypeId::with_parent(self.current_module_path(), struct_def.name.to_string());
 
         // Create type definition (fields will be resolved in phase 2)
         let ir_type = ir::TypeDefinition {
@@ -312,7 +176,12 @@ impl Compiler {
             });
         }
 
-        // Type is already added to the IR registry above, no need for symbol maps
+        // Add to module map
+        self.module_map.add_item(
+            self.current_module_id(),
+            type_id.id.name.clone(),
+            type_id.id.clone(),
+        );
 
         Ok(())
     }
@@ -323,10 +192,8 @@ impl Compiler {
         enum_def: &ast::EnumDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
-        let type_path = self.resolve_item_path(&enum_def.name.to_string());
-
-        // Register type in symbol context
-        let type_id = ir::TypeId::new(type_path);
+        // Create type ID directly from current context - no parsing needed
+        let type_id = ir::TypeId::with_parent(self.current_module_path(), enum_def.name.to_string());
 
         // Create type definition (variants will be resolved in phase 2)
         let ir_type = ir::TypeDefinition {
@@ -347,7 +214,12 @@ impl Compiler {
             });
         }
 
-        // Type is already added to the IR registry above, no need for symbol maps
+        // Add to module map
+        self.module_map.add_item(
+            self.current_module_id(),
+            type_id.id.name.clone(),
+            type_id.id.clone(),
+        );
 
         Ok(())
     }
@@ -358,10 +230,9 @@ impl Compiler {
         predicate: &ast::PredicateDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
-        let predicate_path = self.resolve_item_path(&predicate.name.to_string());
-
-        // Register predicate in symbol context
-        let predicate_id = ir::PredicateId::new(predicate_path);
+        // Create predicate ID directly from current context - no parsing needed
+        let predicate_id =
+            ir::PredicateId::with_parent(self.current_module_path(), predicate.name.to_string());
 
         // Create predicate definition (body will be compiled in phase 2)
         let ir_predicate = ir::Predicate {
@@ -384,7 +255,12 @@ impl Compiler {
             });
         }
 
-        // Predicate is already added to the IR registry above, no need for symbol maps
+        // Add to module map
+        self.module_map.add_item(
+            self.current_module_id(),
+            predicate_id.id.name.clone(),
+            predicate_id.id.clone(),
+        );
 
         Ok(())
     }
@@ -396,25 +272,15 @@ impl Compiler {
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         // Impl blocks are treated as modules containing predicates
-        // Modules are in their own namespace, we can use the type name directly
-        let impl_module_name = impl_block.type_name.to_string();
-        let module_path = self.resolve_item_path(&impl_module_name);
-
-        // Register module in symbol context
-        let module_id = ir::ModuleId::new(module_path.clone());
-
-        // Determine parent module (None only for root "::" itself, otherwise current_module)
-        let parent = if module_id.id.path.as_ref() == "::" {
-            None // Only root module has no parent
-        } else {
-            Some(self.symbol_context.current_module.clone())
-        };
+        // Create module ID directly from current context - no parsing needed
+        let module_id =
+            ir::ModuleId::with_parent(self.current_module_path(), impl_block.type_name.to_string());
 
         // Create module item
         let ir_module = ir::Module {
             id: module_id.clone(),
-            parent,
-            items: vec![],                      // Will be populated in phase 2
+            //items: im_rc::HashMap::new(), // Will be populated during compilation
+            //imports: im_rc::HashMap::new(),
             visibility: ir::Visibility::Public, // Impl blocks are typically public
         };
 
@@ -427,10 +293,16 @@ impl Compiler {
             });
         }
 
+        // Add to module map
+        self.module_map.add_module(module_id.clone());
+        self.module_map.add_item(
+            self.current_module_id(),
+            module_id.id.name.clone(),
+            module_id.id.clone(),
+        );
+
         // Push impl module context and collect predicates
-        self.module_path_stack.push(impl_module_name);
-        let old_current = self.symbol_context.current_module.clone();
-        self.symbol_context.current_module = module_id.clone();
+        self.module_path_stack.push(module_id.full_path());
 
         for predicate in &impl_block.predicates {
             self.collect_predicate_symbols(predicate, ir_program)?;
@@ -438,7 +310,233 @@ impl Compiler {
 
         // Restore context
         self.module_path_stack.pop();
-        self.symbol_context.current_module = old_current;
+        // Module context managed by stack - old_current;
+
+        Ok(())
+    }
+
+    /// Collect module declaration symbols and load the corresponding module file
+    fn collect_module_declaration_symbols(
+        &mut self,
+        module_decl: &ast::ModuleDeclaration,
+        ir_program: &mut ir::Program,
+    ) -> Result<(), CompileError> {
+        // Create module ID directly from current context - no parsing needed
+        let module_id = ir::ModuleId::with_parent(self.current_module_path(), module_decl.name.to_string());
+        let ir_module = ir::Module {
+            id: module_id.clone(),
+            //items: im_rc::HashMap::new(), // Will be populated when we load the module file
+            //imports: im_rc::HashMap::new(),
+            visibility: self.convert_visibility(&module_decl.visibility)?,
+        };
+
+        // Add to registry
+        let registry = ir_program.registry_mut();
+        if !registry.add_module(ir_module) {
+            return Err(CompileError::DuplicateItem {
+                item: module_id.id.clone(),
+                symbol: module_decl.name.clone(),
+            });
+        }
+
+        // Add to module map
+        self.module_map.add_module(module_id.clone());
+        self.module_map.add_item(
+            self.current_module_id(),
+            module_id.id.name.clone(),
+            module_id.id.clone(),
+        );
+
+        // Now load the module file and compile it in the context of this module
+        // Use generic crate-based resolution for external crates, relative paths for local modules
+        let path = self.resolve_module_file_path(&module_decl.name.to_string())?;
+
+        if path.exists() {
+            // Read and parse the module file
+            let module_contents =
+                std::fs::read_to_string(&path).map_err(|e| CompileError::SemanticError {
+                    message: format!("Failed to read module {}: {}", path.display(), e),
+                    symbol: module_decl.name.clone(),
+                })?;
+
+            let module_ast =
+                crate::interpreter::parser::parse_str(&module_contents).map_err(|e| {
+                    CompileError::SemanticError {
+                        message: format!("Failed to parse module {}: {}", path.display(), e),
+                        symbol: module_decl.name.clone(),
+                    }
+                })?;
+
+            // Push module context before processing items
+            self.module_path_stack.push(module_id.full_path());
+
+            // Recursively collect symbols from the module file
+            for item in &module_ast.items {
+                self.collect_item_symbols(item, ir_program)?;
+            }
+
+            // Restore context
+            self.module_path_stack.pop();
+        }
+        // If file doesn't exist, that's okay - the module declaration is still valid
+        // but the module is empty
+
+        Ok(())
+    }
+
+    /// Collect extern crate symbols by loading the entire crate tree
+    pub(super) fn collect_extern_crate_symbols(
+        &mut self,
+        extern_crate: &ast::ExternCrateStatement,
+        ir_program: &mut ir::Program,
+    ) -> Result<(), CompileError> {
+        let crate_name = extern_crate.crate_name.to_string();
+        let crate_alias = extern_crate
+            .alias
+            .as_ref()
+            .map(|alias| alias.to_string())
+            .unwrap_or_else(|| crate_name.clone());
+
+        // Find the crate root directory
+        let crate_root =
+            self.find_crate_root(&crate_name)
+                .ok_or_else(|| CompileError::SemanticError {
+                    message: format!("External crate '{}' not found in search paths", crate_name),
+                    symbol: extern_crate.crate_name.clone(),
+                })?;
+
+        // Create crate root module as a global module (no parent)
+        let crate_module_id = ir::ModuleId::root_with_name(crate_alias);
+
+        // Create the crate root module if it doesn't exist
+        let registry = ir_program.registry_mut();
+        if !registry.contains_item(&crate_module_id) {
+            let crate_module = ir::Module {
+                id: crate_module_id.clone(),
+                //items: im_rc::HashMap::new(),
+                //imports: im_rc::HashMap::new(),
+                visibility: ir::Visibility::Public,
+            };
+            registry.add_module(crate_module);
+
+            // Add to module map
+            self.module_map.add_module(crate_module_id.clone());
+            self.module_map.add_item(
+                self.current_module_id(),
+                crate_module_id.id.name.clone(),
+                crate_module_id.id.clone(),
+            );
+        }
+
+        // Load the entire crate tree starting from mod.pv or crate_name.pv
+        let entry_file = crate_root
+            .join("mod.pv")
+            .exists()
+            .then(|| crate_root.join("mod.pv"))
+            .or_else(|| {
+                let crate_file = crate_root.join(format!("{}.pv", crate_name));
+                crate_file.exists().then_some(crate_file)
+            })
+            .ok_or_else(|| CompileError::SemanticError {
+                message: format!(
+                    "Crate '{}' has no entry point (mod.pv or {}.pv)",
+                    crate_name, crate_name
+                ),
+                symbol: extern_crate.crate_name.clone(),
+            })?;
+
+        // Load the crate tree recursively
+        self.load_crate_tree(&entry_file, &crate_module_id, &crate_root, ir_program)?;
+
+        Ok(())
+    }
+
+    /// Recursively load a crate tree by following mod declarations
+    fn load_crate_tree(
+        &mut self,
+        module_file: &std::path::Path,
+        parent_module_id: &ir::ModuleId,  // Actually the module ID for this file, not its parent
+        crate_root: &std::path::Path,
+        ir_program: &mut ir::Program,
+    ) -> Result<(), CompileError> {
+        // Read and parse the module file
+        let module_contents =
+            std::fs::read_to_string(module_file).map_err(|e| CompileError::SemanticError {
+                message: format!("Failed to read module {}: {}", module_file.display(), e),
+                symbol: InternedSymbol::from_text(&module_file.to_string_lossy()),
+            })?;
+
+        let module_ast = crate::interpreter::parser::parse_str(&module_contents).map_err(|e| {
+            CompileError::SemanticError {
+                message: format!("Failed to parse module {}: {}", module_file.display(), e),
+                symbol: InternedSymbol::from_text(&module_file.to_string_lossy()),
+            }
+        })?;
+
+        // Push the current module context
+        self.module_path_stack.push(parent_module_id.full_path());
+
+        // Two-pass processing: create all modules first, then load their contents
+        // This ensures sibling modules exist before processing imports
+
+        // First pass: Create all child modules (empty shells)
+        let mut child_modules = Vec::new();
+        for item in &module_ast.items {
+            if let ast::Item::ModuleDeclaration(mod_decl) = item {
+                let child_module_id =
+                    ir::ModuleId::with_parent(parent_module_id.full_path(), mod_decl.name.to_string());
+
+                // Create child module
+                let registry = ir_program.registry_mut();
+                if !registry.contains_item(&child_module_id) {
+                    let child_module = ir::Module {
+                        id: child_module_id.clone(),
+                        //items: im_rc::HashMap::new(),
+                        //imports: im_rc::HashMap::new(),
+                        visibility: self.convert_visibility(&mod_decl.visibility)?,
+                    };
+                    registry.add_module(child_module);
+
+                    // Add to module map
+                    self.module_map.add_module(child_module_id.clone());
+                    self.module_map.add_item(
+                        self.current_module_id(),
+                        child_module_id.id.name.clone(),
+                        child_module_id.id.clone(),
+                    );
+                }
+
+                // Store for second pass
+                let child_file = crate_root.join(format!("{}.pv", mod_decl.name.to_string()));
+                if child_file.exists() {
+                    child_modules.push((child_file, child_module_id));
+                }
+            }
+        }
+
+        // Second pass: Recursively load child module contents
+        for (child_file, child_module_id) in child_modules {
+            self.load_crate_tree(&child_file, &child_module_id, crate_root, ir_program)?;
+        }
+
+        // Third pass: Process all other items (types, predicates, use statements, etc.)
+        for item in &module_ast.items {
+            match item {
+                ast::Item::ModuleDeclaration(_) => {
+                    // Already processed in first pass
+                }
+                _ => {
+                    // Process other items normally
+                    self.collect_item_symbols(item, ir_program)?;
+                }
+            }
+        }
+
+        // Store module items for later body compilation after import resolution
+        self.external_module_items.push((parent_module_id.full_path(), module_ast.items));
+
+        // Restore context
+        self.module_path_stack.pop();
 
         Ok(())
     }
@@ -448,68 +546,35 @@ impl Compiler {
         &mut self,
         use_statement: &ast::UseStatement,
     ) -> Result<(), CompileError> {
-        let current_module = &self.symbol_context.current_module;
+        let current_module = &self.current_module_id();
 
         match &use_statement.path {
             ast::UsePath::Simple(qualified_path, symbol) => {
-                // For simple imports, we need to determine if the qualified_path represents:
-                // 1. The full path to the item (need to extract parent module)
-                // 2. The module path (use as-is)
-                // Check by seeing if the path has multiple segments - if so, extract module
-                let target_module = match qualified_path {
-                    ast::QualifiedPath::Global(segments)
-                    | ast::QualifiedPath::Absolute(segments) => {
-                        if segments.len() > 1 {
-                            // Multiple segments: use all but last as module path
-                            format!(
-                                "::{}",
-                                segments[..segments.len() - 1]
-                                    .iter()
-                                    .map(|s| s.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join("::")
-                            )
-                        } else {
-                            // Single segment: this is the module path
-                            self.qualified_path_to_string(qualified_path)
-                        }
-                    }
-                    _ => self.qualified_path_to_string(qualified_path),
-                };
                 let symbol_name = symbol.to_string();
                 let pending_import = PendingImport {
                     use_statement: use_statement.clone(),
                     importing_module: current_module.clone(),
-                    target_module,
-                    symbol_name,
                     alias: None,
                 };
 
                 self.pending_imports.push(pending_import);
             }
             ast::UsePath::Glob(qualified_path) => {
-                let target_module = self.qualified_path_to_string(qualified_path);
                 let pending_import = PendingImport {
                     use_statement: use_statement.clone(),
                     importing_module: current_module.clone(),
-                    target_module,
-                    symbol_name: "*".to_string(), // Special marker for glob imports
                     alias: None,
                 };
 
                 self.pending_imports.push(pending_import);
             }
             ast::UsePath::List(qualified_path, items) => {
-                let target_module = self.qualified_path_to_string(qualified_path);
-
                 for (symbol, alias) in items {
                     let symbol_name = symbol.to_string();
                     let alias_name = alias.as_ref().map(|a| a.to_string());
                     let pending_import = PendingImport {
                         use_statement: use_statement.clone(),
                         importing_module: current_module.clone(),
-                        target_module: target_module.clone(),
-                        symbol_name,
                         alias: alias_name,
                     };
 

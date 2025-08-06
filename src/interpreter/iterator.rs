@@ -3,26 +3,35 @@
 //! This module provides QueryResultIterator, which yields query results lazily
 //! and supports infinite result sets with interruption handling.
 
-use std::rc::Rc;
-use std::sync::atomic::Ordering;
-use std::collections::HashMap;
+use super::compiler;
 use super::results::QueryResult;
 use super::{ExecutionConfig, InterpreterError};
+use crate::goal::Goal;
+use crate::interpreter::compiler::ir;
+use crate::interpreter::runtime::context::{ArgumentValue, PredicateClosure};
+use crate::interpreter::symbol_table::InternedSymbol;
+use crate::lresult::LResult;
+use crate::lterm::LTerm;
 use crate::solver::{Solver, SolverResult};
 use crate::state::State;
 use crate::stream::Stream;
-use crate::query::ResultIterator;
-use crate::lterm::LTerm;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::atomic::Ordering;
 
 /// Iterator that yields query results lazily, supporting infinite result sets
 ///
-/// This iterator wraps the proven ResultIterator from src/query.rs to leverage
-/// its working result processing while maintaining the IR-based interpreter API.
+/// This iterator processes solver results directly to maintain proper variable
+/// name mapping from the original query.
 pub struct QueryResultIterator {
-    /// The inner ResultIterator that does the actual result processing
-    inner: ResultIterator<QueryResult>,
-    /// Variable names from the original query (e.g., ["q"] for member_test_2(q))
+    /// The solver that processes the goal
+    solver: Solver,
+    /// The LTerm variables to extract from solutions
+    variables: Vec<LTerm>,
+    /// Variable names from the original query (e.g., ["x"] for member(x, [1, 2, 3]))
     variable_names: Vec<String>,
+    /// The stream of solutions
+    stream: Stream,
     /// Execution configuration controlling limits and behavior
     config: ExecutionConfig,
     /// Current number of results yielded
@@ -32,22 +41,23 @@ pub struct QueryResultIterator {
 }
 
 impl QueryResultIterator {
-    /// Create a new query result iterator from ResultIterator components
+    /// Create a new query result iterator from solver components
     pub fn new(
-        solver: Solver,
+        mut solver: Solver,
         variables: Vec<LTerm>,
         variable_names: Vec<String>,
         goal: crate::goal::Goal,
         initial_state: State,
         config: ExecutionConfig,
     ) -> Self {
-        use crate::query::ResultIterator;
-        
-        let inner = ResultIterator::new(solver, variables, goal, initial_state);
-        
+        // Start the stream with the goal and initial state
+        let stream = solver.start(&goal, initial_state);
+
         Self {
-            inner,
+            solver,
+            variables,
             variable_names,
+            stream,
             config,
             result_count: 0,
             start_time: std::time::Instant::now(),
@@ -61,98 +71,51 @@ impl QueryResultIterator {
         query: super::parser::ast::Goal,
         config: ExecutionConfig,
     ) -> Result<Self, InterpreterError> {
-        use super::parser::ast;
-        use super::compiler::Compiler;
-        use super::runtime::context::{PredicateClosure, ArgumentValue, ExecutionContext};
-        use crate::interpreter::symbol_table::InternedSymbol;
         use crate::user::{DefaultUser, User};
+        let (ir_program, variable_names, query_predicate_id) =
+            compiler::Compiler::add_query_to_program(ir_program.clone(), query)?;
 
-        // Step 1: Extract variables from the query for later result collection
-        let query_vars = super::query::extract_variables_from_goal(&query);
-        
-        // Step 2: Add the query directly to the existing IR program without AST conversion
-        // Use Rc clone for copy-on-write behavior (only clones if there are other references in add_query_to_program)
-        let query_ir_program_rc = Compiler::add_query_to_program(
-            ir_program.clone(),
-            query.clone()
-        ).map_err(|e| {
-            InterpreterError::RuntimeError(format!("Query compilation failed: {:?}", e))
-        })?;
-        let query_predicate_id = super::compiler::ir::PredicateId::new("::__query__");
-        let query_ir_predicate = query_ir_program_rc.registry.get_predicate(&query_predicate_id)
-            .ok_or_else(|| InterpreterError::RuntimeError("Failed to find compiled query predicate".to_string()))?
-            .clone();
-        
-        // Step 4: Create argument values for the query variables (all relational, no meta)
-        let mut execution_context = ExecutionContext::new(query_ir_program_rc.clone(), environment.clone());
-        
-        // Debug: Show what predicates are available in the query IR program (disabled)
-        // println!("DEBUG: Query IR program has {} items", query_ir_program_rc.registry.all_items().count());
-        // for item in query_ir_program_rc.registry.all_items() {
-        //     if let super::compiler::ir::Item::Predicate(predicate) = item {
-        //         println!("DEBUG: Available predicate: {}", predicate.id.as_ref().path);
-        //     }
-        // }
-        
-        // The query_ir_program already contains the base program, so use it for predicate resolution
-        execution_context.set_base_program(query_ir_program_rc.clone());
-        let captured_args: Vec<ArgumentValue> = query_vars.iter()
-            .map(|var_name| {
-                let fresh_var = execution_context.create_named_fresh_var(var_name);
-                let symbol = InternedSymbol::from(var_name.clone());
-                execution_context.bind_var(symbol, fresh_var.clone());
-                ArgumentValue::Relational(fresh_var)
-            })
+        let query_vars: Vec<LTerm> = variable_names.iter().map(|v| LTerm::var(v)).collect();
+
+        let query_args = query_vars
+            .iter()
+            .map(|v| ArgumentValue::Relational(v.clone()))
             .collect();
-        
-        // Step 5: Create predicate closure for the query
-        let query_closure = PredicateClosure::new(
-            std::rc::Rc::new(query_ir_predicate),
-            captured_args,
-            query_ir_program_rc.clone(),
+
+        let predicate_closure = PredicateClosure::new(
+            query_predicate_id,
+            query_args,
+            ir_program.clone(),
             environment,
         );
-        
-        // Step 6: Create final goal from query closure
-        // No need to add reification goals - the ResultIterator handles reification properly
-        use crate::goal::Goal;
-        let final_goal = Goal::LazyMacro(std::rc::Rc::new(query_closure));
-        
-        // Step 7: Collect variable LTerms for ResultIterator
-        let variable_bindings = execution_context.get_all_variable_bindings();
-        let mut variables = Vec::new();
-        for var_name in &query_vars {
-            let symbol = InternedSymbol::from(var_name.clone());
-            if let Some(variable_value) = variable_bindings.get(&symbol) {
-                if let super::runtime::context::VariableValue::Relational(var_term) = variable_value {
-                    variables.push(var_term.clone());
-                }
-            }
-        }
-        
-        // Step 8: Create solver and initial state
+
+        // Create solver and initial state
         let user_state = DefaultUser::default();
         let user_globals = <DefaultUser as User>::UserContext::default();
         let mut solver = crate::solver::Solver::new(user_globals, false);
-        
+
         // Set timeout if provided
         if let Some(timeout_ms) = config.timeout {
             let start_time = std::time::Instant::now();
             solver.set_timeout(start_time, timeout_ms);
         }
-        
+
         // Set the IR program in the solver for deferred relation calls
-        solver.set_program(query_ir_program_rc.clone());
-        
+        solver.set_program(ir_program.clone());
+
+        let query_goal = Goal::LazyMacro(Rc::new(predicate_closure));
+
         let initial_state = crate::state::State::new(user_state);
-        
-        // Step 9: Create ResultIterator with the proven result processing logic
-        let inner = ResultIterator::new(solver, variables, final_goal, initial_state);
-        
-        // Create wrapper iterator with variable names preserved
+
+        // Start the stream with the goal and initial state
+        let stream = solver.start(&query_goal, initial_state);
+
+        // Create iterator with variable names preserved
         Ok(Self {
-            inner,
-            variable_names: query_vars,
+            solver,
+            variables: query_vars,
+            variable_names,
+            stream,
             config,
             result_count: 0,
             start_time: std::time::Instant::now(),
@@ -194,7 +157,6 @@ impl QueryResultIterator {
 
         false
     }
-
 
     /// Collect a limited number of results into a vector
     ///
@@ -243,38 +205,35 @@ impl Iterator for QueryResultIterator {
             return None;
         }
 
-        // Delegate to the inner ResultIterator which has proven result processing logic
-        match self.inner.next() {
-            Some(result) => {
-                self.result_count += 1;
-
-                // Convert the generic "v0", "v1" variable names to actual query variable names
-                let mut new_bindings = HashMap::new();
-                for (index, var_name) in self.variable_names.iter().enumerate() {
-                    let generic_name = format!("v{}", index);
-                    if let Some(lresult) = result.bindings.get(&generic_name) {
-                        new_bindings.insert(var_name.clone(), lresult.clone());
-                    }
-                }
-                let remapped_result = QueryResult { bindings: new_bindings };
-
-                // Debug output if enabled
-                if self.config.debug_enabled {
-                    println!(
-                        "Solution {}: {} bindings",
-                        self.result_count,
-                        remapped_result.binding_count()
+        // Process the next solution from the solver
+        match self.solver.next(&mut self.stream) {
+            SolverResult::Solution(state) => {
+                // At this point the state has already gone through initial reification
+                let smap = state.smap_ref();
+                let purified_cstore = state.cstore_ref().clone().purify(smap).normalize();
+                let reified_cstore = Rc::new(purified_cstore.walk_star(smap));
+                
+                // Create QueryResult with proper variable names
+                let mut bindings = HashMap::new();
+                for (var, name) in self.variables.iter().zip(&self.variable_names) {
+                    let lresult = LResult(
+                        smap.walk_star(var),
+                        Rc::clone(&reified_cstore)
                     );
+                    bindings.insert(name.clone(), lresult);
                 }
-
-                Some(Ok(remapped_result))
+                
+                self.result_count += 1;
+                Some(Ok(QueryResult { bindings }))
             }
-            None => {
+            SolverResult::NoMoreSolutions => {
                 if self.config.debug_enabled {
                     println!("No more solutions. Total: {}", self.result_count);
                 }
                 None
             }
+            SolverResult::Timeout => None,
+            SolverResult::Error(_) => None,
         }
     }
 }

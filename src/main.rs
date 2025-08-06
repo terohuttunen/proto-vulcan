@@ -2,13 +2,13 @@ use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
 use proto_vulcan::interpreter::compiler::CompilationOptions;
 use proto_vulcan::interpreter::parser::parse_str;
-use proto_vulcan::interpreter::{QueryResult, ExecutionConfig};
 use proto_vulcan::interpreter::test_runner::{TestRunOptions, TestRunner};
 use proto_vulcan::interpreter::{
     create_main_query, find_main_relation,
     trace::{TraceConfig, TraceLevel},
     Interpreter, InterpreterError,
 };
+use proto_vulcan::interpreter::{ExecutionConfig, QueryResult};
 use std::env;
 use std::path::PathBuf;
 
@@ -360,7 +360,7 @@ fn run_file(
 
     let config = ExecutionConfig::default();
     interpreter.load_program(&file_contents, config)?;
-
+    println!("Loaded program successfully");
     let timeout_ms = if timeout_secs > 0 {
         Some(timeout_secs * 1000) // Convert seconds to milliseconds
     } else {
@@ -388,7 +388,9 @@ fn run_file(
         };
 
         // Run query with unified configuration
-        interpreter.query(&actual_query, config).map(|iter| iter.collect_limited(limit.max(100)).unwrap_or_default())
+        interpreter
+            .query(&actual_query, config)
+            .map(|iter| iter.collect_limited(limit.max(100)).unwrap_or_default())
     } else {
         // Run normal query with timeout
         let config = ExecutionConfig {
@@ -396,7 +398,9 @@ fn run_file(
             result_limit: if limit > 0 { Some(limit) } else { None },
             ..Default::default()
         };
-        interpreter.query(&actual_query, config).map(|iter| iter.collect_limited(limit.max(100)).unwrap_or_default())
+        interpreter
+            .query(&actual_query, config)
+            .map(|iter| iter.collect_limited(limit.max(100)).unwrap_or_default())
     };
 
     match query_result {

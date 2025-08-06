@@ -17,19 +17,33 @@ pub enum MetaValue {
 /// Type annotations for meta parameters
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeAnnotation {
+    // Non-relational types (for meta expressions)
     Int,
     String,
     Bool,
-    Relation(usize), // New: relation type with arity (e.g., rel(2) for binary relation)
-    Custom(super::parser::ast::QualifiedPath),  // Custom type names (like qualified paths)
+    // Relational built-in types (for logic terms)
+    RelInt,    // Int (capitalized)
+    RelString, // String (capitalized) 
+    RelBool,   // Bool (capitalized)
+    RelChar,   // Char
+    LTerm,     // Base logic term type
+    Relation(usize), // rel(n) relation type with arity
+    Custom(super::parser::ast::QualifiedPath),  // User-defined compound types
 }
 
 impl fmt::Display for TypeAnnotation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            // Non-relational types (lowercase)
             TypeAnnotation::Int => write!(f, "int"),
-            TypeAnnotation::String => write!(f, "string"),
+            TypeAnnotation::String => write!(f, "string"),  
             TypeAnnotation::Bool => write!(f, "bool"),
+            // Relational built-in types (capitalized)
+            TypeAnnotation::RelInt => write!(f, "Int"),
+            TypeAnnotation::RelString => write!(f, "String"),
+            TypeAnnotation::RelBool => write!(f, "Bool"),
+            TypeAnnotation::RelChar => write!(f, "Char"),
+            TypeAnnotation::LTerm => write!(f, "LTerm"),
             TypeAnnotation::Relation(arity) => write!(f, "rel({})", arity),
             TypeAnnotation::Custom(name) => write!(f, "{}", name),
         }

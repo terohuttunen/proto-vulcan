@@ -5,9 +5,35 @@
 
 use super::ir;
 use super::*;
+use crate::interpreter::symbol_table;
+use std::rc::Rc;
 
 /// AST-to-IR compilation methods for the IR compiler
 impl Compiler {
+    /// Compile bodies of external modules (loaded from std lib etc.)
+    pub(super) fn compile_external_module_bodies(
+        &mut self,
+        ir_program: &mut ir::Program,
+    ) -> Result<(), CompileError> {
+        // Take the external module items (this empties the vec)
+        let external_items = std::mem::take(&mut self.external_module_items);
+        
+        for (module_path, items) in external_items {
+            // Push the module context
+            self.module_path_stack.push(module_path.clone());
+            
+            // Compile each item's body
+            for item in &items {
+                self.compile_item_body(item, ir_program)?;
+            }
+            
+            // Pop the module context
+            self.module_path_stack.pop();
+        }
+        
+        Ok(())
+    }
+
     /// Phase 3: Compile bodies with full symbol resolution
     pub(super) fn compile_bodies(
         &mut self,
@@ -15,15 +41,27 @@ impl Compiler {
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
         // Phase 3: Body compilation
-        
+
         for item in &program.items {
             self.compile_item_body(item, ir_program)?;
         }
         Ok(())
     }
 
+    /// Compile bodies from individual AST items (for incremental compilation)
+    pub(super) fn compile_bodies_from_items(
+        &mut self,
+        items: &[ast::Item],
+        ir_program: &mut ir::Program,
+    ) -> Result<(), CompileError> {
+        for item in items {
+            self.compile_item_body(item, ir_program)?;
+        }
+        Ok(())
+    }
+
     /// Compile the body of a single AST item
-    fn compile_item_body(
+    pub(super) fn compile_item_body(
         &mut self,
         item: &ast::Item,
         ir_program: &mut ir::Program,
@@ -41,8 +79,14 @@ impl Compiler {
             ast::Item::Predicate(predicate) => {
                 self.compile_predicate_body(predicate, ir_program)?;
             }
-            ast::Item::Use(_) | ast::Item::ModuleDeclaration(_) => {
-                // Skip these
+            ast::Item::Use(_) => {
+                // Skip use statements - already processed
+            }
+            ast::Item::ExternCrate(_) => {
+                // Skip extern crate statements - already processed
+            }
+            ast::Item::ModuleDeclaration(module_decl) => {
+                self.compile_module_declaration_body(module_decl, ir_program)?;
             }
             ast::Item::Impl(impl_block) => {
                 self.compile_impl_body(impl_block, ir_program)?;
@@ -59,19 +103,24 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         // Look up the module in the current module using IR registry
         let module_name = module.name.to_string();
-        let module_item_id = self.resolve_local_symbol_with_kind(&module_name, ir::ItemKind::Module, ir_program)
+        let module_item_id = self
+            .resolve_local_symbol_with_kind(&module_name, ir::ItemKind::Module, ir_program)
             .ok_or_else(|| CompileError::UnresolvedModule {
-                attempted_item: ir::ModuleId::new(module_name.clone()).into(),
+                attempted_item: ir::ModuleId::with_parent(
+                    Rc::new(ir::ModulePath::root()),
+                    module_name.clone(),
+                ),
                 symbol: module.name.clone(),
             })?;
 
         // Convert ItemId to ir::ModuleId (we know it's a module from context)
-        let module_id = ir::ModuleId::new(module_item_id.path.clone());
+        let module_id = ir::ModuleId::new(
+            module_item_id.module_path.clone(),
+            module_item_id.name.name.clone(),
+        );
 
         // Push module context
-        self.module_path_stack.push(module.name.to_string());
-        let old_current = self.symbol_context.current_module.clone();
-        self.symbol_context.current_module = module_id.clone();
+        self.module_path_stack.push(module_id.full_path());
 
         // Compile child items
         for child_item in &module.items {
@@ -80,7 +129,6 @@ impl Compiler {
 
         // Restore context
         self.module_path_stack.pop();
-        self.symbol_context.current_module = old_current;
 
         Ok(())
     }
@@ -93,21 +141,30 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         // Look up the type in the current module using IR registry
         let type_name = struct_def.name.to_string();
-        let type_item_id = self.resolve_local_symbol_with_kind(&type_name, ir::ItemKind::Type, ir_program)
+        let type_item_id = self
+            .resolve_local_symbol_with_kind(&type_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(type_name.clone()).into(),
+                attempted_item: ir::TypeId::with_parent(
+                    self.current_module_path(),
+                    type_name.clone(),
+                )
+                .into(),
                 symbol: struct_def.name.clone(),
             })?;
 
         // Convert ItemId to ir::TypeId (we know it's a type from context)
-        let type_id = ir::TypeId::new(type_item_id.path.clone());
+        let type_id = ir::TypeId::new(
+            type_item_id.module_path.clone(),
+            type_item_id.name.name.clone(),
+        );
 
         // Resolve field types
         let fields = match &struct_def.kind {
             ast::StructKind::Named(named_fields) => {
                 let mut ir_fields = vec![];
                 for field in named_fields {
-                    let field_type_ref = self.resolve_type_reference(&field.type_name, ir_program)?;
+                    let field_type_ref =
+                        self.resolve_qualified_field_type(&field.type_name, ir_program)?;
                     ir_fields.push(ir::NamedField {
                         name: field.name.clone(),
                         type_ref: field_type_ref,
@@ -119,9 +176,7 @@ impl Compiler {
             ast::StructKind::Tuple(field_types) => {
                 let mut ir_field_types = vec![];
                 for field_type in field_types {
-                    // Convert InternedSymbol to qualified path
-                    let qualified_path = ast::QualifiedPath::Relative(vec![field_type.clone()]);
-                    let field_type_ref = self.resolve_qualified_path_to_type(&qualified_path, ir_program)?;
+                    let field_type_ref = self.resolve_field_type(field_type, ir_program)?;
                     ir_field_types.push(field_type_ref);
                 }
                 ir::StructFields::Tuple(ir_field_types)
@@ -132,9 +187,9 @@ impl Compiler {
         let registry = ir_program.registry_mut();
         let updated_type = ir::TypeDefinition {
             id: type_id,
-            kind: ir::TypeKind::Struct(ir::StructDefinition { 
+            kind: ir::TypeKind::Struct(ir::StructDefinition {
                 name: struct_def.name.clone(),
-                fields 
+                fields,
             }),
             visibility: self.convert_visibility(&struct_def.visibility)?,
         };
@@ -152,14 +207,22 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         // Look up the type in the current module using IR registry
         let type_name = enum_def.name.to_string();
-        let type_item_id = self.resolve_local_symbol_with_kind(&type_name, ir::ItemKind::Type, ir_program)
+        let type_item_id = self
+            .resolve_local_symbol_with_kind(&type_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(type_name.clone()).into(),
+                attempted_item: ir::TypeId::with_parent(
+                    self.current_module_path(),
+                    type_name.clone(),
+                )
+                .into(),
                 symbol: enum_def.name.clone(),
             })?;
 
         // Convert ItemId to ir::TypeId (we know it's a type from context)
-        let type_id = ir::TypeId::new(type_item_id.path.clone());
+        let type_id = ir::TypeId::new(
+            type_item_id.module_path.clone(),
+            type_item_id.name.name.clone(),
+        );
 
         // Resolve variant types
         let mut variants = vec![];
@@ -169,10 +232,7 @@ impl Compiler {
                 ast::VariantKind::Tuple(field_types) => {
                     let mut ir_field_types = vec![];
                     for field_type in field_types {
-                        // Convert InternedSymbol to qualified path
-                        let qualified_path = ast::QualifiedPath::Relative(vec![field_type.clone()]);
-                        let field_type_ref =
-                            self.resolve_qualified_path_to_type(&qualified_path, ir_program)?;
+                        let field_type_ref = self.resolve_field_type(field_type, ir_program)?;
                         ir_field_types.push(field_type_ref);
                     }
                     ir::EnumVariantKind::Tuple(ir_field_types)
@@ -180,7 +240,8 @@ impl Compiler {
                 ast::VariantKind::Named(fields) => {
                     let mut ir_fields = vec![];
                     for field in fields {
-                        let field_type_ref = self.resolve_type_reference(&field.type_name, ir_program)?;
+                        let field_type_ref =
+                            self.resolve_qualified_field_type(&field.type_name, ir_program)?;
                         ir_fields.push(ir::NamedField {
                             name: field.name.clone(),
                             type_ref: field_type_ref,
@@ -201,9 +262,9 @@ impl Compiler {
         let registry = ir_program.registry_mut();
         let updated_type = ir::TypeDefinition {
             id: type_id,
-            kind: ir::TypeKind::Enum(ir::EnumDefinition { 
+            kind: ir::TypeKind::Enum(ir::EnumDefinition {
                 name: enum_def.name.clone(),
-                variants 
+                variants,
             }),
             visibility: self.convert_visibility(&enum_def.visibility)?,
         };
@@ -233,94 +294,151 @@ impl Compiler {
         // Simple case: single segment - look in current module first, then check builtins
         if segments.len() == 1 {
             let type_name = &segments[0];
-            
+
             // First try to find in current module using IR registry
-            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(type_name, ir::ItemKind::Type, ir_program) {
-                return Ok(ir::TypeId::new(type_item_id.path.clone()));
+            if let Some(type_item_id) =
+                self.resolve_local_symbol_with_kind(type_name, ir::ItemKind::Type, ir_program)
+            {
+                return Ok(ir::TypeId::new(
+                    type_item_id.module_path.clone(),
+                    type_item_id.name.name.clone(),
+                ));
             }
-            
+
             // If not found locally, check if it's a builtin type
             if Self::is_builtin_type(type_name) {
-                return Ok(ir::TypeId::new(format!("{}", type_name)));
+                return Ok(ir::TypeId::with_parent(
+                    Rc::new(ir::ModulePath::root()),
+                    type_name.to_string(),
+                ));
             }
-            
+
             // Not found and not a builtin type - return error
             return Err(CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(type_name.clone()).into(),
+                attempted_item: ir::TypeId::with_parent(
+                    self.current_module_path(),
+                    type_name.clone(),
+                )
+                .into(),
                 symbol: InternedSymbol::from_text(type_name),
             });
         }
 
-        // Complex case: multi-segment path - convert to full path and look up directly
-        let full_path = self.qualified_path_to_string(path);
-        let type_id = ir::TypeId::new(full_path);
-        
+        // Complex case: multi-segment path - use type-specific resolution
+        let type_id = self.resolve_qualified_path_as_type(path, ir_program)?;
+
         // Check if this type exists in the IR registry
         if ir_program.registry.get_type(&type_id).is_some() {
             return Ok(type_id);
         }
-        
+
         // Not found - return error with the last segment as the symbol name
         let empty_string = String::new();
         let type_name = segments.last().unwrap_or(&empty_string);
         return Err(CompileError::UnresolvedType {
             attempted_item: type_id,
             symbol: InternedSymbol::from_text(type_name),
-        })
+        });
     }
 
-    /// Resolve qualified path to PredicateId using proper scoped resolution
+    /// Resolve qualified path to either a PredicateId or a predicate variable
     fn resolve_qualified_path_to_predicate(
         &self,
         path: &ast::QualifiedPath,
         ir_program: &ir::Program,
-    ) -> Result<ir::PredicateId, CompileError> {
+    ) -> Result<ir::PredicateCallTarget, CompileError> {
         let segments: Vec<_> = path.segments().iter().map(|s| s.to_string()).collect();
 
         // Simple case: single segment - look in current module first
         if segments.len() == 1 {
             let predicate_name = &segments[0];
-            
+
+            // Check local scope first - parameters with rel(n) type annotations
+            let predicate_symbol = InternedSymbol::from_text(predicate_name);
+            if let Some(type_annotation) = self.lookup_local_symbol(&predicate_symbol) {
+                // Check if this is a relational type that can be called as a predicate
+                if let ir::TypeAnnotation::Relation(_arity) = type_annotation {
+                    // This is a local variable holding a predicate
+                    return Ok(ir::PredicateCallTarget::Variable(predicate_symbol));
+                }
+            }
+
             // Check if this might be a builtin predicate - allow to pass through for runtime resolution
-            if predicate_name.starts_with("__builtin_") || 
-               predicate_name.starts_with("assert_") {
-                // Create PredicateId for runtime builtin resolution
-                return Ok(ir::PredicateId::new(predicate_name.clone()));
+            if predicate_name.starts_with("__builtin_") || predicate_name.starts_with("assert_") {
+                // Builtin predicates are resolved at runtime
+                return Ok(ir::PredicateCallTarget::Builtin(predicate_name.clone()));
             }
-            
-            // First try to find in current module using IR registry
-            if let Some(predicate_item_id) = self.resolve_local_symbol_with_kind(predicate_name, ir::ItemKind::Predicate, ir_program) {
-                return Ok(ir::PredicateId::new(predicate_item_id.path.clone()));
+
+            // Try enhanced symbol resolution for simple names (includes glob imports and global items)
+            if let Some(item_id) = self.resolve_local_symbol_with_kind(
+                predicate_name,
+                ir::ItemKind::Predicate,
+                ir_program,
+            ) {
+                // Since resolve_local_symbol_with_kind returns ItemId for predicates,
+                // we can wrap it back into PredicateId since it came from a predicate search
+                return Ok(ir::PredicateCallTarget::Predicate(ir::PredicateId { id: item_id }));
             }
-            
-            // Not found locally - return error
-            return Err(CompileError::UnresolvedPredicate {
-                attempted_item: ir::PredicateId::new(predicate_name.clone()),
-                symbol: InternedSymbol::from_text(predicate_name),
-            });
         }
 
-        // Complex case: multi-segment path - convert to full path and look up directly
-        let full_path = self.qualified_path_to_string(path);
-        let predicate_id = ir::PredicateId::new(full_path);
-        
-        // Check if this predicate exists in the IR registry
-        if ir_program.registry.get_predicate(&predicate_id).is_some() {
-            return Ok(predicate_id);
-        }
-        
-        // Not found - return error with the last segment as the symbol name
-        let empty_string = String::new();
-        let predicate_name = segments.last().unwrap_or(&empty_string);
-        return Err(CompileError::UnresolvedPredicate {
-            attempted_item: predicate_id,
-            symbol: InternedSymbol::from_text(predicate_name),
-        })
+        // Complex case: multi-segment path - use predicate-specific resolution
+        let predicate_id = self.resolve_qualified_path_as_predicate(path, ir_program)?;
+        Ok(ir::PredicateCallTarget::Predicate(predicate_id))
     }
 
     // TODO: Add remaining compilation methods for predicates, goals, terms, patterns, etc.
     // This is a large amount of code (over 1000 lines) that would be moved from the original
     // compiler.rs file. For now, I'll include stub methods to complete the interface.
+
+    /// Compile module declaration body (phase 3)
+    fn compile_module_declaration_body(
+        &mut self,
+        module_decl: &ast::ModuleDeclaration,
+        ir_program: &mut ir::Program,
+    ) -> Result<(), CompileError> {
+        // Get the module name and check if there's a corresponding file using generic crate resolution
+        let module_name = module_decl.name.to_string();
+        let path = self.resolve_module_file_path(&module_name)?;
+
+        if path.exists() {
+            // Read and parse the module file (same as in symbol collection)
+            let module_contents =
+                std::fs::read_to_string(&path).map_err(|e| CompileError::SemanticError {
+                    message: format!("Failed to read module {}: {}", path.display(), e),
+                    symbol: module_decl.name.clone(),
+                })?;
+
+            let module_ast =
+                crate::interpreter::parser::parse_str(&module_contents).map_err(|e| {
+                    CompileError::SemanticError {
+                        message: format!("Failed to parse module {}: {}", path.display(), e),
+                        symbol: module_decl.name.clone(),
+                    }
+                })?;
+
+            // Create module ID directly from current context - no parsing needed
+            let module_name_typed =
+                ir::ItemName::new_unchecked(module_name.clone(), ir::ItemKind::Module);
+            let module_id = ir::ModuleId::with_parent(
+                self.current_module_path(),
+                module_name_typed.name.clone(),
+            );
+
+            // Push child module context for compiling its contents
+            self.module_path_stack.push(module_id.full_path());
+
+            // Recursively compile bodies from the module file
+            for item in &module_ast.items {
+                self.compile_item_body(item, ir_program)?;
+            }
+
+            // Restore original module context
+            self.module_path_stack.pop();
+        }
+        // If file doesn't exist, nothing to compile
+
+        Ok(())
+    }
 
     /// Compile predicate body (goals, parameters, etc.)
     fn compile_predicate_body(
@@ -330,16 +448,23 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         // Look up the predicate using IR registry
         let predicate_name = predicate.name.to_string();
-        
+
         // Find predicate using IR registry
-        let predicate_item_id = self.resolve_local_symbol_with_kind(&predicate_name, ir::ItemKind::Predicate, ir_program)
+        let predicate_item_id = self
+            .resolve_local_symbol_with_kind(&predicate_name, ir::ItemKind::Predicate, ir_program)
             .ok_or_else(|| CompileError::UnresolvedPredicate {
-                attempted_item: ir::PredicateId::new(predicate_name.clone()),
+                attempted_item: ir::PredicateId::with_parent(
+                    self.current_module_path(),
+                    predicate_name.clone(),
+                ),
                 symbol: predicate.name.clone(),
             })?;
 
         // Convert ItemId to PredicateId (we know it's a predicate from context)
-        let predicate_id = ir::PredicateId::new(predicate_item_id.path.clone());
+        let predicate_id = ir::PredicateId::new(
+            predicate_item_id.module_path.clone(),
+            predicate_item_id.name.name.clone(),
+        );
 
         // Compile parameters
         let mut parameters = vec![];
@@ -356,11 +481,24 @@ impl Compiler {
             });
         }
 
+        // Push new scope for predicate parameters
+        self.push_local_scope();
+
+        // Add parameters to local scope
+        for param in &parameters {
+            if let Some(type_annotation) = &param.type_annotation {
+                self.add_local_symbol(param.name.clone(), type_annotation.clone());
+            }
+        }
+
         // Compile body goals
         let mut body = vec![];
         for goal in predicate.body.iter() {
             body.push(self.compile_goal(goal, ir_program)?);
         }
+
+        // Pop the predicate parameter scope
+        self.pop_local_scope();
 
         // Update the predicate in the registry
         let registry = ir_program.registry_mut();
@@ -389,14 +527,14 @@ impl Compiler {
         // Impl blocks are treated as modules containing predicates
         let impl_module_name = impl_block.type_name.to_string();
 
-        // Push impl module context
-        self.module_path_stack.push(impl_module_name.clone());
-        let old_current = self.symbol_context.current_module.clone();
+        // Create impl module ID directly from current context - no parsing needed
+        let module_name_typed =
+            ir::ItemName::new_unchecked(impl_module_name.clone(), ir::ItemKind::Module);
+        let module_id =
+            ir::ModuleId::with_parent(self.current_module_path(), module_name_typed.name.clone());
 
-        // Find the impl module ID that was created during symbol collection
-        let module_path = self.resolve_item_path(&impl_module_name);
-        let module_id = ir::ModuleId::new(module_path);
-        self.symbol_context.current_module = module_id;
+        // Push impl module context
+        self.module_path_stack.push(module_id.full_path());
 
         // Compile predicate bodies
         for predicate in &impl_block.predicates {
@@ -405,7 +543,6 @@ impl Compiler {
 
         // Restore context
         self.module_path_stack.pop();
-        self.symbol_context.current_module = old_current;
 
         Ok(())
     }
@@ -418,9 +555,16 @@ impl Compiler {
     ) -> Result<ir::TypeAnnotation, CompileError> {
         use crate::interpreter::metaprogramming::TypeAnnotation as AstTypeAnnotation;
         match annotation {
+            // Non-relational types (for meta expressions)
             AstTypeAnnotation::Int => Ok(ir::TypeAnnotation::Int),
             AstTypeAnnotation::String => Ok(ir::TypeAnnotation::String),
             AstTypeAnnotation::Bool => Ok(ir::TypeAnnotation::Bool),
+            // Relational built-in types (for logic terms)
+            AstTypeAnnotation::RelInt => Ok(ir::TypeAnnotation::RelInt),
+            AstTypeAnnotation::RelString => Ok(ir::TypeAnnotation::RelString),
+            AstTypeAnnotation::RelBool => Ok(ir::TypeAnnotation::RelBool),
+            AstTypeAnnotation::RelChar => Ok(ir::TypeAnnotation::RelChar),
+            AstTypeAnnotation::LTerm => Ok(ir::TypeAnnotation::LTerm),
             AstTypeAnnotation::Relation(arity) => Ok(ir::TypeAnnotation::Relation(*arity)),
             AstTypeAnnotation::Custom(qualified_path) => {
                 let type_id = self.resolve_qualified_path_to_type(qualified_path, ir_program)?;
@@ -430,7 +574,11 @@ impl Compiler {
     }
 
     /// Compile an AST goal to an IR goal
-    pub(super) fn compile_goal(&mut self, goal: &ast::Goal, ir_program: &ir::Program) -> Result<ir::Goal, CompileError> {
+    pub(super) fn compile_goal(
+        &mut self,
+        goal: &ast::Goal,
+        ir_program: &ir::Program,
+    ) -> Result<ir::Goal, CompileError> {
         match goal {
             ast::Goal::Equality(left, right, _span) => {
                 let left_term = self.compile_term(left, ir_program)?;
@@ -466,7 +614,9 @@ impl Compiler {
                 Ok(ir::Goal::Disjunction(ir::StructuralGoal::from_vec(goals)))
             }
 
-            ast::Goal::Fresh(fresh_vars, _span) => self.compile_fresh_variables(fresh_vars, ir_program),
+            ast::Goal::Fresh(fresh_vars, _span) => {
+                self.compile_fresh_variables(fresh_vars, ir_program)
+            }
 
             ast::Goal::Let(let_decl, _span) => self.compile_let_declaration(let_decl, ir_program),
 
@@ -501,12 +651,18 @@ impl Compiler {
     }
 
     /// Compile an AST term to an IR term
-    fn compile_term(&self, term: &ast::Term, ir_program: &ir::Program) -> Result<ir::Term, CompileError> {
+    fn compile_term(
+        &self,
+        term: &ast::Term,
+        ir_program: &ir::Program,
+    ) -> Result<ir::Term, CompileError> {
         match term {
             ast::Term::Variable(name) => {
                 // Check if this Variable is actually a unit enum variant
                 // This serves as a fallback for cases where semantic analysis wasn't performed
-                if let Some(enum_variant) = self.try_disambiguate_variable_as_enum_variant(name, ir_program)? {
+                if let Some(enum_variant) =
+                    self.try_disambiguate_variable_as_enum_variant(name, ir_program)?
+                {
                     return self.compile_enum_variant_construction(&enum_variant, ir_program);
                 }
                 Ok(ir::Term::Variable(name.clone()))
@@ -616,29 +772,101 @@ impl Compiler {
         };
 
         // Resolve the predicate reference
-        let predicate_id = self.resolve_qualified_path_to_predicate(&qualified_path, ir_program)?;
+        let predicate_target = self.resolve_qualified_path_to_predicate(&qualified_path, ir_program)?;
+
+        // Look up predicate to check parameter types for macro calls
+        let predicate_def = match &predicate_target {
+            ir::PredicateCallTarget::Predicate(predicate_id) => {
+                ir_program.registry.get_predicate(predicate_id)
+            }
+            _ => None, // Variables and builtins don't have definitions in the registry
+        };
 
         // Compile arguments
         let mut arguments = Vec::new();
-        for arg in &relation_call.args {
+        for (i, arg) in relation_call.args.iter().enumerate() {
             match arg {
                 ast::CallArgument::Term(term) => {
-                    arguments.push(self.compile_term(term, ir_program)?);
+                    // Check if this should be a meta value for macro parameters
+                    let should_be_meta = if let Some(predicate) = predicate_def {
+                        if predicate.kind == ir::PredicateKind::Macro
+                            && i < predicate.parameters.len()
+                        {
+                            matches!(
+                                predicate.parameters[i].type_annotation,
+                                Some(ir::TypeAnnotation::Int)
+                                    | Some(ir::TypeAnnotation::String)
+                                    | Some(ir::TypeAnnotation::Bool)
+                            )
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    if should_be_meta {
+                        // Convert compatible literals to meta expressions for macro parameters
+                        match term {
+                            ast::Term::Literal(literal, _location) => {
+                                let meta_value = match literal {
+                                    ast::Literal::Number(num_str) => {
+                                        // Parse string to integer for meta parameter
+                                        match num_str.parse::<i64>() {
+                                            Ok(i) => ir::MetaValue::Integer(i),
+                                            Err(_) => {
+                                                return Err(CompileError::SemanticError {
+                                                    message: format!("Invalid integer literal for meta parameter: {}", num_str),
+                                                    symbol: InternedSymbol::from_text("literal"),
+                                                });
+                                            }
+                                        }
+                                    }
+                                    ast::Literal::String(s) => {
+                                        ir::MetaValue::String(s.as_str().into())
+                                    }
+                                    ast::Literal::Boolean(b) => ir::MetaValue::Boolean(*b),
+                                    ast::Literal::Char(_) => {
+                                        return Err(CompileError::SemanticError {
+                                            message: "Character literals cannot be used for meta parameters".to_string(),
+                                            symbol: InternedSymbol::from_text("char_literal"),
+                                        });
+                                    }
+                                };
+                                arguments.push(ir::Term::MetaInterpolation(
+                                    ir::MetaExpression::Literal(meta_value),
+                                ));
+                            }
+                            _ => {
+                                let param_name = if let Some(predicate) = predicate_def {
+                                    predicate.parameters[i].name.to_string()
+                                } else {
+                                    format!("parameter_{}", i)
+                                };
+                                return Err(CompileError::SemanticError {
+                                    message: format!(
+                                        "Meta parameter '{}' expects a literal value",
+                                        param_name
+                                    ),
+                                    symbol: InternedSymbol::from_text(&param_name),
+                                });
+                            }
+                        }
+                    } else {
+                        // Regular relational parameter
+                        arguments.push(self.compile_term(term, ir_program)?);
+                    }
                 }
-                ast::CallArgument::MetaExpression(_meta_expr) => {
-                    // Meta expressions are handled during preprocessing
-                    return Err(CompileError::SemanticError {
-                        message:
-                            "Meta expressions in relation calls not supported in IR compilation"
-                                .to_string(),
-                        symbol: InternedSymbol::from_text("meta_expression"),
-                    });
+                ast::CallArgument::MetaExpression(meta_expr) => {
+                    // Compile meta expressions for runtime evaluation in macro calls
+                    let compiled_meta = self.compile_meta_expression(meta_expr)?;
+                    arguments.push(ir::Term::MetaInterpolation(compiled_meta));
                 }
             }
         }
 
         Ok(ir::Goal::PredicateCall(ir::PredicateCall {
-            predicate: predicate_id,
+            target: predicate_target,
             arguments,
         }))
     }
@@ -648,13 +876,30 @@ impl Compiler {
         fresh_vars: &ast::FreshVariables,
         ir_program: &ir::Program,
     ) -> Result<ir::Goal, CompileError> {
-        let variables = fresh_vars.vars.clone();
+        // Push new scope for fresh variables
+        self.push_local_scope();
 
-        // Compile the body goals
+        // Extract variable names and add them to local scope
+        let mut variables = Vec::new();
+        for param in &fresh_vars.vars {
+            variables.push(param.name.clone());
+
+            // Add the fresh variable to local scope with its type annotation
+            if let Some(type_annotation) = &param.type_annotation {
+                let ir_type_annotation =
+                    self.compile_type_annotation(type_annotation, ir_program)?;
+                self.add_local_symbol(param.name.clone(), ir_type_annotation);
+            }
+        }
+
+        // Compile the body goals within the fresh variable scope
         let mut body = Vec::new();
         for goal in fresh_vars.body.iter() {
             body.push(self.compile_goal(goal, ir_program)?);
         }
+
+        // Pop the fresh variable scope
+        self.pop_local_scope();
 
         Ok(ir::Goal::Fresh(ir::Fresh {
             variables,
@@ -696,11 +941,22 @@ impl Compiler {
 
         let mut arms = Vec::new();
         for arm in &pattern_match.arms {
+            // Push new scope for pattern variables in this match arm
+            self.push_local_scope();
+
             let pattern = self.compile_pattern(&arm.pattern, ir_program)?;
+
+            // Bind compiled pattern variables to local scope
+            self.bind_compiled_pattern_variables(&pattern)?;
+
             let mut body = Vec::new();
             for goal in arm.body.iter() {
                 body.push(self.compile_goal(goal, ir_program)?);
             }
+
+            // Pop the pattern variable scope
+            self.pop_local_scope();
+
             arms.push(ir::PatternArm {
                 pattern,
                 body: ir::StructuralGoal::from_vec(body),
@@ -708,6 +964,66 @@ impl Compiler {
         }
 
         Ok(ir::Goal::PatternMatch(ir::PatternMatch { term, arms }))
+    }
+
+    /// Bind compiled pattern variables to the current local scope
+    fn bind_compiled_pattern_variables(
+        &mut self,
+        pattern: &ir::Pattern,
+    ) -> Result<(), CompileError> {
+        match pattern {
+            ir::Pattern::Variable(var_name) => {
+                // Add the pattern variable to the local scope with LTerm type annotation
+                self.add_local_symbol(var_name.clone(), ir::TypeAnnotation::LTerm);
+            }
+            ir::Pattern::List(list_pattern) => {
+                // Bind variables in list elements
+                for element in &list_pattern.elements {
+                    self.bind_compiled_pattern_variables(element)?;
+                }
+                // Bind variables in tail if present
+                if let Some(tail) = &list_pattern.tail {
+                    self.bind_compiled_pattern_variables(tail)?;
+                }
+            }
+            ir::Pattern::Struct(struct_pattern) => {
+                // Bind variables in struct fields
+                match &struct_pattern.fields {
+                    ir::StructPatternFields::Named(named_fields) => {
+                        for field in named_fields {
+                            self.bind_compiled_pattern_variables(&field.pattern)?;
+                        }
+                    }
+                    ir::StructPatternFields::Tuple(tuple_fields) => {
+                        for field_pattern in tuple_fields {
+                            self.bind_compiled_pattern_variables(field_pattern)?;
+                        }
+                    }
+                }
+            }
+            ir::Pattern::EnumVariant(enum_pattern) => {
+                // Bind variables in enum variant fields
+                match &enum_pattern.kind {
+                    ir::EnumVariantPatternKind::Tuple(tuple_fields) => {
+                        for field_pattern in tuple_fields {
+                            self.bind_compiled_pattern_variables(field_pattern)?;
+                        }
+                    }
+                    ir::EnumVariantPatternKind::Named(named_fields) => {
+                        for field in named_fields {
+                            self.bind_compiled_pattern_variables(&field.pattern)?;
+                        }
+                    }
+                    ir::EnumVariantPatternKind::Unit => {
+                        // No variables to bind in unit variants
+                    }
+                }
+            }
+            ir::Pattern::Literal(_) | ir::Pattern::Wildcard => {
+                // No variables to bind in literals or wildcards
+            }
+        }
+        Ok(())
     }
 
     fn compile_method_call(
@@ -734,32 +1050,46 @@ impl Compiler {
             // This looks like "Shape::Rectangle" - could be an enum variant
             let potential_enum_name = &struct_name_str[..colon_pos];
             let potential_variant_name = &struct_name_str[colon_pos + 2..];
-            
+
             // Try to resolve the enum part as a type using IR registry
-            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(potential_enum_name, ir::ItemKind::Type, ir_program)
-            {
-                let enum_ref = ir::TypeId::new(type_item_id.path.clone());
-                
+            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(
+                potential_enum_name,
+                ir::ItemKind::Type,
+                ir_program,
+            ) {
+                let enum_ref = ir::TypeId::new(
+                    type_item_id.module_path.clone(),
+                    type_item_id.name.name.clone(),
+                );
+
                 // STRICT VALIDATION: Look up the actual enum definition to validate syntax
-                let type_def = ir_program.registry.get_type(&enum_ref)
-                    .ok_or_else(|| CompileError::UnresolvedType {
+                let type_def = ir_program.registry.get_type(&enum_ref).ok_or_else(|| {
+                    CompileError::UnresolvedType {
                         attempted_item: enum_ref.clone(),
                         symbol: InternedSymbol::from_text(potential_enum_name),
-                    })?;
+                    }
+                })?;
 
                 // Extract enum definition and find the specific variant
                 let enum_def = match &type_def.kind {
                     ir::TypeKind::Enum(enum_def) => enum_def,
-                    _ => return Err(CompileError::SemanticError {
-                        message: format!("'{}' is not an enum type", potential_enum_name),
-                        symbol: InternedSymbol::from_text(potential_enum_name),
-                    }),
+                    _ => {
+                        return Err(CompileError::SemanticError {
+                            message: format!("'{}' is not an enum type", potential_enum_name),
+                            symbol: InternedSymbol::from_text(potential_enum_name),
+                        })
+                    }
                 };
 
-                let variant_def = enum_def.variants.iter()
+                let variant_def = enum_def
+                    .variants
+                    .iter()
                     .find(|v| v.name.to_string() == potential_variant_name)
                     .ok_or_else(|| CompileError::UnresolvedType {
-                        attempted_item: ir::TypeId::new(format!("{}::{}", potential_enum_name, potential_variant_name)),
+                        attempted_item: ir::TypeId::with_parent(
+                            self.current_module_path(),
+                            format!("{}::{}", potential_enum_name, potential_variant_name),
+                        ),
                         symbol: InternedSymbol::from_text(potential_variant_name),
                     })?;
 
@@ -794,7 +1124,10 @@ impl Compiler {
                             return Err(CompileError::SemanticError {
                                 message: format!(
                                     "Enum variant '{}::{}' expects {} fields, found {}",
-                                    potential_enum_name, potential_variant_name, expected_fields.len(), struct_construction.fields.len()
+                                    potential_enum_name,
+                                    potential_variant_name,
+                                    expected_fields.len(),
+                                    struct_construction.fields.len()
                                 ),
                                 symbol: InternedSymbol::from_text(potential_variant_name),
                             });
@@ -802,11 +1135,16 @@ impl Compiler {
 
                         // Validate field names exist
                         for field in &struct_construction.fields {
-                            if !expected_fields.iter().any(|ef| ef.name.to_string() == field.name.to_string()) {
+                            if !expected_fields
+                                .iter()
+                                .any(|ef| ef.name.to_string() == field.name.to_string())
+                            {
                                 return Err(CompileError::SemanticError {
                                     message: format!(
-                                        "Enum variant '{}::{}' has no field named '{}'", 
-                                        potential_enum_name, potential_variant_name, field.name.to_string()
+                                        "Enum variant '{}::{}' has no field named '{}'",
+                                        potential_enum_name,
+                                        potential_variant_name,
+                                        field.name.to_string()
                                     ),
                                     symbol: field.name.clone(),
                                 });
@@ -822,7 +1160,7 @@ impl Compiler {
                                 value,
                             });
                         }
-                        
+
                         return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
                             enum_ref,
                             variant_name: InternedSymbol::from_text(potential_variant_name),
@@ -832,17 +1170,24 @@ impl Compiler {
                 }
             }
         }
-        
+
         // If not an enum variant, treat as regular named struct
         // Look up the struct type using IR registry
         let struct_name = struct_construction.name.to_string();
-        let type_item_id = self.resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
+        let type_item_id = self
+            .resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(struct_name.clone()),
+                attempted_item: ir::TypeId::with_parent(
+                    self.current_module_path(),
+                    struct_name.clone(),
+                ),
                 symbol: struct_construction.name.clone(),
             })?;
 
-        let type_id = ir::TypeId::new(type_item_id.path.clone());
+        let type_id = ir::TypeId::new(
+            type_item_id.module_path.clone(),
+            type_item_id.name.name.clone(),
+        );
 
         let mut ir_fields = Vec::new();
         for field in &struct_construction.fields {
@@ -871,21 +1216,28 @@ impl Compiler {
                 // This could be an enum variant like Color::Red
                 let potential_enum_name = &segments[0];
                 let potential_variant_name = &segments[1];
-                
+
                 // Use IR registry as source of truth instead of fragile symbol maps
                 // Try to find the enum type directly in the current program's registry
                 let enum_name_str = potential_enum_name.to_string();
-                let potential_enum_type_id = ir::TypeId::new(format!("::{}", enum_name_str));
-                
+                // Create enum type ID directly from current context - no parsing needed
+                let potential_enum_type_id =
+                    ir::TypeId::with_parent(self.current_module_path(), enum_name_str.clone());
+
                 // Try semantic disambiguation: look up the enum type in the IR registry
-                if let Some(enum_type_item) = ir_program.registry.get_type(&potential_enum_type_id) {
+                if let Some(enum_type_item) = ir_program.registry.get_type(&potential_enum_type_id)
+                {
                     // Found the enum type! Check if it's actually an enum
                     if let ir::TypeKind::Enum(enum_def) = &enum_type_item.kind {
                         // This is an enum type like Color - validate that the variant exists
                         let variant_name_str = potential_variant_name.to_string();
-                        
+
                         // Check if this variant exists in the enum
-                        if let Some(variant_def) = enum_def.variants.iter().find(|v| v.name.to_string() == variant_name_str) {
+                        if let Some(variant_def) = enum_def
+                            .variants
+                            .iter()
+                            .find(|v| v.name.to_string() == variant_name_str)
+                        {
                             // STRICT VALIDATION: Ensure tuple syntax matches variant definition
                             match &variant_def.kind {
                                 // Unit variant: must not have arguments
@@ -899,11 +1251,13 @@ impl Compiler {
                                             symbol: potential_variant_name.clone(),
                                         });
                                     }
-                                    return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
-                                        enum_ref: potential_enum_type_id,
-                                        variant_name: potential_variant_name.clone(),
-                                        kind: ir::EnumVariantConstructionKind::Unit,
-                                    }));
+                                    return Ok(ir::Term::EnumVariant(
+                                        ir::EnumVariantConstruction {
+                                            enum_ref: potential_enum_type_id,
+                                            variant_name: potential_variant_name.clone(),
+                                            kind: ir::EnumVariantConstructionKind::Unit,
+                                        },
+                                    ));
                                 }
 
                                 // Tuple variant: correct syntax, validate arity
@@ -924,16 +1278,21 @@ impl Compiler {
                                         ir_fields.push(self.compile_term(arg, ir_program)?);
                                     }
 
-                                    return Ok(ir::Term::EnumVariant(ir::EnumVariantConstruction {
-                                        enum_ref: potential_enum_type_id,
-                                        variant_name: potential_variant_name.clone(),
-                                        kind: ir::EnumVariantConstructionKind::Tuple(ir_fields),
-                                    }));
+                                    return Ok(ir::Term::EnumVariant(
+                                        ir::EnumVariantConstruction {
+                                            enum_ref: potential_enum_type_id,
+                                            variant_name: potential_variant_name.clone(),
+                                            kind: ir::EnumVariantConstructionKind::Tuple(ir_fields),
+                                        },
+                                    ));
                                 }
 
                                 // Named variant: wrong syntax! Should use named field syntax
                                 ir::EnumVariantKind::Named(expected_fields) => {
-                                    let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+                                    let field_names: Vec<String> = expected_fields
+                                        .iter()
+                                        .map(|f| f.name.to_string())
+                                        .collect();
                                     return Err(CompileError::SemanticError {
                                         message: format!(
                                             "Enum variant '{}::{}' is a named variant and requires named field syntax, not tuple syntax. Correct syntax: '{}::{} {{ {} }}'",
@@ -946,8 +1305,15 @@ impl Compiler {
                             }
                         } else {
                             // Found the enum but variant doesn't exist - this is an error
+                            let variant_name_typed = ir::ItemName::new_unchecked(
+                                variant_name_str.clone(),
+                                ir::ItemKind::Type,
+                            );
                             return Err(CompileError::UnresolvedType {
-                                attempted_item: ir::TypeId::new(format!("{}::{}", enum_name_str, variant_name_str)),
+                                attempted_item: ir::TypeId::with_parent(
+                                    self.current_module_path(),
+                                    variant_name_typed.name.clone(),
+                                ),
                                 symbol: potential_variant_name.clone(),
                             });
                         }
@@ -958,7 +1324,7 @@ impl Compiler {
                 // Not found or not an enum, continue to regular struct compilation
             }
         }
-        
+
         // If not an enum variant, treat as regular tuple struct
         let type_id = self.resolve_qualified_path_to_type(&struct_construction.name, ir_program)?;
 
@@ -980,36 +1346,55 @@ impl Compiler {
     ) -> Result<ir::Term, CompileError> {
         // Look up the enum type using IR registry
         let enum_name = enum_construction.enum_name.to_string();
-        let type_item_id = self.resolve_local_symbol_with_kind(&enum_name, ir::ItemKind::Type, ir_program)
+        let type_item_id = self
+            .resolve_local_symbol_with_kind(&enum_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(enum_name.clone()),
+                attempted_item: ir::TypeId::with_parent(
+                    self.current_module_path(),
+                    enum_name.clone(),
+                ),
                 symbol: enum_construction.enum_name.clone(),
             })?;
 
-        let enum_ref = ir::TypeId::new(type_item_id.path.clone());
+        let enum_ref = ir::TypeId::new(
+            type_item_id.module_path.clone(),
+            type_item_id.name.name.clone(),
+        );
         let variant_name = enum_construction.variant_name.clone();
 
         // STRICT SEMANTIC VALIDATION: Look up the actual enum definition to validate syntax
-        let type_def = ir_program.registry.get_type(&enum_ref)
-            .ok_or_else(|| CompileError::UnresolvedType {
+        let type_def = ir_program.registry.get_type(&enum_ref).ok_or_else(|| {
+            CompileError::UnresolvedType {
                 attempted_item: enum_ref.clone(),
                 symbol: enum_construction.enum_name.clone(),
-            })?;
+            }
+        })?;
 
         // Extract enum definition and find the specific variant
         let enum_def = match &type_def.kind {
             ir::TypeKind::Enum(enum_def) => enum_def,
-            _ => return Err(CompileError::SemanticError {
-                message: format!("'{enum_name}' is not an enum type"),
-                symbol: enum_construction.enum_name.clone(),
-            }),
+            _ => {
+                return Err(CompileError::SemanticError {
+                    message: format!("'{enum_name}' is not an enum type"),
+                    symbol: enum_construction.enum_name.clone(),
+                })
+            }
         };
 
-        let variant_def = enum_def.variants.iter()
+        let variant_def = enum_def
+            .variants
+            .iter()
             .find(|v| v.name.to_string() == variant_name.to_string())
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(format!("{}::{}", enum_name, variant_name.to_string())),
-                symbol: variant_name.clone(),
+            .ok_or_else(|| {
+                let variant_name_typed =
+                    ir::ItemName::new_unchecked(variant_name.to_string(), ir::ItemKind::Type);
+                CompileError::UnresolvedType {
+                    attempted_item: ir::TypeId::with_parent(
+                        self.current_module_path(),
+                        variant_name_typed.name.clone(),
+                    ),
+                    symbol: variant_name.clone(),
+                }
             })?;
 
         // STRICT VALIDATION: Ensure construction syntax matches variant definition
@@ -1020,8 +1405,8 @@ impl Compiler {
             }
 
             // Unit variant with arguments: ERROR
-            (ast::EnumVariantConstructionKind::Tuple(_), ir::EnumVariantKind::Unit) |
-            (ast::EnumVariantConstructionKind::Named(_), ir::EnumVariantKind::Unit) => {
+            (ast::EnumVariantConstructionKind::Tuple(_), ir::EnumVariantKind::Unit)
+            | (ast::EnumVariantConstructionKind::Named(_), ir::EnumVariantKind::Unit) => {
                 let args_count = match &enum_construction.kind {
                     ast::EnumVariantConstructionKind::Tuple(args) => args.len(),
                     ast::EnumVariantConstructionKind::Named(args) => args.len(),
@@ -1037,13 +1422,19 @@ impl Compiler {
             }
 
             // Tuple variant: must use tuple syntax
-            (ast::EnumVariantConstructionKind::Tuple(tuple_fields), ir::EnumVariantKind::Tuple(expected_types)) => {
+            (
+                ast::EnumVariantConstructionKind::Tuple(tuple_fields),
+                ir::EnumVariantKind::Tuple(expected_types),
+            ) => {
                 // Validate arity
                 if tuple_fields.len() != expected_types.len() {
                     return Err(CompileError::SemanticError {
                         message: format!(
                             "Enum variant '{}::{}' expects {} arguments, found {}",
-                            enum_name, variant_name.to_string(), expected_types.len(), tuple_fields.len()
+                            enum_name,
+                            variant_name.to_string(),
+                            expected_types.len(),
+                            tuple_fields.len()
                         ),
                         symbol: variant_name.clone(),
                     });
@@ -1057,7 +1448,10 @@ impl Compiler {
             }
 
             // Tuple variant with wrong syntax: ERROR
-            (ast::EnumVariantConstructionKind::Unit, ir::EnumVariantKind::Tuple(expected_types)) => {
+            (
+                ast::EnumVariantConstructionKind::Unit,
+                ir::EnumVariantKind::Tuple(expected_types),
+            ) => {
                 return Err(CompileError::SemanticError {
                     message: format!(
                         "Enum variant '{}::{}' is a tuple variant and requires {} arguments. Correct syntax: '{}::{}(...)'",
@@ -1067,7 +1461,10 @@ impl Compiler {
                 });
             }
 
-            (ast::EnumVariantConstructionKind::Named(_), ir::EnumVariantKind::Tuple(expected_types)) => {
+            (
+                ast::EnumVariantConstructionKind::Named(_),
+                ir::EnumVariantKind::Tuple(expected_types),
+            ) => {
                 return Err(CompileError::SemanticError {
                     message: format!(
                         "Enum variant '{}::{}' is a tuple variant and requires tuple syntax with {} arguments. Correct syntax: '{}::{}(...)'",
@@ -1078,13 +1475,19 @@ impl Compiler {
             }
 
             // Named variant: must use named syntax
-            (ast::EnumVariantConstructionKind::Named(named_fields), ir::EnumVariantKind::Named(expected_fields)) => {
+            (
+                ast::EnumVariantConstructionKind::Named(named_fields),
+                ir::EnumVariantKind::Named(expected_fields),
+            ) => {
                 // Validate field count
                 if named_fields.len() != expected_fields.len() {
                     return Err(CompileError::SemanticError {
                         message: format!(
                             "Enum variant '{}::{}' expects {} fields, found {}",
-                            enum_name, variant_name.to_string(), expected_fields.len(), named_fields.len()
+                            enum_name,
+                            variant_name.to_string(),
+                            expected_fields.len(),
+                            named_fields.len()
                         ),
                         symbol: variant_name.clone(),
                     });
@@ -1092,11 +1495,16 @@ impl Compiler {
 
                 // Validate field names exist
                 for field in named_fields {
-                    if !expected_fields.iter().any(|ef| ef.name.to_string() == field.name.to_string()) {
+                    if !expected_fields
+                        .iter()
+                        .any(|ef| ef.name.to_string() == field.name.to_string())
+                    {
                         return Err(CompileError::SemanticError {
                             message: format!(
-                                "Enum variant '{}::{}' has no field named '{}'", 
-                                enum_name, variant_name.to_string(), field.name.to_string()
+                                "Enum variant '{}::{}' has no field named '{}'",
+                                enum_name,
+                                variant_name.to_string(),
+                                field.name.to_string()
                             ),
                             symbol: field.name.clone(),
                         });
@@ -1115,8 +1523,12 @@ impl Compiler {
             }
 
             // Named variant with wrong syntax: ERROR
-            (ast::EnumVariantConstructionKind::Unit, ir::EnumVariantKind::Named(expected_fields)) => {
-                let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+            (
+                ast::EnumVariantConstructionKind::Unit,
+                ir::EnumVariantKind::Named(expected_fields),
+            ) => {
+                let field_names: Vec<String> =
+                    expected_fields.iter().map(|f| f.name.to_string()).collect();
                 return Err(CompileError::SemanticError {
                     message: format!(
                         "Enum variant '{}::{}' is a named variant and requires named field syntax. Correct syntax: '{}::{} {{ {} }}'",
@@ -1127,8 +1539,12 @@ impl Compiler {
                 });
             }
 
-            (ast::EnumVariantConstructionKind::Tuple(_), ir::EnumVariantKind::Named(expected_fields)) => {
-                let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+            (
+                ast::EnumVariantConstructionKind::Tuple(_),
+                ir::EnumVariantKind::Named(expected_fields),
+            ) => {
+                let field_names: Vec<String> =
+                    expected_fields.iter().map(|f| f.name.to_string()).collect();
                 return Err(CompileError::SemanticError {
                     message: format!(
                         "Enum variant '{}::{}' is a named variant and requires named field syntax, not tuple syntax. Correct syntax: '{}::{} {{ {} }}'",
@@ -1148,7 +1564,11 @@ impl Compiler {
     }
 
     /// Compile pattern from AST to IR
-    fn compile_pattern(&self, pattern: &ast::Pattern, ir_program: &ir::Program) -> Result<ir::Pattern, CompileError> {
+    fn compile_pattern(
+        &self,
+        pattern: &ast::Pattern,
+        ir_program: &ir::Program,
+    ) -> Result<ir::Pattern, CompileError> {
         match pattern {
             ast::Pattern::Variable(name) => Ok(ir::Pattern::Variable(name.clone())),
 
@@ -1209,13 +1629,19 @@ impl Compiler {
             // This looks like "Shape::Rectangle" - could be an enum variant pattern
             let potential_enum_name = &struct_name_str[..colon_pos];
             let potential_variant_name = &struct_name_str[colon_pos + 2..];
-            
+
             // Try to resolve the enum part as a type using IR registry
-            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(potential_enum_name, ir::ItemKind::Type, ir_program)
-            {
+            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(
+                potential_enum_name,
+                ir::ItemKind::Type,
+                ir_program,
+            ) {
                 // This is a type! Treat as enum variant pattern with named fields
-                let enum_ref = ir::TypeId::new(type_item_id.path.clone());
-                
+                let enum_ref = ir::TypeId::new(
+                    type_item_id.module_path.clone(),
+                    type_item_id.name.name.clone(),
+                );
+
                 // Compile the field patterns as enum variant named field patterns
                 let mut ir_patterns = Vec::new();
                 for field_pattern in &struct_pattern.fields {
@@ -1225,25 +1651,32 @@ impl Compiler {
                         pattern,
                     });
                 }
-                
+
                 return Ok(ir::Pattern::EnumVariant(ir::EnumVariantPattern {
-                    enum_ref,
+                    enum_ref: ir::TypeReference::UserDefined(enum_ref),
                     variant_name: InternedSymbol::from_text(potential_variant_name),
                     kind: ir::EnumVariantPatternKind::Named(ir_patterns),
                 }));
             }
         }
-        
+
         // If not an enum variant, treat as regular named struct pattern
         // Look up the struct type using IR registry
         let struct_name = struct_pattern.name.to_string();
-        let type_item_id = self.resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
+        let type_item_id = self
+            .resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(struct_name.clone()),
+                attempted_item: ir::TypeId::with_parent(
+                    self.current_module_path(),
+                    struct_name.clone(),
+                ),
                 symbol: struct_pattern.name.clone(),
             })?;
 
-        let type_id = ir::TypeId::new(type_item_id.path.clone());
+        let type_id = ir::TypeId::new(
+            type_item_id.module_path.clone(),
+            type_item_id.name.name.clone(),
+        );
 
         let mut ir_patterns = Vec::new();
         for field_pattern in &struct_pattern.fields {
@@ -1255,7 +1688,7 @@ impl Compiler {
         }
 
         Ok(ir::Pattern::Struct(ir::StructPattern {
-            type_ref: type_id,
+            type_ref: ir::TypeReference::UserDefined(type_id),
             fields: ir::StructPatternFields::Named(ir_patterns),
         }))
     }
@@ -1272,37 +1705,50 @@ impl Compiler {
             // This looks like "Color::Red" - could be an enum variant pattern
             let potential_enum_name = &struct_name_str[..colon_pos];
             let potential_variant_name = &struct_name_str[colon_pos + 2..];
-            
+
             // Try to resolve the enum part as a type using IR registry
-            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(potential_enum_name, ir::ItemKind::Type, ir_program)
-            {
+            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(
+                potential_enum_name,
+                ir::ItemKind::Type,
+                ir_program,
+            ) {
                 // This is a type! Treat as enum variant pattern with tuple fields
-                let enum_ref = ir::TypeId::new(type_item_id.path.clone());
-                
+                let enum_ref = ir::TypeId::new(
+                    type_item_id.module_path.clone(),
+                    type_item_id.name.name.clone(),
+                );
+
                 // Compile the argument patterns as enum variant tuple field patterns
                 let mut ir_patterns = Vec::new();
                 for pattern in &struct_pattern.args {
                     ir_patterns.push(self.compile_pattern(pattern, ir_program)?);
                 }
-                
+
                 return Ok(ir::Pattern::EnumVariant(ir::EnumVariantPattern {
-                    enum_ref,
+                    enum_ref: ir::TypeReference::UserDefined(enum_ref),
                     variant_name: InternedSymbol::from_text(potential_variant_name),
                     kind: ir::EnumVariantPatternKind::Tuple(ir_patterns),
                 }));
             }
         }
-        
+
         // If not an enum variant, treat as regular tuple struct pattern
         // Look up the struct type using IR registry
         let struct_name = struct_pattern.name.to_string();
-        let type_item_id = self.resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
+        let type_item_id = self
+            .resolve_local_symbol_with_kind(&struct_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(struct_name.clone()),
+                attempted_item: ir::TypeId::with_parent(
+                    self.current_module_path(),
+                    struct_name.clone(),
+                ),
                 symbol: struct_pattern.name.clone(),
             })?;
 
-        let type_id = ir::TypeId::new(type_item_id.path.clone());
+        let type_id = ir::TypeId::new(
+            type_item_id.module_path.clone(),
+            type_item_id.name.name.clone(),
+        );
 
         let mut ir_patterns = Vec::new();
         for pattern in &struct_pattern.args {
@@ -1310,7 +1756,7 @@ impl Compiler {
         }
 
         Ok(ir::Pattern::Struct(ir::StructPattern {
-            type_ref: type_id,
+            type_ref: ir::TypeReference::UserDefined(type_id),
             fields: ir::StructPatternFields::Tuple(ir_patterns),
         }))
     }
@@ -1323,36 +1769,55 @@ impl Compiler {
     ) -> Result<ir::Pattern, CompileError> {
         // Look up the enum type using IR registry
         let enum_name = enum_pattern.enum_name.to_string();
-        let type_item_id = self.resolve_local_symbol_with_kind(&enum_name, ir::ItemKind::Type, ir_program)
+        let type_item_id = self
+            .resolve_local_symbol_with_kind(&enum_name, ir::ItemKind::Type, ir_program)
             .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(enum_name.clone()),
+                attempted_item: ir::TypeId::with_parent(
+                    self.current_module_path(),
+                    enum_name.clone(),
+                ),
                 symbol: enum_pattern.enum_name.clone(),
             })?;
 
-        let enum_ref = ir::TypeId::new(type_item_id.path.clone());
+        let enum_ref = ir::TypeId::new(
+            type_item_id.module_path.clone(),
+            type_item_id.name.name.clone(),
+        );
         let variant_name = enum_pattern.variant_name.clone();
 
         // STRICT SEMANTIC VALIDATION: Look up the actual enum definition to validate pattern syntax
-        let type_def = ir_program.registry.get_type(&enum_ref)
-            .ok_or_else(|| CompileError::UnresolvedType {
+        let type_def = ir_program.registry.get_type(&enum_ref).ok_or_else(|| {
+            CompileError::UnresolvedType {
                 attempted_item: enum_ref.clone(),
                 symbol: enum_pattern.enum_name.clone(),
-            })?;
+            }
+        })?;
 
         // Extract enum definition and find the specific variant
         let enum_def = match &type_def.kind {
             ir::TypeKind::Enum(enum_def) => enum_def,
-            _ => return Err(CompileError::SemanticError {
-                message: format!("'{enum_name}' is not an enum type"),
-                symbol: enum_pattern.enum_name.clone(),
-            }),
+            _ => {
+                return Err(CompileError::SemanticError {
+                    message: format!("'{enum_name}' is not an enum type"),
+                    symbol: enum_pattern.enum_name.clone(),
+                })
+            }
         };
 
-        let variant_def = enum_def.variants.iter()
+        let variant_def = enum_def
+            .variants
+            .iter()
             .find(|v| v.name.to_string() == variant_name.to_string())
-            .ok_or_else(|| CompileError::UnresolvedType {
-                attempted_item: ir::TypeId::new(format!("{}::{}", enum_name, variant_name.to_string())),
-                symbol: variant_name.clone(),
+            .ok_or_else(|| {
+                let variant_name_typed =
+                    ir::ItemName::new_unchecked(variant_name.to_string(), ir::ItemKind::Type);
+                CompileError::UnresolvedType {
+                    attempted_item: ir::TypeId::with_parent(
+                        self.current_module_path(),
+                        variant_name_typed.name.clone(),
+                    ),
+                    symbol: variant_name.clone(),
+                }
             })?;
 
         // STRICT VALIDATION: Ensure pattern syntax matches variant definition
@@ -1363,8 +1828,8 @@ impl Compiler {
             }
 
             // Unit variant with pattern arguments: ERROR
-            (ast::EnumVariantPatternKind::Tuple(_), ir::EnumVariantKind::Unit) |
-            (ast::EnumVariantPatternKind::Named(_), ir::EnumVariantKind::Unit) => {
+            (ast::EnumVariantPatternKind::Tuple(_), ir::EnumVariantKind::Unit)
+            | (ast::EnumVariantPatternKind::Named(_), ir::EnumVariantKind::Unit) => {
                 let patterns_count = match &enum_pattern.kind {
                     ast::EnumVariantPatternKind::Tuple(patterns) => patterns.len(),
                     ast::EnumVariantPatternKind::Named(patterns) => patterns.len(),
@@ -1380,13 +1845,19 @@ impl Compiler {
             }
 
             // Tuple variant: must use tuple pattern syntax
-            (ast::EnumVariantPatternKind::Tuple(tuple_patterns), ir::EnumVariantKind::Tuple(expected_types)) => {
+            (
+                ast::EnumVariantPatternKind::Tuple(tuple_patterns),
+                ir::EnumVariantKind::Tuple(expected_types),
+            ) => {
                 // Validate arity
                 if tuple_patterns.len() != expected_types.len() {
                     return Err(CompileError::SemanticError {
                         message: format!(
                             "Enum variant '{}::{}' expects {} pattern arguments, found {}",
-                            enum_name, variant_name.to_string(), expected_types.len(), tuple_patterns.len()
+                            enum_name,
+                            variant_name.to_string(),
+                            expected_types.len(),
+                            tuple_patterns.len()
                         ),
                         symbol: variant_name.clone(),
                     });
@@ -1421,13 +1892,19 @@ impl Compiler {
             }
 
             // Named variant: must use named pattern syntax
-            (ast::EnumVariantPatternKind::Named(named_patterns), ir::EnumVariantKind::Named(expected_fields)) => {
+            (
+                ast::EnumVariantPatternKind::Named(named_patterns),
+                ir::EnumVariantKind::Named(expected_fields),
+            ) => {
                 // Validate field count
                 if named_patterns.len() != expected_fields.len() {
                     return Err(CompileError::SemanticError {
                         message: format!(
                             "Enum variant '{}::{}' expects {} field patterns, found {}",
-                            enum_name, variant_name.to_string(), expected_fields.len(), named_patterns.len()
+                            enum_name,
+                            variant_name.to_string(),
+                            expected_fields.len(),
+                            named_patterns.len()
                         ),
                         symbol: variant_name.clone(),
                     });
@@ -1435,11 +1912,16 @@ impl Compiler {
 
                 // Validate field names exist
                 for field_pattern in named_patterns {
-                    if !expected_fields.iter().any(|ef| ef.name.to_string() == field_pattern.name.to_string()) {
+                    if !expected_fields
+                        .iter()
+                        .any(|ef| ef.name.to_string() == field_pattern.name.to_string())
+                    {
                         return Err(CompileError::SemanticError {
                             message: format!(
-                                "Enum variant '{}::{}' has no field named '{}'", 
-                                enum_name, variant_name.to_string(), field_pattern.name.to_string()
+                                "Enum variant '{}::{}' has no field named '{}'",
+                                enum_name,
+                                variant_name.to_string(),
+                                field_pattern.name.to_string()
                             ),
                             symbol: field_pattern.name.clone(),
                         });
@@ -1459,7 +1941,8 @@ impl Compiler {
 
             // Named variant with wrong pattern syntax: ERROR
             (ast::EnumVariantPatternKind::Unit, ir::EnumVariantKind::Named(expected_fields)) => {
-                let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+                let field_names: Vec<String> =
+                    expected_fields.iter().map(|f| f.name.to_string()).collect();
                 return Err(CompileError::SemanticError {
                     message: format!(
                         "Enum variant '{}::{}' is a named variant and requires named field pattern syntax. Correct syntax: '{}::{} {{ {} }}'",
@@ -1470,8 +1953,12 @@ impl Compiler {
                 });
             }
 
-            (ast::EnumVariantPatternKind::Tuple(_), ir::EnumVariantKind::Named(expected_fields)) => {
-                let field_names: Vec<String> = expected_fields.iter().map(|f| f.name.to_string()).collect();
+            (
+                ast::EnumVariantPatternKind::Tuple(_),
+                ir::EnumVariantKind::Named(expected_fields),
+            ) => {
+                let field_names: Vec<String> =
+                    expected_fields.iter().map(|f| f.name.to_string()).collect();
                 return Err(CompileError::SemanticError {
                     message: format!(
                         "Enum variant '{}::{}' is a named variant and requires named field pattern syntax, not tuple syntax. Correct syntax: '{}::{} {{ {} }}'",
@@ -1484,7 +1971,7 @@ impl Compiler {
         };
 
         Ok(ir::Pattern::EnumVariant(ir::EnumVariantPattern {
-            enum_ref,
+            enum_ref: ir::TypeReference::UserDefined(enum_ref),
             variant_name,
             kind,
         }))
@@ -1527,7 +2014,8 @@ impl Compiler {
         match meta_statement {
             MetaStatement::Let(let_stmt) => {
                 let expression = self.compile_meta_expression(&let_stmt.expression)?;
-                let variable_type = self.compile_type_annotation(&let_stmt.variable_type, ir_program)?;
+                let variable_type =
+                    self.compile_type_annotation(&let_stmt.variable_type, ir_program)?;
                 Ok(ir::Goal::MetaLet(ir::MetaLet {
                     variable: let_stmt.variable.clone(),
                     variable_type,
@@ -1686,11 +2174,50 @@ impl Compiler {
             template,
         }))
     }
-    
+
     /// Check if a type name refers to a builtin primitive type
     /// These types are handled internally by the compiler and not registered in the IR registry
     fn is_builtin_type(type_name: &str) -> bool {
-        matches!(type_name, "Bool" | "Number" | "Char" | "String")
+        matches!(type_name, "Bool" | "Number" | "Char" | "String" | "LTerm")
+            || (type_name.starts_with("rel(") && type_name.ends_with(")"))
+    }
+
+    /// Convert a field type (InternedSymbol) to TypeReference, handling built-in types properly
+    fn resolve_field_type(
+        &self,
+        field_type: &symbol_table::InternedSymbol,
+        ir_program: &mut ir::Program,
+    ) -> Result<ir::TypeReference, CompileError> {
+        // Check if this is a built-in type first to avoid qualified path processing
+        if let Some(builtin_type) = ir::BuiltinType::from_str(&field_type.to_string()) {
+            Ok(ir::TypeReference::Builtin(builtin_type))
+        } else {
+            // Convert InternedSymbol to qualified path for non-builtin types
+            let qualified_path = ast::QualifiedPath::Relative(vec![field_type.clone()]);
+            let type_id = self.resolve_qualified_path_to_type(&qualified_path, ir_program)?;
+            Ok(ir::TypeReference::UserDefined(type_id))
+        }
+    }
+
+    /// Convert a qualified path field type to TypeReference, handling built-in types properly
+    fn resolve_qualified_field_type(
+        &self,
+        qualified_path: &ast::QualifiedPath,
+        ir_program: &mut ir::Program,
+    ) -> Result<ir::TypeReference, CompileError> {
+        // For simple relative paths, check if it's a built-in type first
+        if let ast::QualifiedPath::Relative(segments) = qualified_path {
+            if segments.len() == 1 {
+                let type_name = &segments[0];
+                if let Some(builtin_type) = ir::BuiltinType::from_str(&type_name.to_string()) {
+                    return Ok(ir::TypeReference::Builtin(builtin_type));
+                }
+            }
+        }
+
+        // For non-builtin types or complex paths, resolve to TypeId
+        let type_id = self.resolve_qualified_path_to_type(qualified_path, ir_program)?;
+        Ok(ir::TypeReference::UserDefined(type_id))
     }
 
     /// Try to disambiguate a Variable as a unit enum variant (IR compiler fallback)
@@ -1703,14 +2230,23 @@ impl Compiler {
         // Check if the variable name contains "::" which indicates potential enum variant
         if let Some((enum_name, variant_name)) = variable_name.to_string().rsplit_once("::") {
             // Try to resolve the enum type using IR registry
-            if let Some(type_item_id) = self.resolve_local_symbol_with_kind(enum_name, ir::ItemKind::Type, ir_program) {
-                let type_id = ir::TypeId::new(type_item_id.path.clone());
-                
+            if let Some(type_item_id) =
+                self.resolve_local_symbol_with_kind(enum_name, ir::ItemKind::Type, ir_program)
+            {
+                let type_id = ir::TypeId::new(
+                    type_item_id.module_path.clone(),
+                    type_item_id.name.name.clone(),
+                );
+
                 // Check if this type exists and is an enum
                 if let Some(type_def) = ir_program.registry.get_type(&type_id) {
                     if let ir::TypeKind::Enum(enum_def) = &type_def.kind {
                         // Check if this variant exists in the enum and is a unit variant
-                        if let Some(variant_def) = enum_def.variants.iter().find(|v| v.name.to_string() == variant_name) {
+                        if let Some(variant_def) = enum_def
+                            .variants
+                            .iter()
+                            .find(|v| v.name.to_string() == variant_name)
+                        {
                             // Only disambiguate unit variants (no arguments)
                             if let ir::EnumVariantKind::Unit = &variant_def.kind {
                                 return Ok(Some(ast::EnumVariantConstruction {
@@ -1721,8 +2257,15 @@ impl Compiler {
                             }
                         } else {
                             // Found the enum but variant doesn't exist - this is an error
+                            let variant_name_typed = ir::ItemName::new_unchecked(
+                                variant_name.to_string(),
+                                ir::ItemKind::Type,
+                            );
                             return Err(CompileError::UnresolvedType {
-                                attempted_item: ir::TypeId::new(format!("{}::{}", enum_name, variant_name)),
+                                attempted_item: ir::TypeId::with_parent(
+                                    self.current_module_path(),
+                                    variant_name_typed.name.clone(),
+                                ),
                                 symbol: InternedSymbol::from_text(variant_name),
                             });
                         }

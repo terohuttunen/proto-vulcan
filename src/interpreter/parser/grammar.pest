@@ -22,7 +22,7 @@ pattern_arrow = @{ "=>" }
 // =============================================================================
 
 program = {
-    SOI ~ (use_statement | mod_declaration | struct_definition | enum_definition | impl_block | predicate_definition)* ~ EOI
+    SOI ~ (extern_crate_statement | use_statement | mod_declaration | struct_definition | enum_definition | impl_block | predicate_definition)* ~ EOI
 }
 
 // Module declarations
@@ -32,7 +32,7 @@ mod_declaration = {
 
 mod_declaration_body = {
     visibility? ~ mod_keyword ~ ident ~ search_strategy? ~ "{" ~
-        (use_statement | mod_declaration | struct_definition | enum_definition | impl_block | predicate_definition)*
+        (extern_crate_statement | use_statement | mod_declaration | struct_definition | enum_definition | impl_block | predicate_definition)*
     ~ "}"
 }
 
@@ -70,6 +70,8 @@ super_keyword = @{ "super" }
 self_keyword = @{ "self" }
 mod_keyword = @{ "mod" }
 use_keyword = @{ "use" }
+extern_keyword = @{ "extern" }
+as_keyword = @{ "as" }
 struct_keyword = @{ "struct" }
 enum_keyword = @{ "enum" }
 
@@ -113,6 +115,9 @@ impl_block = {
 // =============================================================================
 // Imports
 // =============================================================================
+
+// External crate declaration
+extern_crate_statement = { extern_keyword ~ crate_keyword ~ ident ~ (as_keyword ~ ident)? ~ ";" }
 
 use_statement = { use_keyword ~ use_path ~ ";" }
 

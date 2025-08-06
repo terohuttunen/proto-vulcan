@@ -2,7 +2,17 @@
 // Tests for structural and utility predicates in std::list
 
 use std::list::*;
-use tests::common::*;
+
+// =============================================================================
+// ARITHMETIC PREDICATES (CONSTRAINT-BASED) - FOR TESTING ONLY
+// =============================================================================
+
+// Check if a number is positive (greater than 0)
+rel positive(n) {
+    constraint(domain="clpz") {
+        n > 0
+    }
+}
 
 // =============================================================================
 // MATRIX OPERATION TESTS

@@ -107,9 +107,15 @@ impl ImportContext {
     pub fn matches_restricted_path(&self, path: &QualifiedPath) -> bool {
         // Convert QualifiedPath to ModulePath and check if importing module matches
         let target_path = match path {
-            QualifiedPath::Relative(segments) => ModulePath::new(segments.iter().map(|s| s.to_string()).collect()),
-            QualifiedPath::Absolute(segments) => ModulePath::new(segments.iter().map(|s| s.to_string()).collect()),
-            QualifiedPath::Global(segments) => ModulePath::new(segments.iter().map(|s| s.to_string()).collect()),
+            QualifiedPath::Relative(segments) => {
+                ModulePath::new(segments.iter().map(|s| s.to_string()).collect())
+            }
+            QualifiedPath::Absolute(segments) => {
+                ModulePath::new(segments.iter().map(|s| s.to_string()).collect())
+            }
+            QualifiedPath::Global(segments) => {
+                ModulePath::new(segments.iter().map(|s| s.to_string()).collect())
+            }
             _ => return false, // TODO: Handle other path types
         };
 

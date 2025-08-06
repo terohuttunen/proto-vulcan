@@ -93,7 +93,7 @@ use super::parser::{
     ast::{self, Item},
     parse_str,
 };
-use super::{Interpreter, InterpreterError};
+use super::{ExecutionConfig, Interpreter, InterpreterError};
 use crate::goal::{Goal, GoalCast};
 use crate::lterm::{LTerm, LTermInner, LValue};
 use colored::*;
@@ -484,10 +484,7 @@ impl TestRunner {
         match term {
             ast::Term::Wildcard(_) => true, // Wildcard matches anything
             ast::Term::Literal(literal, _) => Self::matches_literal(lterm, literal),
-            ast::Term::Variable(_) => {
-                // Variables in expected terms act as wildcards for matching
-                true
-            }
+            ast::Term::Variable(_) => true, // Variables in expected terms act as wildcards for matching
             ast::Term::List(list_construction, _) => {
                 Self::matches_list_structure(lterm, list_construction)
             }
@@ -684,7 +681,9 @@ impl TestRunner {
                         .fields
                         .iter()
                         .find(|(name, _)| name == &*ast_field.name)
-                        .map(|(_, field_value)| Self::matches_pattern(field_value, &ast_field.value))
+                        .map(|(_, field_value)| {
+                            Self::matches_pattern(field_value, &ast_field.value)
+                        })
                         .unwrap_or(false)
                 })
             } else {
@@ -697,7 +696,7 @@ impl TestRunner {
 
     /// Match an LTerm against a tuple struct pattern.
     fn matches_tuple_struct(lterm: &LTerm, tuple_struct: &ast::TupleStructConstruction) -> bool {
-        use super::runtime::RegistryTupleStruct;
+        use super::runtime::{RegistryEnumVariant, RegistryTupleStruct, VariantData};
         use crate::lterm::LTermInner;
 
         // Check if the LTerm is a compound object representing a tuple struct
@@ -716,6 +715,40 @@ impl TestRunner {
                     .iter()
                     .zip(tuple_struct.args.iter())
                     .all(|(lterm_arg, ast_arg)| Self::matches_pattern(lterm_arg, ast_arg))
+            } else if let Some(enum_variant_obj) =
+                compound_obj.as_any().downcast_ref::<RegistryEnumVariant>()
+            {
+                // Check if this TupleStruct might actually be an enum variant like Color::Red
+                // The tuple struct name should be in the form "EnumName::VariantName"
+                if let Some((enum_name, variant_name)) =
+                    tuple_struct.name.to_string().rsplit_once("::")
+                {
+                    // Check that the variant name matches
+                    if enum_variant_obj.variant_name == variant_name {
+                        // Match the construction arguments based on variant data
+                        match &enum_variant_obj.variant_data {
+                            VariantData::Unit => tuple_struct.args.is_empty(),
+                            VariantData::Tuple(lterm_args) => {
+                                if lterm_args.len() != tuple_struct.args.len() {
+                                    return false;
+                                }
+                                lterm_args.iter().zip(tuple_struct.args.iter()).all(
+                                    |(lterm_arg, ast_arg)| {
+                                        Self::matches_pattern(lterm_arg, ast_arg)
+                                    },
+                                )
+                            }
+                            VariantData::Named(_) => {
+                                // Named variants can't be constructed with tuple syntax
+                                false
+                            }
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
             } else {
                 false
             }
@@ -777,10 +810,22 @@ impl TestRunner {
     ) -> TestResult {
         let test_start_time = std::time::Instant::now();
 
+        // Step 1: Create base interpreter with stdlib (like CLI)
         let mut interpreter = DefaultInterpreter::with_stdlib();
 
-        // Manually register assertion builtins
+        // Manually register assertion builtins in the environment
         self.register_assertion_builtins(&mut interpreter.environment.borrow_mut());
+
+        // Load the standard library as base program (compiles std crate properly)
+        use crate::interpreter::compiler::Compiler;
+        match Compiler::create_stdlib_program() {
+            Ok(stdlib_program) => {
+                interpreter.base_program = Some(std::rc::Rc::new(stdlib_program));
+            }
+            Err(e) => {
+                return TestResult::Error(format!("Failed to load standard library: {:?}", e));
+            }
+        }
 
         let file_contents = match fs::read_to_string(&item.file_path) {
             Ok(c) => c,
@@ -798,43 +843,34 @@ impl TestRunner {
             }
         };
 
-        if let Err(e) = interpreter.load_program_ast(program) {
+        // Step 2: Compile test program with stdlib as base context
+        // Use compile_items_into to add test items to the existing stdlib program
+        let mut compiler = Compiler::new();
+
+        // Get a mutable copy of the base program
+        let mut combined_program = if let Some(base) = &interpreter.base_program {
+            (**base).clone()
+        } else {
+            return TestResult::Error("No base program available".to_string());
+        };
+
+        // Compile test program items into the combined program
+        if let Err(e) = compiler.compile_items_into(&mut combined_program, &program.items, None) {
             return TestResult::Error(format!(
-                "Load error in file {}: {}",
+                "Compilation error in file {}: {:?}",
                 item.file_path.display(),
                 e
             ));
         }
+
+        // Update the interpreter's base program with the combined program
+        interpreter.base_program = Some(std::rc::Rc::new(combined_program));
 
         let query_string = if let Some(var) = &item.query_variable {
             format!("{}({})", item.test_name, var)
         } else {
             format!("{}()", item.test_name)
         };
-
-        // ENHANCED DEBUG: Try to provide detailed failure information
-        let enhanced_debug = std::env::var("PROTO_VULCAN_DEBUG_TESTS").is_ok();
-
-        if enhanced_debug {
-            println!("RUNNING TEST: {}", item.test_name);
-            println!("File: {}", item.file_path.display());
-            println!("Debug mode enabled - assertion evaluations will be shown");
-            
-            // Debug: Show IR program state
-            if let Some(base_program) = &interpreter.base_program {
-                println!("IR program loaded with {} items", base_program.registry.all_items().count());
-                println!("Available predicates:");
-                for item in base_program.registry.all_items() {
-                    if let crate::interpreter::compiler::ir::Item::Predicate(pred) = item {
-                        println!("  - predicate ID: {}", pred.id.id.path.as_ref());
-                    }
-                }
-            } else {
-                println!("WARNING: No IR program loaded in test interpreter");
-            }
-            
-            println!("============================================================");
-        }
 
         // ARCHITECTURAL DISTINCTION: Here we implement the key difference between
         // @test(should_fail) and @test(expected = [])
@@ -849,21 +885,17 @@ impl TestRunner {
         //   * If should_fail = false, this is an unexpected error (TestResult::Error)
         let test_timeout_info = timeout_ms.map(|ms| (test_start_time, ms));
 
-        match interpreter.query_with_test_timeout(&query_string, timeout_ms, test_timeout_info) {
-            Ok(results) => {
-                if enhanced_debug {
-                    println!("============================================================");
-                    println!("TEST EXECUTION COMPLETE");
-                    println!("Solutions found: {}", results.len());
-                    if !results.is_empty() {
-                        println!("First solution bindings:");
-                        for (var, binding) in &results[0].bindings {
-                            println!("   {} = {:?}", var, binding.0);
-                        }
-                    }
-                    println!("============================================================");
-                }
+        // Use the same query path as CLI to ensure proper variable resolution
+        let config = ExecutionConfig {
+            timeout: timeout_ms,
+            ..Default::default()
+        };
 
+        match interpreter
+            .query(&query_string, config)
+            .map(|iter| iter.collect_limited(100).unwrap_or_default())
+        {
+            Ok(results) => {
                 if let Some(expected) = &item.expected {
                     // Query-based test: compare results with expected values
                     let query_variable = if let Some(v) = &item.query_variable {
@@ -875,25 +907,21 @@ impl TestRunner {
                         );
                     };
 
+                    /*
+                    for (i, r) in results.iter().enumerate() {
+                        for (k, v) in &r.bindings {
+                            eprintln!("  '{}' -> {:?}", k, v.0);
+                        }
+                    }
+                    */
+
                     let result_lterms: Vec<LTerm> = results
                         .iter()
                         .filter_map(|r| r.bindings.get(query_variable).map(|res| res.0.clone()))
                         .collect();
 
-                    // Apply semantic analysis to the expected term for consistent behavior
-                    let mut expected_term_analyzed = expected.clone();
-                    if let Err(e) = super::semantic_analysis::analyze_term(
-                        &mut expected_term_analyzed,
-                        &interpreter.environment,
-                    ) {
-                        return TestResult::Error(format!(
-                            "Failed to analyze expected term: {}",
-                            e
-                        ));
-                    }
-
-                    let expected_ast_list = match expected_term_analyzed {
-                        ast::Term::List(list_construction, _) => list_construction.elements,
+                    let expected_ast_list = match expected {
+                        ast::Term::List(list_construction, _) => list_construction.elements.clone(),
                         _ => {
                             return TestResult::Error(
                                 "Expected term must be a list for query-based tests".to_string(),
@@ -903,8 +931,16 @@ impl TestRunner {
 
                     if result_lterms.len() != expected_ast_list.len() {
                         // Convert results to strings for display
-                        let result_lterms_str: Vec<String> =
-                            result_lterms.iter().map(|t| t.to_string()).collect();
+                        let result_lterms_str: Vec<String> = results
+                            .iter()
+                            .filter_map(|r| {
+                                r.bindings.get(query_variable).map(|lresult| {
+                                    // Extract just the value part (LTerm) from LResult for comparison
+                                    // This mimics how CLI extracts values for display
+                                    format!("{}", lresult.0)
+                                })
+                            })
+                            .collect();
                         let expected_ast_list_str: Vec<String> =
                             expected_ast_list.iter().map(|t| format!("{}", t)).collect();
 
@@ -932,8 +968,14 @@ impl TestRunner {
                         TestResult::Pass
                     } else {
                         if !all_match {
-                            let result_lterms_str: Vec<String> =
-                                result_lterms.iter().map(|t| t.to_string()).collect();
+                            let result_lterms_str: Vec<String> = results
+                                .iter()
+                                .filter_map(|r| {
+                                    r.bindings
+                                        .get(query_variable)
+                                        .map(|lresult| lresult.to_string())
+                                })
+                                .collect();
                             let expected_ast_list_str: Vec<String> =
                                 expected_ast_list.iter().map(|t| format!("{}", t)).collect();
 
@@ -956,10 +998,6 @@ impl TestRunner {
                     if successful_run != item.should_fail {
                         TestResult::Pass
                     } else {
-                        if enhanced_debug && !successful_run && !item.should_fail {
-                            // ENHANCED DEBUG: Provide better failure context
-                            return self.enhanced_failure_context(item);
-                        }
                         TestResult::Fail
                     }
                 }

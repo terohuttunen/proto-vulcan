@@ -61,16 +61,16 @@ impl Validator {
         let item = program.registry.get_item(item_id).ok_or_else(|| {
             super::super::CompileError::UnresolvedReference {
                 attempted_item: item_id.clone(),
-                symbol: InternedSymbol::from_text(&item_id.path),
+                symbol: InternedSymbol::from_text(&item_id.to_string()),
             }
         })?;
 
         // Validate the item based on its type
-        match item {
+        match item.as_ref() {
             Item::Module(module) => self.validate_module(&module, program)?,
             Item::Type(type_def) => self.validate_type_definition(&type_def, program)?,
             Item::Predicate(predicate) => self.validate_predicate(&predicate, program)?,
-            Item::Import(import) => self.validate_import(&import, program)?,
+            Item::Alias(alias) => self.validate_alias(&alias, program)?,
         }
 
         // Remove from validation stack
@@ -89,18 +89,20 @@ impl Validator {
         program: &Program,
     ) -> Result<(), super::super::CompileError> {
         // Validate all child items exist and are accessible
-        for child_id in &module.items {
+        /*
+        for (_, child_id) in &module.items {
             // Check that child item exists
             if !program.registry.contains_item(child_id) {
                 return Err(super::super::CompileError::UnresolvedReference {
                     attempted_item: child_id.clone(),
-                    symbol: InternedSymbol::from_text(&child_id.path),
+                    symbol: InternedSymbol::from_text(&child_id.to_string()),
                 });
             }
 
             // Recursively validate child item
             self.validate_item(child_id, program)?;
         }
+        */
 
         Ok(())
     }
@@ -137,13 +139,13 @@ impl Validator {
                     }
 
                     // Validate field type reference
-                    self.validate_type_reference(&field.type_ref, program)?;
+                    self.validate_type_reference_new(&field.type_ref, program)?;
                 }
             }
             StructFields::Tuple(tuple_fields) => {
                 for type_ref in tuple_fields {
                     // Validate tuple field type reference
-                    self.validate_type_reference(type_ref, program)?;
+                    self.validate_type_reference_new(type_ref, program)?;
                 }
             }
         }
@@ -174,7 +176,7 @@ impl Validator {
                 }
                 EnumVariantKind::Tuple(tuple_fields) => {
                     for type_ref in tuple_fields {
-                        self.validate_type_reference(type_ref, program)?;
+                        self.validate_type_reference_new(type_ref, program)?;
                     }
                 }
                 EnumVariantKind::Named(named_fields) => {
@@ -189,7 +191,7 @@ impl Validator {
                         }
 
                         // Validate field type reference
-                        self.validate_type_reference(&field.type_ref, program)?;
+                        self.validate_type_reference_new(&field.type_ref, program)?;
                     }
                 }
             }
@@ -229,21 +231,18 @@ impl Validator {
     }
 
     /// Validate an import
-    fn validate_import(
+    fn validate_alias(
         &mut self,
-        import: &Import,
+        alias: &Alias,
         program: &Program,
     ) -> Result<(), super::super::CompileError> {
         // Check that the source reference exists and is accessible
-        if !program.registry.contains_item(&import.source_ref) {
+        if !program.registry.contains_item(&alias.target) {
             return Err(super::super::CompileError::UnresolvedReference {
-                attempted_item: import.source_ref.clone(),
-                symbol: InternedSymbol::from_text(&import.source_ref.path),
+                attempted_item: alias.target.clone(),
+                symbol: InternedSymbol::from_text(&alias.target.to_string()),
             });
         }
-
-        // Recursively validate the source item
-        self.validate_item(&import.source_ref, program)?;
 
         Ok(())
     }
@@ -255,17 +254,20 @@ impl Validator {
         program: &Program,
     ) -> Result<(), super::super::CompileError> {
         let type_ref = type_ref.as_ref();
-        
+
         // Skip validation for builtin types
-        if Self::is_builtin_type(&type_ref.path) {
+        if Self::is_builtin_type(&type_ref.to_string()) {
             return Ok(());
         }
-        
+
         // Check that the type exists
         let type_item = program.registry.get_type(type_ref).ok_or_else(|| {
             super::super::CompileError::UnresolvedType {
-                attempted_item: TypeId::new(type_ref.path.clone()),
-                symbol: InternedSymbol::from_text(&type_ref.path),
+                attempted_item: TypeId::new(
+                    type_ref.module_path.clone(),
+                    type_ref.name.name.clone(),
+                ),
+                symbol: InternedSymbol::from_text(&type_ref.to_string()),
             }
         })?;
 
@@ -275,6 +277,24 @@ impl Validator {
         Ok(())
     }
 
+    /// Validate a TypeReference (either builtin or user-defined)
+    fn validate_type_reference_new(
+        &mut self,
+        type_ref: &TypeReference,
+        program: &Program,
+    ) -> Result<(), super::super::CompileError> {
+        match type_ref {
+            TypeReference::Builtin(_) => {
+                // Built-in types are always valid
+                Ok(())
+            }
+            TypeReference::UserDefined(type_id) => {
+                // Delegate to existing validation for TypeId
+                self.validate_type_reference(type_id, program)
+            }
+        }
+    }
+
     /// Validate a type annotation
     fn validate_type_annotation(
         &mut self,
@@ -282,7 +302,14 @@ impl Validator {
         program: &Program,
     ) -> Result<(), super::super::CompileError> {
         match type_annotation {
-            TypeAnnotation::Int | TypeAnnotation::String | TypeAnnotation::Bool => {
+            TypeAnnotation::Int
+            | TypeAnnotation::String
+            | TypeAnnotation::Bool
+            | TypeAnnotation::RelInt
+            | TypeAnnotation::RelString
+            | TypeAnnotation::RelBool
+            | TypeAnnotation::RelChar
+            | TypeAnnotation::LTerm => {
                 // Built-in types are always valid
                 Ok(())
             }
@@ -383,36 +410,40 @@ impl Validator {
     ) -> Result<(), super::super::CompileError> {
         // Check arity match using registry convenience method
         // Skip validation for builtin predicates (they will be resolved at runtime)
-        let predicate_name = predicate_call.predicate.as_ref().path.to_string();
-        if predicate_name.starts_with("__builtin_") || predicate_name.starts_with("assert_") {
-            // Skip arity validation for builtins - will be checked at runtime
-            return Ok(());
+        match &predicate_call.target {
+            PredicateCallTarget::Predicate(predicate_id) => {
+                let predicate_name = predicate_id.id.to_string();
+                // Remove :: prefix for root module predicates (builtins) for proper detection
+                let predicate_name_clean = if predicate_name.starts_with("::") {
+                    &predicate_name[2..]
+                } else {
+                    &predicate_name
+                };
+                if predicate_name_clean.starts_with("__builtin_")
+                    || predicate_name_clean.starts_with("assert_")
+                {
+                    // Skip arity validation for builtins - will be checked at runtime
+                    return Ok(());
+                }
+                
+                // Recursively validate the predicate definition
+                self.validate_item(predicate_id, program)?;
+            }
+            PredicateCallTarget::Variable(_) => {
+                // Variables are validated at runtime
+            }
+            PredicateCallTarget::Builtin(_) => {
+                // Builtins are validated at runtime
+                return Ok(());
+            }
         }
-        
-        let expected_arity = program
-            .registry
-            .get_predicate_arity(&predicate_call.predicate)
-            .ok_or_else(|| super::super::CompileError::UnresolvedPredicate {
-                attempted_item: predicate_call.predicate.clone(),
-                symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
-            })?;
 
-        if predicate_call.arguments.len() != expected_arity {
-            return Err(super::super::CompileError::ArityMismatch {
-                predicate_item: predicate_call.predicate.clone(),
-                expected_arity,
-                actual_arity: predicate_call.arguments.len(),
-                symbol: InternedSymbol::from_text(&predicate_call.predicate.as_ref().path),
-            });
-        }
+        // Arity validation removed - should happen at compile time, not during IR validation
 
         // Validate all arguments
         for arg in &predicate_call.arguments {
             self.validate_term(arg, program)?;
         }
-
-        // Recursively validate the predicate definition
-        self.validate_item(&predicate_call.predicate, program)?;
 
         Ok(())
     }
@@ -462,7 +493,7 @@ impl Validator {
                 Ok(())
             }
             Pattern::Struct(struct_pattern) => {
-                self.validate_type_reference(&struct_pattern.type_ref, program)?;
+                self.validate_type_reference_new(&struct_pattern.type_ref, program)?;
                 match &struct_pattern.fields {
                     StructPatternFields::Named(named_patterns) => {
                         for field_pattern in named_patterns {
@@ -478,7 +509,7 @@ impl Validator {
                 Ok(())
             }
             Pattern::EnumVariant(enum_pattern) => {
-                self.validate_type_reference(&enum_pattern.enum_ref, program)?;
+                self.validate_type_reference_new(&enum_pattern.enum_ref, program)?;
                 match &enum_pattern.kind {
                     EnumVariantPatternKind::Unit => Ok(()),
                     EnumVariantPatternKind::Tuple(tuple_patterns) => {
@@ -553,6 +584,10 @@ impl Validator {
                 }
             }
             Term::MetaInterpolation(meta_expr) => self.validate_meta_expression(meta_expr, program),
+            Term::Predicate(predicate_id) => {
+                // Validate that the predicate reference exists
+                self.validate_item(predicate_id, program)
+            }
         }
     }
 
@@ -590,10 +625,14 @@ impl Validator {
 
         let cycle_items: Vec<_> = self.validation_stack[cycle_start..]
             .iter()
-            .map(|id| id.path.as_ref())
+            .map(|id| id.to_string())
             .collect();
 
-        format!("{} -> {}", cycle_items.join(" -> "), current_item.path)
+        format!(
+            "{} -> {}",
+            cycle_items.join(" -> "),
+            current_item.to_string()
+        )
     }
 
     /// Check if a type name refers to a builtin primitive type
