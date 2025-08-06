@@ -1075,10 +1075,8 @@ impl ExecutionContext {
         if goals.is_empty() {
             Goal::fail()
         } else {
-            goals
-                .into_iter()
-                .reduce(|acc, goal| crate::operator::disj::Disj::new(acc, goal))
-                .unwrap()
+            // Use Conde for proper fair interleaving, same as the macro system
+            Conde::from_vec(goals).cast_into()
         }
     }
 
