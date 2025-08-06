@@ -251,11 +251,34 @@ impl ExecutionContext {
                 self.lookup_predicate_by_id(predicate_id)
             }
             ir::PredicateCallTarget::Variable(var_name) => {
-                // Higher-order predicates not yet implemented
-                Err(RuntimeError::SemanticError {
-                    message: format!("Higher-order predicate calls not yet implemented: {}", var_name),
-                    context: "predicate call resolution".to_string(),
-                })
+                // Look up the variable value to resolve the predicate reference
+                if let Some(var_value) = self.lookup_variable_value(var_name) {
+                    match var_value {
+                        VariableValue::Relational(lterm) => {
+                            // Check if this LTerm is a relation reference
+                            if let Some(predicate_id) = lterm.get_relation_ref() {
+                                // Resolve the predicate ID to an actual predicate
+                                self.lookup_predicate_by_id(predicate_id)
+                            } else {
+                                Err(RuntimeError::SemanticError {
+                                    message: format!("Expected relation reference, but got: {:?}", lterm),
+                                    context: "higher-order predicate call".to_string(),
+                                })
+                            }
+                        }
+                        VariableValue::Meta(_) => {
+                            Err(RuntimeError::SemanticError {
+                                message: "Expected relation reference, but got meta value".to_string(),
+                                context: "higher-order predicate call".to_string(),
+                            })
+                        }
+                    }
+                } else {
+                    Err(RuntimeError::UnboundVariable {
+                        variable_name: var_name.to_string(),
+                        context: "higher-order predicate call".to_string(),
+                    })
+                }
             }
             ir::PredicateCallTarget::Builtin(builtin_name) => {
                 // Look up builtin directly by name  

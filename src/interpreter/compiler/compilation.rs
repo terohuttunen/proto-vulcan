@@ -665,6 +665,11 @@ impl Compiler {
                 {
                     return self.compile_enum_variant_construction(&enum_variant, ir_program);
                 }
+                
+                
+                // TODO: Check if this variable has a rel(n) type annotation and should be converted to predicate reference
+                // For now, we'll handle this through the parameter type system in predicate calls
+                
                 Ok(ir::Term::Variable(name.clone()))
             }
 
@@ -853,8 +858,14 @@ impl Compiler {
                             }
                         }
                     } else {
-                        // Regular relational parameter
-                        arguments.push(self.compile_term(term, ir_program)?);
+                        // Regular relational parameter - check if it should be a predicate reference
+                        let compiled_arg = if self.should_convert_arg_to_predicate_ref(&predicate_target, i, term, predicate_def, ir_program)? {
+                            // Convert variable to predicate reference for higher-order predicates
+                            self.compile_term_as_predicate_ref(term, ir_program)?
+                        } else {
+                            self.compile_term(term, ir_program)?
+                        };
+                        arguments.push(compiled_arg);
                     }
                 }
                 ast::CallArgument::MetaExpression(meta_expr) => {
@@ -2275,5 +2286,50 @@ impl Compiler {
         }
 
         Ok(None)
+    }
+
+    /// Check if an argument should be converted to a predicate reference for higher-order predicates
+    fn should_convert_arg_to_predicate_ref(
+        &self,
+        predicate_target: &ir::PredicateCallTarget,
+        param_index: usize,
+        term: &ast::Term,
+        predicate_def: Option<&ir::Predicate>,
+        ir_program: &ir::Program,
+    ) -> Result<bool, CompileError> {
+        // Check if the predicate parameter has a rel(n) type annotation
+        if let Some(predicate) = predicate_def {
+            if param_index < predicate.parameters.len() {
+                if let Some(ir::TypeAnnotation::Relation(_arity)) = &predicate.parameters[param_index].type_annotation {
+                    // Parameter expects a relation - check if the term is a variable that resolves to a predicate
+                    if let ast::Term::Variable(var_name) = term {
+                        let simple_path = ast::QualifiedPath::simple(vec![var_name.clone()]);
+                        if self.resolve_qualified_path_as_predicate(&simple_path, ir_program).is_ok() {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// Compile a term as a predicate reference for higher-order predicates
+    fn compile_term_as_predicate_ref(
+        &self,
+        term: &ast::Term,
+        ir_program: &ir::Program,
+    ) -> Result<ir::Term, CompileError> {
+        match term {
+            ast::Term::Variable(var_name) => {
+                let simple_path = ast::QualifiedPath::simple(vec![var_name.clone()]);
+                let predicate_id = self.resolve_qualified_path_as_predicate(&simple_path, ir_program)?;
+                Ok(ir::Term::Predicate(predicate_id))
+            }
+            _ => {
+                // For non-variable terms, just compile normally
+                self.compile_term(term, ir_program)
+            }
+        }
     }
 }
