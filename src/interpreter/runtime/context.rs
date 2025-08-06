@@ -467,10 +467,15 @@ impl ExecutionContext {
             ir::Term::EnumVariant(enum_construction) => {
                 self.ir_enum_variant_to_runtime(enum_construction)
             }
-            ir::Term::MetaInterpolation(_meta_expr) => {
-                // Meta interpolation should be expanded before runtime execution
-                // For now, return a fresh variable as placeholder
-                Ok(self.create_fresh_var())
+            ir::Term::MetaInterpolation(meta_expr) => {
+                // Evaluate the meta expression and convert to LTerm
+                let meta_value = self.evaluate_meta_expr(meta_expr)?;
+                let lterm = match meta_value {
+                    MetaValue::Integer(i) => LTerm::from(i as isize),
+                    MetaValue::String(s) => LTerm::from(s.as_ref()),
+                    MetaValue::Boolean(b) => LTerm::from(b),
+                };
+                Ok(lterm)
             }
             ir::Term::Predicate(predicate_id) => {
                 // Create an LTerm::RelationRef for higher-order predicates
