@@ -1767,6 +1767,13 @@ impl ExecutionContext {
             (Add, MetaValue::String(a), MetaValue::String(b)) => {
                 Ok(MetaValue::String(format!("{}{}", a, b).into()))
             }
+            // Boolean operations
+            (And, MetaValue::Boolean(a), MetaValue::Boolean(b)) => {
+                Ok(MetaValue::Boolean(a && b))
+            }
+            (Or, MetaValue::Boolean(a), MetaValue::Boolean(b)) => {
+                Ok(MetaValue::Boolean(a || b))
+            }
             // Type mismatches
             _ => Err(RuntimeError::SemanticError {
                 message: format!("Invalid operand types for binary operation: {:?}", op),
