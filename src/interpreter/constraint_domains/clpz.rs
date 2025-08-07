@@ -47,20 +47,25 @@ impl ClpzTemplate {
 }
 
 impl super::DomainConstraintTemplate for ClpzTemplate {
+    fn required_variables(&self) -> &[String] {
+        &self.required_variables
+    }
+    
     fn execute(
         &self,
-        lookup: &dyn Fn(&str) -> Option<super::ResolvedValue>,
+        execution_context: &mut crate::interpreter::runtime::context::ExecutionContext,
+        variables: &std::collections::HashMap<String, super::VariableInfo>,
     ) -> Result<crate::goal::Goal, InterpreterError> {
-        // Resolve all required variables using the lookup closure
-        let mut resolved_vars = std::collections::HashMap::new();
-        for var_name in &self.required_variables {
-            let resolved_value = lookup(var_name)
-                .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))?;
-            resolved_vars.insert(var_name.clone(), resolved_value);
+        // Start with succeed and chain all constraints
+        let mut result = Goal::succeed();
+
+        // Build conjunction chain directly using IR mode
+        for constraint in &self.constraints {
+            let goal = constraint.convert_to_goal_ir(execution_context, variables)?;
+            result = Conj::new(result, goal).cast_into();
         }
 
-        // Execute constraints with resolved variables
-        self.execute_constraints_with_resolved_vars(resolved_vars)
+        Ok(result)
     }
 }
 
@@ -386,6 +391,121 @@ pub enum CompOp {
 }
 
 impl ClpzConstraint {
+    /// Converts a single constraint into a goal using IR execution context and template variables.
+    fn convert_to_goal_ir(
+        &self,
+        execution_context: &mut ExecutionContext,
+        variables: &std::collections::HashMap<String, super::VariableInfo>,
+    ) -> Result<Goal, InterpreterError> {
+        match self {
+            ClpzConstraint::Expression { left, op, right } => {
+                // Handle arithmetic expressions specially for equality constraints
+                if matches!(op, CompOp::Equal) {
+                    // Check for patterns like: x + y == z, x * y == z, etc.
+                    match (left, right) {
+                        // Pattern: (x + y) == z
+                        (ArithExpr::BinaryOp { left: x, op: ArithOp::Add, right: y }, z) => {
+                            let x_term = eval_arith_expr(x, execution_context)?;
+                            let y_term = eval_arith_expr(y, execution_context)?;
+                            let z_term = eval_arith_expr(z, execution_context)?;
+                            
+                            use crate::relation::clpz::plusz::plusz;
+                            Ok(plusz(x_term, y_term, z_term).cast_into())
+                        }
+                        // Pattern: z == (x + y)
+                        (z, ArithExpr::BinaryOp { left: x, op: ArithOp::Add, right: y }) => {
+                            let x_term = eval_arith_expr(x, execution_context)?;
+                            let y_term = eval_arith_expr(y, execution_context)?;
+                            let z_term = eval_arith_expr(z, execution_context)?;
+                            
+                            use crate::relation::clpz::plusz::plusz;
+                            Ok(plusz(x_term, y_term, z_term).cast_into())
+                        }
+                        // Pattern: (x * y) == z
+                        (ArithExpr::BinaryOp { left: x, op: ArithOp::Multiply, right: y }, z) => {
+                            let x_term = eval_arith_expr(x, execution_context)?;
+                            let y_term = eval_arith_expr(y, execution_context)?;
+                            let z_term = eval_arith_expr(z, execution_context)?;
+                            
+                            use crate::relation::clpz::timesz::timesz;
+                            Ok(timesz(x_term, y_term, z_term).cast_into())
+                        }
+                        // Pattern: z == (x * y)
+                        (z, ArithExpr::BinaryOp { left: x, op: ArithOp::Multiply, right: y }) => {
+                            let x_term = eval_arith_expr(x, execution_context)?;
+                            let y_term = eval_arith_expr(y, execution_context)?;
+                            let z_term = eval_arith_expr(z, execution_context)?;
+                            
+                            use crate::relation::clpz::timesz::timesz;
+                            Ok(timesz(x_term, y_term, z_term).cast_into())
+                        }
+                        // General case: evaluate both sides and compare
+                        _ => {
+                            let left_term = eval_arith_expr(left, execution_context)?;
+                            let right_term = eval_arith_expr(right, execution_context)?;
+                            
+                            use crate::relation::eq::eq;
+                            Ok(eq(left_term, right_term).cast_into())
+                        }
+                    }
+                } else {
+                    // For non-equality operations, evaluate both sides and use generic comparison
+                    let left_term = eval_arith_expr(left, execution_context)?;
+                    let right_term = eval_arith_expr(right, execution_context)?;
+                    
+                    match op {
+                        CompOp::NotEqual => {
+                            // ClpZ doesn't have a direct neqz, use generic diseq
+                            use crate::relation::diseq::diseq;
+                            Ok(diseq(left_term, right_term).cast_into())
+                        }
+                        CompOp::LessThan => {
+                            use crate::relation::clpz::ltz::ltz;
+                            Ok(ltz(left_term, right_term).cast_into())
+                        }
+                        CompOp::LessEqual => {
+                            use crate::relation::clpz::ltez::ltez;
+                            Ok(ltez(left_term, right_term).cast_into())
+                        }
+                        CompOp::GreaterThan => {
+                            use crate::relation::clpz::ltz::ltz;
+                            Ok(ltz(right_term, left_term).cast_into()) // x > y ≡ y < x
+                        }
+                        CompOp::GreaterEqual => {
+                            use crate::relation::clpz::ltez::ltez;
+                            Ok(ltez(right_term, left_term).cast_into()) // x >= y ≡ y <= x
+                        }
+                        CompOp::Equal => unreachable!(), // Already handled above
+                    }
+                }
+            }
+            ClpzConstraint::Fresh { vars, constraints } => {
+                // Create fresh variables using the Fresh operator
+                let fresh_vars: Vec<LTerm> = vars.iter().map(|var_name| LTerm::var(var_name)).collect();
+
+                // Create new variable info map that includes the fresh variables
+                let mut extended_variables = variables.clone();
+                for var_name in vars {
+                    extended_variables.insert(var_name.clone(), super::VariableInfo {
+                        name: var_name.clone(),
+                        var_type: super::VariableType::Relational,
+                    });
+                }
+
+                // Convert all sub-constraints using the extended variable map
+                let mut body_goal = Goal::succeed();
+                for constraint in constraints {
+                    let goal = constraint.convert_to_goal_ir(execution_context, &extended_variables)?;
+                    body_goal = Conj::new(body_goal, goal).cast_into();
+                }
+
+                // Wrap the body in a Fresh operator
+                use crate::operator::fresh::Fresh;
+                Ok(Fresh::new(fresh_vars, body_goal).cast_into())
+            }
+        }
+    }
+
     /// Convert constraint to goal using pre-resolved variables (new API)
     fn convert_to_goal_with_resolved_vars(
         &self,

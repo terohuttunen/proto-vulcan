@@ -29,43 +29,27 @@ pub struct ClpfdTemplate {
     constraints: Vec<ClpfdConstraint>,
 }
 
-impl ClpfdTemplate {
-    /// Execute constraints with resolved variables
-    fn execute_constraints_with_resolved_vars(
+
+impl super::DomainConstraintTemplate for ClpfdTemplate {
+    fn required_variables(&self) -> &[String] {
+        &self.required_variables
+    }
+    
+    fn execute(
         &self,
-        resolved_vars: std::collections::HashMap<String, super::ResolvedValue>,
-    ) -> Result<Goal, InterpreterError> {
+        execution_context: &mut crate::interpreter::runtime::context::ExecutionContext,
+        variables: &std::collections::HashMap<String, super::VariableInfo>,
+    ) -> Result<crate::goal::Goal, InterpreterError> {
         // Start with succeed and chain all constraints
         let mut result = Goal::succeed();
 
-        // Build conjunction chain directly
+        // Build conjunction chain directly using IR mode
         for constraint in &self.constraints {
-            let goal = constraint.convert_to_goal_with_resolved_vars(
-                resolved_vars.clone(),
-                &std::collections::HashMap::new(),
-            )?;
+            let goal = constraint.convert_to_goal_ir(execution_context, variables)?;
             result = Conj::new(result, goal).cast_into();
         }
 
         Ok(result)
-    }
-}
-
-impl super::DomainConstraintTemplate for ClpfdTemplate {
-    fn execute(
-        &self,
-        lookup: &dyn Fn(&str) -> Option<super::ResolvedValue>,
-    ) -> Result<crate::goal::Goal, InterpreterError> {
-        // Resolve all required variables using the lookup closure
-        let mut resolved_vars = std::collections::HashMap::new();
-        for var_name in &self.required_variables {
-            let resolved_value = lookup(var_name)
-                .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))?;
-            resolved_vars.insert(var_name.clone(), resolved_value);
-        }
-
-        // Execute constraints with resolved variables
-        self.execute_constraints_with_resolved_vars(resolved_vars)
     }
 }
 
@@ -716,13 +700,183 @@ impl ClpfdConstraint {
                             values.iter().map(|&v| v as isize).collect();
                         Ok(infd(var_term, &domain_values).cast_into())
                     }
-                    _ => Err(InterpreterError::RuntimeError(
-                        "Interpolated domain specs not yet supported in IR mode".to_string(),
-                    )),
+                    DomainSpec::InterpolatedRange(start_bound, end_bound) => {
+                        // Evaluate interpolated bounds to integers using current execution context
+                        let start = eval_domain_bound(start_bound, execution_context, &Default::default())?;
+                        let end = eval_domain_bound(end_bound, execution_context, &Default::default())?;
+                        
+                        use crate::relation::clpfd::infd::infdrange;
+                        let range = start..=end;
+                        Ok(infdrange(var_term, &range).cast_into())
+                    }
+                    DomainSpec::InterpolatedSet(bounds) => {
+                        // Evaluate all interpolated bounds to integers using current execution context
+                        let mut values = Vec::new();
+                        for bound in bounds {
+                            let value = eval_domain_bound(bound, execution_context, &Default::default())?;
+                            values.push(value);
+                        }
+                        
+                        use crate::relation::clpfd::infd::infd;
+                        Ok(infd(var_term, &values).cast_into())
+                    }
                 }
             }
+            ClpfdConstraint::Global { name, args } => {
+                // Handle global constraints like alldiff/distinct
+                let mut resolved_args = Vec::new();
+                
+                for arg_name in args {
+                    // Check if this is a variable or a constant
+                    if let Ok(constant_value) = arg_name.parse::<isize>() {
+                        // It's a constant value, convert to LTerm directly
+                        resolved_args.push(LTerm::from(constant_value));
+                    } else {
+                        // It's a variable, look it up in the execution context
+                        let symbol = crate::interpreter::symbol_table::InternedSymbol::from(arg_name.clone());
+                        let var_term = execution_context
+                            .lookup_var(&symbol)
+                            .ok_or_else(|| InterpreterError::UnknownVariable(arg_name.clone()))?;
+                        resolved_args.push(var_term);
+                    }
+                }
+                
+                // Build the appropriate global constraint goal
+                match name.as_str() {
+                    "distinct" | "alldiff" => {
+                        use crate::relation::clpfd::distinctfd::distinctfd;
+                        // Convert vector of LTerms to a list LTerm
+                        let mut list_term = LTerm::empty_list();
+                        for arg in resolved_args.into_iter().rev() {
+                            list_term = LTerm::cons(arg, list_term);
+                        }
+                        Ok(distinctfd(list_term).cast_into())
+                    }
+                    _ => Err(InterpreterError::RuntimeError(format!(
+                        "Unknown global constraint: {}",
+                        name
+                    ))),
+                }
+            }
+            ClpfdConstraint::ListDomain { variables: var_list, domain_spec } => {
+                // Handle list domain constraints like [x, y, z] in 1..3
+                // Apply the domain constraint to each variable in the list
+                let mut goals = Vec::new();
+                
+                for var_name in var_list {
+                    let var_info = variables
+                        .get(var_name)
+                        .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))?;
+                    
+                    let var_term = match var_info.var_type {
+                        super::VariableType::Relational => {
+                            let symbol = crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
+                            execution_context
+                                .lookup_var(&symbol)
+                                .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))?
+                        }
+                        super::VariableType::Meta => {
+                            return Err(InterpreterError::RuntimeError(
+                                "Meta variables not supported in list domain constraints".to_string(),
+                            ));
+                        }
+                    };
+                    
+                    // Apply domain constraint to this variable
+                    let domain_goal = match domain_spec {
+                        DomainSpec::Range(start, end) => {
+                            use crate::relation::clpfd::infd::infdrange;
+                            let range = (*start as isize)..=(*end as isize);
+                            infdrange(var_term, &range).cast_into()
+                        }
+                        DomainSpec::Set(values) => {
+                            use crate::relation::clpfd::infd::infd;
+                            let domain_values: Vec<isize> = values.iter().map(|&v| v as isize).collect();
+                            infd(var_term, &domain_values).cast_into()
+                        }
+                        DomainSpec::InterpolatedRange(start_bound, end_bound) => {
+                            let start = eval_domain_bound(start_bound, execution_context, &Default::default())?;
+                            let end = eval_domain_bound(end_bound, execution_context, &Default::default())?;
+                            
+                            use crate::relation::clpfd::infd::infdrange;
+                            let range = start..=end;
+                            infdrange(var_term, &range).cast_into()
+                        }
+                        DomainSpec::InterpolatedSet(bounds) => {
+                            let mut values = Vec::new();
+                            for bound in bounds {
+                                let value = eval_domain_bound(bound, execution_context, &Default::default())?;
+                                values.push(value);
+                            }
+                            
+                            use crate::relation::clpfd::infd::infd;
+                            infd(var_term, &values).cast_into()
+                        }
+                    };
+                    
+                    goals.push(domain_goal);
+                }
+                
+                // Combine all domain goals into a conjunction
+                let mut result = Goal::succeed();
+                for goal in goals {
+                    result = Conj::new(result, goal).cast_into();
+                }
+                Ok(result)
+            }
+            ClpfdConstraint::Expression { left, op, right } => {
+                // Handle arithmetic expression constraints like x == 5, x < y, x + y == z, etc.
+                
+                // First, collect all constraint goals needed for binary operations
+                let mut constraint_goals = Vec::new();
+                let left_term = eval_arith_expr_with_constraints_ir(left, execution_context, &mut constraint_goals)?;
+                let right_term = eval_arith_expr_with_constraints_ir(right, execution_context, &mut constraint_goals)?;
+                
+                // Build the main comparison goal
+                let comparison_goal = match op {
+                    CompOp::Equal => {
+                        crate::relation::eq::eq(left_term, right_term).cast_into()
+                    }
+                    CompOp::NotEqual => {
+                        crate::relation::diseq::diseq(left_term, right_term).cast_into()
+                    }
+                    CompOp::LessThan => {
+                        use crate::relation::clpfd::ltfd::ltfd;
+                        ltfd(left_term, right_term).cast_into()
+                    }
+                    CompOp::LessEqual => {
+                        use crate::relation::clpfd::ltfd::ltfd;
+                        use crate::relation::eq::eq;
+                        // x <= y is equivalent to (x < y) or (x == y)
+                        let lt_goal = ltfd(left_term.clone(), right_term.clone()).cast_into();
+                        let eq_goal = eq(left_term, right_term).cast_into();
+                        crate::operator::disj::Disj::new(lt_goal, eq_goal).cast_into()
+                    }
+                    CompOp::GreaterThan => {
+                        use crate::relation::clpfd::ltfd::ltfd;
+                        // x > y is equivalent to y < x
+                        ltfd(right_term, left_term).cast_into()
+                    }
+                    CompOp::GreaterEqual => {
+                        use crate::relation::clpfd::ltfd::ltfd;
+                        use crate::relation::eq::eq;
+                        // x >= y is equivalent to (y < x) or (x == y)
+                        let gt_goal = ltfd(right_term.clone(), left_term.clone()).cast_into();
+                        let eq_goal = eq(left_term, right_term).cast_into();
+                        crate::operator::disj::Disj::new(gt_goal, eq_goal).cast_into()
+                    }
+                };
+                
+                // Combine all constraint goals with the comparison goal
+                constraint_goals.push(comparison_goal);
+                let mut result = Goal::succeed();
+                for goal in constraint_goals {
+                    result = crate::operator::conj::Conj::new(result, goal).cast_into();
+                }
+                Ok(result)
+            }
             _ => Err(InterpreterError::RuntimeError(
-                "Only domain constraints are implemented in IR mode".to_string(),
+                "This constraint type is not yet implemented in IR mode".to_string(),
             )),
         }
     }
@@ -1092,7 +1246,12 @@ impl ClpfdConstraint {
                 collect_vars(right, &mut vars);
             }
             ClpfdConstraint::Global { args, .. } => {
-                vars.extend(args.clone());
+                // Only include args that are actual variables (not numeric constants)
+                for arg in args {
+                    if arg.parse::<i32>().is_err() {
+                        vars.push(arg.clone());
+                    }
+                }
             }
             ClpfdConstraint::Fresh {
                 vars: _,
@@ -1105,6 +1264,153 @@ impl ClpfdConstraint {
             }
         }
         vars
+    }
+}
+
+/// Evaluates an arithmetic expression with constraint generation for IR mode
+fn eval_arith_expr_with_constraints_ir(
+    expr: &ArithExpr,
+    execution_context: &mut ExecutionContext,
+    constraint_goals: &mut Vec<Goal>,
+) -> Result<LTerm, InterpreterError> {
+    match expr {
+        ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
+        ArithExpr::Variable(name) => {
+            let symbol = crate::interpreter::symbol_table::InternedSymbol::from(name.clone());
+            execution_context
+                .lookup_var(&symbol)
+                .ok_or_else(|| InterpreterError::UnknownVariable(name.clone()))
+        }
+        ArithExpr::Interpolation(meta_expr) => {
+            // Handle meta expression interpolation
+            match meta_expr {
+                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
+                    let symbol =
+                        crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
+                    if let Some(var_value) = execution_context.lookup_variable_value(&symbol) {
+                        if let Some(meta_value) = var_value.as_meta() {
+                            match meta_value {
+                                crate::interpreter::compiler::ir::MetaValue::Integer(i) => {
+                                    Ok(LTerm::from(*i as isize))
+                                }
+                                _ => Err(InterpreterError::RuntimeError(format!(
+                                    "Interpolation variable '{}' must be an integer for arithmetic expressions",
+                                    var_name
+                                ))),
+                            }
+                        } else {
+                            execution_context
+                                .lookup_var(&symbol)
+                                .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))
+                        }
+                    } else {
+                        Err(InterpreterError::RuntimeError(format!(
+                            "Interpolation variable '{}' not found in constraint context",
+                            var_name
+                        )))
+                    }
+                }
+                _ => Err(InterpreterError::RuntimeError(
+                    "Complex interpolation expressions not yet supported in IR mode".to_string(),
+                )),
+            }
+        }
+        ArithExpr::BinaryOp { left, op, right } => {
+            // Recursively evaluate left and right operands
+            let left_term = eval_arith_expr_with_constraints_ir(left, execution_context, constraint_goals)?;
+            let right_term = eval_arith_expr_with_constraints_ir(right, execution_context, constraint_goals)?;
+            
+            // Create fresh variable for the result
+            let result_var = execution_context.create_fresh_var();
+            
+            // Create the appropriate arithmetic constraint goal
+            let constraint_goal = match op {
+                ArithOp::Add => {
+                    use crate::relation::clpfd::plusfd::plusfd;
+                    // result = left + right, so plusfd(left, right, result)
+                    plusfd(left_term, right_term, result_var.clone()).cast_into()
+                }
+                ArithOp::Subtract => {
+                    use crate::relation::clpfd::plusfd::plusfd;
+                    // result = left - right, equivalent to left = result + right
+                    // So plusfd(result, right, left)
+                    plusfd(result_var.clone(), right_term, left_term).cast_into()
+                }
+                ArithOp::Multiply => {
+                    use crate::relation::clpfd::timesfd::timesfd;
+                    // result = left * right, so timesfd(left, right, result)
+                    timesfd(left_term, right_term, result_var.clone()).cast_into()
+                }
+                ArithOp::Divide => {
+                    // Division is more complex and less commonly supported in CLPFD
+                    // For now, return an error
+                    return Err(InterpreterError::RuntimeError(
+                        "Division not yet supported in CLPFD constraints".to_string(),
+                    ));
+                }
+            };
+            
+            constraint_goals.push(constraint_goal);
+            Ok(result_var)
+        }
+    }
+}
+
+/// Evaluates an arithmetic expression for IR mode, creating temporary variables for intermediate results.
+fn eval_arith_expr_ir(
+    expr: &ArithExpr,
+    execution_context: &mut ExecutionContext,
+) -> Result<LTerm, InterpreterError> {
+    match expr {
+        ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
+        ArithExpr::Variable(name) => {
+            let symbol = crate::interpreter::symbol_table::InternedSymbol::from(name.clone());
+            execution_context
+                .lookup_var(&symbol)
+                .ok_or_else(|| InterpreterError::UnknownVariable(name.clone()))
+        }
+        ArithExpr::Interpolation(meta_expr) => {
+            // For simple variable interpolations, directly access the execution context
+            match meta_expr {
+                crate::interpreter::metaprogramming::MetaExpression::Variable(var_name, _) => {
+                    // Directly look up the variable in the execution context
+                    let symbol =
+                        crate::interpreter::symbol_table::InternedSymbol::from(var_name.clone());
+                    if let Some(var_value) = execution_context.lookup_variable_value(&symbol) {
+                        if let Some(meta_value) = var_value.as_meta() {
+                            match meta_value {
+                                crate::interpreter::compiler::ir::MetaValue::Integer(i) => {
+                                    Ok(LTerm::from(*i as isize))
+                                }
+                                _ => Err(InterpreterError::RuntimeError(format!(
+                                    "Interpolation variable '{}' must be an integer for arithmetic expressions",
+                                    var_name
+                                ))),
+                            }
+                        } else {
+                            // It's a relational variable, return it directly
+                            execution_context
+                                .lookup_var(&symbol)
+                                .ok_or_else(|| InterpreterError::UnknownVariable(var_name.clone()))
+                        }
+                    } else {
+                        Err(InterpreterError::RuntimeError(format!(
+                            "Interpolation variable '{}' not found in constraint context",
+                            var_name
+                        )))
+                    }
+                }
+                _ => Err(InterpreterError::RuntimeError(
+                    "Complex interpolation expressions not yet supported in IR mode".to_string(),
+                )),
+            }
+        }
+        ArithExpr::BinaryOp { left, op, right } => {
+            // For arithmetic expressions in constraints, we need to return a fresh variable
+            // The actual constraint will be posted by the containing expression constraint
+            let result_var = execution_context.create_fresh_var();
+            Ok(result_var)
+        }
     }
 }
 

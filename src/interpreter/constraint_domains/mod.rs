@@ -58,12 +58,16 @@ pub enum VariableType {
     Meta,
 }
 
-/// Trait for compiled constraint templates that execute with variable lookup
+/// Trait for compiled constraint templates that execute with execution context
 pub trait DomainConstraintTemplate: std::fmt::Debug {
-    /// Execute the template with variable value lookup to produce a Goal
+    /// Get the list of required variables for this template
+    fn required_variables(&self) -> &[String];
+    
+    /// Execute the template with execution context to produce a Goal
     fn execute(
         &self,
-        resolver: &dyn Fn(&str) -> Option<ResolvedValue>,
+        execution_context: &mut crate::interpreter::runtime::context::ExecutionContext,
+        variables: &std::collections::HashMap<String, VariableInfo>,
     ) -> Result<Goal, InterpreterError>;
 }
 

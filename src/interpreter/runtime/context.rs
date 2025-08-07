@@ -852,29 +852,37 @@ impl ExecutionContext {
         &mut self,
         constraint_block: &ir::ConstraintBlock,
     ) -> Result<Goal, RuntimeError> {
-        // Create a lookup closure that resolves variables from the current context
-        let lookup = |var_name: &str| -> Option<ResolvedValue> {
-            let symbol = InternedSymbol::from(var_name.to_string());
-
-            // Look up variable in current scope
-            if let Some(var_value) = self.lookup_variable_value(&symbol) {
-                // Check if it's a relational or meta variable
-                if let Some(lterm) = var_value.to_lterm() {
-                    Some(ResolvedValue::Relational(lterm))
-                } else if let Some(meta_value) = var_value.as_meta() {
-                    Some(ResolvedValue::Meta(meta_value.clone()))
+        // Create variable info map for all variables in the constraint
+        let mut variables = std::collections::HashMap::new();
+        
+        // Extract variable info from the constraint block
+        for var_name in constraint_block.template.required_variables() {
+            let symbol = InternedSymbol::from(var_name.clone());
+            
+            // Determine variable type based on current context
+            let var_type = if let Some(var_value) = self.lookup_variable_value(&symbol) {
+                if var_value.as_meta().is_some() {
+                    crate::interpreter::constraint_domains::VariableType::Meta
                 } else {
-                    None // Unsupported type
+                    crate::interpreter::constraint_domains::VariableType::Relational
                 }
             } else {
-                None // Variable not found
-            }
-        };
+                return Err(RuntimeError::ConstraintError {
+                    message: format!("Unknown variable '{}' in constraint", var_name),
+                    context: format!("constraint domain '{}'", constraint_block.domain),
+                });
+            };
+            
+            variables.insert(var_name.clone(), crate::interpreter::constraint_domains::VariableInfo {
+                name: var_name.clone(),
+                var_type,
+            });
+        }
 
-        // Execute template with lookup closure
+        // Execute template with execution context and variables
         constraint_block
             .template
-            .execute(&lookup)
+            .execute(self, &variables)
             .map_err(|err| RuntimeError::ConstraintError {
                 message: format!("Failed to execute constraint template: {}", err),
                 context: format!("constraint domain '{}'", constraint_block.domain),
