@@ -1888,6 +1888,11 @@ impl ExecutionContext {
 
         match (start_value, end_value) {
             (MetaValue::Integer(start), MetaValue::Integer(end)) => {
+                // Handle empty range case - should succeed as no-op
+                if start >= end {
+                    return Ok(Goal::succeed());
+                }
+
                 // Build disjunction directly with Disj pairs
                 let mut result = Goal::fail();
 
