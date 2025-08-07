@@ -482,9 +482,15 @@ impl TestRunner {
     /// Matches an LTerm against an AST Term, supporting wildcards.
     fn matches_pattern(lterm: &LTerm, term: &ast::Term) -> bool {
         match term {
-            ast::Term::Wildcard(_) => true, // Wildcard matches anything
-            ast::Term::Literal(literal, _) => Self::matches_literal(lterm, literal),
-            ast::Term::Variable(_) => true, // Variables in expected terms act as wildcards for matching
+            ast::Term::Wildcard(_) => {
+                true // Wildcard matches anything
+            }
+            ast::Term::Literal(literal, _) => {
+                Self::matches_literal(lterm, literal)
+            }
+            ast::Term::Variable(_) => {
+                true // Variables in expected terms act as wildcards for matching
+            }
             ast::Term::List(list_construction, _) => {
                 Self::matches_list_structure(lterm, list_construction)
             }
@@ -494,7 +500,9 @@ impl TestRunner {
             ast::Term::TupleStruct(tuple_struct, _) => {
                 Self::matches_tuple_struct(lterm, tuple_struct)
             }
-            ast::Term::Parenthesized(inner, _) => Self::matches_pattern(lterm, inner),
+            ast::Term::Parenthesized(inner, _) => {
+                Self::matches_pattern(lterm, inner)
+            }
             ast::Term::Interpolation(..) => {
                 // TODO: Implement interpolation pattern matching
                 false
@@ -662,11 +670,12 @@ impl TestRunner {
 
     /// Match an LTerm against a named struct pattern.
     fn matches_named_struct(lterm: &LTerm, named_struct: &ast::NamedStructConstruction) -> bool {
-        use super::runtime::RegistryNamedStruct;
+        use super::runtime::{RegistryEnumVariant, RegistryNamedStruct, VariantData};
         use crate::lterm::LTermInner;
 
         // Check if the LTerm is a compound object representing a named struct
         if let LTermInner::Compound(compound_obj) = lterm.as_ref() {
+            // First try matching as a regular named struct
             if let Some(named_struct_obj) =
                 compound_obj.as_any().downcast_ref::<RegistryNamedStruct>()
             {
@@ -676,7 +685,7 @@ impl TestRunner {
                 }
 
                 // Check that all AST fields exist in LTerm fields and match
-                named_struct.fields.iter().all(|ast_field| {
+                return named_struct.fields.iter().all(|ast_field| {
                     named_struct_obj
                         .fields
                         .iter()
@@ -685,10 +694,39 @@ impl TestRunner {
                             Self::matches_pattern(field_value, &ast_field.value)
                         })
                         .unwrap_or(false)
-                })
-            } else {
-                false
+                });
             }
+            
+            // If not a named struct, check if it might be an enum variant with named fields
+            // This handles the case where test expectations parse "Person::Named { ... }" as NamedStruct
+            // but the runtime result is a RegistryEnumVariant
+            if let Some(enum_var) = compound_obj.as_any().downcast_ref::<RegistryEnumVariant>() {
+                // Check if the named_struct name looks like an enum variant (contains "::")
+                if let Some((_enum_name, variant_name)) = named_struct.name.rsplit_once("::") {
+                    // Check if variant name matches
+                    if enum_var.variant_name == variant_name {
+                        // Check if it's a named variant with matching fields
+                        if let VariantData::Named(lterm_fields) = &enum_var.variant_data {
+                            if lterm_fields.len() != named_struct.fields.len() {
+                                return false;
+                            }
+
+                            // Check that all AST fields exist in LTerm fields and match
+                            return named_struct.fields.iter().all(|ast_field| {
+                                lterm_fields
+                                    .iter()
+                                    .find(|(name, _)| name == &*ast_field.name)
+                                    .map(|(_, field_value)| {
+                                        Self::matches_pattern(field_value, &ast_field.value)
+                                    })
+                                    .unwrap_or(false)
+                            });
+                        }
+                    }
+                }
+            }
+
+            false
         } else {
             false
         }
@@ -928,6 +966,9 @@ impl TestRunner {
                             )
                         }
                     };
+
+                    // Note: Expected terms are raw AST parsed from test attributes
+                    // They may represent enum variants as NamedStruct nodes that need special handling
 
                     if result_lterms.len() != expected_ast_list.len() {
                         // Convert results to strings for display
