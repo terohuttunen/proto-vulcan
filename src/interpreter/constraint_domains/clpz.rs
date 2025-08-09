@@ -5,15 +5,18 @@
 //! - x * y == z (multiplication constraints)
 //! - x < y (comparison constraints)
 
-use super::ConstraintDomain;
+use super::{ConstraintDomain, DomainConstraintTemplate, FreshVariableContext, RuntimeValue, VariableType};
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::parser::ast::ConstraintBody;
-use crate::interpreter::runtime::context::ExecutionContext;
 use crate::interpreter::InterpreterError;
+use crate::interpreter::metaprogramming::{MetaValue, evaluate_meta_expression};
+use crate::interpreter::runtime::ExecutionContext;
 use crate::lterm::LTerm;
 use crate::operator::conj::Conj;
 use pest::Parser;
 use pest_derive::Parser;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Parser)]
 #[grammar = "interpreter/constraint_domains/grammars/clpz.pest"]
@@ -23,49 +26,39 @@ pub struct ClpzParser;
 #[derive(Debug, Clone)]
 pub struct ClpzTemplate {
     body: ConstraintBody,
-    required_variables: Vec<String>,
+    /// External relational variables referenced by this template
+    external_relational_variables: Vec<String>,
+    /// External meta variables referenced by this template
+    external_meta_variables: Vec<String>,
     constraints: Vec<ClpzConstraint>,
 }
 
-impl ClpzTemplate {
-    /// Execute constraints with resolved variables
-    fn execute_constraints_with_resolved_vars(
+
+impl DomainConstraintTemplate for ClpzTemplate {
+    fn to_goal_with_context(
         &self,
-        resolved_vars: std::collections::HashMap<String, super::ResolvedValue>,
+        external_binder: &dyn Fn(&str) -> Option<RuntimeValue>,
+        fresh_context: &mut FreshVariableContext,
     ) -> Result<Goal, InterpreterError> {
+        
         // Start with succeed and chain all constraints
         let mut result = Goal::succeed();
 
-        // Build conjunction chain directly
-        for constraint in &self.constraints {
-            let goal = constraint.convert_to_goal_with_resolved_vars(resolved_vars.clone())?;
+        // Build conjunction chain using new context-based approach
+        for constraint in self.constraints.iter() {
+            let goal = constraint.to_goal_with_context(external_binder, fresh_context)?;
             result = Conj::new(result, goal).cast_into();
         }
 
         Ok(result)
-    }
-}
-
-impl super::DomainConstraintTemplate for ClpzTemplate {
-    fn required_variables(&self) -> &[String] {
-        &self.required_variables
     }
     
-    fn execute(
-        &self,
-        execution_context: &mut crate::interpreter::runtime::context::ExecutionContext,
-        variables: &std::collections::HashMap<String, super::VariableInfo>,
-    ) -> Result<crate::goal::Goal, InterpreterError> {
-        // Start with succeed and chain all constraints
-        let mut result = Goal::succeed();
-
-        // Build conjunction chain directly using IR mode
-        for constraint in &self.constraints {
-            let goal = constraint.convert_to_goal_ir(execution_context, variables)?;
-            result = Conj::new(result, goal).cast_into();
-        }
-
-        Ok(result)
+    fn external_relational_variables(&self) -> &[String] {
+        &self.external_relational_variables
+    }
+    
+    fn external_meta_variables(&self) -> &[String] {
+        &self.external_meta_variables
     }
 }
 
@@ -93,27 +86,45 @@ impl ConstraintDomain for ClpzDomain {
     fn compile(
         &self,
         body: &ConstraintBody,
-        binder: &dyn Fn(&str) -> Option<super::VariableInfo>,
-    ) -> Result<std::rc::Rc<dyn super::DomainConstraintTemplate>, InterpreterError> {
+        binder: &dyn Fn(&str) -> Option<VariableType>,
+    ) -> Result<Rc<dyn DomainConstraintTemplate>, InterpreterError> {
         // Parse constraints and validate variables using binder
         let constraints = self.parse_constraints_with_binder(&body.raw_content, binder)?;
 
-        // Extract required variables
-        let mut required_variables = Vec::new();
+        // Extract external variables and separate by type
+        let mut external_relational_variables = Vec::new();
+        let mut external_meta_variables = Vec::new();
+        
         for constraint in &constraints {
-            required_variables.extend(constraint.extract_variables());
-        }
-        // Remove duplicates
-        required_variables.sort();
-        required_variables.dedup();
+            let variables = constraint.extract_variables();
+            for var_name in variables {
+                // Skip variables that look like constants (numeric)
+                if var_name.parse::<i32>().is_ok() {
+                    continue;
+                }
 
-        // Create template with parsed constraints and required variables
+                // CHANGED: Treat all variables as potentially external (relational)
+                // The runtime external binder will handle the actual resolution
+                // This fixes the timing issue where fresh variables don't exist at template creation time
+                if !external_relational_variables.contains(&var_name) {
+                    external_relational_variables.push(var_name);
+                }
+            }
+        }
+        
+        // Sort for consistent ordering
+        external_relational_variables.sort();
+        external_meta_variables.sort();
+
+        
+        // Create template with parsed constraints and external variable tracking
         let template = ClpzTemplate {
             body: body.clone(),
-            required_variables,
+            external_relational_variables,
+            external_meta_variables,
             constraints,
         };
-        Ok(std::rc::Rc::new(template))
+        Ok(Rc::new(template))
     }
 }
 
@@ -122,7 +133,7 @@ impl ClpzDomain {
     fn parse_constraints_with_binder(
         &self,
         content: &str,
-        binder: &dyn Fn(&str) -> Option<super::VariableInfo>,
+        binder: &dyn Fn(&str) -> Option<VariableType>,
     ) -> Result<Vec<ClpzConstraint>, InterpreterError> {
         // First parse constraints normally
         let constraints = self.parse_constraints_block(content)?;
@@ -391,11 +402,11 @@ pub enum CompOp {
 }
 
 impl ClpzConstraint {
-    /// Converts a single constraint into a goal using IR execution context and template variables.
-    fn convert_to_goal_ir(
+    /// Convert constraint to goal using external binder and fresh variable context
+    fn to_goal_with_context(
         &self,
-        execution_context: &mut ExecutionContext,
-        variables: &std::collections::HashMap<String, super::VariableInfo>,
+        external_binder: &dyn Fn(&str) -> Option<RuntimeValue>,
+        fresh_context: &mut FreshVariableContext,
     ) -> Result<Goal, InterpreterError> {
         match self {
             ClpzConstraint::Expression { left, op, right } => {
@@ -405,44 +416,62 @@ impl ClpzConstraint {
                     match (left, right) {
                         // Pattern: (x + y) == z
                         (ArithExpr::BinaryOp { left: x, op: ArithOp::Add, right: y }, z) => {
-                            let x_term = eval_arith_expr(x, execution_context)?;
-                            let y_term = eval_arith_expr(y, execution_context)?;
-                            let z_term = eval_arith_expr(z, execution_context)?;
+                            let x_term = self.eval_arith_expr_with_context(x, external_binder, fresh_context)?;
+                            let y_term = self.eval_arith_expr_with_context(y, external_binder, fresh_context)?;
+                            let z_term = self.eval_arith_expr_with_context(z, external_binder, fresh_context)?;
                             
                             use crate::relation::clpz::plusz::plusz;
                             Ok(plusz(x_term, y_term, z_term).cast_into())
                         }
                         // Pattern: z == (x + y)
                         (z, ArithExpr::BinaryOp { left: x, op: ArithOp::Add, right: y }) => {
-                            let x_term = eval_arith_expr(x, execution_context)?;
-                            let y_term = eval_arith_expr(y, execution_context)?;
-                            let z_term = eval_arith_expr(z, execution_context)?;
+                            let x_term = self.eval_arith_expr_with_context(x, external_binder, fresh_context)?;
+                            let y_term = self.eval_arith_expr_with_context(y, external_binder, fresh_context)?;
+                            let z_term = self.eval_arith_expr_with_context(z, external_binder, fresh_context)?;
                             
                             use crate::relation::clpz::plusz::plusz;
                             Ok(plusz(x_term, y_term, z_term).cast_into())
                         }
                         // Pattern: (x * y) == z
                         (ArithExpr::BinaryOp { left: x, op: ArithOp::Multiply, right: y }, z) => {
-                            let x_term = eval_arith_expr(x, execution_context)?;
-                            let y_term = eval_arith_expr(y, execution_context)?;
-                            let z_term = eval_arith_expr(z, execution_context)?;
+                            let x_term = self.eval_arith_expr_with_context(x, external_binder, fresh_context)?;
+                            let y_term = self.eval_arith_expr_with_context(y, external_binder, fresh_context)?;
+                            let z_term = self.eval_arith_expr_with_context(z, external_binder, fresh_context)?;
                             
                             use crate::relation::clpz::timesz::timesz;
                             Ok(timesz(x_term, y_term, z_term).cast_into())
                         }
                         // Pattern: z == (x * y)
                         (z, ArithExpr::BinaryOp { left: x, op: ArithOp::Multiply, right: y }) => {
-                            let x_term = eval_arith_expr(x, execution_context)?;
-                            let y_term = eval_arith_expr(y, execution_context)?;
-                            let z_term = eval_arith_expr(z, execution_context)?;
+                            let x_term = self.eval_arith_expr_with_context(x, external_binder, fresh_context)?;
+                            let y_term = self.eval_arith_expr_with_context(y, external_binder, fresh_context)?;
+                            let z_term = self.eval_arith_expr_with_context(z, external_binder, fresh_context)?;
                             
                             use crate::relation::clpz::timesz::timesz;
                             Ok(timesz(x_term, y_term, z_term).cast_into())
                         }
+                        // Pattern: (x - y) == z  =>  y + z == x
+                        (ArithExpr::BinaryOp { left: x, op: ArithOp::Subtract, right: y }, z) => {
+                            let x_term = self.eval_arith_expr_with_context(x, external_binder, fresh_context)?;
+                            let y_term = self.eval_arith_expr_with_context(y, external_binder, fresh_context)?;
+                            let z_term = self.eval_arith_expr_with_context(z, external_binder, fresh_context)?;
+                            
+                            use crate::relation::clpz::plusz::plusz;
+                            Ok(plusz(y_term, z_term, x_term).cast_into())
+                        }
+                        // Pattern: z == (x - y)  =>  y + z == x  
+                        (z, ArithExpr::BinaryOp { left: x, op: ArithOp::Subtract, right: y }) => {
+                            let x_term = self.eval_arith_expr_with_context(x, external_binder, fresh_context)?;
+                            let y_term = self.eval_arith_expr_with_context(y, external_binder, fresh_context)?;
+                            let z_term = self.eval_arith_expr_with_context(z, external_binder, fresh_context)?;
+                            
+                            use crate::relation::clpz::plusz::plusz;
+                            Ok(plusz(y_term, z_term, x_term).cast_into())
+                        }
                         // General case: evaluate both sides and compare
                         _ => {
-                            let left_term = eval_arith_expr(left, execution_context)?;
-                            let right_term = eval_arith_expr(right, execution_context)?;
+                            let left_term = self.eval_arith_expr_with_context(left, external_binder, fresh_context)?;
+                            let right_term = self.eval_arith_expr_with_context(right, external_binder, fresh_context)?;
                             
                             use crate::relation::eq::eq;
                             Ok(eq(left_term, right_term).cast_into())
@@ -450,8 +479,8 @@ impl ClpzConstraint {
                     }
                 } else {
                     // For non-equality operations, evaluate both sides and use generic comparison
-                    let left_term = eval_arith_expr(left, execution_context)?;
-                    let right_term = eval_arith_expr(right, execution_context)?;
+                    let left_term = self.eval_arith_expr_with_context(left, external_binder, fresh_context)?;
+                    let right_term = self.eval_arith_expr_with_context(right, external_binder, fresh_context)?;
                     
                     match op {
                         CompOp::NotEqual => {
@@ -480,33 +509,102 @@ impl ClpzConstraint {
                 }
             }
             ClpzConstraint::Fresh { vars, constraints } => {
-                // Create fresh variables using the Fresh operator
-                let fresh_vars: Vec<LTerm> = vars.iter().map(|var_name| LTerm::var(var_name)).collect();
+                
+                // Push fresh variable scope with relational variables
+                let fresh_relational_vars: Vec<String> = vars.clone();
+                let fresh_meta_vars: Vec<(String, MetaValue)> = Vec::new(); // No meta vars in ClpZ fresh blocks
+                
+                let (fresh_lterms, _) = fresh_context.push_scope(&fresh_relational_vars, &fresh_meta_vars);
 
-                // Create new variable info map that includes the fresh variables
-                let mut extended_variables = variables.clone();
-                for var_name in vars {
-                    extended_variables.insert(var_name.clone(), super::VariableInfo {
-                        name: var_name.clone(),
-                        var_type: super::VariableType::Relational,
-                    });
-                }
-
-                // Convert all sub-constraints using the extended variable map
+                // Convert all sub-constraints using the fresh context
                 let mut body_goal = Goal::succeed();
                 for constraint in constraints {
-                    let goal = constraint.convert_to_goal_ir(execution_context, &extended_variables)?;
+                    let goal = constraint.to_goal_with_context(external_binder, fresh_context)?;
                     body_goal = Conj::new(body_goal, goal).cast_into();
                 }
 
+                // Pop the fresh variable scope
+                fresh_context.pop_scope();
+
                 // Wrap the body in a Fresh operator
                 use crate::operator::fresh::Fresh;
-                Ok(Fresh::new(fresh_vars, body_goal).cast_into())
+                Ok(Fresh::new(fresh_lterms, body_goal).cast_into())
             }
         }
     }
 
-    /// Convert constraint to goal using pre-resolved variables (new API)
+    /// Evaluate arithmetic expression using external binder and fresh context
+    fn eval_arith_expr_with_context(
+        &self,
+        expr: &ArithExpr,
+        external_binder: &dyn Fn(&str) -> Option<RuntimeValue>,
+        fresh_context: &mut FreshVariableContext,
+    ) -> Result<LTerm, InterpreterError> {
+        match expr {
+            ArithExpr::Integer(val) => Ok(LTerm::from(*val as isize)),
+            ArithExpr::Variable(name) => {
+                
+                // First check if it's a fresh variable
+                if let Some(runtime_value) = fresh_context.resolve_fresh_variable(name) {
+                    match runtime_value {
+                        RuntimeValue::Relational(lterm) => {
+                            Ok(lterm)
+                        },
+                        RuntimeValue::Meta(meta_value) => {
+                            // Convert meta value to LTerm for relational context
+                            let lterm = meta_value.to_lterm();
+                            Ok(lterm)
+                        }
+                    }
+                } else {
+                    // Check external binder
+                    if let Some(runtime_value) = external_binder(name) {
+                        match runtime_value {
+                            RuntimeValue::Relational(lterm) => {
+                                Ok(lterm)
+                            },
+                            RuntimeValue::Meta(meta_value) => {
+                                // Convert meta value to LTerm for relational context
+                                let lterm = meta_value.to_lterm();
+                                Ok(lterm)
+                            }
+                        }
+                    } else {
+                        Err(InterpreterError::UnknownVariable(name.clone()))
+                    }
+                }
+            }
+            ArithExpr::Interpolation(meta_expr) => {
+                // Evaluate meta expression using current context
+                let meta_bindings = HashMap::new();
+                
+                // Get meta variables from external binder and fresh context
+                // Note: For meta interpolation, we would need external meta variable values
+                // For now, we'll handle simple variable interpolation
+                
+                let meta_value = evaluate_meta_expression(meta_expr, &meta_bindings)
+                    .map_err(|e| InterpreterError::RuntimeError(format!(
+                        "Meta expression evaluation error in CLPZ constraint: {}", e
+                    )))?;
+                
+                Ok(meta_value.to_lterm())
+            }
+            ArithExpr::BinaryOp { left, op, right } => {
+                // For binary operations in constraint expressions, we should create compound goals
+                // However, since this is inside eval_arith_expr_with_context which expects a single LTerm result,
+                // we need to handle this at the constraint level, not the expression level.
+                // This suggests the constraint should be restructured to handle arithmetic directly.
+                
+                // For now, we'll return an error with better guidance
+                Err(InterpreterError::RuntimeError(
+                    format!("Complex arithmetic expressions like '{} {} {}' should be handled as top-level constraints, not as sub-expressions. Use constraints like 'x + y == z' directly.", 
+                        format_arith_expr(left), format_arith_op(op), format_arith_expr(right))
+                ))
+            }
+        }
+    }
+
+    /// Convert constraint to goal using pre-resolved variables (OLD API - to be removed)
     fn convert_to_goal_with_resolved_vars(
         &self,
         resolved_variables: std::collections::HashMap<String, super::ResolvedValue>,
@@ -738,6 +836,18 @@ impl ClpzConstraint {
             }
         }
         vars
+    }
+
+    /// Convert constraint to goal using IR execution context (OLD API - to be removed)
+    fn convert_to_goal_ir(
+        &self,
+        _execution_context: &mut crate::interpreter::runtime::context::ExecutionContext,
+        _variables: &HashMap<String, super::VariableInfo>,
+    ) -> Result<Goal, InterpreterError> {
+        // This is the old API that should be removed once migration is complete
+        Err(InterpreterError::RuntimeError(
+            "convert_to_goal_ir is deprecated - use to_goal_with_context instead".to_string()
+        ))
     }
 }
 
