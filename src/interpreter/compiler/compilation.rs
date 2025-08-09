@@ -779,6 +779,33 @@ impl Compiler {
         // Resolve the predicate reference
         let predicate_target = self.resolve_qualified_path_to_predicate(&qualified_path, ir_program)?;
 
+        // Validate builtin predicates exist and have correct arity
+        if let ir::PredicateCallTarget::Builtin(builtin_name) = &predicate_target {
+            // We need access to the environment, but it's not directly available here
+            // For now, we'll validate using the builtin registry
+            let registry = crate::interpreter::builtins::get_builtin_registry();
+            
+            match registry.get(builtin_name) {
+                Some(&expected_arity) => {
+                    if expected_arity != relation_call.args.len() {
+                        return Err(CompileError::SemanticError { 
+                            message: format!(
+                                "Builtin predicate '{}' expects {} arguments, but {} were provided",
+                                builtin_name, expected_arity, relation_call.args.len()
+                            ),
+                            symbol: InternedSymbol::from_text(builtin_name) 
+                        });
+                    }
+                }
+                None => {
+                    return Err(CompileError::SemanticError { 
+                        message: format!("Unknown builtin predicate '{}'", builtin_name),
+                        symbol: InternedSymbol::from_text(builtin_name) 
+                    });
+                }
+            }
+        }
+
         // Look up predicate to check parameter types for macro calls
         let predicate_def = match &predicate_target {
             ir::PredicateCallTarget::Predicate(predicate_id) => {
