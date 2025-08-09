@@ -1,0 +1,236 @@
+// Environment Variables Test Suite
+// Tests for std::env module functionality
+
+use std::env::*;
+use std::fs::{file_exists};
+use std::path::{join_path, parent_path, file_name};
+
+// =============================================================================
+// ENVIRONMENT VARIABLE TESTS
+// =============================================================================
+
+// Test reading HOME environment variable (should exist on most systems)
+@test
+rel test_home_env_var() {
+    |home_dir| {
+        env_var("HOME", home_dir)
+        // If HOME exists, test passes
+    }
+}
+
+// Test current working directory
+@test
+rel test_current_dir() {
+    |dir| {
+        current_dir(dir)
+        // If we can get current directory, test passes
+    }
+}
+
+// Test temporary directory
+@test
+rel test_temp_dir() {
+    |temp| {
+        temp_dir(temp)
+        // If we can get temp directory, test passes
+    }
+}
+
+// Test environment variable with default (should always work)
+@test(expected = ["bash"])
+rel test_env_var_with_default(shell) {
+    env_var_or_default("SHELL_TEST_NOT_SET", "bash", shell)
+}
+
+// Test environment variable existence for PATH (should exist on most systems)
+@test
+rel test_path_env_var_exists() {
+    env_var_exists("PATH")
+}
+
+// Test environment variable that doesn't exist (should fail)
+@test(expected = [])
+rel test_nonexistent_env_var(result) {
+    |some_value| {
+        env_var("DEFINITELY_DOES_NOT_EXIST_12345", some_value),
+        result == true
+    }
+}
+
+// =============================================================================
+// PATH EXPANSION TESTS
+// =============================================================================
+
+// Test basic path expansion (no variables)
+@test(expected = ["hello/world"])
+rel test_expand_path_no_vars(expanded) {
+    expand_path("hello/world", expanded)
+}
+
+// Test path expansion with environment variable
+@test
+rel test_expand_path_with_env() {
+    |expanded| {
+        expand_path("$HOME/Documents", expanded)
+        // If we can expand $HOME, test passes
+    }
+}
+
+// Test home directory resolution
+@test
+rel test_home_dir() {
+    |home| {
+        home_dir(home)
+        // If we can get home directory, test passes
+    }
+}
+
+// Test home relative path resolution
+@test
+rel test_home_relative_path() {
+    |full_path| {
+        home_relative("Documents/test.txt", full_path)
+        // If we can resolve home relative path, test passes
+    }
+}
+
+// =============================================================================
+// SYSTEM DIRECTORY TESTS
+// =============================================================================
+
+// Test config directory resolution
+@test
+rel test_config_dir() {
+    |config| {
+        config_dir(config)
+        // If we can resolve config directory, test passes
+    }
+}
+
+// Test data directory resolution
+@test
+rel test_data_dir() {
+    |data| {
+        data_dir(data)
+        // If we can resolve data directory, test passes
+    }
+}
+
+// Test cache directory resolution
+@test
+rel test_cache_dir() {
+    |cache| {
+        cache_dir(cache)
+        // If we can resolve cache directory, test passes
+    }
+}
+
+// =============================================================================
+// ENVIRONMENT RESULT ENUM TESTS
+// =============================================================================
+
+// Test EnvResult enum with successful env var lookup
+@test
+rel test_env_result_success() {
+    |env_result, value| {
+        env_var_result("HOME", env_result),
+        env_ok(env_result, value)
+        // If we can get HOME and extract from Ok, test passes
+    }
+}
+
+// Test EnvResult enum with failed env var lookup
+@test(expected = ["Environment variable not found"])
+rel test_env_result_error(error_msg) {
+    |env_result| {
+        env_var_result("DEFINITELY_DOES_NOT_EXIST_12345", env_result),
+        env_error(env_result, error_msg)
+    }
+}
+
+// =============================================================================
+// ENVIRONMENT INSPECTION TESTS
+// =============================================================================
+
+// Test listing all environment variables
+@test
+rel test_env_vars_list() {
+    |vars| {
+        env_vars(vars)
+        // If we can get environment variables list, test passes
+    }
+}
+
+// Test counting environment variables
+@test
+rel test_env_var_count() {
+    |count| {
+        env_var_count(count)
+        // If we can count environment variables, test passes
+    }
+}
+
+// =============================================================================
+// EXECUTABLE SEARCH TESTS
+// =============================================================================
+
+// Test finding a common executable (ls should exist on Unix systems)
+@test
+rel test_which_ls() {
+    |ls_path| {
+        which("ls", ls_path)
+        // If we can find 'ls', test passes
+    }
+}
+
+// Test executable directory resolution
+@test
+rel test_exe_dir() {
+    |exe_dir| {
+        exe_dir(exe_dir)
+        // If we can get executable directory, test passes
+    }
+}
+
+// =============================================================================
+// INTEGRATION TESTS
+// =============================================================================
+
+// Test combining environment and filesystem operations
+@test
+rel test_env_and_fs_integration() {
+    |home, test_file_path, exists_result| {
+        // Get home directory from environment
+        home_dir(home),
+        
+        // Build a path to a file that might exist
+        join_path(home, ".bashrc", test_file_path),
+        
+        // Check if the file exists (don't require it to exist)
+        any {
+            file_exists(test_file_path),
+            true  // File may or may not exist, both are valid
+        },
+        
+        exists_result == true
+    }
+}
+
+// Test path expansion and resolution pipeline
+@test
+rel test_path_pipeline() {
+    |expanded, parent, filename, reconstructed| {
+        // Expand a path with environment variable
+        expand_path("$HOME/.config/app.conf", expanded),
+        
+        // Extract components
+        parent_path(expanded, parent),
+        file_name(expanded, filename),
+        
+        // Reconstruct path
+        join_path(parent, filename, reconstructed),
+        
+        // Verify reconstruction matches expansion
+        reconstructed == expanded
+    }
+}
