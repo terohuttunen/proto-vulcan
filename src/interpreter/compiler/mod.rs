@@ -632,10 +632,7 @@ impl Compiler {
                 ir::ModuleId::with_parent(current_module_path.clone(), segment.to_string());
 
             if let Some(module) = ir_program.registry.get_module(&module_id) {
-                current_module_path = module
-                    .id
-                    .parent_path()
-                    .unwrap_or_else(|| ir_program.get_root_module_path());
+                current_module_path = module.id.full_path();
             } else {
                 return Err(CompileError::UnresolvedReference {
                     attempted_item: module_id.into(),
@@ -660,16 +657,44 @@ impl Compiler {
         }
 
         // Walk through all but the last segment
-        for segment in &segments[..segments.len() - 1] {
+        for (index, segment) in segments[..segments.len() - 1].iter().enumerate() {
             let module_id =
                 ir::ModuleId::with_parent(current_module_path.clone(), segment.to_string());
 
             if let Some(module) = ir_program.registry.get_module(&module_id) {
-                current_module_path = module
-                    .id
-                    .parent_path()
-                    .unwrap_or_else(|| ir_program.get_root_module_path());
+                current_module_path = module.id.full_path();
             } else {
+                // If this is the first segment and we can't find the module in current scope,
+                // try looking in parent scopes for impl-block modules
+                if index == 0 {
+                    let mut search_path = current_module_path.clone();
+                    let mut found = false;
+                    
+                    // Walk up the parent hierarchy looking for the impl-block module
+                    while let Some(parent_path) = search_path.parent() {
+                        let parent_module_id = ir::ModuleId::with_parent(parent_path.clone(), segment.to_string());
+                        if let Some(parent_module) = ir_program.registry.get_module(&parent_module_id) {
+                            current_module_path = parent_module.id.full_path();
+                            found = true;
+                            break;
+                        }
+                        search_path = parent_path.clone();
+                    }
+                    
+                    // Also check in the root module
+                    if !found {
+                        let root_module_id = ir::ModuleId::with_parent(ir_program.get_root_module_path(), segment.to_string());
+                        if let Some(root_module) = ir_program.registry.get_module(&root_module_id) {
+                            current_module_path = root_module.id.full_path();
+                            found = true;
+                        }
+                    }
+                    
+                    if found {
+                        continue;
+                    }
+                }
+                
                 return Err(CompileError::UnresolvedReference {
                     attempted_item: module_id.into(),
                     symbol: segment.clone(),
@@ -689,6 +714,13 @@ impl Compiler {
         // 'self' refers to current module
         let mut current_module_path = self.current_module_path();
 
+        if segments.is_empty() {
+            return Err(CompileError::SemanticError {
+                message: "Empty path segments in self path resolution".to_string(),
+                symbol: InternedSymbol::from_text("self"),
+            });
+        }
+
         if segments.len() == 1 {
             return Ok((current_module_path, segments[0].to_string()));
         }
@@ -699,10 +731,7 @@ impl Compiler {
                 ir::ModuleId::with_parent(current_module_path.clone(), segment.to_string());
 
             if let Some(module) = ir_program.registry.get_module(&module_id) {
-                current_module_path = module
-                    .id
-                    .parent_path()
-                    .unwrap_or_else(|| ir_program.get_root_module_path());
+                current_module_path = module.id.full_path();
             } else {
                 return Err(CompileError::UnresolvedReference {
                     attempted_item: module_id.into(),
@@ -1102,7 +1131,42 @@ impl Compiler {
             return Some(global_item_id);
         }
 
-        // Symbol not found locally, via glob imports, or in globals
+        // If not found locally or via glob imports or globals, check parent scopes
+        // This is especially important for impl-blocks that create nested modules
+        // but need access to types from parent modules
+        let mut current_path = self.current_module_path();
+        while let Some(parent_path) = current_path.parent() {
+            // Skip empty parent paths to avoid infinite loops
+            if parent_path.is_root() && current_path.is_root() {
+                break;
+            }
+            
+            let (parent_item_id, parent_found) = match expected_kind {
+                ir::ItemKind::Type => {
+                    let type_id = ir::TypeId::with_parent(parent_path.clone(), name);
+                    let found = ir_program.registry.get_type(&type_id).is_some();
+                    (type_id.into(), found)
+                }
+                ir::ItemKind::Predicate => {
+                    let predicate_id = ir::PredicateId::with_parent(parent_path.clone(), name);
+                    let found = ir_program.registry.get_predicate(&predicate_id).is_some();
+                    (predicate_id.into(), found)
+                }
+                ir::ItemKind::Module => {
+                    let module_id = ir::ModuleId::with_parent(parent_path.clone(), name);
+                    let found = ir_program.registry.get_module(&module_id).is_some();
+                    (module_id.into(), found)
+                }
+            };
+
+            if parent_found {
+                return Some(parent_item_id);
+            }
+
+            current_path = parent_path.clone();
+        }
+
+        // Symbol not found locally, via glob imports, globals, or in parent scopes
         None
     }
 

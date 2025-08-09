@@ -1,0 +1,242 @@
+// Comprehensive tests for impl blocks and method calls
+// This file tests all aspects of the implementation and usage of method predicates on structs
+// including basic functionality, pattern matching, cross-impl-block calls, and edge cases.
+
+// Define a simple Point struct
+struct Point {
+    x: Number,
+    y: Number
+}
+
+// Implement methods on Point
+impl Point {
+    // Constructor method
+    rel new(x, y, result) {
+        result == Point { x: x, y: y }
+    }
+    
+    // Distance from origin
+    rel distance_from_origin(point, dist) {
+        |x, y| {
+            Point { x: x, y: y } == point,
+            // Simple distance calculation for testing  
+            dist == x  
+        }
+    }
+    
+    // Check if point is at origin
+    rel is_origin(point, result) {
+        |x, y| {
+            Point { x: x, y: y } == point,
+            any {
+                all {
+                    x == 0,
+                    y == 0,
+                    result == true
+                },
+                all {
+                    any {
+                        x != 0,
+                        y != 0
+                    },
+                    result == false
+                }
+            }
+        }
+    }
+    
+    // Translate a point
+    rel translate(point, dx, dy, result) {
+        |x, y| {
+            Point { x: x, y: y } == point,
+            // For simplicity, just create new point (arithmetic not supported in this context)
+            result == Point { x: x, y: y }
+        }
+    }
+    
+    // Parameter-less method for testing
+    rel simple_test() {
+        // Test basic compilation - no parameters at all
+        1 == 1
+    }
+    
+    // Alternative getter method
+    rel get_x_alt(self, x) {
+        |px, py| {
+            Point { x: px, y: py } == self,
+            x == px
+        }
+    }
+    
+    // Method that just validates self
+    rel validate_self(self) {
+        self == self
+    }
+}
+
+// Define a Rectangle struct for more complex testing
+struct Rectangle {
+    top_left: Point,
+    width: Number,
+    height: Number
+}
+
+impl Rectangle {
+    // Constructor for Rectangle
+    rel new(x, y, w, h, result) {
+        |point| {
+            Point::new(x, y, point),
+            result == Rectangle {
+                top_left: point,
+                width: w,
+                height: h
+            }
+        }
+    }
+    
+    // Get area of rectangle (simplified)
+    rel area(rect, area) {
+        |w, h| {
+            Rectangle { top_left: _, width: w, height: h } == rect,
+            // For simplicity, just use width as area
+            area == w
+        }
+    }
+    
+    // Check if rectangle contains a point (simplified)
+    rel contains_point(rect, point, result) {
+        |tl, px, py, tlx, tly| {
+            Rectangle { top_left: tl, width: _, height: _ } == rect,
+            Point { x: px, y: py } == point,
+            Point { x: tlx, y: tly } == tl,
+            // Simple check: point x must match top_left x (for testing)
+            any {
+                all {
+                    px == tlx,
+                    result == true
+                },
+                all {
+                    px != tlx,
+                    result == false
+                }
+            }
+        }
+    }
+}
+
+// Test: Basic method call on struct construction
+@test
+rel test_basic_method_call() {
+    Point::new(3, 4, Point { x: 3, y: 4 })
+}
+
+// Test: Method call with variable receiver (direct struct method call)
+@test
+rel test_method_on_variable() {
+    |dist| {
+        Point { x: 5, y: 8 }.distance_from_origin(dist),
+        dist == 5
+    }
+}
+
+// Test: Chaining method calls (construction then method)  
+@test
+rel test_method_chaining() {
+    |result| {
+        Point { x: 0, y: 0 }.is_origin(result),
+        result == true
+    }
+}
+
+// Test: Method call with multiple arguments
+@test
+rel test_method_multiple_args() {
+    |result| {
+        Point { x: 5, y: 6 }.translate(2, 3, result),
+        result == Point { x: 5, y: 6 }
+    }
+}
+
+// Test: Method call on nested struct
+@test  
+rel test_nested_struct_method() {
+    |area| {
+        Rectangle { top_left: Point { x: 1, y: 1 }, width: 3, height: 4 }.area(area),
+        area == 3
+    }
+}
+
+// Test: Complex method with struct pattern matching
+@test
+rel test_complex_method() {
+    |result| {
+        Rectangle { top_left: Point { x: 0, y: 0 }, width: 10, height: 10 }.contains_point(Point { x: 5, y: 5 }, result),
+        result == false
+    }
+}
+
+// Test: Method call with explicit struct construction
+@test
+rel test_explicit_struct_method() {
+    |result| {
+        Point { x: 1, y: 2 }.is_origin(result),
+        result == false
+    }
+}
+
+// Test: Method calls with pattern matching
+@test
+rel test_method_with_pattern_matching() {
+    |input_point, result| {
+        input_point == Point { x: 0, y: 0 },
+        match input_point {
+            Point { x: px, y: py } => all {
+                Point { x: px, y: py }.is_origin(result),
+                result == true
+            }
+        }
+    }
+}
+
+// Test: Error case - should fail if method doesn't exist
+// @test(should_fail = true)
+// rel test_nonexistent_method(result) {
+//     Point { x: 1, y: 2 }.nonexistent_method(result)
+// }
+
+// Test: Recursive method calls through variables using match
+@test
+rel test_recursive_method_calls() {
+    |p1, p2, final_point| {
+        Point::new(1, 2, p1),
+        match p1 {
+            Point { x: px, y: py } => Point { x: px, y: py }.translate(3, 4, p2)
+        },
+        match p2 {
+            Point { x: px2, y: py2 } => Point { x: px2, y: py2 }.translate(6, 9, final_point)
+        }
+    }
+}
+
+// Test: Simple parameter-less method (from debug tests)
+@test
+rel test_simple_no_params() {
+    Point::simple_test()
+}
+
+
+// Test: Basic direct predicate call (alternative pattern)
+@test  
+rel test_direct_predicate_call() {
+    |point| {
+        point == Point { x: 5, y: 10 },
+        Point::get_x_alt(point, 5)
+    }
+}
+
+
+// Test: Self validation method
+@test
+rel test_self_validation() {
+    Point { x: 5, y: 10 }.validate_self()
+}

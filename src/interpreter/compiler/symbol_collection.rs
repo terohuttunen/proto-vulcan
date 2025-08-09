@@ -274,7 +274,7 @@ impl Compiler {
         // Create module ID directly from current context - no parsing needed
         let module_id =
             ir::ModuleId::with_parent(self.current_module_path(), impl_block.type_name.to_string());
-
+        
         // Create module item
         let ir_module = ir::Module {
             id: module_id.clone(),
@@ -296,7 +296,7 @@ impl Compiler {
         self.module_map.add_module(module_id.clone());
         self.module_map.add_item(
             self.current_module_id(),
-            module_id.id.name.clone(),
+            ir::ItemName::new_unchecked(impl_block.type_name.to_string(), ir::ItemKind::Module),
             module_id.id.clone(),
         );
 

@@ -642,7 +642,7 @@ impl Compiler {
                 self.compile_constraint_block(constraint_block)
             }
 
-            ast::Goal::MethodCall(method_call, _span) => self.compile_method_call(method_call),
+            ast::Goal::MethodCall(method_call, _span) => self.compile_method_call(method_call, ir_program),
 
             ast::Goal::MetaStatement(meta_statement, _span) => {
                 self.compile_meta_statement(meta_statement, ir_program)
@@ -1039,14 +1039,73 @@ impl Compiler {
 
     fn compile_method_call(
         &self,
-        _method_call: &ast::MethodCall,
+        method_call: &ast::MethodCall,
+        ir_program: &ir::Program,
     ) -> Result<ir::Goal, CompileError> {
-        // Method calls are more complex and may need transformation
-        // to regular predicate calls. For now, treat as unimplemented
-        Err(CompileError::SemanticError {
-            message: "Method call compilation not yet implemented".to_string(),
-            symbol: InternedSymbol::from_text("method_call"),
-        })
+        // Transform method call into a regular predicate call
+        // receiver.method(args...) becomes TypeName::method(receiver, args...)
+        
+        // First, we need to determine the type of the receiver
+        let receiver_type_name = self.extract_receiver_type(&method_call.receiver)?;
+        
+        // Create a qualified path for the method: TypeName::method_name
+        let method_path = ast::QualifiedPath::Relative(vec![
+            receiver_type_name.clone(),
+            method_call.method.clone(),
+        ]);
+        
+        // Resolve the method as a predicate
+        let predicate_target = self.resolve_qualified_path_to_predicate(&method_path, ir_program)?;
+        
+        // Compile the receiver as the first argument
+        let receiver_term = self.compile_term(&method_call.receiver, ir_program)?;
+        let mut arguments = vec![receiver_term];
+        
+        // Compile the rest of the arguments
+        for arg in &method_call.args {
+            arguments.push(self.compile_term(arg, ir_program)?);
+        }
+        
+        // Create the predicate call
+        Ok(ir::Goal::PredicateCall(ir::PredicateCall {
+            target: predicate_target,
+            arguments,
+        }))
+    }
+    
+    /// Extract the type name from a receiver term for method calls
+    fn extract_receiver_type(&self, receiver: &ast::Term) -> Result<InternedSymbol, CompileError> {
+        match receiver {
+            ast::Term::NamedStruct(named_struct, _) => {
+                Ok(named_struct.name.clone())
+            },
+            ast::Term::TupleStruct(tuple_struct, _) => {
+                // For tuple structs, extract the final segment from the qualified path
+                let segments = tuple_struct.name.segments();
+                if let Some(type_name) = segments.last() {
+                    Ok(type_name.clone())
+                } else {
+                    Err(CompileError::SemanticError {
+                        message: "Cannot extract type name from empty qualified path".to_string(),
+                        symbol: InternedSymbol::from_text("tuple_struct"),
+                    })
+                }
+            },
+            ast::Term::Variable(var_name) => {
+                // For variables, we'll need type inference in the future
+                // For now, return an error asking for explicit type annotation
+                Err(CompileError::SemanticError {
+                    message: format!("Cannot determine type of variable '{}' for method call. Consider using explicit struct construction or type annotation", var_name),
+                    symbol: var_name.clone(),
+                })
+            },
+            _ => {
+                Err(CompileError::SemanticError {
+                    message: "Method calls are only supported on struct instances".to_string(),
+                    symbol: InternedSymbol::from_text("method_receiver"),
+                })
+            }
+        }
     }
 
     fn compile_named_struct_construction(

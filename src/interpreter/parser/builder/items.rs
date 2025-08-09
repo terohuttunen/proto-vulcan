@@ -330,7 +330,54 @@ impl<'a> AstBuilder<'a> {
         let span = self.pair_to_span(&pair);
         let mut inner = pair.into_inner();
         let type_name_pair = inner.next().unwrap();
-        let type_name = self.create_symbol_from_pair(&type_name_pair);
+        let type_name = match type_name_pair.as_rule() {
+            Rule::qualified_path => {
+                // For qualified paths, we need to extract the final segment
+                if let Ok(qualified_path) = self.build_qualified_path(type_name_pair.clone()) {
+                    match qualified_path {
+                        QualifiedPath::Relative(segments) if segments.len() == 1 => {
+                            segments[0].clone()
+                        }
+                        _ => {
+                            // For now, just use the first inner ident for complex paths
+                            if let Some(first_ident) = type_name_pair.clone().into_inner()
+                                .find(|p| p.as_rule() == Rule::ident) 
+                            {
+                                self.create_symbol_from_pair(&first_ident)
+                            } else {
+                                self.create_symbol_from_pair(&type_name_pair)
+                            }
+                        }
+                    }
+                } else {
+                    self.create_symbol_from_pair(&type_name_pair)
+                }
+            }
+            Rule::ident => self.create_symbol_from_pair(&type_name_pair),
+            _ => {
+                // For type_name rule, we need to get the inner content
+                if let Some(inner) = type_name_pair.clone().into_inner().next() {
+                    match inner.as_rule() {
+                        Rule::qualified_path => {
+                            if let Ok(qualified_path) = self.build_qualified_path(inner.clone()) {
+                                match qualified_path {
+                                    QualifiedPath::Relative(segments) if segments.len() == 1 => {
+                                        segments[0].clone()
+                                    }
+                                    _ => self.create_symbol_from_pair(&inner)
+                                }
+                            } else {
+                                self.create_symbol_from_pair(&inner)
+                            }
+                        }
+                        Rule::ident => self.create_symbol_from_pair(&inner),
+                        _ => self.create_symbol_from_pair(&type_name_pair)
+                    }
+                } else {
+                    self.create_symbol_from_pair(&type_name_pair)
+                }
+            }
+        };
         let mut predicates = vec![];
         for rel_pair in inner {
             if rel_pair.as_rule() == Rule::predicate_definition {

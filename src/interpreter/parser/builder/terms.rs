@@ -84,6 +84,16 @@ impl<'a> AstBuilder<'a> {
                 let qualified_path_pair = pair.into_inner().next().unwrap(); // qualified_path
                 let qualified_path = self.build_qualified_path(qualified_path_pair)?;
 
+                // Special case: standalone 'self' should be treated as a variable in method contexts
+                if let QualifiedPath::Self_(segments) = &qualified_path {
+                    if segments.is_empty() {
+                        // Standalone 'self' - treat as variable
+                        return Ok(Term::Variable(
+                            crate::interpreter::symbol_table::InternedSymbol::from_text("self")
+                        ));
+                    }
+                }
+
                 // Semantic disambiguation: if this is a simple identifier (no ::) with no args,
                 // treat it as a variable instead of a compound construction
                 if let QualifiedPath::Relative(segments) = &qualified_path {
