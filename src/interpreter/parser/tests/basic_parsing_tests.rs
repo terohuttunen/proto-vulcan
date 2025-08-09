@@ -1876,12 +1876,10 @@ fn test_debug_isolated_mod_declarations() {
     // Test individual mod declarations
     let input1 = "mod child;";
     let result1 = VulcanParser::parse(Rule::mod_declaration, input1);
-    println!("DEBUG: Parsing '{}' -> {:?}", input1, result1.is_ok());
     assert!(result1.is_ok());
 
     let input2 = "pub mod utils;";
     let result2 = VulcanParser::parse(Rule::mod_declaration, input2);
-    println!("DEBUG: Parsing '{}' -> {:?}", input2, result2.is_ok());
     assert!(result2.is_ok());
 
     // Test the exact content inside a module

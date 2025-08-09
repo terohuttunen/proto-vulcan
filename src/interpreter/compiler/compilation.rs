@@ -2148,7 +2148,7 @@ impl Compiler {
         constraint_block: &ast::ConstraintBlock,
     ) -> Result<ir::Goal, CompileError> {
         use crate::interpreter::constraint_domains::{
-            VariableInfo, VariableType,
+            VariableType,
         };
 
         let domain_name = constraint_block.domain.as_str();
@@ -2163,13 +2163,10 @@ impl Compiler {
             })?;
 
         // Create a binder closure that validates variables in the current context
-        let binder = |var_name: &str| -> Option<VariableInfo> {
+        let binder = |_var_name: &str| -> Option<VariableType> {
             // For now, assume all variables are relational
             // TODO: Add proper type inference/annotation to determine variable types
-            Some(VariableInfo {
-                name: var_name.to_string(),
-                var_type: VariableType::Relational,
-            })
+            Some(VariableType::Relational)
         };
 
         // Compile the constraint into an IR template using the new API

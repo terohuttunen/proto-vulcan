@@ -3,6 +3,7 @@ use std::fmt;
 
 use super::parser::ast::Spanned;
 use super::symbol_table::InternedSymbol;
+use crate::lterm::LTerm;
 
 /// Core meta values used in template expansion
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +13,18 @@ pub enum MetaValue {
     Boolean(bool),
     // Note: Relation values are not supported in meta programming
     // Relations are runtime entities, not compile-time meta values
+}
+
+impl MetaValue {
+    /// Convert meta value to LTerm for use in relational constraints
+    /// This is used for meta interpolation in constraint blocks like {variable}
+    pub fn to_lterm(&self) -> LTerm {
+        match self {
+            MetaValue::Integer(i) => LTerm::from(*i as isize),
+            MetaValue::String(s) => LTerm::from(s.clone()),
+            MetaValue::Boolean(b) => LTerm::from(*b),
+        }
+    }
 }
 
 /// Type annotations for meta parameters

@@ -7,7 +7,6 @@ use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::compiler::ir;
 use crate::interpreter::compiler::ir::MetaValue;
 use crate::interpreter::compiler::errors::RuntimeError;
-use crate::interpreter::constraint_domains::ResolvedValue;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::runtime_value::RuntimeValue;
 use crate::interpreter::parser::ast::SearchStrategy;
@@ -343,7 +342,6 @@ impl ExecutionContext {
                 arity,
             } = runtime_value
             {
-                // println!("DEBUG: Found predicate '{}' as builtin", predicate_name);
                 return Ok(PredicateLocation::Builtin(func.clone(), *arity));
             }
         }
@@ -357,6 +355,7 @@ impl ExecutionContext {
 
     /// Convert an IR goal to a runtime goal
     pub fn ir_goal_to_runtime(&mut self, ir_goal: &ir::Goal) -> Result<Goal, RuntimeError> {
+        
         // Add tracing if enabled
         if let Some(trace_config) = &self.trace_config {
             if trace_config.enabled {
@@ -752,26 +751,36 @@ impl ExecutionContext {
 
     /// Convert an IR fresh goal to runtime
     fn ir_fresh_to_runtime(&mut self, fresh: &ir::Fresh) -> Result<Goal, RuntimeError> {
-        // Push new scope
+        // Create fresh LTerm variables that will be used in the body
+        let mut fresh_vars = Vec::new();
+        
+        
+        // Push new scope and bind fresh variables
         self.push_scope();
-
-        // Bind fresh variables
         for var in fresh.variables.iter() {
-            let fresh_var = LTerm::var(&var.to_string());
-            self.bind_var(var.clone(), fresh_var);
+            // Create a proper fresh variable with a unique name
+            let fresh_lterm = LTerm::var(&var.to_string());
+            self.bind_var(var.clone(), fresh_lterm.clone());
+            fresh_vars.push(fresh_lterm.clone());
         }
 
-        // Convert body goals - this is where constraint templates are resolved with actual runtime values
+        // Convert body goals with fresh variables in scope
+        // The constraint templates will capture these fresh variables
         let mut body_goals = Vec::new();
         for goal in fresh.body.iter() {
-            body_goals.push(self.ir_goal_to_runtime(goal)?);
+            let runtime_goal = self.ir_goal_to_runtime(goal)?;
+            body_goals.push(runtime_goal);
         }
         let body_goal = self.build_conjunction(body_goals);
 
-        // Pop scope after all goals are compiled (including constraint templates)
+        // Pop scope after compilation
         self.pop_scope();
 
-        Ok(body_goal)
+        // FIXED: Use the Fresh operator to properly introduce fresh variables
+        // The Fresh operator is needed to introduce the variables into the unification context
+        use crate::operator::fresh::Fresh;
+        let fresh_goal = Fresh::new(fresh_vars, body_goal);
+        Ok(fresh_goal.cast_into())
     }
 
     /// Convert an IR let goal to runtime
@@ -852,37 +861,48 @@ impl ExecutionContext {
         &mut self,
         constraint_block: &ir::ConstraintBlock,
     ) -> Result<Goal, RuntimeError> {
-        // Create variable info map for all variables in the constraint
-        let mut variables = std::collections::HashMap::new();
+        // Capture current scope's variable bindings for the external binder
+        // This includes any fresh variables from enclosing fresh blocks
+        let mut captured_bindings = std::collections::HashMap::new();
         
-        // Extract variable info from the constraint block
-        for var_name in constraint_block.template.required_variables() {
-            let symbol = InternedSymbol::from(var_name.clone());
-            
-            // Determine variable type based on current context
-            let var_type = if let Some(var_value) = self.lookup_variable_value(&symbol) {
-                if var_value.as_meta().is_some() {
-                    crate::interpreter::constraint_domains::VariableType::Meta
-                } else {
-                    crate::interpreter::constraint_domains::VariableType::Relational
+        // Capture all current variable bindings (including fresh variables)
+        for scope in &self.variable_scopes {
+            for (symbol, value) in scope {
+                match value {
+                    VariableValue::Relational(lterm) => {
+                        captured_bindings.insert(
+                            symbol.to_string(), 
+                            crate::interpreter::constraint_domains::RuntimeValue::Relational(lterm.clone())
+                        );
+                    }
+                    VariableValue::Meta(meta_value) => {
+                        // Convert internal MetaValue to constraint domain MetaValue
+                        let converted_meta = match meta_value {
+                            MetaValue::Integer(i) => crate::interpreter::metaprogramming::MetaValue::Integer(*i),
+                            MetaValue::String(s) => crate::interpreter::metaprogramming::MetaValue::String(s.to_string()),
+                            MetaValue::Boolean(b) => crate::interpreter::metaprogramming::MetaValue::Boolean(*b),
+                        };
+                        captured_bindings.insert(
+                            symbol.to_string(),
+                            crate::interpreter::constraint_domains::RuntimeValue::Meta(converted_meta)
+                        );
+                    }
                 }
-            } else {
-                return Err(RuntimeError::ConstraintError {
-                    message: format!("Unknown variable '{}' in constraint", var_name),
-                    context: format!("constraint domain '{}'", constraint_block.domain),
-                });
-            };
-            
-            variables.insert(var_name.clone(), crate::interpreter::constraint_domains::VariableInfo {
-                name: var_name.clone(),
-                var_type,
-            });
+            }
         }
+        
+        // Create external binder closure that resolves variables from captured bindings
+        let external_binder = move |var_name: &str| -> Option<crate::interpreter::constraint_domains::RuntimeValue> {
+            captured_bindings.get(var_name).cloned()
+        };
 
-        // Execute template with execution context and variables
+        // Create fresh variable context for nested fresh blocks  
+        let mut fresh_context = crate::interpreter::constraint_domains::FreshVariableContext::new();
+
+        // Execute template with new context-based approach
         constraint_block
             .template
-            .execute(self, &variables)
+            .to_goal_with_context(&external_binder, &mut fresh_context)
             .map_err(|err| RuntimeError::ConstraintError {
                 message: format!("Failed to execute constraint template: {}", err),
                 context: format!("constraint domain '{}'", constraint_block.domain),

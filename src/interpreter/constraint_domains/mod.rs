@@ -7,6 +7,8 @@
 use super::parser::ast::ConstraintBody;
 use super::InterpreterError;
 use crate::goal::Goal;
+use crate::lterm::LTerm;
+use crate::interpreter::metaprogramming::MetaValue;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -58,17 +60,102 @@ pub enum VariableType {
     Meta,
 }
 
-/// Trait for compiled constraint templates that execute with execution context
-pub trait DomainConstraintTemplate: std::fmt::Debug {
-    /// Get the list of required variables for this template
-    fn required_variables(&self) -> &[String];
+/// Runtime value that can be bound to constraint variables
+#[derive(Debug, Clone)]
+pub enum RuntimeValue {
+    /// Relational variable (LTerm)
+    Relational(LTerm),
+    /// Meta variable (compile-time value)
+    Meta(MetaValue),
+}
+
+/// Context stack for managing nested fresh variable scopes
+#[derive(Debug, Clone)]
+pub struct FreshVariableContext {
+    /// Stack of fresh variable scopes (innermost first)
+    scope_stack: Vec<FreshScope>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FreshScope {
+    /// All fresh variables in this scope (shared namespace)
+    variables: HashMap<String, RuntimeValue>,
+}
+
+impl FreshVariableContext {
+    pub fn new() -> Self {
+        Self {
+            scope_stack: Vec::new(),
+        }
+    }
     
-    /// Execute the template with execution context to produce a Goal
-    fn execute(
+    /// Push a fresh variable scope with both relational and meta variables
+    pub fn push_scope(
+        &mut self, 
+        relational_vars: &[String],
+        meta_vars: &[(String, MetaValue)],
+    ) -> (Vec<LTerm>, Vec<(String, MetaValue)>) {
+        let mut scope = FreshScope {
+            variables: HashMap::new(),
+        };
+        
+        // Create relational fresh variables
+        let mut rel_lterms = Vec::new();
+        for var_name in relational_vars {
+            let fresh_var = LTerm::var(var_name);
+            scope.variables.insert(var_name.clone(), RuntimeValue::Relational(fresh_var.clone()));
+            rel_lterms.push(fresh_var);
+        }
+        
+        // Store meta fresh variables
+        let mut meta_pairs = Vec::new();
+        for (var_name, meta_value) in meta_vars {
+            scope.variables.insert(var_name.clone(), RuntimeValue::Meta(meta_value.clone()));
+            meta_pairs.push((var_name.clone(), meta_value.clone()));
+        }
+        
+        self.scope_stack.push(scope);
+        (rel_lterms, meta_pairs)
+    }
+    
+    /// Pop the most recent fresh variable scope
+    pub fn pop_scope(&mut self) {
+        self.scope_stack.pop();
+    }
+    
+    /// Resolve variable through the context stack (innermost to outermost)
+    pub fn resolve_fresh_variable(&self, var_name: &str) -> Option<RuntimeValue> {
+        // Search from innermost scope to outermost (proper shadowing)
+        for scope in self.scope_stack.iter().rev() {
+            if let Some(runtime_value) = scope.variables.get(var_name) {
+                return Some(runtime_value.clone());
+            }
+        }
+        None
+    }
+    
+    /// Check if a variable is bound in any fresh scope
+    pub fn has_fresh_variable(&self, var_name: &str) -> bool {
+        self.scope_stack.iter().any(|scope| 
+            scope.variables.contains_key(var_name)
+        )
+    }
+}
+
+/// Trait for compiled constraint templates that execute with context stack
+pub trait DomainConstraintTemplate: std::fmt::Debug {
+    /// Execute template with external binder and fresh variable context
+    fn to_goal_with_context(
         &self,
-        execution_context: &mut crate::interpreter::runtime::context::ExecutionContext,
-        variables: &std::collections::HashMap<String, VariableInfo>,
+        external_binder: &dyn Fn(&str) -> Option<RuntimeValue>,
+        fresh_context: &mut FreshVariableContext,
     ) -> Result<Goal, InterpreterError>;
+    
+    /// Get external relational variables referenced by this template
+    fn external_relational_variables(&self) -> &[String];
+    
+    /// Get external meta variables referenced by this template
+    fn external_meta_variables(&self) -> &[String];
 }
 
 /// Represents a resolved variable value for constraint template execution
@@ -88,11 +175,11 @@ pub trait ConstraintDomain {
     /// Get description of supported syntax for error messages
     fn syntax_help(&self) -> &str;
 
-    /// Compile constraint block with variable binding validation
+    /// Compile constraint block with variable type validation
     fn compile(
         &self,
         body: &ConstraintBody,
-        binder: &dyn Fn(&str) -> Option<VariableInfo>,
+        binder: &dyn Fn(&str) -> Option<VariableType>,
     ) -> Result<Rc<dyn DomainConstraintTemplate>, InterpreterError>;
 }
 
