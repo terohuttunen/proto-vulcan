@@ -1,6 +1,9 @@
 // Standard Library for Proto-Vulcan
-// This module provides common relations for list processing, logic operations, and utilities
+// This module provides common relations for list processing, logic operations, filesystem access, and utilities
 
 // Declare submodules
 pub mod list;
 pub mod higher_order;
+pub mod fs;
+pub mod path;
+pub mod env;

@@ -1,0 +1,238 @@
+// Path Manipulation Module
+// Operations for working with filesystem paths in a cross-platform way
+
+// =============================================================================
+// PATH CONSTRUCTION AND DECOMPOSITION
+// =============================================================================
+
+// Join path components with appropriate separator
+// Usage: join_path("/home/user", "file.txt", Path) -> Path is "/home/user/file.txt"
+pub rel join_path(base, component, result) {
+    __builtin_join_path(base, component, result)
+}
+
+// Join multiple path components
+// Usage: join_paths(["home", "user", "docs", "file.txt"], Path)
+pub rel join_paths(components, result) {
+    match components {
+        [] => result == "",
+        [single] => result == single,
+        [first, second | rest] => |intermediate, final_result| {
+            join_path(first, second, intermediate),
+            join_paths([intermediate | rest], result)
+        }
+    }
+}
+
+// Get parent directory of path
+// Usage: parent_path("/home/user/file.txt", Parent) -> Parent is "/home/user"
+pub rel parent_path(path, parent) {
+    __builtin_parent_path(path, parent)
+}
+
+// Get filename from path (including extension)
+// Usage: file_name("/home/user/file.txt", Name) -> Name is "file.txt"
+pub rel file_name(path, name) {
+    __builtin_file_name(path, name)
+}
+
+// Get file stem (filename without extension)
+// Usage: file_stem("/home/user/file.txt", Stem) -> Stem is "file"
+pub rel file_stem(path, stem) {
+    __builtin_file_stem(path, stem)
+}
+
+// Get file extension
+// Usage: extension("/home/user/file.txt", Ext) -> Ext is "txt"
+pub rel extension(path, ext) {
+    __builtin_extension(path, ext)
+}
+
+// Split path into components
+// Usage: path_components("/home/user/file.txt", Components) 
+//        -> Components is ["home", "user", "file.txt"]
+pub rel path_components(path, components) {
+    __builtin_path_components(path, components)
+}
+
+// =============================================================================
+// PATH PROPERTIES
+// =============================================================================
+
+// Check if path is absolute
+// Usage: is_absolute_path("/home/user/file.txt") -> succeeds (Unix)
+//        is_absolute_path("C:\\Users\\file.txt") -> succeeds (Windows)
+pub rel is_absolute_path(path) {
+    __builtin_is_absolute_path(path)
+}
+
+// Check if path is relative
+// Usage: is_relative_path("../file.txt") -> succeeds
+pub rel is_relative_path(path) {
+    any {
+        all { is_absolute_path(path), false },
+        true
+    }
+}
+
+// Canonicalize path (resolve . and .. components, follow symlinks)
+// Usage: canonicalize("../file.txt", Canonical) -> Canonical is absolute path
+pub rel canonicalize(path, canonical) {
+    __builtin_canonicalize(path, canonical)
+}
+
+// =============================================================================
+// PATH MANIPULATION
+// =============================================================================
+
+// Make path relative to a base directory
+// Usage: relative_path("/home/user/docs/file.txt", "/home/user", Relative)
+//        -> Relative is "docs/file.txt"
+pub rel relative_path(path, base, relative) {
+    __builtin_relative_path(path, base, relative)
+}
+
+// Make relative path absolute by joining with base
+// Usage: absolute_path("docs/file.txt", "/home/user", Absolute)
+//        -> Absolute is "/home/user/docs/file.txt"
+pub rel absolute_path(input_path, base, absolute) {
+    any {
+        // If already absolute, return as-is
+        all {
+            is_absolute_path(input_path),
+            absolute == input_path
+        },
+        // Otherwise join with base (for relative paths)
+        |joined| {
+            all {
+                join_path(base, input_path, joined),
+                // Only succeed if the input was not absolute
+                any {
+                    all { is_absolute_path(input_path), false },
+                    absolute == joined
+                }
+            }
+        }
+    }
+}
+
+// Change file extension
+// Usage: with_extension("/home/user/file.txt", "md", NewPath)
+//        -> NewPath is "/home/user/file.md"
+pub rel with_extension(path, new_ext, result) {
+    |parent, stem| {
+        parent_path(path, parent),
+        file_stem(path, stem),
+        |name_with_ext| {
+            __builtin_string_concat([stem, ".", new_ext], name_with_ext),
+            join_path(parent, name_with_ext, result)
+        }
+    }
+}
+
+// Add suffix to filename (before extension)
+// Usage: add_suffix("/home/user/file.txt", "_backup", NewPath)
+//        -> NewPath is "/home/user/file_backup.txt"
+pub rel add_suffix(path, suffix, result) {
+    |parent, stem, ext| {
+        parent_path(path, parent),
+        file_stem(path, stem),
+        extension(path, ext),
+        |new_stem, name_with_ext| {
+            __builtin_string_concat([stem, suffix], new_stem),
+            __builtin_string_concat([new_stem, ".", ext], name_with_ext),
+            join_path(parent, name_with_ext, result)
+        }
+    }
+}
+
+// =============================================================================
+// PATH UTILITIES
+// =============================================================================
+
+// Check if path has specific extension
+// Usage: has_extension("/home/user/file.txt", "txt") -> succeeds
+pub rel has_extension(path, expected_ext) {
+    |actual_ext| {
+        extension(path, actual_ext),
+        actual_ext == expected_ext
+    }
+}
+
+// Get all ancestor directories of a path
+// Usage: ancestors("/home/user/docs/file.txt", Ancestors)
+//        -> Ancestors is ["/home/user/docs", "/home/user", "/home", "/"]
+pub rel ancestors(path, ancestors) {
+    |parent| {
+        parent_path(path, parent),
+        any {
+            // Base case: parent is root or empty
+            all {
+                any { parent == "", parent == "/" },
+                ancestors == []
+            },
+            // Recursive case: get parent's ancestors
+            |parent_ancestors| {
+                all {
+                    parent != "",
+                    parent != "/",
+                    ancestors(parent, parent_ancestors),
+                    ancestors == [parent | parent_ancestors]
+                }
+            }
+        }
+    }
+}
+
+// Find common prefix of two paths
+// Usage: common_prefix("/home/user/docs/a.txt", "/home/user/pics/b.txt", Common)
+//        -> Common is "/home/user"
+pub rel common_prefix(path1, path2, common) {
+    |components1, components2| {
+        path_components(path1, components1),
+        path_components(path2, components2),
+        common_prefix_list(components1, components2, common_components),
+        join_paths(common_components, common)
+    }
+}
+
+// Helper: find common prefix of two lists
+rel common_prefix_list(list1, list2, common) {
+    match [list1, list2] {
+        [[], _] => common == [],
+        [_, []] => common == [],
+        [[h1 | t1], [h2 | t2]] => any {
+            // Headers are different, no common prefix
+            all {
+                h1 != h2,
+                common == []
+            },
+            // Headers are same, check tails
+            |tail_common| {
+                all {
+                    h1 == h2,
+                    common_prefix_list(t1, t2, tail_common),
+                    common == [h1 | tail_common]
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// STRING UTILITIES FOR PATHS
+// =============================================================================
+
+// Helper: concatenate list of strings
+rel string_concat(strings, result) {
+    __builtin_string_concat(strings, result)
+}
+
+// Normalize path separators for current platform
+// Usage: normalize_path("C:\\Users/file.txt", Normalized)
+//        -> Normalized uses correct separators
+pub rel normalize_path(path, normalized) {
+    __builtin_normalize_path(path, normalized)
+}
+
+// Tests for this module are in tests/path_tests.pv

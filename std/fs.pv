@@ -1,0 +1,273 @@
+// Filesystem Operations Module
+// Core filesystem operations for reading, writing, and manipulating files
+
+// Result type for operations that can fail
+pub enum FsResult {
+    Ok(LTerm),
+    Err(String)
+}
+
+// Helper to extract successful results
+pub rel fs_ok(fs_result, value) {
+    fs_result == FsResult::Ok(value)
+}
+
+// Helper to check for errors
+pub rel fs_error(fs_result, error_msg) {
+    fs_result == FsResult::Err(error_msg)
+}
+
+// =============================================================================
+// FILE READING OPERATIONS
+// =============================================================================
+
+// Read entire file as string
+// Usage: read_file("path/to/file.txt", Content) -> Content is string
+// Note: This directly calls the builtin and succeeds/fails based on file accessibility
+pub rel read_file(path, content) {
+    __builtin_read_file(path, content)
+}
+
+// Read file as list of bytes (integers 0-255)
+// Usage: read_file_bytes("path/to/file.bin", Bytes) -> Bytes is [int]
+pub rel read_file_bytes(path, bytes) {
+    __builtin_read_file_bytes(path, bytes)
+}
+
+// Read file as list of lines (strings)
+// Usage: read_file_lines("path/to/file.txt", Lines) -> Lines is [string]
+pub rel read_file_lines(path, lines) {
+    __builtin_read_file_lines(path, lines)
+}
+
+// =============================================================================
+// FILE WRITING OPERATIONS  
+// =============================================================================
+
+// Write string to file
+// Usage: write_file("path/to/file.txt", "content", Result)
+pub rel write_file(path, content, result) {
+    __builtin_write_file(path, content, result)
+}
+
+// Write bytes to file
+// Usage: write_file_bytes("path/to/file.bin", [65, 66, 67], Result)
+pub rel write_file_bytes(path, bytes, result) {
+    __builtin_write_file_bytes(path, bytes, result)
+}
+
+// Write lines to file (joins with newlines)
+// Usage: write_file_lines("path/to/file.txt", ["line1", "line2"], Result)
+pub rel write_file_lines(path, lines, result) {
+    __builtin_write_file_lines(path, lines, result)
+}
+
+// Append string to file
+// Usage: append_file("path/to/file.txt", "new content", Result)
+pub rel append_file(path, content, result) {
+    __builtin_append_file(path, content, result)
+}
+
+// =============================================================================
+// FILE OPERATIONS
+// =============================================================================
+
+// Copy file from source to destination
+// Usage: copy_file("source.txt", "dest.txt", Result)
+pub rel copy_file(source, dest, result) {
+    __builtin_copy_file(source, dest, result)
+}
+
+// Remove/delete file
+// Usage: remove_file("path/to/file.txt", Result)
+pub rel remove_file(path, result) {
+    __builtin_remove_file(path, result)
+}
+
+// Rename/move file
+// Usage: rename_file("old_name.txt", "new_name.txt", Result)
+pub rel rename_file(old_path, new_path, result) {
+    __builtin_rename_file(old_path, new_path, result)
+}
+
+// =============================================================================
+// FILE STATUS AND METADATA
+// =============================================================================
+
+// Check if file exists
+// Usage: file_exists("path/to/file.txt") -> succeeds if file exists
+pub rel file_exists(path) {
+    __builtin_file_exists(path)
+}
+
+// Check if path is a file
+// Usage: is_file("path/to/something") -> succeeds if it's a file
+pub rel is_file(path) {
+    __builtin_is_file(path)
+}
+
+// Check if path is a directory
+// Usage: is_dir("path/to/something") -> succeeds if it's a directory
+pub rel is_dir(path) {
+    __builtin_is_dir(path)
+}
+
+// Get file size in bytes
+// Usage: file_size("path/to/file.txt", Size) -> Size is integer
+pub rel file_size(path, size) {
+    __builtin_file_size(path, size)
+}
+
+// =============================================================================
+// DIRECTORY OPERATIONS
+// =============================================================================
+
+// List directory contents as list of entry names
+// Usage: read_dir("/path/to/dir", Entries) -> Entries is [string]
+pub rel read_dir(path, entries) {
+    __builtin_read_dir(path, entries)
+}
+
+// Create directory
+// Usage: create_dir("/path/to/new_dir", Result)
+pub rel create_dir(path, result) {
+    __builtin_create_dir(path, result)
+}
+
+// Create directory and all parent directories
+// Usage: create_dir_all("/path/to/nested/new_dir", Result)
+pub rel create_dir_all(path, result) {
+    __builtin_create_dir_all(path, result)
+}
+
+// Remove empty directory
+// Usage: remove_dir("/path/to/empty_dir", Result)
+pub rel remove_dir(path, result) {
+    __builtin_remove_dir(path, result)
+}
+
+// Remove directory and all contents recursively
+// Usage: remove_dir_all("/path/to/dir_tree", Result)
+pub rel remove_dir_all(path, result) {
+    __builtin_remove_dir_all(path, result)
+}
+
+// =============================================================================
+// CONVENIENCE PREDICATES
+// =============================================================================
+
+// Safe file read with error handling
+// Usage: safe_read_file("file.txt", Content) -> succeeds only if read successful
+pub rel safe_read_file(path, content) {
+    read_file(path, content)
+}
+
+// Safe file write with error handling  
+// Usage: safe_write_file("file.txt", "content") -> succeeds only if write successful
+pub rel safe_write_file(path, content) {
+    |result| {
+        write_file(path, content, result)
+    }
+}
+
+// Read file with FsResult wrapping for explicit error handling
+// Usage: read_file_result("file.txt", Result) -> Result is FsResult::Ok(content) or FsResult::Err(msg)
+pub rel read_file_result(path, result) {
+    any {
+        // Success case: file exists and can be read
+        |content| {
+            all {
+                read_file(path, content),
+                result == FsResult::Ok(content)
+            }
+        },
+        // Error case: file doesn't exist or can't be read
+        all {
+            // Use negation to check if read_file fails
+            |test_content| {
+                any {
+                    all { read_file(path, test_content), false },
+                    true
+                }
+            },
+            result == FsResult::Err("File not found or not readable")
+        }
+    }
+}
+
+// Read file if it exists, otherwise use default content
+// Usage: read_file_or_default("config.txt", "default config", Content)
+pub rel read_file_or_default(path, default_content, content) {
+    any {
+        // Try to read the file
+        all {
+            file_exists(path),
+            safe_read_file(path, content)
+        },
+        // Use default if file doesn't exist or can't be read
+        all {
+            content == default_content
+        }
+    }
+}
+
+// Write file only if content has changed
+// Usage: write_if_changed("file.txt", "new content", Changed)
+pub rel write_if_changed(path, new_content, changed) {
+    any {
+        // File doesn't exist, write it
+        all {
+            not_exists(path),
+            safe_write_file(path, new_content),
+            changed == true
+        },
+        // File exists but content is different, write it  
+        |current_content| {
+            all {
+                safe_read_file(path, current_content),
+                current_content != new_content,
+                safe_write_file(path, new_content),
+                changed == true
+            }
+        },
+        // File exists and content is the same, don't write
+        |current_content| {
+            all {
+                safe_read_file(path, current_content),
+                current_content == new_content,
+                changed == false
+            }
+        }
+    }
+}
+
+// Helper: file does not exist
+rel not_exists(path) {
+    any {
+        all { file_exists(path), false },
+        true
+    }
+}
+
+// =============================================================================
+// TESTS
+// =============================================================================
+
+// Test FsResult enum construction and helper functions
+@test(expected = ["test_value"])
+rel test_fs_result_ok_extraction(value) {
+    |result| {
+        result == FsResult::Ok("test_value"),
+        fs_ok(result, value)
+    }
+}
+
+@test(expected = ["test_error"])
+rel test_fs_result_error_extraction(error) {
+    |result| {
+        result == FsResult::Err("test_error"),
+        fs_error(result, error)
+    }
+}
+
+// Basic tests are in tests/fs_tests.pv
