@@ -23,7 +23,7 @@ enum PredicateLocation {
     /// Found in an IR program (predicate, source program)
     IR(ir::Predicate, Rc<ir::Program>),
     /// Found as a builtin (function reference, arity)
-    Builtin(Rc<dyn Fn(Vec<LTerm>) -> Goal>, usize),
+    Builtin(Rc<dyn Fn(Vec<ArgumentValue>) -> Goal>, usize),
 }
 use crate::lterm::LTerm;
 use crate::solver::Solver;
@@ -730,21 +730,8 @@ impl ExecutionContext {
                     });
                 }
 
-                // Convert ArgumentValues back to LTerms for builtin function call
-                let runtime_args: Vec<_> = captured_args
-                    .into_iter()
-                    .map(|arg| {
-                        match arg {
-                            ArgumentValue::Relational(lterm) => lterm,
-                            ArgumentValue::Meta(_) => {
-                                // Builtins don't support meta arguments - this is an error
-                                panic!("Builtin relations cannot have meta arguments");
-                            }
-                        }
-                    })
-                    .collect();
-
-                Ok(func(runtime_args))
+                // Pass ArgumentValues directly to builtin function - no conversion needed!
+                Ok(func(captured_args))
             }
         }
     }

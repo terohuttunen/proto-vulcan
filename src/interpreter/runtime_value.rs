@@ -1,4 +1,5 @@
 use super::parser::ast::{Literal, PredicateDefinition, StructDefinition, Term};
+use super::runtime::context::ArgumentValue;
 use crate::goal::Goal;
 use crate::lterm::LTerm;
 use std::rc::Rc;
@@ -69,7 +70,7 @@ pub enum RuntimeValue {
     /// A relation handle for higher-order predicates
     PredicateHandle(PredicateHandle),
     BuiltinRelation {
-        func: Rc<dyn Fn(Vec<LTerm>) -> Goal>,
+        func: Rc<dyn Fn(Vec<ArgumentValue>) -> Goal>,
         arity: usize,
     },
     Struct(StructDefinition),

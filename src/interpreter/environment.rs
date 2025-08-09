@@ -3,6 +3,7 @@ use super::parser::ast::{
     EnumDefinition, Item, ModuleDeclaration, PredicateDefinition, Program, QualifiedName,
     QualifiedPath, RelationName, StructDefinition, UsePath, UseStatement, Visibility,
 };
+use super::runtime::context::ArgumentValue;
 use super::runtime_value::{PredicateHandle, RuntimeValue};
 use super::symbol_table::InternedSymbol;
 use super::InterpreterError;
@@ -97,7 +98,7 @@ impl Environment {
     pub fn add_builtin_relation(
         &mut self,
         name: String,
-        func: Rc<dyn Fn(Vec<LTerm>) -> Goal>,
+        func: Rc<dyn Fn(Vec<ArgumentValue>) -> Goal>,
         arity: usize,
     ) {
         let value = RuntimeValue::BuiltinRelation { func, arity };

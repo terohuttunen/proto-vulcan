@@ -87,21 +87,17 @@
 //! Instead, they return empty result sets. Therefore, impossible constraint scenarios should use
 //! `@test(expected = [])`, not `@test(should_fail)`.
 
-use super::assertions::{assert_bound, assert_domain_size, assert_eq, assert_neq, assert_unbound};
-use super::environment::Environment;
 use super::parser::{
     ast::{self, Item},
     parse_str,
 };
 use super::{ExecutionConfig, Interpreter, InterpreterError};
-use crate::goal::{Goal, GoalCast};
 use crate::lterm::{LTerm, LTermInner, LValue};
 use colored::*;
 use regex;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::time::Instant;
 use walkdir::WalkDir;
 
@@ -430,54 +426,6 @@ impl TestRunner {
         );
     }
 
-    fn register_assertion_builtins(&self, env: &mut Environment) {
-        let assert_eq_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
-            assert_eq(args[0].clone(), args[1].clone())
-        });
-        env.add_builtin_relation("assert_eq".to_string(), assert_eq_rel, 2);
-
-        let assert_neq_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
-            assert_neq(args[0].clone(), args[1].clone())
-        });
-        env.add_builtin_relation("assert_neq".to_string(), assert_neq_rel, 2);
-
-        let assert_bound_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
-            if args.len() != 1 {
-                crate::relation::fail().cast_into()
-            } else {
-                assert_bound(args[0].clone())
-            }
-        });
-        env.add_builtin_relation("assert_bound".to_string(), assert_bound_rel, 1);
-
-        let assert_unbound_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
-            if args.len() != 1 {
-                crate::relation::fail().cast_into()
-            } else {
-                assert_unbound(args[0].clone())
-            }
-        });
-        env.add_builtin_relation("assert_unbound".to_string(), assert_unbound_rel, 1);
-
-        let assert_domain_size_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
-            if args.len() != 2 {
-                crate::relation::fail().cast_into()
-            } else {
-                // Extract the expected size from the second argument
-                if let Some(size_val) = args[1].get_number() {
-                    if size_val >= 0 {
-                        let size = size_val as usize;
-                        assert_domain_size(args[0].clone(), size)
-                    } else {
-                        crate::relation::fail().cast_into()
-                    }
-                } else {
-                    crate::relation::fail().cast_into()
-                }
-            }
-        });
-        env.add_builtin_relation("assert_domain_size".to_string(), assert_domain_size_rel, 2);
-    }
 
     /// Matches an LTerm against an AST Term, supporting wildcards.
     fn matches_pattern(lterm: &LTerm, term: &ast::Term) -> bool {
@@ -850,9 +798,6 @@ impl TestRunner {
 
         // Step 1: Create base interpreter with stdlib (like CLI)
         let mut interpreter = DefaultInterpreter::with_stdlib();
-
-        // Manually register assertion builtins in the environment
-        self.register_assertion_builtins(&mut interpreter.environment.borrow_mut());
 
         // Load the standard library as base program (compiles std crate properly)
         use crate::interpreter::compiler::Compiler;

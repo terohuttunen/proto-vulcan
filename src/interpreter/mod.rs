@@ -1,6 +1,5 @@
 use self::environment::Environment;
 use self::parser::ast;
-use crate::lterm::{LTerm, LTermInner};
 use std::cell::RefCell;
 use std::fmt::{self, Display};
 use std::fs;
@@ -10,6 +9,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 mod assertions;
+pub mod builtins;
 pub mod compiler;
 pub mod constraint_domains;
 pub mod deferred;
@@ -265,10 +265,10 @@ impl Interpreter {
     /// Creates a new interpreter with core builtins registered.
     /// Note: Standard library is now loaded automatically via import resolution when needed.
     pub fn with_stdlib() -> Self {
-        let mut interpreter = Self::new();
+        let interpreter = Self::new();
 
-        // Register core builtin relations
-        interpreter.register_core_builtins();
+        // Register all builtin relations
+        builtins::register_builtins(&mut interpreter.environment.borrow_mut());
 
         // Note: No longer loading stdlib here - it will be loaded automatically
         // via the new IR-based import resolution when std predicates are imported
@@ -349,68 +349,6 @@ impl Interpreter {
         }
     }
 
-    /// Register core builtin relations
-    fn register_core_builtins(&mut self) {
-        use crate::goal::{AnyGoal, Goal, GoalCast};
-        use crate::lterm::LValue;
-        use crate::relation::fail;
-
-        // Builtin length predicate - efficiently calculates list length
-        // Prefixed with __builtin_ to avoid conflicts with library predicates
-        let length_rel = Rc::new(move |args: Vec<LTerm>| -> Goal {
-            if args.len() != 2 {
-                return fail().cast_into();
-            }
-
-            use crate::goal::Goal;
-            use crate::solver::{Solve, Solver};
-            use crate::state::State;
-            use crate::stream::Stream;
-
-            #[derive(Debug)]
-            struct BuiltinLengthGoal {
-                list: LTerm,
-                length: LTerm,
-            }
-
-            impl Solve for BuiltinLengthGoal {
-                fn solve(&self, _solver: &Solver, state: State) -> Stream {
-                    // Walk the substitution map to get resolved values (same as assertions)
-                    let list_walked = state.smap_ref().walk(&self.list).clone();
-                    let length_walked = state.smap_ref().walk(&self.length).clone();
-
-                    // Check if list is now a concrete list
-                    if list_walked.is_list() {
-                        let count = list_walked.iter().count();
-                        let count_term: LTerm =
-                            LTerm::from(LTermInner::Val(LValue::Number(count as isize)));
-
-                        // Use the constraint system's unification (same as assertions)
-                        match state.unify(&length_walked, &count_term) {
-                            Ok(new_state) => Stream::unit(Box::new(new_state)),
-                            Err(_) => Stream::empty(),
-                        }
-                    } else {
-                        // If list is still a variable, we can't compute length yet
-                        // A more sophisticated implementation would add length constraints
-                        Stream::empty()
-                    }
-                }
-            }
-
-            // Return the goal using the same pattern as assertions
-            Goal::dynamic(Rc::new(BuiltinLengthGoal {
-                list: args[0].clone(),
-                length: args[1].clone(),
-            }))
-        });
-
-        self.environment.borrow_mut().add_builtin_relation(
-            "__builtin_length".to_string(),
-            length_rel,
-            2,
-        );
-    }
 
     /// Load a program as the base program for subsequent queries
     pub fn load_program(
