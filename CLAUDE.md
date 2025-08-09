@@ -88,11 +88,11 @@ Proto-Vulcan operates as two related but distinct languages:
 - **Constraint Domains**: CLP(FD) and CLP(Z) support (`constraint_domains/`)
 
 #### Key Type Relationships
-- `LTerm<U, E>`: Logic terms (variables, values, compounds)
-- `Goal<U, E>`: Runtime goals for the solver
-- `State<U, E>`: Solver state with substitutions and constraints
-- `Stream<U, E>`: Lazy evaluation streams
-- Generic over `U: User` and `E: Engine<U>` for extensibility
+- `LTerm`: Logic terms (variables, values, compounds)
+- `Goal`: Runtime goals for the solver
+- `State`: Solver state with substitutions and constraints
+- `Stream`: Lazy evaluation streams
+- `ArgumentValue`: Unified parameter type supporting both `Meta(MetaValue)` and `Relational(LTerm)`
 
 ### Language Features
 
@@ -110,6 +110,36 @@ Proto-Vulcan operates as two related but distinct languages:
 - Tests in `.pv` files marked with `@test` attribute
 - Built-in assertions: `assert_eq`, `assert_neq`, `assert_succeeds`, `assert_fails`
 - Test runner with filtering, timing, and parallel execution options
+
+### Builtin Predicate System (`src/interpreter/builtins/`)
+
+Proto-Vulcan features a unified builtin predicate system that supports both relational terms and meta-values (compile-time values like integers, strings, booleans).
+
+#### Architecture
+```
+src/interpreter/builtins/
+├── mod.rs       # Central registration system
+├── core.rs      # Core language builtins
+├── testing.rs   # Test assertion builtins  
+└── macros.rs    # Helper utilities for builtin implementation
+```
+
+#### Builtin Categories
+- **Core Language**: `__builtin_length` - list length calculation
+- **Test Assertions**: `assert_eq`, `assert_neq`, `assert_bound`, `assert_unbound`, `assert_domain_size`
+
+#### Parameter System
+Builtins use `Vec<ArgumentValue>` parameters supporting:
+- `ArgumentValue::Relational(LTerm)` - Logic terms for unification
+- `ArgumentValue::Meta(MetaValue)` - Compile-time values (integers, strings, booleans)
+
+This unified interface allows builtins to receive the same parameter types as regular predicates, enabling future support for higher-order predicates and meta-programming.
+
+#### Adding New Builtins
+1. Implement function with signature `fn(Vec<ArgumentValue>) -> Goal`
+2. Add `BuiltinSpec` entry to array in `builtins/mod.rs`
+3. Use helper functions from `macros.rs` for common patterns
+4. Follow naming conventions: `__builtin_` for core, `assert_` for testing
 
 ### Standard Library (`std/`)
 - `list.pv`: List manipulation predicates
@@ -130,9 +160,30 @@ Proto-Vulcan includes constraint programming domains:
 ## Development Patterns
 
 ### Adding New Relations
-1. For builtin relations: Add to `Interpreter::register_core_builtins()` 
-2. For library relations: Add to appropriate `.pv` file in `std/`
-3. Follow the pattern of returning `Goal<U, E>` from builtin functions
+
+#### Builtin Relations
+1. **Create the builtin function**: Implement with signature `fn(Vec<ArgumentValue>) -> Goal`
+   ```rust
+   pub fn my_builtin(args: Vec<ArgumentValue>) -> Goal {
+       let (term1, term2) = match extract_two_relational(args) {
+           Ok(result) => result,
+           Err(goal) => return goal, // Handle arity/type errors
+       };
+       // Implementation logic here
+   }
+   ```
+
+2. **Register the builtin**: Add `BuiltinSpec` to array in `builtins/mod.rs`
+   ```rust
+   BuiltinSpec { name: "__builtin_my_pred", arity: 2, func: my_builtin },
+   ```
+
+3. **Organize by category**: Place in appropriate module (`core.rs`, `testing.rs`, etc.)
+
+#### Library Relations
+- Add to appropriate `.pv` file in `std/` directory
+- Use standard `.pv` syntax with proper module declarations
+- Follow existing naming and documentation conventions
 
 ### Working with AST
 - Parse with `parser::parse_str()` for programs or `query::parse_query()` for queries
