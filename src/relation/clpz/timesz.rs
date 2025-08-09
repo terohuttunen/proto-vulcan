@@ -106,7 +106,8 @@ impl Constraint for TimesZConstraint {
             }
             (LTermInner::Var(_, _), LTermInner::Var(_, _), LTermInner::Val(LValue::Number(_)))
             | (LTermInner::Var(_, _), LTermInner::Val(LValue::Number(_)), LTermInner::Var(_, _))
-            | (LTermInner::Val(LValue::Number(_)), LTermInner::Var(_, _), LTermInner::Var(_, _)) => {
+            | (LTermInner::Val(LValue::Number(_)), LTermInner::Var(_, _), LTermInner::Var(_, _))
+            | (LTermInner::Var(_, _), LTermInner::Var(_, _), LTermInner::Var(_, _)) => {
                 /* Not enough terms grounded to verify constraint. */
                 Ok(state.with_constraint(self))
             }
