@@ -37,6 +37,8 @@ pub struct Solver {
     timeout_info: Option<(std::time::Instant, u64)>,
     /// Optional program for accessing type information during execution
     program: Option<Rc<crate::interpreter::compiler::ir::Program>>,
+    /// Optional environment for accessing system state like command line arguments
+    environment: Option<Rc<std::cell::RefCell<crate::interpreter::environment::Environment>>>,
 }
 
 impl Solver {
@@ -53,6 +55,7 @@ impl Solver {
             debug_enabled,
             timeout_info: None,
             program: None,
+            environment: None,
         }
     }
 
@@ -74,6 +77,7 @@ impl Solver {
             debug_enabled,
             timeout_info: None,
             program: Some(program),
+            environment: None,
         }
     }
 
@@ -85,6 +89,16 @@ impl Solver {
     /// Clear timeout information
     pub fn clear_timeout(&mut self) {
         self.timeout_info = None;
+    }
+
+    /// Set environment for accessing system state
+    pub fn set_environment(&mut self, environment: Rc<std::cell::RefCell<crate::interpreter::environment::Environment>>) {
+        self.environment = Some(environment);
+    }
+
+    /// Get environment reference for accessing system state
+    pub fn environment(&self) -> Option<&Rc<std::cell::RefCell<crate::interpreter::environment::Environment>>> {
+        self.environment.as_ref()
     }
 
     pub fn start(&self, goal: &Goal, state: State) -> Stream {

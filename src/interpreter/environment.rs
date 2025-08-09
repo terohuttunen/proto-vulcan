@@ -65,6 +65,8 @@ pub struct Environment {
     import_resolver: ImportResolver,
     /// Type registry for struct and enum definitions (indexed by registration order)
     type_registry: Vec<TypeDefinition>,
+    /// Command line arguments passed to the program
+    argv: Vec<String>,
 }
 
 impl Environment {
@@ -81,6 +83,7 @@ impl Environment {
             relation_registry: Vec::new(),
             import_resolver: ImportResolver::new(),
             type_registry: Vec::new(),
+            argv: Vec::new(),
         }
     }
 
@@ -92,6 +95,16 @@ impl Environment {
     /// Add a search path for module resolution
     pub fn add_search_path(&mut self, path: PathBuf) {
         self.search_paths.push(path);
+    }
+
+    /// Set command line arguments for the program
+    pub fn set_argv(&mut self, argv: Vec<String>) {
+        self.argv = argv;
+    }
+
+    /// Get command line arguments
+    pub fn get_argv(&self) -> &[String] {
+        &self.argv
     }
 
     /// Adds a builtin Rust function as a relation to the global scope.

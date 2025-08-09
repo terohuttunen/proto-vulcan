@@ -301,6 +301,49 @@ pub fn env_vars_builtin(args: Vec<ArgumentValue>) -> Goal {
 }
 
 // =============================================================================
+// COMMAND LINE ARGUMENT BUILTINS
+// =============================================================================
+
+/// Get command line arguments (argv)
+pub fn argv_builtin(args: Vec<ArgumentValue>) -> Goal {
+    let args_term = match extract_single_relational(args) {
+        Ok(result) => result,
+        Err(goal) => return goal,
+    };
+
+    #[derive(Debug)]
+    struct ArgvGoal {
+        args_term: LTerm,
+    }
+
+    impl Solve for ArgvGoal {
+        fn solve(&self, solver: &Solver, state: State) -> Stream {
+            // Get arguments from the solver's environment
+            if let Some(env_ref) = solver.environment() {
+                let env = env_ref.borrow();
+                let argv = env.get_argv();
+                let argv_lterms: Vec<LTerm> = argv.iter().map(|s| string_to_lterm(s.clone())).collect();
+                let argv_lterm = LTerm::from_vec(argv_lterms);
+                
+                match state.unify(&self.args_term, &argv_lterm) {
+                    Ok(new_state) => Stream::unit(Box::new(new_state)),
+                    Err(_) => Stream::empty(),
+                }
+            } else {
+                // No environment available, return empty argv
+                let empty_argv = LTerm::from_vec(vec![]);
+                match state.unify(&self.args_term, &empty_argv) {
+                    Ok(new_state) => Stream::unit(Box::new(new_state)),
+                    Err(_) => Stream::empty(),
+                }
+            }
+        }
+    }
+
+    Goal::dynamic(Rc::new(ArgvGoal { args_term }))
+}
+
+// =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
 

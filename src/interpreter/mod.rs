@@ -13,7 +13,7 @@ pub mod builtins;
 pub mod compiler;
 pub mod constraint_domains;
 pub mod deferred;
-mod environment;
+pub mod environment;
 pub mod import;
 mod integration;
 pub mod metaprogramming;
@@ -278,6 +278,11 @@ impl Interpreter {
     /// Get a reference to the environment
     pub fn environment(&self) -> std::cell::Ref<Environment> {
         self.environment.borrow()
+    }
+
+    /// Set command line arguments for the interpreter
+    pub fn set_argv(&self, argv: Vec<String>) {
+        self.environment.borrow_mut().set_argv(argv);
     }
 
     /// Get a reference to the base program

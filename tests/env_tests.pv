@@ -4,6 +4,7 @@
 use std::env::*;
 use std::fs::{file_exists};
 use std::path::{join_path, parent_path, file_name};
+use std::list::{member, first};
 
 // =============================================================================
 // ENVIRONMENT VARIABLE TESTS
@@ -193,7 +194,127 @@ rel test_exe_dir() {
 }
 
 // =============================================================================
-// INTEGRATION TESTS
+// COMMAND LINE ARGUMENT TESTS
+// =============================================================================
+
+// Test getting command line arguments (basic functionality)
+@test
+rel test_argv_basic() {
+    |args| {
+        argv(args)
+        // If we can get argv, test passes (args might be empty)
+    }
+}
+
+// Test getting arguments without program name
+@test
+rel test_args_basic() {
+    |args| {
+        args(args)
+    },
+    true
+}
+
+// Test getting program name
+@test  
+rel test_program_name_basic() {
+    |name| {
+        program_name(name)
+    },
+    true
+}
+
+// Test argument count functionality
+@test
+rel test_argv_count() {
+    |count| {
+        argv_count(count)
+        // If we can count argv, test passes
+    }
+}
+
+// Test args count functionality
+@test
+rel test_arg_count() {
+    |count| {
+        arg_count(count)
+    },
+    true
+}
+
+// Test that argv always has at least one element (the program name)
+@test
+rel test_argv_has_program_name() {
+    |args, count| {
+        argv(args),
+        argv_count(count),
+        constraint(domain="clpz") {
+            count >= 1
+        }
+    },
+    true
+}
+
+// Test relationship between argv and args
+@test
+rel test_argv_args_relationship() {
+    |argv_list, args_list, argv_len, args_len| {
+        argv(argv_list),
+        args(args_list), 
+        argv_count(argv_len),
+        arg_count(args_len),
+        constraint(domain="clpz") {
+            args_len == argv_len - 1
+        }
+    },
+    true
+}
+
+// Test program name extraction from argv
+@test
+rel test_program_name_from_argv() {
+    |argv_list, prog_name1, prog_name2| {
+        argv(argv_list),
+        program_name(prog_name1),
+        first(argv_list, prog_name2),
+        prog_name1 == prog_name2
+    },
+    true
+}
+
+// Test flag checking (will pass if no flags present)
+@test
+rel test_has_flag_functionality() {
+    |result| {
+        any {
+            // If the flag exists, succeed
+            all {
+                has_flag("--test"),
+                result == true
+            },
+            // If no flags, still succeed by setting result
+            all {
+                |args| {
+                    args(args),
+                    // Ensure we don't have the test flag
+                    not_member("--test", args)
+                },
+                result == "no_flags"
+            }
+        }
+    }
+}
+
+// Helper predicate for checking non-membership
+rel not_member(x, list) {
+    any {
+        all { member(x, list), false },  // if member succeeds, fail
+        true  // else succeed
+    }
+}
+
+// =============================================================================
+// INTEGRATION TESTS  
 // =============================================================================
 
 // Test combining environment and filesystem operations

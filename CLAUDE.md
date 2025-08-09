@@ -39,6 +39,10 @@ cargo run -- --format json --query "member(X, [1, 2, 3])" std/list.pv
 # Enable tracing
 cargo run -- --trace --query "member(X, [1, 2, 3])" std/list.pv
 
+# Pass arguments to .pv programs
+cargo run -- program.pv arg1 arg2 --flag --option=value
+cargo run -- ocaml_parser.pv --input example.ml --output parsed.json
+
 # Run tests
 cargo run -- test
 cargo run -- test --file examples/zebra.pv
@@ -106,6 +110,41 @@ Proto-Vulcan operates as two related but distinct languages:
 - **Constraint Blocks**: `constraint(domain="clpfd") { constraints }`
 - **Search Strategies**: `@bfs`, `@dfs` annotations
 
+#### Command Line Argument Access
+Proto-Vulcan programs can access command line arguments through `std::env`:
+
+```rust
+use std::env::*;
+
+@main
+rel main() {
+    |args, prog_name, flag_present| {
+        // Get all arguments including program name
+        argv(args),
+        
+        // Get just the program name  
+        program_name(prog_name),
+        
+        // Check for specific flags
+        any {
+            has_flag("--verbose"),
+            flag_present = "verbose mode enabled"
+        },
+        
+        println!("Program: {}, Args: {}", prog_name, args)
+    }
+}
+```
+
+Usage: `cargo run -- program.pv arg1 arg2 --verbose`
+
+Available predicates:
+- `argv(Args)` - Get all arguments including program name
+- `args(Args)` - Get arguments excluding program name  
+- `program_name(Name)` - Get the program name
+- `argv_count(Count)` / `arg_count(Count)` - Count arguments
+- `has_flag(Flag)` - Check if a flag is present
+
 #### Test System
 - Tests in `.pv` files marked with `@test` attribute
 - Built-in assertions: `assert_eq`, `assert_neq`, `assert_succeeds`, `assert_fails`
@@ -144,6 +183,9 @@ This unified interface allows builtins to receive the same parameter types as re
 ### Standard Library (`std/`)
 - `list.pv`: List manipulation predicates
 - `higher_order.pv`: Higher-order operations
+- `env.pv`: Environment variables and command line argument access
+- `fs.pv`: File system operations  
+- `path.pv`: Path manipulation utilities
 - `mod.pv`: Module entry point
 
 ## Migration Notes

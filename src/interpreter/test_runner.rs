@@ -799,6 +799,12 @@ impl TestRunner {
         // Step 1: Create base interpreter with stdlib (like CLI)
         let mut interpreter = DefaultInterpreter::with_stdlib();
 
+        // Set up command line arguments for the test environment
+        let test_argv = vec![
+            item.file_path.to_string_lossy().to_string()
+        ];
+        interpreter.set_argv(test_argv);
+
         // Load the standard library as base program (compiles std crate properly)
         use crate::interpreter::compiler::Compiler;
         match Compiler::create_stdlib_program() {

@@ -543,6 +543,52 @@ rel distinct_test_10(result) {
     result == true
 }
 
+// Reverse relation - reverses a list
+pub rel reverse(list, reversed) {
+    reverse_acc(list, [], reversed)
+}
+
+// Helper relation with accumulator for efficient reverse
+rel reverse_acc(list, acc, result) {
+    match list {
+        [] => result == acc,
+        [head | tail] => reverse_acc(tail, [head | acc], result)
+    }
+}
+
+// Test reverse with empty list
+@test(expected = [[]])
+rel reverse_test_1(q) {
+    reverse([], q)
+}
+
+// Test reverse with single element
+@test(expected = [[1]])
+rel reverse_test_2(q) {
+    reverse([1], q)
+}
+
+// Test reverse with multiple elements
+@test(expected = [[3, 2, 1]])
+rel reverse_test_3(q) {
+    reverse([1, 2, 3], q)
+}
+
+// Test reverse with nested lists
+@test(expected = [[[3, 4], [1, 2]]])
+rel reverse_test_4(q) {
+    reverse([[1, 2], [3, 4]], q)
+}
+
+// Test reverse backward mode (double reverse should give original)
+@test
+rel reverse_test_5() {
+    |rev| {
+        reverse([1, 2, 3], rev),
+        reverse(rev, [1, 2, 3])
+    }
+}
+
 // =============================================================================
 
 // Length relation - determines the length of a list

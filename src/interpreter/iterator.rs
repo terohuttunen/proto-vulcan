@@ -84,7 +84,7 @@ impl QueryResultIterator {
             query_predicate_id,
             query_args,
             ir_program.clone(),
-            environment,
+            environment.clone(),
         );
 
         // Create solver and initial state
@@ -100,6 +100,9 @@ impl QueryResultIterator {
 
         // Set the IR program in the solver for deferred relation calls
         solver.set_program(ir_program.clone());
+        
+        // Set the environment in the solver for accessing system state (like argv)
+        solver.set_environment(environment.clone());
 
         // Create the base query goal from predicate closure
         let base_query_goal = Goal::LazyMacro(Rc::new(predicate_closure));

@@ -75,6 +75,7 @@ fn get_builtin_specs() -> Vec<BuiltinSpec> {
         BuiltinSpec { name: "__builtin_expand_path", arity: 2, func: env::expand_path_builtin },
         BuiltinSpec { name: "__builtin_which", arity: 2, func: env::which_builtin },
         BuiltinSpec { name: "__builtin_env_vars", arity: 1, func: env::env_vars_builtin },
+        BuiltinSpec { name: "__builtin_argv", arity: 1, func: env::argv_builtin },
     ]
 }
 

@@ -100,6 +100,10 @@ struct Cli {
     /// Enable/disable unused import warnings
     #[arg(long, default_value = "true")]
     warn_unused_imports: bool,
+
+    /// Application arguments passed to the .pv program (everything after the filename)
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    app_args: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -197,6 +201,7 @@ fn main() {
             cli.trace,
             cli.trace_level,
             cli.timeout,
+            cli.app_args.clone(),
         ),
         Some(Commands::Check {
             file,
@@ -245,6 +250,7 @@ fn main() {
                     cli.trace,
                     cli.trace_level,
                     cli.timeout,
+                    cli.app_args.clone(),
                 )
             } else {
                 eprintln!("Error: Please provide a file to run or specify a subcommand.");
@@ -330,8 +336,15 @@ fn run_file(
     trace_enabled: bool,
     trace_level: u8,
     timeout_secs: u64,
+    app_args: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut interpreter = DefaultInterpreter::with_stdlib();
+    
+    // Set up command line arguments (argv-style: [program_name, ...args])
+    let mut argv = vec![path.to_string_lossy().to_string()];
+    argv.extend(app_args);
+    interpreter.set_argv(argv);
+    
     let file_contents = std::fs::read_to_string(&path)
         .map_err(|e| format!("Failed to read file '{}': {}", path.display(), e))?;
 
