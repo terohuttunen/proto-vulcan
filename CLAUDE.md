@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Proto-Vulcan is a relational logic programming language embedded in Rust, inspired by miniKanren. It supports both macro-based embedding in Rust code and direct execution via the new interpreter that processes `.pv` files.
 
+## Documentation
+
+For comprehensive language documentation, see:
+- **[Programmer's Guide](docs/PROGRAMMER_GUIDE.md)** - Complete guide to programming in Proto-Vulcan, covering all language constructs, types, constraints, implementation blocks, and advanced features
+
 ## Development Commands
 
 ### Build and Test
