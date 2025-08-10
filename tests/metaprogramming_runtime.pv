@@ -1,6 +1,8 @@
 // Comprehensive runtime tests for metaprogramming features
 // Tests the template expansion engine
 
+use std::list::*;
+
 // Test basic meta let statement execution
 @test(expected = [5])
 rel test_meta_let_basic(result) {
@@ -35,7 +37,7 @@ rel test_meta_if_false(result) {
 // Test meta for loop with simple range
 @test(expected = [1, 2, 3])
 rel test_meta_for_simple(result) {
-    for i: int in 1..4 {
+    any_of i: int in 1..4 {
         result == i
     }
 }
@@ -54,7 +56,7 @@ rel test_nested_metaprogramming(result) {
     let count: int = 3;
     let use_loop: bool = true;
     if use_loop {
-        for i: int in 1..count {
+        any_of i: int in 1..count {
             let item_name: string = "item";
             result == {item_name}
         }
@@ -82,7 +84,7 @@ rel test_meta_arithmetic(result) {
 rel test_meta_for_computed_range(result) {
     let start: int = 2;
     let end: int = start + 3;
-    for i: int in start..end {
+    any_of i: int in start..end {
         result == i
     }
 }
@@ -134,8 +136,8 @@ rel test_interpolation_contexts(result) {
 // Test meta for loop generating multiple goals
 @test
 rel test_meta_for_multiple_goals(result) {
-    for i: int in 1..3 {
-        for j: int in 1..2 {
+    any_of i: int in 1..3 {
+        any_of j: int in 1..2 {
             result == "nested_loop_item"
         }
     }
@@ -160,7 +162,7 @@ rel regular_helper(input, output) {
 @test
 rel test_empty_for_loop(result) {
     // This should produce no goals
-    for i: int in 5..5 {
+    any_of i: int in 5..5 {
         result == "should_not_appear"
     }
     // This should always succeed since no constraints are added
@@ -309,4 +311,82 @@ rel test_struct_arithmetic_expansion(result) {
     let x_val: int = a * b;
     let y_val: int = b * c;
     result == Point({x_val}, {y_val})
-} 
+}
+
+// =============================================================================
+// ALL_OF TESTS - Conjunction Generation (Simple Tests Only)
+// =============================================================================
+
+// Test basic all_of functionality without constraints
+@test
+rel test_all_of_simple(result) {
+    all_of i: int in 1..3 {
+        let value: int = i * 2;
+        // Each iteration creates goals but doesn't bind result
+    },
+    result == "all_iterations_completed"
+}
+
+// Test all_of with empty range (should succeed trivially)
+@test
+rel test_all_of_empty_range(result) {
+    all_of i: int in 5..5 {
+        result == "should_not_appear"
+    },
+    result == "empty_all_of_succeeds"
+}
+
+// Test all_of with computed range
+@test
+rel test_all_of_computed_range(result) {
+    let start: int = 2;
+    let count: int = 3; 
+    let end: int = start + count;
+    all_of i: int in start..end {
+        let computed: int = i * 2;
+        // Goals execute but don't interfere with result
+    },
+    result == "computed_range_success"
+}
+
+// =============================================================================
+// INTERLEAVING ORDER TEST - Ensures any_of has same behavior as any {...}
+// =============================================================================
+
+// Simple test with direct unification goals
+@test(expected = [10, 20, 30])
+rel test_simple_manual(q) {
+    any {
+        q == 10,
+        q == 20, 
+        q == 30
+    }
+}
+
+// Simple test using any_of
+@test(expected = [10, 20, 30])
+rel test_simple_any_of(q) {
+    any_of i: int in 0..3 {
+        q == {(i + 1) * 10}
+    }
+}
+
+// Manual test to verify what the any_of should expand to
+@test(expected = [1, 4, 2, 7, 3, 5, 8, 6, 9])  
+rel test_manual_equivalent(q) {
+    any {
+        member(q, [1, 2, 3]),
+        member(q, [4, 5, 6]),
+        member(q, [7, 8, 9])
+    }
+}
+
+// This test verifies that 'any_of' metaprogramming produces the same interleaving
+// order as regular 'any' blocks. It should match the BFS order: [1, 4, 2, 7, 3, 5, 8, 6, 9]
+// This is equivalent to test_interleaving_order in language_features.pv but uses metaprogramming
+@test(expected = [1, 4, 2, 7, 3, 5, 8, 6, 9])
+rel test_any_of_interleaving_order(q) {
+    any_of i: int in 0..3 {
+        member(q, [{i*3+1}, {i*3+2}, {i*3+3}])
+    }
+}

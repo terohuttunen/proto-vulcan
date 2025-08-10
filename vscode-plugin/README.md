@@ -19,7 +19,7 @@ A Visual Studio Code extension that provides syntax highlighting and language su
 Proto-Vulcan is a logic programming language that combines:
 - **Relational Programming**: Define relationships between data
 - **Constraint Programming**: Finite domain and integer constraints
-- **Macros**: Template-based code generation
+- **Template Metaprogramming**: Code generation with `any_of`/`all_of` loops
 - **Testing Framework**: Built-in test annotations
 - **Higher-Order Programming**: Support for meta-programming constructs
 
@@ -49,28 +49,32 @@ rel test_append(q) {
     append([1, 2], [3, 4], q)
 }
 
-// Define a macro
-macro repeat_element(count: int, element, result) {
-    if count == 0 {
-        result == []
-    } else {
-        |tail| {
-            repeat_element(count - 1, element, tail),
-            result == [element | tail]
-        }
+// Macro with template metaprogramming - disjunction generation
+macro find_solutions(result) {
+    any_of i: int in 1..4 {
+        result == Point(i, i * i)
     }
 }
 
-// Grade classification with else if chains
-macro classify_grade(score: int, result) {
-    if score >= 90 {
+// Macro with template metaprogramming - conjunction generation
+macro apply_constraints(result) {
+    |x: Int| {
+        all_of i: int in 1..4 {
+            constraint(domain="clpfd") { x #>= i }
+        },
+        constraint(domain="clpfd") { x #<= 10 },
+        result == x
+    }
+}
+
+// Macro with compile-time conditions and variables
+macro classify_grade(score, result) {
+    let threshold_a: int = 90;
+    let threshold_b: int = 80;
+    if score >= threshold_a {
         result == "A"
-    } else if score >= 80 {
+    } else if score >= threshold_b {
         result == "B"
-    } else if score >= 70 {
-        result == "C"
-    } else if score >= 60 {
-        result == "D"
     } else {
         result == "F"
     }
@@ -81,10 +85,13 @@ macro classify_grade(score: int, result) {
 
 ### Keywords
 - `rel` - Define relations
-- `macro` - Define macros
-- `if` - Conditional logic
-- `else` - Alternative conditions
+- `macro` - Define macros with template metaprogramming
+- `if` - Conditional logic (in macros: compile-time)
+- `else` - Alternative conditions 
 - `else if` - Chained conditional logic
+- `any_of` - Template disjunction generation (macros only)
+- `all_of` - Template conjunction generation (macros only) 
+- `let` - Template variable binding (macros only)
 - `import` - Import modules
 - `module` - Define modules
 

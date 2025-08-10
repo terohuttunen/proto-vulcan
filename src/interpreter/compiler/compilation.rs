@@ -2495,7 +2495,7 @@ impl Compiler {
                     else_body: ir_else_body.map(ir::StructuralGoal::from_vec),
                 }))
             }
-            MetaStatement::For {
+            MetaStatement::AnyOf {
                 variable,
                 variable_type,
                 range,
@@ -2510,6 +2510,31 @@ impl Compiler {
                     ir_body.push(self.compile_goal(goal, ir_program)?);
                 }
 
+                Ok(ir::Goal::MetaFor(ir::MetaFor {
+                    variable: variable.clone(),
+                    variable_type: ir_variable_type,
+                    start: start_expr,
+                    end: end_expr,
+                    body: ir::StructuralGoal::from_vec(ir_body),
+                }))
+            }
+            MetaStatement::AllOf {
+                variable,
+                variable_type,
+                range,
+                body,
+            } => {
+                let start_expr = self.compile_meta_expression(&range.start)?;
+                let end_expr = self.compile_meta_expression(&range.end)?;
+                let ir_variable_type = self.compile_type_annotation(variable_type, ir_program)?;
+
+                let mut ir_body = Vec::new();
+                for goal in body {
+                    ir_body.push(self.compile_goal(goal, ir_program)?);
+                }
+
+                // For now, use the same IR structure for both AnyOf and AllOf
+                // The difference will be handled in the template expansion phase
                 Ok(ir::Goal::MetaFor(ir::MetaFor {
                     variable: variable.clone(),
                     variable_type: ir_variable_type,

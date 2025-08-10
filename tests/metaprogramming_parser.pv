@@ -26,11 +26,11 @@ rel test_meta_if(result) {
     }
 }
 
-// Test 4: Meta for statements
+// Test 4: Meta any_of statements
 @test(expected = [1, 2])
 rel test_meta_for(result) {
     let count: int = 3;
-    for i: int in 1..count {
+    any_of i: int in 1..count {
         result == i
     }
 }
@@ -53,7 +53,7 @@ rel test_complex_meta(result) {
     let is_equal: bool = a == b;
     
     if is_equal && sum > 10 {
-        for i: int in 1..product {
+        any_of i: int in 1..product {
             result == {sum}
         }
     } else {

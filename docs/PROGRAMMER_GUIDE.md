@@ -14,6 +14,8 @@ A comprehensive guide to programming in Proto-Vulcan, a relational logic program
 8. [Standard Library Reference](#standard-library-reference)
 9. [Builtin Predicates](#builtin-predicates)
 10. [Advanced Features](#advanced-features)
+    - [Template Metaprogramming with Macros](#template-metaprogramming-with-macros)
+    - [Command Line Argument Processing](#command-line-argument-processing)
 11. [CLI Reference](#cli-reference)
 12. [Examples and Patterns](#examples-and-patterns)
 13. [Appendices](#appendices)
@@ -55,7 +57,7 @@ cargo run --example sudoku --features clpfd
 
 Create a simple program in a `.pv` file:
 
-```prolog
+```proto-vulcan
 // hello.pv
 use std::list::*;
 
@@ -89,7 +91,7 @@ cargo run -- --format json --query "member(X, [1, 2, 3])" std/list.pv
 
 Relations are the fundamental building blocks of Proto-Vulcan programs. They define logical relationships between terms.
 
-```prolog
+```proto-vulcan
 // Basic relation definition
 rel parent(parent, child) {
     any {
@@ -130,7 +132,7 @@ Goals are logical statements that can either succeed or fail. They're the buildi
 - **Relation calls**: `parent(X, "Bob")` - calls another relation
 - **Compound goals**: `all { goal1, goal2 }`, `any { goal1, goal2 }`
 
-```prolog
+```proto-vulcan
 rel example_goals(x, y) {
     all {
         x == "Alice",           // Unification goal
@@ -147,7 +149,7 @@ Proto-Vulcan has two types of variables:
 1. **Relation Parameters**: Named in the relation signature
 2. **Fresh Variables**: Introduced within goals using `|var1, var2| { ... }`
 
-```prolog
+```proto-vulcan
 rel grandparent(grandparent, grandchild) {
     |parent| {              // Fresh variable
         parent(grandparent, parent),
@@ -175,7 +177,7 @@ rel complex_relation(result) {
 
 Terms represent data in Proto-Vulcan:
 
-```prolog
+```proto-vulcan
 // Atoms (constants)
 rel atoms_example() {
     x == 42,                    // Number
@@ -195,7 +197,7 @@ rel compound_example() {
 
 Unification (`==`) is the core operation that matches and binds variables to values or structures.
 
-```prolog
+```proto-vulcan
 rel unification_examples() {
     // Simple unification
     X == 42,
@@ -226,7 +228,7 @@ rel unification_examples() {
 
 The `all` block requires all contained goals to succeed:
 
-```prolog
+```proto-vulcan
 rel conjunction_example(x, y) {
     all {
         x == "Alice",
@@ -249,7 +251,7 @@ rel implicit_conjunction(x, y) {
 
 The `any` block succeeds if any contained goal succeeds:
 
-```prolog
+```proto-vulcan
 rel disjunction_example(person) {
     any {
         person == "Alice",
@@ -272,7 +274,7 @@ rel family_member(name) {
 
 The `match` statement provides structured disjunction with pattern testing:
 
-```prolog
+```proto-vulcan
 use std::list::*;
 
 rel list_length(list, length) {
@@ -308,7 +310,7 @@ rel classify_list(list, classification) {
 
 Guards allow you to add additional conditions to pattern matches using the `if` keyword:
 
-```prolog
+```proto-vulcan
 // Basic guard with constraint
 rel classify_number(n, classification) {
     match n {
@@ -372,7 +374,7 @@ rel check_doubled(n, is_large_when_doubled) {
 
 Proto-Vulcan supports both breadth-first (BFS) and depth-first (DFS) search:
 
-```prolog
+```proto-vulcan
 // Default behavior (BFS) - interleaves solutions
 @test(expected = [1, 4, 2, 5, 3, 6])
 rel bfs_example(x) {
@@ -440,7 +442,7 @@ Proto-Vulcan's type system follows this hierarchy:
 #### Numbers
 Proto-Vulcan uses `isize` integers for numeric computations:
 
-```prolog
+```proto-vulcan
 // Number literals and operations
 rel number_examples() {
     positive == 42,
@@ -465,7 +467,7 @@ rel arithmetic_example() {
 #### Strings
 Strings are UTF-8 encoded and support standard escape sequences:
 
-```prolog
+```proto-vulcan
 // String literals and patterns
 rel string_examples() {
     simple == "Hello, World!",
@@ -488,7 +490,7 @@ rel string_matching(message) {
 #### Booleans
 Boolean values for logical operations:
 
-```prolog
+```proto-vulcan
 // Boolean literals and logic
 rel boolean_examples() {
     truth == true,
@@ -510,7 +512,7 @@ rel boolean_logic() {
 #### Characters
 Individual Unicode characters:
 
-```prolog
+```proto-vulcan
 // Character examples
 rel char_examples() {
     letter == 'a',
@@ -525,7 +527,7 @@ rel char_examples() {
 #### Named Variables
 Variables that can be bound to values through unification:
 
-```prolog
+```proto-vulcan
 rel variable_examples() {
     // Simple binding
     X == 42,  // X is bound to 42
@@ -542,7 +544,7 @@ rel variable_examples() {
 #### Anonymous Variables
 The underscore `_` represents "don't care" values:
 
-```prolog
+```proto-vulcan
 rel anonymous_examples() {
     // Ignore certain values
     [First, _, Third] == [1, 2, 3],  // First = 1, Third = 3
@@ -555,7 +557,7 @@ rel anonymous_examples() {
 #### Fresh Variables
 Variables introduced in limited scopes:
 
-```prolog
+```proto-vulcan
 rel fresh_variable_scoping() {
     // Variables scoped to this block
     |x, y, temp| {
@@ -572,7 +574,7 @@ rel fresh_variable_scoping() {
 
 Lists are fundamental data structures built from `Empty` and `Cons` constructors:
 
-```prolog
+```proto-vulcan
 // List construction
 rel list_construction() {
     empty == [],                    // Empty list
@@ -602,7 +604,7 @@ rel improper_lists() {
 ```
 
 **List Operations:**
-```prolog
+```proto-vulcan
 use std::list::*;
 
 rel list_operations_example() {
@@ -627,7 +629,7 @@ rel list_operations_example() {
 Structured data types with named fields or positional arguments:
 
 **Tuple Structs:**
-```prolog
+```proto-vulcan
 // Declaration
 struct Point(Number, Number);
 struct Color(Number, Number, Number);
@@ -647,7 +649,7 @@ rel tuple_struct_examples() {
 ```
 
 **Named Structs:**
-```prolog
+```proto-vulcan
 // Declaration
 struct Person { name: String, age: Number }
 struct Rectangle { width: Number, height: Number }
@@ -673,7 +675,7 @@ rel named_struct_examples() {
 ```
 
 **Pattern Matching with Structs:**
-```prolog
+```proto-vulcan
 rel struct_pattern_matching() {
     // Tuple struct patterns
     match Point(10, 20) {
@@ -696,7 +698,7 @@ rel struct_pattern_matching() {
 
 Proto-Vulcan supports enums for modeling data with multiple variants:
 
-```prolog
+```proto-vulcan
 // Simple enum
 enum Color {
     Red,
@@ -734,7 +736,7 @@ Proto-Vulcan supports implementation blocks that allow you to define methods on 
 
 Methods in implementation blocks use a `self` parameter to represent the instance they're called on. This parameter is automatically bound when using dot notation:
 
-```prolog
+```proto-vulcan
 struct Point {
     x: Number,
     y: Number
@@ -806,7 +808,7 @@ impl Point {
 
 Proto-Vulcan supports multiple ways to call methods:
 
-```prolog
+```proto-vulcan
 rel method_call_examples() {
     // 1. Static method call (no self - like constructor)
     Point::new(3, 4, Point { x: 3, y: 4 }),
@@ -842,7 +844,7 @@ rel method_call_examples() {
 
 #### Complex Implementation Example
 
-```prolog
+```proto-vulcan
 struct Rectangle {
     top_left: Point,
     width: Number,
@@ -895,7 +897,7 @@ impl Rectangle {
 
 #### Method Usage Patterns from Tests
 
-```prolog
+```proto-vulcan
 // Based on actual test cases from impl_block_tests.pv
 
 // Pattern 1: Constructor then method calls
@@ -961,7 +963,7 @@ rel test_method_with_pattern_matching() {
 
 #### Implementation Blocks for Enums
 
-```prolog
+```proto-vulcan
 enum Shape {
     Circle(Number),
     Rectangle(Number, Number),
@@ -1014,7 +1016,7 @@ impl Shape {
 4. **Naming**: While conventionally named `self`, you can use any name (like `point`, `rect`)
 5. **Static methods**: Methods without a `self` parameter are static (like constructors)
 
-```prolog
+```proto-vulcan
 impl Point {
     // Static method - no self parameter
     rel origin(result) {
@@ -1070,7 +1072,7 @@ Proto-Vulcan includes powerful constraint programming capabilities through CLP(F
 
 CLP(FD) works with variables that range over finite sets of integers:
 
-```prolog
+```proto-vulcan
 // Basic domain constraints
 rel basic_clpfd_example(x, y) {
     constraint(domain="clpfd") {
@@ -1093,7 +1095,7 @@ rel multiple_variables(result) {
 ```
 
 #### Arithmetic Constraints
-```prolog
+```proto-vulcan
 rel arithmetic_constraints(result) {
     |x, y, sum, diff, prod| {
         constraint(domain="clpfd") {
@@ -1112,7 +1114,7 @@ rel arithmetic_constraints(result) {
 ```
 
 #### All-Different Constraint
-```prolog
+```proto-vulcan
 // N-Queens problem fragment
 rel queens_partial(result) {
     |q1, q2, q3| {
@@ -1126,7 +1128,7 @@ rel queens_partial(result) {
 ```
 
 #### Comparison Constraints
-```prolog
+```proto-vulcan
 rel comparison_constraints(x, y) {
     constraint(domain="clpfd") {
         x in 1..100,
@@ -1145,7 +1147,7 @@ rel comparison_constraints(x, y) {
 
 CLP(Z) provides constraints over the full range of integers:
 
-```prolog
+```proto-vulcan
 rel clpz_example(x, y) {
     constraint(domain="clpz") {
         x + y > 100,
@@ -1159,7 +1161,7 @@ rel clpz_example(x, y) {
 
 Here's a simplified Sudoku constraint setup:
 
-```prolog
+```proto-vulcan
 rel sudoku_constraints(grid) {
     |row1, row2, row3| {
         // Grid structure
@@ -1195,7 +1197,7 @@ Proto-Vulcan includes a comprehensive module system for organizing code:
 
 ### Module Declaration
 
-```prolog
+```proto-vulcan
 // geometry.pv
 mod geometry {
     struct Point(Number, Number);
@@ -1221,7 +1223,7 @@ mod geometry {
 
 ### Imports
 
-```prolog
+```proto-vulcan
 // main.pv
 use std::list::*;              // Import all from std::list
 use geometry::{Point, distance}; // Import specific items
@@ -1239,7 +1241,7 @@ rel main() {
 
 ### Visibility Control
 
-```prolog
+```proto-vulcan
 mod my_module {
     // Public - exported from module
     pub rel public_relation(x, y) {
@@ -1268,7 +1270,7 @@ rel external_code() {
 The standard library provides common functionality:
 
 #### std::list
-```prolog
+```proto-vulcan
 use std::list::*;
 
 rel list_example() {
@@ -1280,7 +1282,7 @@ rel list_example() {
 ```
 
 #### std::env  
-```prolog
+```proto-vulcan
 use std::env::*;
 
 rel env_example() {
@@ -1293,7 +1295,7 @@ rel env_example() {
 ```
 
 #### std::fs
-```prolog
+```proto-vulcan
 use std::fs::*;
 
 rel file_example() {
@@ -1306,7 +1308,7 @@ rel file_example() {
 
 ### Module Resolution
 
-```prolog
+```proto-vulcan
 // Absolute imports
 use std::list::member;          // From standard library
 use crate::geometry::Point;     // From current crate root
@@ -1325,7 +1327,7 @@ Proto-Vulcan includes a comprehensive testing framework built into the language:
 
 ### Test Annotations
 
-```prolog
+```proto-vulcan
 // Basic test - must succeed
 @test
 rel test_basic_success() {
@@ -1362,7 +1364,7 @@ rel test_complex_results(result) {
 
 ### Assertion Predicates
 
-```prolog
+```proto-vulcan
 // Equality assertions
 @test
 rel test_assertions() {
@@ -1409,7 +1411,7 @@ cargo run -- test --name test_member_basic
 
 ### Test Organization
 
-```prolog
+```proto-vulcan
 // tests/list_tests.pv
 use std::list::*;
 
@@ -1440,7 +1442,7 @@ rel test_append_decomposition(result) {
 
 ### Test-Driven Development
 
-```prolog
+```proto-vulcan
 // Write tests first
 @test(expected = [120])
 rel test_factorial(result) {
@@ -1475,7 +1477,7 @@ The list module provides fundamental list manipulation predicates:
 
 #### Core List Predicates
 
-```prolog
+```proto-vulcan
 use std::list::*;
 
 // Test membership
@@ -1513,7 +1515,7 @@ rel remove_examples() {
 
 #### List Properties and Transformations
 
-```prolog
+```proto-vulcan
 // List length
 rel length_examples() {
     length([a, b, c, d], 4),
@@ -1556,7 +1558,7 @@ rel permute_examples() {
 
 ### std::env - Environment Access
 
-```prolog
+```proto-vulcan
 use std::env::*;
 
 // Environment variables
@@ -1592,7 +1594,7 @@ rel system_dirs() {
 
 ### std::fs - File System Operations
 
-```prolog
+```proto-vulcan
 use std::fs::*;
 
 // File reading
@@ -1636,7 +1638,7 @@ rel dir_ops_examples() {
 
 ### std::path - Path Manipulation
 
-```prolog
+```proto-vulcan
 use std::path::*;
 
 rel path_examples() {
@@ -1659,7 +1661,7 @@ Proto-Vulcan provides builtin predicates that interface with the underlying syst
 
 ### Core Language Builtins
 
-```prolog
+```proto-vulcan
 // Length calculation (efficient implementation)
 rel length_builtin_example() {
     __builtin_length([1, 2, 3, 4], 4),
@@ -1673,7 +1675,7 @@ rel length_builtin_example() {
 
 ### Testing Builtins
 
-```prolog
+```proto-vulcan
 // Built into the test framework
 @test
 rel builtin_assertions() {
@@ -1699,7 +1701,7 @@ rel constraint_assertions() {
 
 These are wrapped by the std::fs module but can be used directly:
 
-```prolog
+```proto-vulcan
 // Direct builtin usage (prefer std::fs wrappers)
 rel filesystem_builtins() {
     __builtin_read_file("file.txt", _),
@@ -1711,7 +1713,7 @@ rel filesystem_builtins() {
 
 ### Environment Builtins  
 
-```prolog
+```proto-vulcan
 // Direct builtin usage (prefer std::env wrappers)
 rel environment_builtins() {
     __builtin_env_var("HOME", _),
@@ -1722,7 +1724,7 @@ rel environment_builtins() {
 
 ### String and Path Builtins
 
-```prolog
+```proto-vulcan
 rel string_path_builtins() {
     __builtin_string_concat("hello", " world", "hello world"),
     __builtin_join_path("/home", "user", "/home/user"),
@@ -1750,11 +1752,231 @@ Builtins are implemented in Rust and registered with the interpreter. See `src/i
 
 ## Advanced Features
 
+### Template Metaprogramming with Macros
+
+Proto-Vulcan provides a powerful template metaprogramming system through macros that allows compile-time code generation. Unlike regular relations, macros can contain template constructs that are expanded before execution.
+
+#### Macro Definitions
+
+Macros are defined using the `macro` keyword and can contain template metaprogramming constructs:
+
+```proto-vulcan
+macro simple_macro(result) {
+    result == "Hello from macro"
+}
+
+// Using the macro in a relation
+rel test_macro(output) {
+    simple_macro(output)
+}
+```
+
+#### Template Variables
+
+Within macros, you can define compile-time variables using `let` statements with type annotations:
+
+```proto-vulcan
+macro computed_values(result) {
+    let base: int = 10;
+    let multiplier: int = 3;
+    let computed: int = base * multiplier;
+    result == computed  // Result will be 30
+}
+```
+
+**Available template types:**
+- `int` - Compile-time integers
+- `string` - Compile-time strings  
+- `bool` - Compile-time booleans
+
+#### Conditional Compilation
+
+Use `if` statements for compile-time branching:
+
+```proto-vulcan
+macro conditional_logic(flag, result) {
+    let debug_mode: bool = true;
+    if debug_mode {
+        result == ["debug", "mode", "enabled"]
+    } else {
+        result == ["production", "mode"]
+    }
+}
+```
+
+#### Template Loops: `any_of` and `all_of`
+
+Proto-Vulcan provides two powerful loop constructs for generating code at compile-time:
+
+##### `any_of` - Disjunction Generation
+
+`any_of` generates a disjunction (logical OR) where any of the generated alternatives can succeed:
+
+```proto-vulcan
+macro find_factors(n, result) {
+    any_of i: int in 2..10 {
+        let quotient: int = n / i;
+        all {
+            n == i * quotient,
+            result == ["factor", i, quotient]
+        }
+    }
+}
+
+// Usage
+rel test_factors(output) {
+    find_factors(12, output)  // Can produce: ["factor", 2, 6], ["factor", 3, 4], ["factor", 4, 3], ["factor", 6, 2]
+}
+```
+
+This expands to:
+```proto-vulcan
+any {
+    all { 12 == 2 * 6, result == ["factor", 2, 6] },
+    all { 12 == 3 * 4, result == ["factor", 3, 4] },
+    all { 12 == 4 * 3, result == ["factor", 4, 3] },
+    // ... for each i from 2 to 9
+}
+```
+
+##### `all_of` - Conjunction Generation
+
+`all_of` generates a conjunction (logical AND) where all generated goals must succeed:
+
+```proto-vulcan
+macro apply_bounds(var, result) {
+    |x| {
+        all_of i: int in 1..5 {
+            constraint(domain="clpfd") { x >= i }
+        },
+        constraint(domain="clpfd") { x <= 20 },
+        x == var,
+        result == "bounds_applied"
+    }
+}
+```
+
+This expands to:
+```proto-vulcan
+|x| {
+    constraint(domain="clpfd") { x >= 1 },
+    constraint(domain="clpfd") { x >= 2 },
+    constraint(domain="clpfd") { x >= 3 },
+    constraint(domain="clpfd") { x >= 4 },
+    constraint(domain="clpfd") { x <= 20 },
+    x == var,
+    result == "bounds_applied"
+}
+```
+
+#### Interpolation
+
+Use `{expression}` to interpolate template values into relational terms:
+
+```proto-vulcan
+macro point_generator(scale, result) {
+    let base_x: int = 5;
+    let base_y: int = 10;
+    any_of i: int in 1..4 {
+        let scaled_x: int = base_x * i * scale;
+        let scaled_y: int = base_y * i * scale;
+        result == Point({scaled_x}, {scaled_y})
+    }
+}
+```
+
+#### Complex Template Examples
+
+##### Generate Multiple Constraints
+
+```proto-vulcan
+macro range_constraints(var, min_val, max_val, result) {
+    |x| {
+        all_of i: int in min_val..max_val {
+            constraint(domain="clpfd") { 
+                x != i  // x cannot equal any value in range
+            }
+        },
+        x == var,
+        result == "excluded_range_applied"
+    }
+}
+```
+
+##### Nested Template Loops
+
+```proto-vulcan
+macro multiplication_table(size, result) {
+    any_of i: int in 1..size {
+        any_of j: int in 1..size {
+            let product: int = i * j;
+            result == ["multiply", i, j, product]
+        }
+    }
+}
+```
+
+##### Conditional Loop Generation
+
+```proto-vulcan
+macro selective_generation(condition, result) {
+    let generate_evens: bool = condition;
+    if generate_evens {
+        any_of i: int in 2..10 {
+            if i % 2 == 0 {
+                result == ["even", i]
+            }
+        }
+    } else {
+        any_of i: int in 1..10 {
+            if i % 2 == 1 {
+                result == ["odd", i]
+            }
+        }
+    }
+}
+```
+
+#### Template Metaprogramming Best Practices
+
+1. **Use meaningful template variable names** - `let count: int = 5` is better than `let c: int = 5`
+
+2. **Keep template logic simple** - Complex compile-time computation can make code hard to understand
+
+3. **Document macro behavior** - Explain what the macro generates, especially for complex templates
+
+4. **Use `any_of` for alternatives** - When you need "any of these options"
+
+5. **Use `all_of` for requirements** - When you need "all of these conditions"
+
+6. **Combine with constraints** - Template loops work excellently with constraint programming
+
+7. **Test macro expansions** - Use `@test` annotations to verify macro behavior
+
+#### Error Handling
+
+Template expansion can produce compile-time errors:
+
+```proto-vulcan
+macro invalid_template(result) {
+    let count: string = "not_a_number";  // Error: type mismatch
+    any_of i: int in 1..count {          // Error: range bounds must be integers
+        result == i
+    }
+}
+```
+
+Common template errors:
+- Type mismatches in template variables
+- Non-integer range bounds in loops
+- Unbound template variables
+- Infinite recursion in template expansion
+
 ### Command Line Argument Processing
 
 Proto-Vulcan programs can access and process command line arguments:
 
-```prolog
+```proto-vulcan
 use std::env::*;
 
 @main
@@ -1807,7 +2029,7 @@ rel process_args(args) {
 
 Working with terms as data structures:
 
-```prolog
+```proto-vulcan
 // Inspect term structure
 rel term_analysis(term, info) {
     any {
@@ -1844,7 +2066,7 @@ rel compound_info(compound, info) {
 
 Predicates that operate on other predicates:
 
-```prolog
+```proto-vulcan
 use std::higher_order::*;
 
 // Apply predicate to all elements
@@ -1891,7 +2113,7 @@ rel add(x, y, result) {
 
 Write recursive relations in tail-recursive form when possible:
 
-```prolog
+```proto-vulcan
 // Non-tail recursive (can cause stack overflow)
 rel factorial_bad(n, result) {
     match n {
@@ -1929,7 +2151,7 @@ rel factorial_acc(n, acc, result) {
 
 Place most restrictive constraints first:
 
-```prolog
+```proto-vulcan
 // Less efficient - generates many possibilities then filters
 rel inefficient_constraints(x, y, z) {
     constraint(domain="clpfd") {
@@ -1953,7 +2175,7 @@ rel efficient_constraints(x, y, z) {
 
 #### Mode Directives (Future Feature)
 
-```prolog
+```proto-vulcan
 // Future syntax for specifying input/output modes
 rel append(+list1, +list2, -result) {
     // list1 and list2 are inputs (+)
@@ -2124,7 +2346,7 @@ cargo run -- --format json --query "member(X, [a,b,c])" --limit 1 std/list.pv
 
 #### The Zebra Puzzle (Einstein's Riddle)
 
-```prolog
+```proto-vulcan
 // examples/zebra.pv
 use std::list::*;
 
@@ -2213,7 +2435,7 @@ rel solve_zebra(houses) {
 
 #### N-Queens Problem
 
-```prolog
+```proto-vulcan
 // N-Queens constraint satisfaction
 rel n_queens(n, solution) {
     |queens| {
@@ -2263,7 +2485,7 @@ rel no_attacks_from_position(queen_col, queen_row, other_queens, other_row) {
 
 #### Functional-Style List Operations
 
-```prolog
+```proto-vulcan
 use std::list::*;
 
 // Map operation over lists
@@ -2330,7 +2552,7 @@ rel double(x, result) {
 
 #### Tree Processing
 
-```prolog
+```proto-vulcan
 // Binary tree structure
 enum Tree {
     Empty,
@@ -2388,7 +2610,7 @@ rel tree_insert(value, old_tree, new_tree) {
 
 #### Sudoku Solver
 
-```prolog
+```proto-vulcan
 // 4x4 Sudoku for simplicity
 rel sudoku_4x4(grid) {
     // Grid structure: [[r1c1,r1c2,r1c3,r1c4], [r2c1,...], ...]
@@ -2428,7 +2650,7 @@ rel sudoku_4x4(grid) {
 
 #### Graph Coloring
 
-```prolog
+```proto-vulcan
 // Graph coloring with constraint programming
 struct Edge(Number, Number);  // edge between two vertices
 
@@ -2464,7 +2686,7 @@ rel no_adjacent_same_color(edges, colors) {
 
 #### Configuration File Parser
 
-```prolog
+```proto-vulcan
 use std::fs::*;
 use std::list::*;
 
@@ -2510,7 +2732,7 @@ rel parse_config_line(line, result) {
 
 #### Simple Calculator
 
-```prolog
+```proto-vulcan
 // Expression evaluation
 enum Expr {
     Num(Number),
@@ -2680,7 +2902,7 @@ Solution: Check file path, ensure file exists, verify working directory
 #### Best Practices for Efficient Code
 
 1. **Use constraints early and specifically**
-   ```prolog
+   ```proto-vulcan
    // Good: specific constraints first
    constraint(domain="clpfd") {
        x in 1..10,
@@ -2697,7 +2919,7 @@ Solution: Check file path, ensure file exists, verify working directory
    ```
 
 2. **Prefer tail recursion**
-   ```prolog
+   ```proto-vulcan
    // Good: tail recursive
    rel sum_acc(list, acc, result) {
        match list {
@@ -2708,7 +2930,7 @@ Solution: Check file path, ensure file exists, verify working directory
    ```
 
 3. **Use appropriate search strategy**
-   ```prolog
+   ```proto-vulcan
    // Use DFS for deep, narrow searches
    rel find_path(start, end, path) @dfs {
        // Path finding logic
@@ -2721,7 +2943,7 @@ Solution: Check file path, ensure file exists, verify working directory
    ```
 
 4. **Minimize fresh variable scope**
-   ```prolog
+   ```proto-vulcan
    // Good: minimal scope
    rel example() {
        goal1(),

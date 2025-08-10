@@ -138,7 +138,13 @@ pub enum MetaStatement {
         else_ifs: Vec<(MetaExpression, super::parser::ast::GoalBody)>,
         else_body: Option<super::parser::ast::GoalBody>,
     },
-    For {
+    AnyOf {
+        variable: super::symbol_table::InternedSymbol,
+        variable_type: TypeAnnotation,
+        range: MetaForRange,
+        body: super::parser::ast::GoalBody,
+    },
+    AllOf {
         variable: super::symbol_table::InternedSymbol,
         variable_type: TypeAnnotation,
         range: MetaForRange,
@@ -413,12 +419,18 @@ pub fn expand_meta_statement(
             context,
             original_span,
         ),
-        MetaStatement::For {
+        MetaStatement::AnyOf {
             variable,
             variable_type,
             range,
             body,
-        } => expand_for_statement(variable, variable_type, range, body, context, original_span),
+        } => expand_any_of_statement(variable, variable_type, range, body, context, original_span),
+        MetaStatement::AllOf {
+            variable,
+            variable_type,
+            range,
+            body,
+        } => expand_all_of_statement(variable, variable_type, range, body, context, original_span),
     };
 
     context.pop_depth();
@@ -513,24 +525,21 @@ fn expand_if_statement(
     }
 }
 
-/// Expand a for statement by iterating over the range and expanding the body for each value
-fn expand_for_statement(
-    variable: &str,
+/// Shared function to evaluate a range and validate types
+fn evaluate_range_and_validate(
+    range: &MetaForRange,
     variable_type: &TypeAnnotation,
-    for_range: &MetaForRange,
-    body: &super::parser::ast::GoalBody,
-    context: &mut TemplateExpansionContext,
-    original_span: &super::parser::ast::Location,
-) -> TemplateExpansionResult {
+    context: &TemplateExpansionContext,
+) -> Result<MetaRange, MetaError> {
     // Evaluate the start and end expressions
-    let start_val = evaluate_meta_expression(&for_range.start, &context.bindings)?;
-    let end_val = evaluate_meta_expression(&for_range.end, &context.bindings)?;
+    let start_val = evaluate_meta_expression(&range.start, &context.bindings)?;
+    let end_val = evaluate_meta_expression(&range.end, &context.bindings)?;
 
-    let range = match (start_val, end_val) {
+    let evaluated_range = match (start_val, end_val) {
         (MetaValue::Integer(start), MetaValue::Integer(end)) => MetaRange::new(start, end)?,
         _ => {
             return Err(MetaError::TypeMismatch(
-                "For loop range bounds must be integers".to_string(),
+                "Loop range bounds must be integers".to_string(),
             ))
         }
     };
@@ -538,42 +547,80 @@ fn expand_for_statement(
     // Type check - only integer ranges are supported for now
     if *variable_type != TypeAnnotation::Int {
         return Err(MetaError::TypeMismatch(
-            "For loop variables must be integers".to_string(),
+            "Loop variables must be integers".to_string(),
         ));
     }
 
-    // Generate disjunction branches for each iteration
-    use super::parser::ast::{Conjunction, Disjunction, Goal, LetDeclaration, Literal, Term};
+    Ok(evaluated_range)
+}
 
+/// Shared function to expand a single iteration
+fn expand_iteration(
+    variable: &str,
+    value: i64,
+    body: &super::parser::ast::GoalBody,
+    context: &mut TemplateExpansionContext,
+    original_span: &super::parser::ast::Location,
+) -> Result<Vec<super::parser::ast::Goal>, MetaError> {
+    use super::parser::ast::{Goal, LetDeclaration, Literal, Term};
+    use super::symbol_table::InternedSymbol;
+
+    // Create a new scope for this iteration
+    let mut iteration_context = context.enter_scope();
+    iteration_context.bind(variable.to_string(), MetaValue::Integer(value));
+
+    // Expand the body in the iteration context
+    let iteration_goals = expand_goal_body(body, &mut iteration_context)?;
+
+    // Create let statement to bind the loop variable
+    let runtime_value = Term::Literal(Literal::Number(value.to_string()), original_span.clone());
+    let let_decl = LetDeclaration {
+        var_name: InternedSymbol::from_text(variable),
+        value: Some(runtime_value),
+    };
+
+    // Create the body for this iteration: let statement + expanded goals
+    let mut iteration_body = vec![Goal::Let(let_decl, original_span.clone())];
+    iteration_body.extend(iteration_goals);
+
+    Ok(iteration_body)
+}
+
+/// Expand an any_of statement - generates disjunction
+fn expand_any_of_statement(
+    variable: &str,
+    variable_type: &TypeAnnotation,
+    range: &MetaForRange,
+    body: &super::parser::ast::GoalBody,
+    context: &mut TemplateExpansionContext,
+    original_span: &super::parser::ast::Location,
+) -> TemplateExpansionResult {
+    use super::parser::ast::{Conjunction, Disjunction, Goal};
+
+    let evaluated_range = evaluate_range_and_validate(range, variable_type, context)?;
     let mut disjunction_branches = Vec::new();
 
     // Iterate over the range
-    for i in range.iter() {
-        // Create a new scope for each iteration
-        let mut iteration_context = context.enter_scope();
-        iteration_context.bind(variable.to_string(), MetaValue::Integer(i));
+    for i in evaluated_range.iter() {
+        let iteration_goals = expand_iteration(variable, i, body, context, original_span)?;
 
-        // Expand the body in the iteration context
-        let iteration_goals = expand_goal_body(body, &mut iteration_context)?;
-
-        // Create let statement to bind the loop variable
-        let runtime_value = Term::Literal(Literal::Number(i.to_string()), original_span.clone());
-        let let_decl = LetDeclaration {
-            var_name: InternedSymbol::from_text(variable),
-            value: Some(runtime_value),
+        // If the iteration has multiple goals, wrap them in a conjunction
+        // If it has a single goal, use it directly to avoid unnecessary nesting
+        let branch_goal = if iteration_goals.len() == 1 {
+            iteration_goals.into_iter().next().unwrap()
+        } else if iteration_goals.is_empty() {
+            // Empty iterations contribute nothing to the disjunction
+            continue;
+        } else {
+            // Multiple goals need to be wrapped in a conjunction
+            let iteration_conj = Conjunction {
+                body: iteration_goals,
+                params: None, // No special parameters for meta-generated conjunctions
+            };
+            Goal::Conjunction(iteration_conj, original_span.clone())
         };
 
-        // Create the body for this iteration: let statement + expanded goals
-        let mut iteration_body = vec![Goal::Let(let_decl, original_span.clone())];
-        iteration_body.extend(iteration_goals);
-
-        // Each iteration becomes a conjunction
-        let iteration_conj = Conjunction {
-            body: iteration_body,
-            params: None, // No special parameters for meta-generated conjunctions
-        };
-
-        disjunction_branches.push(Goal::Conjunction(iteration_conj, original_span.clone()));
+        disjunction_branches.push(branch_goal);
     }
 
     // Create a disjunction of all iterations
@@ -588,6 +635,27 @@ fn expand_for_statement(
         };
         Ok(vec![Goal::Disjunction(disjunction, original_span.clone())])
     }
+}
+
+/// Expand an all_of statement - generates conjunction
+fn expand_all_of_statement(
+    variable: &str,
+    variable_type: &TypeAnnotation,
+    range: &MetaForRange,
+    body: &super::parser::ast::GoalBody,
+    context: &mut TemplateExpansionContext,
+    original_span: &super::parser::ast::Location,
+) -> TemplateExpansionResult {
+    let evaluated_range = evaluate_range_and_validate(range, variable_type, context)?;
+    let mut all_goals = Vec::new();
+
+    // Iterate over the range
+    for i in evaluated_range.iter() {
+        let iteration_body = expand_iteration(variable, i, body, context, original_span)?;
+        all_goals.extend(iteration_body);
+    }
+
+    Ok(all_goals)
 }
 
 /// Expand a goal body (list of goals) by processing each goal that may contain meta constructs
@@ -943,13 +1011,25 @@ impl fmt::Display for MetaStatement {
                 }
                 Ok(())
             }
-            MetaStatement::For {
+            MetaStatement::AnyOf {
                 variable,
                 variable_type,
                 range,
                 body,
             } => {
-                write!(f, "for {}: {} in {} {{ ", variable, variable_type, range)?;
+                write!(f, "any_of {}: {} in {} {{ ", variable, variable_type, range)?;
+                for goal in body {
+                    write!(f, "{}, ", goal)?;
+                }
+                write!(f, " }}")
+            }
+            MetaStatement::AllOf {
+                variable,
+                variable_type,
+                range,
+                body,
+            } => {
+                write!(f, "all_of {}: {} in {} {{ ", variable, variable_type, range)?;
                 for goal in body {
                     write!(f, "{}, ", goal)?;
                 }

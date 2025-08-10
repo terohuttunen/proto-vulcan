@@ -34,10 +34,10 @@ rel test_meta_if_condition(result) {
     }
 }
 
-// Test meta for loop
+// Test meta any_of loop
 @test(expected = [1, 2, 3, 4, 5])
 rel test_meta_for_loop(result) {
-    for i: int in 1..6 {
+    any_of i: int in 1..6 {
         result == i
     }
 }

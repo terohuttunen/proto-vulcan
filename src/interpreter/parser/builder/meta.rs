@@ -17,9 +17,18 @@ impl<'a> AstBuilder<'a> {
                     else_body,
                 })
             }
-            Rule::meta_for_statement => {
-                let (variable, variable_type, range, body) = self.build_meta_for_statement(inner)?;
-                Ok(MetaStatement::For {
+            Rule::meta_any_of_statement => {
+                let (variable, variable_type, range, body) = self.build_meta_loop_statement(inner)?;
+                Ok(MetaStatement::AnyOf {
+                    variable,
+                    variable_type,
+                    range,
+                    body,
+                })
+            }
+            Rule::meta_all_of_statement => {
+                let (variable, variable_type, range, body) = self.build_meta_loop_statement(inner)?;
+                Ok(MetaStatement::AllOf {
                     variable,
                     variable_type,
                     range,
@@ -93,7 +102,7 @@ impl<'a> AstBuilder<'a> {
         Ok((condition, then_body, else_ifs, else_body))
     }
 
-    pub fn build_meta_for_statement(&mut self, pair: Pair<Rule>) -> ParseResult<(
+    pub fn build_meta_loop_statement(&mut self, pair: Pair<Rule>) -> ParseResult<(
         crate::interpreter::symbol_table::InternedSymbol,
         TypeAnnotation,
         MetaForRange,

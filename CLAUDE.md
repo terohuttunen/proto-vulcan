@@ -114,6 +114,12 @@ Proto-Vulcan operates as two related but distinct languages:
 - **Fresh Variables**: `|x| goal` introduces scoped variables
 - **Constraint Blocks**: `constraint(domain="clpfd") { constraints }`
 - **Search Strategies**: `@bfs`, `@dfs` annotations
+- **Template Metaprogramming**: 
+  - `let x: int = value` - compile-time variables with type annotations
+  - `if condition { body }` - conditional compilation  
+  - `any_of i: int in 1..n { body }` - generates disjunction from range iteration
+  - `all_of i: int in 1..n { body }` - generates conjunction from range iteration
+  - `{variable}` - interpolation of meta values into relational terms
 
 #### Command Line Argument Access
 Proto-Vulcan programs can access command line arguments through `std::env`:
@@ -227,6 +233,63 @@ Proto-Vulcan includes constraint programming domains:
 - Add to appropriate `.pv` file in `std/` directory
 - Use standard `.pv` syntax with proper module declarations
 - Follow existing naming and documentation conventions
+
+### Template Metaprogramming Examples
+
+Proto-Vulcan's template system allows compile-time code generation with explicit control over logical operators:
+
+#### Basic Disjunction Generation
+```protovulcan
+// Generate alternatives - "any of these values"
+rel find_solution(result) {
+    any_of i: int in 1..4 {
+        result == Point(i, i * i)
+    }
+}
+// Expands to: any { result == Point(1,1), result == Point(2,4), result == Point(3,9) }
+```
+
+#### Basic Conjunction Generation  
+```protovulcan
+// Apply all constraints - "all of these must hold"
+rel constrain_variable(result) {
+    |x: Int| {
+        all_of i: int in 1..4 {
+            constraint(domain="clpfd") { x #>= i }
+        },
+        constraint(domain="clpfd") { x #<= 10 },
+        result == x
+    }
+}
+// Expands to: all { x #>= 1, x #>= 2, x #>= 3, x #<= 10, result == x }
+```
+
+#### Complex Nested Templates
+```protovulcan
+// Mixed disjunction and conjunction
+rel complex_generation(result) {
+    let max_outer: int = 3;
+    any_of i: int in 1..max_outer {
+        all_of j: int in i..(i + 2) {
+            constraint(domain="clpfd") { result #>= j * i }
+        },
+        constraint(domain="clpfd") { result #<= 20 }
+    }
+}
+```
+
+#### Template Variables and Interpolation
+```protovulcan
+// Compile-time computation with interpolation
+rel interpolated_generation(result) {
+    let base: int = 5;
+    let multiplier: int = 2;
+    any_of i: int in 1..4 {
+        let computed: int = base + i * multiplier;
+        result == Point({computed}, {i})
+    }
+}
+```
 
 ### Working with AST
 - Parse with `parser::parse_str()` for programs or `query::parse_query()` for queries

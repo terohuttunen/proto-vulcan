@@ -1916,10 +1916,10 @@ impl ExecutionContext {
                     return Ok(Goal::succeed());
                 }
 
-                // Build disjunction directly with Disj pairs
-                let mut result = Goal::fail();
+                // Collect all iteration goals first, then use Comte for fair interleaving
+                let mut all_iteration_goals = Vec::new();
 
-                for i in (start..end).rev() {
+                for i in start..end {
                     // Push new scope for iteration
                     self.push_scope();
 
@@ -1937,12 +1937,12 @@ impl ExecutionContext {
 
                     // Each iteration becomes a conjunction of its goals
                     let iteration_conjunction = self.build_conjunction(iteration_goals);
-                    
-                    // Build disjunction with proper order (reverse iteration to get correct order)
-                    result = crate::operator::disj::Disj::new(iteration_conjunction, result);
+                    all_iteration_goals.push(iteration_conjunction);
                 }
 
-                Ok(result)
+                // Use the same build_disjunction method as regular any {...} blocks
+                // This ensures fair interleaving with Comte operator
+                Ok(self.build_disjunction(all_iteration_goals))
             }
             _ => Err(RuntimeError::SemanticError {
                 message: "Meta for loop bounds must be integers".to_string(),

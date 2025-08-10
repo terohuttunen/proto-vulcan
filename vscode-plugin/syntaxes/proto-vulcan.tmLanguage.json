@@ -33,7 +33,7 @@
             "patterns": [
                 {
                     "name": "keyword.control.proto-vulcan",
-                    "match": "\\b(if|else|for|in|match|any|all|let)\\b"
+                    "match": "\\b(if|else|any_of|all_of|in|match|any|all|let)\\b"
                 },
                 {
                     "name": "keyword.other.proto-vulcan",
