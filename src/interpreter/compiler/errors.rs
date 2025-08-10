@@ -85,6 +85,8 @@ pub struct CompilationOptions {
     pub warn_shadowing: bool,
     /// Enable unused import warnings
     pub warn_unused_imports: bool,
+    /// Whether we're compiling in test mode (includes @test items)
+    pub include_test_items: bool,
 }
 
 impl Default for CompilationOptions {
@@ -93,6 +95,7 @@ impl Default for CompilationOptions {
             strict_mode: false,
             warn_shadowing: true,
             warn_unused_imports: true,
+            include_test_items: false,
         }
     }
 }

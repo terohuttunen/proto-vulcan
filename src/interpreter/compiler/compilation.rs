@@ -448,6 +448,13 @@ impl Compiler {
         predicate: &ast::PredicateDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
+        // Skip @test items when not in test mode
+        if !self.compilation_context.options.include_test_items {
+            let has_test_attr = predicate.attributes.iter().any(|attr| attr.name.to_string() == "test");
+            if has_test_attr {
+                return Ok(()); // Skip this predicate
+            }
+        }
         // Look up the predicate using IR registry
         let predicate_name = predicate.name.to_string();
 

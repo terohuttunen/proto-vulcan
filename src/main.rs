@@ -214,6 +214,7 @@ fn main() {
                 strict_mode: *strict,
                 warn_shadowing: *warn_shadowing,
                 warn_unused_imports: *warn_unused_imports,
+                include_test_items: false, // Check command should not include test items
             };
             parse_file(file.clone(), *show_ast, options)
         }

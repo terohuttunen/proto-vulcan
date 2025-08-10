@@ -834,7 +834,11 @@ impl TestRunner {
 
         // Step 2: Compile test program with stdlib as base context
         // Use compile_items_into to add test items to the existing stdlib program
-        let mut compiler = Compiler::new();
+        let test_options = super::compiler::CompilationOptions {
+            include_test_items: true,
+            ..Default::default()
+        };
+        let mut compiler = super::compiler::Compiler::with_options(test_options);
 
         // Get a mutable copy of the base program
         let mut combined_program = if let Some(base) = &interpreter.base_program {

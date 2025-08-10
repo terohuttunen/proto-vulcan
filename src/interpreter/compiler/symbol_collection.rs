@@ -229,6 +229,13 @@ impl Compiler {
         predicate: &ast::PredicateDefinition,
         ir_program: &mut ir::Program,
     ) -> Result<(), CompileError> {
+        // Skip @test items when not in test mode
+        if !self.compilation_context.options.include_test_items {
+            let has_test_attr = predicate.attributes.iter().any(|attr| attr.name.to_string() == "test");
+            if has_test_attr {
+                return Ok(()); // Skip this predicate
+            }
+        }
         // Create predicate ID directly from current context - no parsing needed
         let predicate_id =
             ir::PredicateId::with_parent(self.current_module_path(), predicate.name.to_string());
