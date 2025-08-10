@@ -193,10 +193,6 @@ This unified interface allows builtins to receive the same parameter types as re
 - `path.pv`: Path manipulation utilities
 - `mod.pv`: Module entry point
 
-## Migration Notes
-
-The project supports both legacy macro syntax and new `.pv` syntax. See `MIGRATION_GUIDE.md` for detailed migration instructions from macro-based to interpreter-based syntax.
-
 ## Constraint Programming
 
 Proto-Vulcan includes constraint programming domains:
