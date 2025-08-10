@@ -987,6 +987,12 @@ impl Compiler {
             // Bind compiled pattern variables to local scope
             self.bind_compiled_pattern_variables(&pattern)?;
 
+            // Compile guard if present (pattern variables are available in scope)
+            let guard = match &arm.guard {
+                Some(guard_goal) => Some(self.compile_goal(guard_goal, ir_program)?),
+                None => None,
+            };
+
             let mut body = Vec::new();
             for goal in arm.body.iter() {
                 body.push(self.compile_goal(goal, ir_program)?);
@@ -997,6 +1003,7 @@ impl Compiler {
 
             arms.push(ir::PatternArm {
                 pattern,
+                guard,
                 body: ir::StructuralGoal::from_vec(body),
             });
         }

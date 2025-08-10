@@ -74,6 +74,7 @@ extern_keyword = @{ "extern" }
 as_keyword = @{ "as" }
 struct_keyword = @{ "struct" }
 enum_keyword = @{ "enum" }
+if_keyword = @{ "if" }
 
 struct_definition = {
     visibility? ~ struct_keyword ~ type_name ~ (tuple_struct_def | named_struct_def)
@@ -280,7 +281,7 @@ custom_param = { ident ~ "=" ~ param_value }
 param_value = { number_literal | string_literal | boolean_literal | ident }
 
 pattern_matching = { "match" ~ term ~ "{" ~ (pattern_arm ~ ("," ~ pattern_arm)* ~ ","?)? ~ "}" }
-pattern_arm = { pattern ~ pattern_arrow ~ (goal | "{" ~ goal_body ~ "}") }
+pattern_arm = { pattern ~ (if_keyword ~ goal)? ~ pattern_arrow ~ (goal | "{" ~ goal_body ~ "}") }
 parenthesized_goal = { "(" ~ goal_body ~ ")" }
 
 // -- Basic Goals --

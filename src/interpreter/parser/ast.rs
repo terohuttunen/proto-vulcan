@@ -835,6 +835,7 @@ pub struct PatternMatching {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternArm {
     pub pattern: Pattern,
+    pub guard: Option<Goal>,
     pub body: GoalBody,
 }
 
@@ -1390,7 +1391,11 @@ impl Display for PatternMatching {
 
 impl Display for PatternArm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} => {{ ", self.pattern)?;
+        write!(f, "{}", self.pattern)?;
+        if let Some(guard) = &self.guard {
+            write!(f, " if {}", guard)?;
+        }
+        write!(f, " => {{ ")?;
         for goal in &self.body {
             write!(f, "{}, ", goal)?;
         }

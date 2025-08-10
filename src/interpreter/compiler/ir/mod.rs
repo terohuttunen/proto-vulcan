@@ -1829,6 +1829,7 @@ pub struct PatternMatch {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternArm {
     pub pattern: Pattern,
+    pub guard: Option<Goal>,
     pub body: Rc<[StructuralGoal]>,
 }
 

@@ -1,0 +1,64 @@
+// tests/guard_tests.pv
+// Tests for pattern matching with guards
+
+@test
+rel guard_with_constraint() {
+    match 5 {
+        n if constraint(domain="clpfd") { n > 0 } => true,
+        _ => false
+    }
+}
+
+@test(should_fail)
+rel guard_with_failing_constraint() {
+    match -5 {
+        n if constraint(domain="clpfd") { n > 0 } => true,
+        _ => false
+    }
+}
+
+@test
+rel guard_with_unification() {
+    match 42 {
+        n if n == 42 => true,
+        _ => false
+    }
+}
+
+@test(should_fail)
+rel guard_with_failing_unification() {
+    match 42 {
+        n if n == 43 => true,
+        _ => false
+    }
+}
+
+@test
+rel guard_fallthrough_to_second_arm() {
+    match 10 {
+        n if constraint(domain="clpfd") { n > 20 } => false,  // Should fail guard
+        n if constraint(domain="clpfd") { n > 5 } => true     // Should succeed
+    }
+}
+
+@test
+rel multiple_guards_with_conjunction() {
+    match [1, 2] {
+        [x, y] if all {
+            constraint(domain="clpfd") { x > 0 },
+            constraint(domain="clpfd") { y > x }
+        } => true,
+        _ => false
+    }
+}
+
+@test(should_fail)
+rel guard_with_fresh_variables() {
+    match 10 {
+        n if |doubled| {
+            constraint(domain="clpfd") { doubled == n * 2 },
+            constraint(domain="clpfd") { doubled > 25 }  // 10 * 2 = 20, not > 25
+        } => true,
+        _ => false
+    }
+}

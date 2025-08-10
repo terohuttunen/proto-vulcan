@@ -381,14 +381,36 @@ impl<'a> AstBuilder<'a> {
     pub fn build_pattern_arm(&mut self, pair: Pair<Rule>) -> ParseResult<PatternArm> {
         let mut inner = pair.into_inner();
         let pattern = self.build_pattern(inner.next().unwrap())?;
-        // Skip the pattern_arrow token
-        let _arrow = inner.next().unwrap(); // This should be the pattern_arrow rule
+        
+        // The next elements could be: if_keyword, goal, pattern_arrow, body
+        // or just: pattern_arrow, body
+        let mut guard = None;
+        let next_pair = inner.next().unwrap();
+        
+        // Check if this is the if_keyword (guard present) or pattern arrow (no guard)
+        if next_pair.as_rule() == Rule::if_keyword {
+            // We have a guard: if_keyword followed by goal
+            let goal_pair = inner.next().unwrap(); // Get the goal that follows if_keyword
+            guard = Some(self.build_goal(goal_pair)?);
+            
+            // Now get the pattern arrow
+            let arrow_pair = inner.next().unwrap();
+            if arrow_pair.as_rule() != Rule::pattern_arrow {
+                return Err(ParseError::UnexpectedRule(arrow_pair.as_rule()));
+            }
+        } else if next_pair.as_rule() == Rule::pattern_arrow {
+            // No guard, this is the pattern arrow directly
+            // Continue with body parsing
+        } else {
+            return Err(ParseError::UnexpectedRule(next_pair.as_rule()));
+        }
+        
         let body_part = inner.next().unwrap();
         let body = match body_part.as_rule() {
             Rule::goal => vec![self.build_goal(body_part)?],
             Rule::goal_body => self.build_goal_body(body_part)?,
             _ => return Err(ParseError::UnexpectedRule(body_part.as_rule())),
         };
-        Ok(PatternArm { pattern, body })
+        Ok(PatternArm { pattern, guard, body })
     }
 }

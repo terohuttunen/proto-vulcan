@@ -822,8 +822,16 @@ impl ExecutionContext {
             let unification_goal =
                 crate::relation::eq::eq(pattern_term, match_term.clone()).cast_into();
 
-            // Build conjunction: unification first, then body goals
+            // Build conjunction: unification first, then guard (if present), then body goals
             let mut arm_goals = vec![unification_goal];
+            
+            // Add guard evaluation if present
+            if let Some(guard_goal) = &arm.guard {
+                let guard_runtime_goal = self.ir_goal_to_runtime(guard_goal)?;
+                arm_goals.push(guard_runtime_goal);
+            }
+            
+            // Add body goals
             for goal in arm.body.iter() {
                 let body_goal = self.ir_goal_to_runtime(goal)?;
                 arm_goals.push(body_goal);
