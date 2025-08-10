@@ -419,6 +419,7 @@ impl<'a> AstBuilder<'a> {
         let predicate_kind = match relation_kind_pair.as_str() {
             "rel" => PredicateKind::Relation,
             "macro" => PredicateKind::Macro,
+            "dcg" => PredicateKind::Grammar,
             _ => return Err(ParseError::UnexpectedRule(relation_kind_pair.as_rule())),
         };
 

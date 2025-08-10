@@ -241,6 +241,7 @@ impl Compiler {
             kind: match predicate.predicate_kind {
                 ast::PredicateKind::Relation => ir::PredicateKind::Relation,
                 ast::PredicateKind::Macro => ir::PredicateKind::Macro,
+                ast::PredicateKind::Grammar => ir::PredicateKind::Grammar,
             },
             visibility: self.convert_visibility(&predicate.visibility)?,
         };

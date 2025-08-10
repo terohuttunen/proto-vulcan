@@ -17,20 +17,20 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         // Take the external module items (this empties the vec)
         let external_items = std::mem::take(&mut self.external_module_items);
-        
+
         for (module_path, items) in external_items {
             // Push the module context
             self.module_path_stack.push(module_path.clone());
-            
+
             // Compile each item's body
             for item in &items {
                 self.compile_item_body(item, ir_program)?;
             }
-            
+
             // Pop the module context
             self.module_path_stack.pop();
         }
-        
+
         Ok(())
     }
 
@@ -377,7 +377,9 @@ impl Compiler {
             ) {
                 // Since resolve_local_symbol_with_kind returns ItemId for predicates,
                 // we can wrap it back into PredicateId since it came from a predicate search
-                return Ok(ir::PredicateCallTarget::Predicate(ir::PredicateId { id: item_id }));
+                return Ok(ir::PredicateCallTarget::Predicate(ir::PredicateId {
+                    id: item_id,
+                }));
             }
         }
 
@@ -481,6 +483,20 @@ impl Compiler {
             });
         }
 
+        // For DCGs, add difference list parameters (Input, Output)
+        if predicate.predicate_kind == ast::PredicateKind::Grammar {
+            let input_param = ir::Parameter {
+                name: InternedSymbol::from_text("Input"),
+                type_annotation: None,
+            };
+            let output_param = ir::Parameter {
+                name: InternedSymbol::from_text("Output"),
+                type_annotation: None,
+            };
+            parameters.push(input_param);
+            parameters.push(output_param);
+        }
+
         // Push new scope for predicate parameters
         self.push_local_scope();
 
@@ -492,10 +508,18 @@ impl Compiler {
         }
 
         // Compile body goals
-        let mut body = vec![];
-        for goal in predicate.body.iter() {
-            body.push(self.compile_goal(goal, ir_program)?);
-        }
+        let body = if predicate.predicate_kind == ast::PredicateKind::Grammar {
+            // For DCGs, transform the body to thread difference lists
+            let dcg_goals = self.compile_dcg_body(&predicate.body, ir_program)?;
+            dcg_goals
+        } else {
+            // For regular relations, compile goals normally
+            let mut goals = vec![];
+            for goal in predicate.body.iter() {
+                goals.push(self.compile_goal(goal, ir_program)?);
+            }
+            goals
+        };
 
         // Pop the predicate parameter scope
         self.pop_local_scope();
@@ -509,6 +533,7 @@ impl Compiler {
             kind: match predicate.predicate_kind {
                 ast::PredicateKind::Relation => ir::PredicateKind::Relation,
                 ast::PredicateKind::Macro => ir::PredicateKind::Macro,
+                ast::PredicateKind::Grammar => ir::PredicateKind::Grammar,
             },
             visibility: self.convert_visibility(&predicate.visibility)?,
         };
@@ -516,6 +541,297 @@ impl Compiler {
         registry.replace_item(ir::Item::Predicate(updated_predicate));
 
         Ok(())
+    }
+
+    /// Compile DCG body goals, transforming them to thread difference lists
+    fn compile_dcg_body(
+        &mut self,
+        body: &[ast::Goal],
+        ir_program: &mut ir::Program,
+    ) -> Result<Vec<ir::Goal>, CompileError> {
+        let mut compiled_goals = vec![];
+        let mut current_list_var = InternedSymbol::from_text("Input");
+        let mut intermediate_vars = vec![];
+
+        // Process each goal in sequence, threading the difference lists
+        for (i, goal) in body.iter().enumerate() {
+            let next_list_var = if i == body.len() - 1 {
+                // Last goal uses Output
+                InternedSymbol::from_text("Output")
+            } else {
+                // Intermediate goal uses a fresh variable with compiler prefix
+                let var_name = InternedSymbol::from_text(&format!("__dcg_rest_{}", i));
+                intermediate_vars.push(var_name.clone());
+                var_name
+            };
+
+            let compiled_goal =
+                self.compile_dcg_goal(goal, current_list_var, next_list_var.clone(), ir_program)?;
+            compiled_goals.push(compiled_goal);
+
+            current_list_var = next_list_var;
+        }
+
+        // If we have intermediate variables, wrap the goals in a Fresh goal
+        if !intermediate_vars.is_empty() {
+            let fresh_goal = ir::Goal::Fresh(ir::Fresh {
+                variables: intermediate_vars,
+                body: ir::StructuralGoal::from_vec(compiled_goals),
+            });
+            Ok(vec![fresh_goal])
+        } else {
+            Ok(compiled_goals)
+        }
+    }
+
+    /// Compile a single DCG goal, adding difference list parameters
+    fn compile_dcg_goal(
+        &mut self,
+        goal: &ast::Goal,
+        input_var: InternedSymbol,
+        output_var: InternedSymbol,
+        ir_program: &mut ir::Program,
+    ) -> Result<ir::Goal, CompileError> {
+        match goal {
+            ast::Goal::RelationCall(call, _span) => {
+                // Transform DCG relation call to include difference lists
+                let mut args = vec![];
+
+                // Add original arguments
+                for arg in &call.args {
+                    // Convert ast::CallArgument to ir::Term
+                    match arg {
+                        ast::CallArgument::Term(term) => {
+                            let compiled_term = self.compile_term(term, ir_program)?;
+                            args.push(compiled_term);
+                        }
+                        ast::CallArgument::MetaExpression(_meta_expr) => {
+                            // For now, DCG doesn't support meta expressions in arguments
+                            // This could be extended in the future
+                            return Err(CompileError::SemanticError {
+                                message: "Meta expressions are not supported in DCG arguments"
+                                    .to_string(),
+                                symbol: InternedSymbol::from_text("dcg_meta"),
+                            });
+                        }
+                    }
+                }
+
+                // Add difference list arguments
+                args.push(ir::Term::Variable(input_var));
+                args.push(ir::Term::Variable(output_var));
+
+                // Use the same structure as regular relation calls
+                // Convert RelationName to QualifiedPath
+                let qualified_path = match &call.name {
+                    ast::RelationName::Simple(name) => {
+                        ast::QualifiedPath::Relative(vec![name.clone()])
+                    }
+                    ast::RelationName::Qualified(qualified_name) => {
+                        // Convert QualifiedName to QualifiedPath by combining path and name
+                        match &qualified_name.path {
+                            ast::QualifiedPath::Global(segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Global(new_segments)
+                            }
+                            ast::QualifiedPath::Absolute(segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Absolute(new_segments)
+                            }
+                            ast::QualifiedPath::Relative(segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Relative(new_segments)
+                            }
+                            ast::QualifiedPath::Super(levels, segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Super(*levels, new_segments)
+                            }
+                            ast::QualifiedPath::Self_(segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Self_(new_segments)
+                            }
+                            ast::QualifiedPath::External(crate_name, segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::External(crate_name.clone(), new_segments)
+                            }
+                        }
+                    }
+                };
+
+                // Resolve the predicate reference
+                let predicate_target =
+                    self.resolve_qualified_path_to_predicate(&qualified_path, ir_program)?;
+
+                Ok(ir::Goal::PredicateCall(ir::PredicateCall {
+                    target: predicate_target,
+                    arguments: args,
+                }))
+            }
+            ast::Goal::PatternMatch(pattern_match, _span) => {
+                // Handle pattern matching in DCG context by adding Input/Output variables to scope
+                // and compiling pattern match with DCG goal compilation for arms
+                self.compile_dcg_pattern_match(pattern_match, input_var, output_var, ir_program)
+            }
+            ast::Goal::Conjunction(conjunction, _span) => {
+                // For conjunctions in DCG, we need to thread the difference lists through
+                // each goal in the conjunction
+                let mut compiled_goals = vec![];
+                let mut current_input = input_var;
+                let mut intermediate_vars = vec![];
+
+                for (i, goal) in conjunction.body.iter().enumerate() {
+                    let next_output = if i == conjunction.body.len() - 1 {
+                        // Last goal uses the final output
+                        output_var.clone()
+                    } else {
+                        // Intermediate goal uses a fresh variable
+                        let var_name = InternedSymbol::from_text(&format!("__dcg_conj_{}", i));
+                        intermediate_vars.push(var_name.clone());
+                        var_name
+                    };
+
+                    let compiled_goal = self.compile_dcg_goal(
+                        goal,
+                        current_input,
+                        next_output.clone(),
+                        ir_program,
+                    )?;
+                    compiled_goals.push(compiled_goal);
+                    current_input = next_output;
+                }
+
+                // Wrap in fresh variables if needed
+                if !intermediate_vars.is_empty() {
+                    Ok(ir::Goal::Fresh(ir::Fresh {
+                        variables: intermediate_vars,
+                        body: ir::StructuralGoal::from_vec(compiled_goals),
+                    }))
+                } else {
+                    Ok(ir::Goal::Conjunction(ir::StructuralGoal::from_vec(
+                        compiled_goals,
+                    )))
+                }
+            }
+            ast::Goal::Disjunction(disjunction, _span) => {
+                // For disjunctions in DCG, each alternative should use the same Input and Output vars
+                // Each branch gets the same input and should produce the same output
+                let mut compiled_goals = vec![];
+
+                for goal in disjunction.body.iter() {
+                    let compiled_goal = self.compile_dcg_goal(
+                        goal,
+                        input_var.clone(),
+                        output_var.clone(),
+                        ir_program,
+                    )?;
+                    compiled_goals.push(compiled_goal);
+                }
+
+                Ok(ir::Goal::Disjunction(ir::StructuralGoal::from_vec(
+                    compiled_goals,
+                )))
+            }
+            _ => {
+                // For non-DCG goals like unification, compile normally
+                // These goals don't need difference list threading but should
+                // have access to Input/Output variables in their scope
+                self.compile_goal(goal, ir_program)
+            }
+        }
+    }
+
+    /// Compile pattern matching in DCG context with difference list variables in scope
+    fn compile_dcg_pattern_match(
+        &mut self,
+        pattern_match: &ast::PatternMatching,
+        input_var: InternedSymbol,
+        output_var: InternedSymbol,
+        ir_program: &mut ir::Program,
+    ) -> Result<ir::Goal, CompileError> {
+        // Compile the term being matched
+        let compiled_term = self.compile_term(&pattern_match.term, ir_program)?;
+
+        // Compile each arm with DCG goal compilation
+        let mut compiled_arms = vec![];
+        for arm in &pattern_match.arms {
+            let compiled_pattern = self.compile_pattern(&arm.pattern, ir_program)?;
+
+            // Compile guard if present
+            let compiled_guard = if let Some(guard_goal) = &arm.guard {
+                Some(self.compile_goal(guard_goal, ir_program)?)
+            } else {
+                None
+            };
+
+            // Compile body with DCG goal compilation to handle difference list threading
+            let mut compiled_body_goals = vec![];
+            // arm.body is a Vec<Goal> (GoalBody)
+            if arm.body.is_empty() {
+                // Empty body - just unify Input with Output
+                compiled_body_goals.push(ir::Goal::Equality(
+                    ir::Term::Variable(input_var.clone()),
+                    ir::Term::Variable(output_var.clone()),
+                ));
+            } else if arm.body.len() == 1 {
+                // Single goal
+                let compiled_goal = self.compile_dcg_goal(
+                    &arm.body[0],
+                    input_var.clone(),
+                    output_var.clone(),
+                    ir_program,
+                )?;
+                compiled_body_goals.push(compiled_goal);
+            } else {
+                // Multiple goals - thread difference lists through them
+                let mut current_input = input_var.clone();
+                let mut intermediate_vars = vec![];
+
+                for (i, goal) in arm.body.iter().enumerate() {
+                    let next_output = if i == arm.body.len() - 1 {
+                        output_var.clone()
+                    } else {
+                        let var_name = InternedSymbol::from_text(&format!("__dcg_arm_{}", i));
+                        intermediate_vars.push(var_name.clone());
+                        var_name
+                    };
+
+                    let compiled_goal = self.compile_dcg_goal(
+                        goal,
+                        current_input,
+                        next_output.clone(),
+                        ir_program,
+                    )?;
+                    compiled_body_goals.push(compiled_goal);
+                    current_input = next_output;
+                }
+
+                // Wrap in fresh if needed
+                if !intermediate_vars.is_empty() {
+                    let fresh_goal = ir::Goal::Fresh(ir::Fresh {
+                        variables: intermediate_vars,
+                        body: ir::StructuralGoal::from_vec(compiled_body_goals),
+                    });
+                    compiled_body_goals = vec![fresh_goal];
+                }
+            }
+
+            compiled_arms.push(ir::PatternArm {
+                pattern: compiled_pattern,
+                guard: compiled_guard,
+                body: ir::StructuralGoal::from_vec(compiled_body_goals),
+            });
+        }
+
+        Ok(ir::Goal::PatternMatch(ir::PatternMatch {
+            term: compiled_term,
+            arms: compiled_arms,
+        }))
     }
 
     /// Compile impl block body
@@ -642,7 +958,9 @@ impl Compiler {
                 self.compile_constraint_block(constraint_block)
             }
 
-            ast::Goal::MethodCall(method_call, _span) => self.compile_method_call(method_call, ir_program),
+            ast::Goal::MethodCall(method_call, _span) => {
+                self.compile_method_call(method_call, ir_program)
+            }
 
             ast::Goal::MetaStatement(meta_statement, _span) => {
                 self.compile_meta_statement(meta_statement, ir_program)
@@ -665,11 +983,10 @@ impl Compiler {
                 {
                     return self.compile_enum_variant_construction(&enum_variant, ir_program);
                 }
-                
-                
+
                 // TODO: Check if this variable has a rel(n) type annotation and should be converted to predicate reference
                 // For now, we'll handle this through the parameter type system in predicate calls
-                
+
                 Ok(ir::Term::Variable(name.clone()))
             }
 
@@ -777,30 +1094,33 @@ impl Compiler {
         };
 
         // Resolve the predicate reference
-        let predicate_target = self.resolve_qualified_path_to_predicate(&qualified_path, ir_program)?;
+        let predicate_target =
+            self.resolve_qualified_path_to_predicate(&qualified_path, ir_program)?;
 
         // Validate builtin predicates exist and have correct arity
         if let ir::PredicateCallTarget::Builtin(builtin_name) = &predicate_target {
             // We need access to the environment, but it's not directly available here
             // For now, we'll validate using the builtin registry
             let registry = crate::interpreter::builtins::get_builtin_registry();
-            
+
             match registry.get(builtin_name) {
                 Some(&expected_arity) => {
                     if expected_arity != relation_call.args.len() {
-                        return Err(CompileError::SemanticError { 
+                        return Err(CompileError::SemanticError {
                             message: format!(
                                 "Builtin predicate '{}' expects {} arguments, but {} were provided",
-                                builtin_name, expected_arity, relation_call.args.len()
+                                builtin_name,
+                                expected_arity,
+                                relation_call.args.len()
                             ),
-                            symbol: InternedSymbol::from_text(builtin_name) 
+                            symbol: InternedSymbol::from_text(builtin_name),
                         });
                     }
                 }
                 None => {
-                    return Err(CompileError::SemanticError { 
+                    return Err(CompileError::SemanticError {
                         message: format!("Unknown builtin predicate '{}'", builtin_name),
-                        symbol: InternedSymbol::from_text(builtin_name) 
+                        symbol: InternedSymbol::from_text(builtin_name),
                     });
                 }
             }
@@ -886,7 +1206,13 @@ impl Compiler {
                         }
                     } else {
                         // Regular relational parameter - check if it should be a predicate reference
-                        let compiled_arg = if self.should_convert_arg_to_predicate_ref(&predicate_target, i, term, predicate_def, ir_program)? {
+                        let compiled_arg = if self.should_convert_arg_to_predicate_ref(
+                            &predicate_target,
+                            i,
+                            term,
+                            predicate_def,
+                            ir_program,
+                        )? {
                             // Convert variable to predicate reference for higher-order predicates
                             self.compile_term_as_predicate_ref(term, ir_program)?
                         } else {
@@ -1078,41 +1404,40 @@ impl Compiler {
     ) -> Result<ir::Goal, CompileError> {
         // Transform method call into a regular predicate call
         // receiver.method(args...) becomes TypeName::method(receiver, args...)
-        
+
         // First, we need to determine the type of the receiver
         let receiver_type_name = self.extract_receiver_type(&method_call.receiver)?;
-        
+
         // Create a qualified path for the method: TypeName::method_name
         let method_path = ast::QualifiedPath::Relative(vec![
             receiver_type_name.clone(),
             method_call.method.clone(),
         ]);
-        
+
         // Resolve the method as a predicate
-        let predicate_target = self.resolve_qualified_path_to_predicate(&method_path, ir_program)?;
-        
+        let predicate_target =
+            self.resolve_qualified_path_to_predicate(&method_path, ir_program)?;
+
         // Compile the receiver as the first argument
         let receiver_term = self.compile_term(&method_call.receiver, ir_program)?;
         let mut arguments = vec![receiver_term];
-        
+
         // Compile the rest of the arguments
         for arg in &method_call.args {
             arguments.push(self.compile_term(arg, ir_program)?);
         }
-        
+
         // Create the predicate call
         Ok(ir::Goal::PredicateCall(ir::PredicateCall {
             target: predicate_target,
             arguments,
         }))
     }
-    
+
     /// Extract the type name from a receiver term for method calls
     fn extract_receiver_type(&self, receiver: &ast::Term) -> Result<InternedSymbol, CompileError> {
         match receiver {
-            ast::Term::NamedStruct(named_struct, _) => {
-                Ok(named_struct.name.clone())
-            },
+            ast::Term::NamedStruct(named_struct, _) => Ok(named_struct.name.clone()),
             ast::Term::TupleStruct(tuple_struct, _) => {
                 // For tuple structs, extract the final segment from the qualified path
                 let segments = tuple_struct.name.segments();
@@ -1124,7 +1449,7 @@ impl Compiler {
                         symbol: InternedSymbol::from_text("tuple_struct"),
                     })
                 }
-            },
+            }
             ast::Term::Variable(var_name) => {
                 // For variables, we'll need type inference in the future
                 // For now, return an error asking for explicit type annotation
@@ -1132,13 +1457,11 @@ impl Compiler {
                     message: format!("Cannot determine type of variable '{}' for method call. Consider using explicit struct construction or type annotation", var_name),
                     symbol: var_name.clone(),
                 })
-            },
-            _ => {
-                Err(CompileError::SemanticError {
-                    message: "Method calls are only supported on struct instances".to_string(),
-                    symbol: InternedSymbol::from_text("method_receiver"),
-                })
             }
+            _ => Err(CompileError::SemanticError {
+                message: "Method calls are only supported on struct instances".to_string(),
+                symbol: InternedSymbol::from_text("method_receiver"),
+            }),
         }
     }
 
@@ -2240,9 +2563,7 @@ impl Compiler {
         &mut self,
         constraint_block: &ast::ConstraintBlock,
     ) -> Result<ir::Goal, CompileError> {
-        use crate::interpreter::constraint_domains::{
-            VariableType,
-        };
+        use crate::interpreter::constraint_domains::VariableType;
 
         let domain_name = constraint_block.domain.as_str();
 
@@ -2390,11 +2711,16 @@ impl Compiler {
         // Check if the predicate parameter has a rel(n) type annotation
         if let Some(predicate) = predicate_def {
             if param_index < predicate.parameters.len() {
-                if let Some(ir::TypeAnnotation::Relation(_arity)) = &predicate.parameters[param_index].type_annotation {
+                if let Some(ir::TypeAnnotation::Relation(_arity)) =
+                    &predicate.parameters[param_index].type_annotation
+                {
                     // Parameter expects a relation - check if the term is a variable that resolves to a predicate
                     if let ast::Term::Variable(var_name) = term {
                         let simple_path = ast::QualifiedPath::simple(vec![var_name.clone()]);
-                        if self.resolve_qualified_path_as_predicate(&simple_path, ir_program).is_ok() {
+                        if self
+                            .resolve_qualified_path_as_predicate(&simple_path, ir_program)
+                            .is_ok()
+                        {
                             return Ok(true);
                         }
                     }
@@ -2413,7 +2739,8 @@ impl Compiler {
         match term {
             ast::Term::Variable(var_name) => {
                 let simple_path = ast::QualifiedPath::simple(vec![var_name.clone()]);
-                let predicate_id = self.resolve_qualified_path_as_predicate(&simple_path, ir_program)?;
+                let predicate_id =
+                    self.resolve_qualified_path_as_predicate(&simple_path, ir_program)?;
                 Ok(ir::Term::Predicate(predicate_id))
             }
             _ => {

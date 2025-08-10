@@ -149,7 +149,7 @@ predicate_definition = {
     ~ "}"
 }
 
-predicate_keyword = @{ "macro" | "rel" }
+predicate_keyword = @{ "dcg" | "macro" | "rel" }
 
 parameter = { ident ~ (":" ~ meta_type_annotation)? }
 meta_type_annotation = { relation_type | "int" | "string" | "bool" | type_name }

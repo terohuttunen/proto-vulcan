@@ -1,0 +1,243 @@
+// DCG (Definite Clause Grammar) utilities for Proto-Vulcan
+// Standard library for working with difference lists and grammar parsing
+//
+// ## What are DCGs?
+//
+// Definite Clause Grammars (DCGs) are a way to write parsers using logic programming.
+// They automatically handle "difference lists" - pairs of lists where parsing consumes 
+// elements from the input list and produces a remainder.
+//
+// ## Basic DCG Syntax
+//
+// DCG rules are defined with the `dcg` keyword:
+//
+// ```prolog
+// dcg my_rule(param) {
+//     terminal("expected_token"),
+//     other_rule(param)
+// }
+// ```
+//
+// ## How DCGs Work
+//
+// DCG rules are compiled to regular relations with two extra parameters:
+// - `Input` - the input list to parse
+// - `Output` - the remaining list after parsing
+//
+// So `my_rule(param)` becomes `my_rule(param, Input, Output)`.
+//
+// ## Example Usage
+//
+// ```prolog
+// // Define a DCG rule
+// dcg greeting() {
+//     terminal("hello"),
+//     terminal("world")
+// }
+//
+// // Use it in a query
+// rel test() {
+//     greeting(["hello", "world"], [])  // Parses completely
+// }
+//
+// // Or with remainder
+// rel test_partial() {
+//     greeting(["hello", "world", "!"], remainder),
+//     remainder == ["!"]  // remainder contains "!"
+// }
+// ```
+//
+// ## Pattern Matching in DCGs
+//
+// DCGs can use pattern matching on the implicit Input and Output variables:
+//
+// ```prolog
+// dcg word(w) {
+//     match Input {
+//         [w | rest] => Output == rest
+//     }
+// }
+// ```
+//
+// ## Combining DCG Rules
+//
+// DCG rules can call other DCG rules. The difference lists are automatically
+// threaded through the calls:
+//
+// ```prolog
+// dcg sentence() {
+//     subject(),      // Input -> Temp1
+//     verb(),         // Temp1 -> Temp2  
+//     object()        // Temp2 -> Output
+// }
+// ```
+
+use std::list::{append, member, reverse};
+
+/// Basic terminal consumption that matches a specific element
+dcg terminal(element) {
+    match Input {
+        [element | rest] => Output == rest
+    }
+}
+
+/// DCG utility for consuming a specific sequence of terminals
+dcg sequence(items) {
+    match items {
+        [] => Output == Input, // No consumption for empty sequence
+        [first | rest] => all {
+            terminal(first),
+            sequence(rest)
+        }
+    }
+}
+
+/// DCG utility for consuming any single element and returning it
+dcg any_element(element) {
+    match Input {
+        [element | rest] => Output == rest
+    }
+}
+
+/// DCG utility for end of input
+dcg eos() {
+    Input == Output,
+    Input == []
+}
+
+/// DCG utility for peeking at the next element without consuming
+dcg peek(element) {
+    match Input {
+        [element | _] => Output == Input
+    }
+}
+
+/// DCG utility for consuming elements while they match a specific value
+/// Returns the count of consumed elements
+dcg consume_while_count(element, count) {
+    consume_while_helper(element, [], count_list),
+    |length| {
+        __builtin_length(count_list, length),
+        count == length
+    }
+}
+
+/// Helper for consume_while - collects consumed elements
+dcg consume_while_helper(element, acc, result) {
+    any {
+        all {
+            terminal(element),
+            |new_acc| {
+                append(acc, [element], new_acc),
+                consume_while_helper(element, new_acc, result)
+            }
+        },
+        all {
+            result == acc,
+            Output == Input  // No more consumption
+        }
+    }
+}
+
+/// DCG utility for optional terminal
+dcg optional_terminal(element) {
+    any {
+        terminal(element),
+        Output == Input  // No consumption if element not found
+    }
+}
+
+/// DCG utility for digit characters
+dcg digit(d) {
+    any {
+        terminal("0"), d == 0,
+        terminal("1"), d == 1,
+        terminal("2"), d == 2,
+        terminal("3"), d == 3,
+        terminal("4"), d == 4,
+        terminal("5"), d == 5,
+        terminal("6"), d == 6,
+        terminal("7"), d == 7,
+        terminal("8"), d == 8,
+        terminal("9"), d == 9
+    }
+}
+
+/// DCG utility for alphabetic characters (lowercase)
+dcg alpha_lower(c) {
+    any {
+        terminal("a"), c == "a",
+        terminal("b"), c == "b",
+        terminal("c"), c == "c",
+        terminal("d"), c == "d",
+        terminal("e"), c == "e",
+        terminal("f"), c == "f",
+        terminal("g"), c == "g",
+        terminal("h"), c == "h",
+        terminal("i"), c == "i",
+        terminal("j"), c == "j",
+        terminal("k"), c == "k",
+        terminal("l"), c == "l",
+        terminal("m"), c == "m",
+        terminal("n"), c == "n",
+        terminal("o"), c == "o",
+        terminal("p"), c == "p",
+        terminal("q"), c == "q",
+        terminal("r"), c == "r",
+        terminal("s"), c == "s",
+        terminal("t"), c == "t",
+        terminal("u"), c == "u",
+        terminal("v"), c == "v",
+        terminal("w"), c == "w",
+        terminal("x"), c == "x",
+        terminal("y"), c == "y",
+        terminal("z"), c == "z"
+    }
+}
+
+/// DCG utility for whitespace
+dcg whitespace() {
+    any {
+        terminal(" "),
+        terminal("\t"),
+        terminal("\n"),
+        terminal("\r")
+    }
+}
+
+/// DCG utility for consuming zero or more whitespace
+dcg whitespaces() {
+    any {
+        all {
+            whitespace(),
+            whitespaces()
+        },
+        Output == Input  // No consumption
+    }
+}
+
+/// DCG utility for parsing single digits as integers
+dcg digit_as_int(n) {
+    any {
+        all { terminal("0"), n == 0 },
+        all { terminal("1"), n == 1 },
+        all { terminal("2"), n == 2 },
+        all { terminal("3"), n == 3 },
+        all { terminal("4"), n == 4 },
+        all { terminal("5"), n == 5 },
+        all { terminal("6"), n == 6 },
+        all { terminal("7"), n == 7 },
+        all { terminal("8"), n == 8 },
+        all { terminal("9"), n == 9 }
+    }
+}
+
+/// DCG utility for simple single-digit number parsing
+dcg simple_number(n) {
+    digit_as_int(n)
+}
+
+/// Note: Higher-order phrase predicates not yet supported
+/// To use DCGs, call them directly with (input, output) parameters:
+///   my_dcg(input_list, output_list)
+/// For complete consumption, ensure output_list == []

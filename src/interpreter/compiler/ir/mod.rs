@@ -1009,6 +1009,8 @@ pub enum PredicateKind {
     Relation,
     /// Macro predicate for template expansion
     Macro,
+    /// Grammar rule (DCG)
+    Grammar,
 }
 
 /// Visibility levels

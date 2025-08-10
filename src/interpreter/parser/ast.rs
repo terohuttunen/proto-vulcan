@@ -566,6 +566,7 @@ pub struct Attribute {
 pub enum PredicateKind {
     Relation, // Regular relation defined with 'rel'
     Macro,    // Template relation defined with 'macro'
+    Grammar,  // Grammar rule defined with 'dcg'
 }
 
 impl Display for PredicateKind {
@@ -573,6 +574,7 @@ impl Display for PredicateKind {
         match self {
             PredicateKind::Relation => write!(f, "rel"),
             PredicateKind::Macro => write!(f, "macro"),
+            PredicateKind::Grammar => write!(f, "dcg"),
         }
     }
 }

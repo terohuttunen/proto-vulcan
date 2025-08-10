@@ -93,6 +93,7 @@ impl Display for PredicateKind {
         match self {
             PredicateKind::Relation => write!(f, "rel"),
             PredicateKind::Macro => write!(f, "macro"),
+            PredicateKind::Grammar => write!(f, "dcg"),
         }
     }
 }

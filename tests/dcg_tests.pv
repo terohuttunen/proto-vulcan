@@ -1,0 +1,357 @@
+// Comprehensive tests for DCG (Definite Clause Grammar) functionality
+// Tests core DCG compilation and usage patterns
+
+use std::list::{member, append};
+
+// =============================================================================
+// DCG Test Utilities - Define DCG rules for testing
+// =============================================================================
+
+/// Basic terminal DCG that matches a specific element
+dcg terminal(element) {
+    match Input {
+        [element | rest] => Output == rest
+    }
+}
+
+/// DCG that consumes any single element and returns it
+dcg any_element(element) {
+    match Input {
+        [element | rest] => Output == rest
+    }
+}
+
+/// DCG that peeks at next element without consuming it
+dcg peek_element(element) {
+    match Input {
+        [element | _] => Output == Input
+    }
+}
+
+/// DCG that matches end of input
+dcg end_of_input() {
+    Input == Output,
+    Input == []
+}
+
+/// DCG that matches a sequence of terminals
+dcg sequence(items) {
+    match items {
+        [] => Output == Input,
+        [first | rest] => all {
+            terminal(first),
+            sequence(rest)
+        }
+    }
+}
+
+/// DCG for optional terminal (succeeds whether element is present or not)
+dcg optional_terminal(element) {
+    any {
+        terminal(element),
+        Output == Input  // No consumption if not found
+    }
+}
+
+/// DCG for digit characters
+dcg digit_char(d) {
+    any {
+        all { terminal("0"), d == 0 },
+        all { terminal("1"), d == 1 },
+        all { terminal("2"), d == 2 },
+        all { terminal("3"), d == 3 },
+        all { terminal("4"), d == 4 },
+        all { terminal("5"), d == 5 },
+        all { terminal("6"), d == 6 },
+        all { terminal("7"), d == 7 },
+        all { terminal("8"), d == 8 },
+        all { terminal("9"), d == 9 }
+    }
+}
+
+// =============================================================================
+// Basic Terminal Tests
+// =============================================================================
+
+@test
+rel test_terminal_match() {
+    terminal("hello", ["hello", "world"], ["world"])
+}
+
+@test
+rel test_terminal_different_element() {
+    terminal("goodbye", ["goodbye", "world"], ["world"])
+}
+
+@test
+rel test_any_element_consumption() {
+    any_element("first", ["first", "second"], ["second"])
+}
+
+@test
+rel test_any_element_variable_binding() {
+    |element| {
+        any_element(element, ["x", "y", "z"], ["y", "z"]),
+        assert_eq(element, "x")
+    }
+}
+
+@test
+rel test_peek_no_consumption() {
+    peek_element("hello", ["hello", "world"], ["hello", "world"])
+}
+
+// =============================================================================
+// Sequence Tests
+// =============================================================================
+
+@test
+rel test_sequence_empty() {
+    sequence([], ["any", "input"], ["any", "input"])
+}
+
+@test
+rel test_sequence_single() {
+    sequence(["hello"], ["hello", "world"], ["world"])
+}
+
+@test
+rel test_sequence_multiple() {
+    sequence(["hello", "world"], ["hello", "world", "!"], ["!"])
+}
+
+@test
+rel test_sequence_exact_match() {
+    sequence(["a", "b", "c"], ["a", "b", "c"], [])
+}
+
+// =============================================================================
+// Control Flow Tests
+// =============================================================================
+
+@test
+rel test_end_of_input_empty() {
+    end_of_input([], [])
+}
+
+@test
+rel test_optional_terminal_present() {
+    optional_terminal("hello", ["hello", "world"], ["world"])
+}
+
+@test
+rel test_optional_terminal_absent() {
+    optional_terminal("goodbye", ["hello", "world"], ["hello", "world"])
+}
+
+// =============================================================================
+// Character Class Tests  
+// =============================================================================
+
+@test
+rel test_digit_char_zero() {
+    digit_char(0, ["0", "1", "2"], ["1", "2"])
+}
+
+@test
+rel test_digit_char_nine() {
+    digit_char(9, ["9", "8", "7"], ["8", "7"])
+}
+
+@test
+rel test_digit_char_middle() {
+    digit_char(5, ["5", "abc"], ["abc"])
+}
+
+// =============================================================================
+// Complex Integration Tests
+// =============================================================================
+
+/// Test a simple expression parser using DCG utilities
+dcg number_token(n) {
+    digit_char(n)
+}
+
+dcg plus_token() {
+    terminal("+")
+}
+
+dcg simple_expression(left, right) {
+    number_token(left),
+    plus_token(),
+    number_token(right)
+}
+
+@test
+rel test_simple_expression_parsing() {
+    simple_expression(3, 5, ["3", "+", "5"], [])
+}
+
+@test
+rel test_simple_expression_with_remainder() {
+    simple_expression(1, 2, ["1", "+", "2", "extra"], ["extra"])
+}
+
+/// Test sentence structure parsing
+dcg article() {
+    any {
+        terminal("the"),
+        terminal("a"),
+        terminal("an")
+    }
+}
+
+dcg noun() {
+    any {
+        terminal("cat"),
+        terminal("dog"),
+        terminal("bird")
+    }
+}
+
+dcg verb() {
+    any {
+        terminal("runs"),
+        terminal("flies"),
+        terminal("sleeps")
+    }
+}
+
+dcg simple_sentence() {
+    article(),
+    noun(),
+    verb()
+}
+
+@test
+rel test_simple_sentence_parsing() {
+    simple_sentence(["the", "cat", "runs"], [])
+}
+
+@test
+rel test_simple_sentence_with_remainder() {
+    simple_sentence(["a", "dog", "sleeps", "quietly"], ["quietly"])
+}
+
+@test
+rel test_simple_sentence_different_combinations() {
+    all {
+        simple_sentence(["the", "bird", "flies"], []),
+        simple_sentence(["a", "cat", "runs"], []),
+        simple_sentence(["an", "dog", "sleeps"], [])
+    }
+}
+
+// =============================================================================
+// Edge Case Tests
+// =============================================================================
+
+@test
+rel test_empty_input_handling() {
+    all {
+        end_of_input([], []),
+        optional_terminal("x", [], []),
+        sequence([], [], [])
+    }
+}
+
+@test
+rel test_single_element_lists() {
+    all {
+        terminal("x", ["x"], []),
+        any_element("y", ["y"], []),
+        sequence(["z"], ["z"], [])
+    }
+}
+
+// Test DCG with pattern matching and guards
+dcg conditional_terminal(element, should_match) {
+    match Input {
+        [element | rest] if should_match == true => Output == rest
+    }
+}
+
+@test 
+rel test_conditional_terminal_with_guard() {
+    conditional_terminal("hello", true, ["hello", "world"], ["world"])
+}
+
+// Test backtracking behavior
+dcg alternative_terminals(matched) {
+    any {
+        all { terminal("first"), matched == "first" },
+        all { terminal("second"), matched == "second" },
+        all { terminal("third"), matched == "third" }
+    }
+}
+
+@test
+rel test_backtracking_alternatives() {
+    all {
+        alternative_terminals("first", ["first", "rest"], ["rest"]),
+        alternative_terminals("second", ["second", "rest"], ["rest"]),
+        alternative_terminals("third", ["third", "rest"], ["rest"])
+    }
+}
+
+// =============================================================================
+// DCG Composition Tests
+// =============================================================================
+
+/// Test composing DCGs in complex ways
+dcg word_and_punct(word, punct) {
+    terminal(word),
+    terminal(punct)
+}
+
+@test
+rel test_dcg_composition() {
+    word_and_punct("hello", "!", ["hello", "!", "world"], ["world"])
+}
+
+/// Test nested DCG calls
+dcg nested_sequence() {
+    simple_expression(_, _),  // Parse any expression
+    terminal("end")
+}
+
+@test
+rel test_nested_dcg_calls() {
+    nested_sequence(["7", "+", "8", "end"], [])
+}
+
+// =============================================================================
+// Performance and Stress Tests
+// =============================================================================
+
+@test
+rel test_long_sequence() {
+    |long_list| {
+        long_list == ["a", "b", "c", "d", "e", "f", "g", "h"],
+        sequence(long_list, long_list, [])
+    }
+}
+
+/// Test deeply nested alternatives
+dcg nested_choice(result) {
+    any {
+        all { terminal("a"), result == "a" },
+        any {
+            all { terminal("b"), result == "b" },
+            any {
+                all { terminal("c"), result == "c" },
+                all { terminal("d"), result == "d" }
+            }
+        }
+    }
+}
+
+@test
+rel test_nested_choice_deep() {
+    nested_choice("d", ["d"], [])
+}
+
+@test
+rel test_nested_choice_shallow() {
+    nested_choice("a", ["a"], [])
+}
