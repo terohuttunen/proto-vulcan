@@ -515,6 +515,7 @@ fn test_parse_pattern_matching() {
                                 elements: vec![],
                                 tail: None,
                             }),
+                            guard: None,
                             body: vec![Goal::RelationCall(
                                 RelationCall {
                                     name: RelationName::Simple("succeed".to_string().into()),
@@ -528,6 +529,7 @@ fn test_parse_pattern_matching() {
                                 elements: vec![Pattern::Variable(InternedSymbol::from_text("a"))],
                                 tail: None,
                             }),
+                            guard: None,
                             body: vec![Goal::Equality(
                                 Term::Variable(InternedSymbol::from_text("a")),
                                 Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
@@ -536,6 +538,7 @@ fn test_parse_pattern_matching() {
                         },
                         PatternArm {
                             pattern: Pattern::Wildcard,
+                            guard: None,
                             body: vec![Goal::RelationCall(
                                 RelationCall {
                                     name: RelationName::Simple("fail".to_string().into()),
@@ -585,6 +588,7 @@ fn test_parse_pattern_matching_single_goal() {
                                 elements: vec![],
                                 tail: None,
                             }),
+                            guard: None,
                             body: vec![Goal::RelationCall(
                                 RelationCall {
                                     name: RelationName::Simple("succeed".to_string().into()),
@@ -598,6 +602,7 @@ fn test_parse_pattern_matching_single_goal() {
                                 elements: vec![Pattern::Variable(InternedSymbol::from_text("a"))],
                                 tail: None,
                             }),
+                            guard: None,
                             body: vec![Goal::Equality(
                                 Term::Variable(InternedSymbol::from_text("a")),
                                 Term::Literal(Literal::Number("1".to_string()), Location::dummy()),
@@ -606,6 +611,7 @@ fn test_parse_pattern_matching_single_goal() {
                         },
                         PatternArm {
                             pattern: Pattern::Wildcard,
+                            guard: None,
                             body: vec![Goal::RelationCall(
                                 RelationCall {
                                     name: RelationName::Simple("fail".to_string().into()),
@@ -655,6 +661,7 @@ fn test_parse_list_pattern_with_tail() {
                             ],
                             tail: Some(Box::new(Pattern::Variable("t".to_string().into()))),
                         }),
+                        guard: None,
                         body: vec![Goal::Equality(
                             Term::Variable("a".to_string().into()),
                             Term::Variable("b".to_string().into()),
@@ -1024,6 +1031,7 @@ fn test_parse_named_struct_pattern() {
                                 },
                             ],
                         }),
+                        guard: None,
                         body: vec![Goal::Equality(
                             Term::Variable("a".to_string().into()),
                             Term::Variable("b".to_string().into()),
