@@ -62,8 +62,8 @@ impl Constraint for TimesFdConstraint {
         let maybe_udomain = match uwalk.as_ref() {
             LTermInner::Var(_, _) => dstore.get(uwalk),
             LTermInner::Val(LValue::Number(u)) => {
-                singleton_udomain = Rc::new(FiniteDomain::from(*u));
-                Some(&singleton_udomain)
+                singleton_udomain = FiniteDomain::from(*u);
+                Some(&singleton_udomain as &dyn crate::state::DomainValue)
             }
             _ => None,
         };
@@ -73,8 +73,8 @@ impl Constraint for TimesFdConstraint {
         let maybe_vdomain = match vwalk.as_ref() {
             LTermInner::Var(_, _) => dstore.get(vwalk),
             LTermInner::Val(LValue::Number(v)) => {
-                singleton_vdomain = Rc::new(FiniteDomain::from(*v));
-                Some(&singleton_vdomain)
+                singleton_vdomain = FiniteDomain::from(*v);
+                Some(&singleton_vdomain as &dyn crate::state::DomainValue)
             }
             _ => None,
         };
@@ -84,8 +84,8 @@ impl Constraint for TimesFdConstraint {
         let maybe_wdomain = match wwalk.as_ref() {
             LTermInner::Var(_, _) => dstore.get(wwalk),
             LTermInner::Val(LValue::Number(w)) => {
-                singleton_wdomain = Rc::new(FiniteDomain::from(*w));
-                Some(&singleton_wdomain)
+                singleton_wdomain = FiniteDomain::from(*w);
+                Some(&singleton_wdomain as &dyn crate::state::DomainValue)
             }
             _ => None,
         };
@@ -104,12 +104,17 @@ impl Constraint for TimesFdConstraint {
 
         match (maybe_udomain, maybe_vdomain, maybe_wdomain) {
             (Some(udomain), Some(vdomain), Some(wdomain)) => {
-                let umin = udomain.min();
-                let umax = udomain.max();
-                let vmin = vdomain.min();
-                let vmax = vdomain.max();
-                let wmin = wdomain.min();
-                let wmax = wdomain.max();
+                // Extract finite domains - error if not finite domains
+                let udomain_fd = crate::state::dstore::as_finite_domain(udomain).ok_or(())?;
+                let vdomain_fd = crate::state::dstore::as_finite_domain(vdomain).ok_or(())?;
+                let wdomain_fd = crate::state::dstore::as_finite_domain(wdomain).ok_or(())?;
+
+                let umin = udomain_fd.min();
+                let umax = udomain_fd.max();
+                let vmin = vdomain_fd.min();
+                let vmax = vdomain_fd.max();
+                let wmin = wdomain_fd.min();
+                let wmax = wdomain_fd.max();
                 // The constraint is: u * v = w  <=>  u = w / v  <=>  v = w / u
                 //
                 // Given domains for u and v, we can then deduce that the domain of w must be

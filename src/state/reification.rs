@@ -15,15 +15,21 @@ use crate::state::map_sum::map_sum;
 fn force_ans(x: LTerm) -> Goal {
     proto_vulcan!(fngoal move |solver, state| {
         let xwalk: LTerm = state.smap_ref().walk(&x).clone();
-        let maybe_xdomain = state.dstore_ref().get(&xwalk).cloned();
+        let maybe_xdomain = state.dstore_ref().get(&xwalk).map(|d| d.clone_box());
 
         match (xwalk.as_ref(), maybe_xdomain) {
             (LTermInner::Var(_, _), Some(xdomain)) => {
                 // Stream of solutions where xwalk can equal any value of xdomain
-                map_sum(solver, state, |d| {
-                    let dterm = LTerm::from(d);
-                    proto_vulcan!(dterm == xwalk)
-                }, xdomain.iter().rev())
+                // Try to downcast to FiniteDomain for iteration
+                if let Some(fd) = xdomain.as_any().downcast_ref::<crate::state::FiniteDomain>() {
+                    map_sum(solver, state, |d| {
+                        let dterm = LTerm::from(d);
+                        proto_vulcan!(dterm == xwalk)
+                    }, fd.iter().rev())
+                } else {
+                    // For non-finite domains, we can't iterate - just succeed
+                    solver.start(&Goal::Succeed, state)
+                }
                 /*
                 map_sum_iter(state, move |d| {
                     let dterm = LTerm::from(d);

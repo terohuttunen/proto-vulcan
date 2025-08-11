@@ -194,11 +194,14 @@ impl Solve for AssertDomainSizeGoal {
             if walked.is_var() {
                 // Check if the variable has a domain in the domain store
                 if let Some(domain) = state.dstore_ref().get(&walked) {
-                    let actual_size = match domain.as_ref() {
-                        crate::state::FiniteDomain::Interval(range) => {
-                            (range.end() - range.start()).saturating_add(1) as usize
+                    let actual_size = if let Some(size) = domain.size() {
+                        size
+                    } else {
+                        // For infinite domains, we can't check size
+                        if debug_enabled {
+                            println!("   FAIL: Domain is infinite, cannot check size");
                         }
-                        crate::state::FiniteDomain::Sparse(vec) => vec.len(),
+                        return Stream::empty();
                     };
 
                     if debug_enabled {

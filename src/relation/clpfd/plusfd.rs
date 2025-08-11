@@ -1,4 +1,3 @@
-
 /// Constrains u + v = w finite domains
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::{LTerm, LTermInner};
@@ -17,17 +16,12 @@ pub struct PlusFd {
 }
 
 impl PlusFd {
-    pub fn new<G: AnyGoal>(
-        u: LTerm,
-        v: LTerm,
-        w: LTerm,
-    ) -> InferredGoal<G> {
+    pub fn new<G: AnyGoal>(u: LTerm, v: LTerm, w: LTerm) -> InferredGoal<G> {
         InferredGoal::new(G::dynamic(Rc::new(PlusFd { u, v, w })))
     }
 }
 
-impl Solve for PlusFd
-{
+impl Solve for PlusFd {
     fn solve(&self, _solver: &Solver, state: State) -> Stream {
         match PlusFdConstraint::new(self.u.clone(), self.v.clone(), self.w.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
@@ -50,8 +44,7 @@ pub struct PlusFdConstraint {
     w: LTerm,
 }
 
-impl PlusFdConstraint
-{
+impl PlusFdConstraint {
     pub fn new(u: LTerm, v: LTerm, w: LTerm) -> Rc<dyn Constraint> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
@@ -60,8 +53,7 @@ impl PlusFdConstraint
     }
 }
 
-impl Constraint for PlusFdConstraint
-{
+impl Constraint for PlusFdConstraint {
     fn run(self: Rc<Self>, state: State) -> SResult {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -71,8 +63,8 @@ impl Constraint for PlusFdConstraint
         let maybe_udomain = match uwalk.as_ref() {
             LTermInner::Var(_, _) => dstore.get(uwalk),
             LTermInner::Val(LValue::Number(u)) => {
-                singleton_udomain = Rc::new(FiniteDomain::from(*u));
-                Some(&singleton_udomain)
+                singleton_udomain = FiniteDomain::from(*u);
+                Some(&singleton_udomain as &dyn crate::state::DomainValue)
             }
             _ => None,
         };
@@ -82,8 +74,8 @@ impl Constraint for PlusFdConstraint
         let maybe_vdomain = match vwalk.as_ref() {
             LTermInner::Var(_, _) => dstore.get(vwalk),
             LTermInner::Val(LValue::Number(v)) => {
-                singleton_vdomain = Rc::new(FiniteDomain::from(*v));
-                Some(&singleton_vdomain)
+                singleton_vdomain = FiniteDomain::from(*v);
+                Some(&singleton_vdomain as &dyn crate::state::DomainValue)
             }
             _ => None,
         };
@@ -93,8 +85,8 @@ impl Constraint for PlusFdConstraint
         let maybe_wdomain = match wwalk.as_ref() {
             LTermInner::Var(_, _) => dstore.get(wwalk),
             LTermInner::Val(LValue::Number(w)) => {
-                singleton_wdomain = Rc::new(FiniteDomain::from(*w));
-                Some(&singleton_wdomain)
+                singleton_wdomain = FiniteDomain::from(*w);
+                Some(&singleton_wdomain as &dyn crate::state::DomainValue)
             }
             _ => None,
         };
@@ -113,12 +105,17 @@ impl Constraint for PlusFdConstraint
 
         match (maybe_udomain, maybe_vdomain, maybe_wdomain) {
             (Some(udomain), Some(vdomain), Some(wdomain)) => {
-                let umin = udomain.min();
-                let umax = udomain.max();
-                let vmin = vdomain.min();
-                let vmax = vdomain.max();
-                let wmin = wdomain.min();
-                let wmax = wdomain.max();
+                // Extract finite domains - error if not finite domains
+                let udomain_fd = crate::state::dstore::as_finite_domain(udomain).ok_or(())?;
+                let vdomain_fd = crate::state::dstore::as_finite_domain(vdomain).ok_or(())?;
+                let wdomain_fd = crate::state::dstore::as_finite_domain(wdomain).ok_or(())?;
+
+                let umin = udomain_fd.min();
+                let umax = udomain_fd.max();
+                let vmin = vdomain_fd.min();
+                let vmax = vdomain_fd.max();
+                let wmin = wdomain_fd.min();
+                let wmax = wdomain_fd.max();
                 // The constraint is: u + v = w
                 //
                 // Given domains for u and v, we can then deduce that the domain of w must be
@@ -160,8 +157,7 @@ impl Constraint for PlusFdConstraint
     }
 }
 
-impl std::fmt::Display for PlusFdConstraint
-{
+impl std::fmt::Display for PlusFdConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }

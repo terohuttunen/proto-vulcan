@@ -1,4 +1,3 @@
-
 /// Less than or equal FD
 use crate::goal::{AnyGoal, InferredGoal};
 use crate::lterm::LTerm;
@@ -20,8 +19,7 @@ impl LessThanOrEqualFd {
     }
 }
 
-impl Solve for LessThanOrEqualFd
-{
+impl Solve for LessThanOrEqualFd {
     fn solve(&self, _solver: &Solver, state: State) -> Stream {
         match LessThanOrEqualFdConstraint::new(self.u.clone(), self.v.clone()).run(state) {
             Ok(state) => Stream::unit(Box::new(state)),
@@ -44,8 +42,7 @@ pub struct LessThanOrEqualFdConstraint {
     v: LTerm,
 }
 
-impl LessThanOrEqualFdConstraint
-{
+impl LessThanOrEqualFdConstraint {
     pub fn new(u: LTerm, v: LTerm) -> Rc<dyn Constraint> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
@@ -53,8 +50,7 @@ impl LessThanOrEqualFdConstraint
     }
 }
 
-impl Constraint for LessThanOrEqualFdConstraint
-{
+impl Constraint for LessThanOrEqualFdConstraint {
     fn run(self: Rc<Self>, state: State) -> SResult {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -69,16 +65,22 @@ impl Constraint for LessThanOrEqualFdConstraint
             (Some(udomain), Some(vdomain)) => {
                 // Both variables of the constraints have assigned domains, we can evaluate
                 // the constraint. The constraint implies that min(u) <= max(v).
-                let vmax = vdomain.max();
-                let umin = udomain.min();
+
+                // Extract finite domains - error if not finite domains
+                let udomain_fd = crate::state::dstore::as_finite_domain(udomain).ok_or(())?;
+                let vdomain_fd = crate::state::dstore::as_finite_domain(vdomain).ok_or(())?;
+
+                let vmax = vdomain_fd.max();
+                let umin = udomain_fd.min();
+
                 Ok(state
                     .process_domain(
                         &uwalk,
-                        Rc::new(udomain.copy_before(|u| vmax < *u).ok_or(())?),
+                        Rc::new(udomain_fd.copy_before(|u| vmax < *u).ok_or(())?),
                     )?
                     .process_domain(
                         &vwalk,
-                        Rc::new(vdomain.drop_before(|v| umin <= *v).ok_or(())?),
+                        Rc::new(vdomain_fd.drop_before(|v| umin <= *v).ok_or(())?),
                     )?
                     .with_constraint(self))
             }
@@ -87,16 +89,22 @@ impl Constraint for LessThanOrEqualFdConstraint
                 // to a number. After the number constraint has been applied to the domain,
                 // the constraint is dropped.
                 let v = vwalk.get_number().unwrap();
-                Ok(state
-                    .process_domain(&uwalk, Rc::new(udomain.copy_before(|u| v < *u).ok_or(())?))?)
+                let udomain_fd = crate::state::dstore::as_finite_domain(udomain).ok_or(())?;
+                Ok(state.process_domain(
+                    &uwalk,
+                    Rc::new(udomain_fd.copy_before(|u| v < *u).ok_or(())?),
+                )?)
             }
             (None, Some(vdomain)) if uwalk.is_number() => {
                 // The variable `v` has an assigned domain, and variable `u` has been bound
                 // to a number. After the number constraint has been applied to the domain,
                 // the constraint is dropped.
                 let u = uwalk.get_number().unwrap();
-                Ok(state
-                    .process_domain(&vwalk, Rc::new(vdomain.drop_before(|v| u <= *v).ok_or(())?))?)
+                let vdomain_fd = crate::state::dstore::as_finite_domain(vdomain).ok_or(())?;
+                Ok(state.process_domain(
+                    &vwalk,
+                    Rc::new(vdomain_fd.drop_before(|v| u <= *v).ok_or(())?),
+                )?)
             }
             (None, None) if uwalk.is_number() && vwalk.is_number() => {
                 // Both variables are bound to numbers. Constraint is no longer needed if it
@@ -124,8 +132,7 @@ impl Constraint for LessThanOrEqualFdConstraint
     }
 }
 
-impl std::fmt::Display for LessThanOrEqualFdConstraint
-{
+impl std::fmt::Display for LessThanOrEqualFdConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }

@@ -21,8 +21,7 @@ impl DiseqFd {
     }
 }
 
-impl Solve for DiseqFd
-{
+impl Solve for DiseqFd {
     fn solve(&self, _solver: &Solver, state: State) -> Stream {
         let u = self.u.clone();
         let v = self.v.clone();
@@ -73,8 +72,7 @@ pub struct DiseqFdConstraint {
     v: LTerm,
 }
 
-impl DiseqFdConstraint
-{
+impl DiseqFdConstraint {
     pub fn new(u: LTerm, v: LTerm) -> Rc<dyn Constraint> {
         assert!(u.is_var() || u.is_number());
         assert!(v.is_var() || v.is_number());
@@ -82,8 +80,7 @@ impl DiseqFdConstraint
     }
 }
 
-impl Constraint for DiseqFdConstraint
-{
+impl Constraint for DiseqFdConstraint {
     fn run(self: Rc<Self>, state: State) -> SResult {
         let smap = state.get_smap();
         let dstore = state.get_dstore();
@@ -94,8 +91,8 @@ impl Constraint for DiseqFdConstraint
         let maybe_udomain = match uwalk.as_ref() {
             LTermInner::Var(_, _) => dstore.get(uwalk),
             LTermInner::Val(LValue::Number(u)) => {
-                singleton_udomain = Rc::new(FiniteDomain::from(*u));
-                Some(&singleton_udomain)
+                singleton_udomain = FiniteDomain::from(*u);
+                Some(&singleton_udomain as &dyn crate::state::DomainValue)
             }
             _ => None,
         };
@@ -106,8 +103,8 @@ impl Constraint for DiseqFdConstraint
         let maybe_vdomain = match vwalk.as_ref() {
             LTermInner::Var(_, _) => dstore.get(vwalk),
             LTermInner::Val(LValue::Number(v)) => {
-                singleton_vdomain = Rc::new(FiniteDomain::from(*v));
-                Some(&singleton_vdomain)
+                singleton_vdomain = FiniteDomain::from(*v);
+                Some(&singleton_vdomain as &dyn crate::state::DomainValue)
             }
             _ => None,
         };
@@ -117,27 +114,34 @@ impl Constraint for DiseqFdConstraint
                 // Both variables have singleton domains. If values are same, the constraint
                 // fails in the current state and is dropped; if the values are different, the constraint
                 // succeeds and is dropped.
-                if udomain.min() == vdomain.min() {
+                let udomain_fd = crate::state::dstore::as_finite_domain(udomain).ok_or(())?;
+                let vdomain_fd = crate::state::dstore::as_finite_domain(vdomain).ok_or(())?;
+                if udomain_fd.min() == vdomain_fd.min() {
                     Err(())
                 } else {
                     Ok(state)
                 }
             }
-            (Some(udomain), Some(vdomain)) if udomain.is_disjoint(vdomain.as_ref()) => {
-                // When the domains are disjoint, the constraint can never be violated.
-                // Constraint can be dropped.
-                Ok(state)
-            }
             (Some(udomain), Some(vdomain)) => {
-                // The domains are not both singleton or disjoint. The constraints are kept
-                // until they can be resolved into singleton, or until they become disjoint.
-                let state = state.with_constraint(self);
-                if udomain.is_singleton() {
-                    state.process_domain(vwalk, Rc::new(vdomain.diff(udomain.as_ref()).ok_or(())?))
-                } else if vdomain.is_singleton() {
-                    state.process_domain(uwalk, Rc::new(udomain.diff(vdomain.as_ref()).ok_or(())?))
-                } else {
+                // Extract finite domains - error if not finite domains
+                let udomain_fd = crate::state::dstore::as_finite_domain(udomain).ok_or(())?;
+                let vdomain_fd = crate::state::dstore::as_finite_domain(vdomain).ok_or(())?;
+
+                if udomain_fd.is_disjoint(vdomain_fd) {
+                    // When the domains are disjoint, the constraint can never be violated.
+                    // Constraint can be dropped.
                     Ok(state)
+                } else {
+                    // The domains are not both singleton or disjoint. The constraints are kept
+                    // until they can be resolved into singleton, or until they become disjoint.
+                    let state = state.with_constraint(self);
+                    if udomain.is_singleton() {
+                        state.process_domain(vwalk, Rc::new(vdomain_fd.diff(udomain_fd).ok_or(())?))
+                    } else if vdomain.is_singleton() {
+                        state.process_domain(uwalk, Rc::new(udomain_fd.diff(vdomain_fd).ok_or(())?))
+                    } else {
+                        Ok(state)
+                    }
                 }
             }
             _ => {
@@ -153,8 +157,7 @@ impl Constraint for DiseqFdConstraint
     }
 }
 
-impl std::fmt::Display for DiseqFdConstraint
-{
+impl std::fmt::Display for DiseqFdConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "")
     }

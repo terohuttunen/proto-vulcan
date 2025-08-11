@@ -17,6 +17,9 @@ pub use constraint::Constraint;
 pub mod fd;
 pub use fd::FiniteDomain;
 
+pub mod dstore;
+pub use dstore::{DomainValue, DynamicDomainStore};
+
 use constraint::store::ConstraintStore;
 
 pub mod map_sum;
@@ -33,10 +36,10 @@ pub type SResult = Result<State, ()>;
 /// (part of) logic program. The `State` can be cloned and each clone can be modified independently
 /// of each other; the data structures within `State` are clone-on-write.
 ///
-/// A state has four separate data storages that are clone-on-write:
+/// A state has separate data storages that are clone-on-write:
 ///    1. The current substitution of LTerms
 ///    2. The constraint store
-///    3. The domain store
+///    3. The dynamic domain store (supports multiple constraint domain types)
 ///    4. User data
 #[derive(Debug, Clone)]
 pub struct State {
@@ -46,8 +49,8 @@ pub struct State {
     /// The constraint store
     cstore: Rc<ConstraintStore>,
 
-    /// The domain store
-    dstore: Rc<HashMap<LTerm, Rc<FiniteDomain>>>,
+    /// The dynamic domain store supporting multiple constraint domain types
+    dstore: Rc<DynamicDomainStore>,
 
     pub user_state: DefaultUser,
 }
@@ -57,7 +60,7 @@ impl State {
         State {
             smap: Rc::new(SMap::new()),
             cstore: Rc::new(ConstraintStore::new()),
-            dstore: Rc::new(HashMap::new()),
+            dstore: Rc::new(DynamicDomainStore::new()),
             user_state,
         }
     }
@@ -109,24 +112,24 @@ impl State {
         Rc::clone(&self.cstore)
     }
 
-    /// Return a reference to the domain store of the state
-    pub fn dstore_ref(&self) -> &HashMap<LTerm, Rc<FiniteDomain>> {
+    /// Return a reference to the dynamic domain store of the state
+    pub fn dstore_ref(&self) -> &DynamicDomainStore {
         self.dstore.as_ref()
     }
 
-    pub fn dstore_to_mut(&mut self) -> &mut HashMap<LTerm, Rc<FiniteDomain>> {
+    pub fn dstore_to_mut(&mut self) -> &mut DynamicDomainStore {
         Rc::make_mut(&mut self.dstore)
     }
 
-    pub fn with_dstore(self, dstore: HashMap<LTerm, Rc<FiniteDomain>>) -> State {
+    pub fn with_dstore(self, dstore: DynamicDomainStore) -> State {
         State {
             dstore: Rc::new(dstore),
             ..self
         }
     }
 
-    /// Get a cloned reference to the domain store fo the state
-    pub fn get_dstore(&self) -> Rc<HashMap<LTerm, Rc<FiniteDomain>>> {
+    /// Get a cloned reference to the dynamic domain store of the state
+    pub fn get_dstore(&self) -> Rc<DynamicDomainStore> {
         Rc::clone(&self.dstore)
     }
 
@@ -153,15 +156,25 @@ impl State {
     /// Adds a new domain constraint for a variable `x`; or if the term is a value, then
     /// checks that the value is within the domain. If new domain constraint is added for a
     /// variable, it is updated to the domain store.
+    ///
+    /// This method provides backward compatibility by accepting FiniteDomain and converting
+    /// to the new DomainValue system directly.
     pub fn process_domain(self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult {
+        // Convert FiniteDomain to DomainValue directly (no adapter needed)
+        let domain_value = Box::new((*domain).clone()) as Box<dyn DomainValue>;
+        self.process_domain_value(x, domain_value)
+    }
+
+    /// Process domain constraint with any DomainValue type (new API)
+    pub fn process_domain_value(self, x: &LTerm, domain: Box<dyn DomainValue>) -> SResult {
         match x.as_ref() {
-            LTermInner::Var(_, _) => self.update_var_domain(x, domain),
-            LTermInner::Val(LValue::Number(v)) if domain.contains(*v) => Ok(self),
+            LTermInner::Var(_, _) => self.update_var_domain_value(x, domain),
+            LTermInner::Val(_) if domain.contains_lterm(x) => Ok(self),
             _ => Err(()),
         }
     }
 
-    /// Updates domain constraint of a variable `x`.
+    /// Updates domain constraint of a variable `x` (backward compatibility).
     ///
     /// If variable does not have an existing domain, then it is given the `domain`.
     ///
@@ -172,40 +185,68 @@ impl State {
     /// Note: if domains are resolved into singletons, then they are converted into value
     ///       kind LTerms.
     fn update_var_domain(self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult {
+        let domain_value = Box::new((*domain).clone()) as Box<dyn DomainValue>;
+        self.update_var_domain_value(x, domain_value)
+    }
+
+    /// Updates domain constraint of a variable `x` using DomainValue (new API).
+    ///
+    /// If variable does not have an existing domain, then it is given the `domain`.
+    ///
+    /// If the variable `x` is already constrained, then the resulting constraint uses lattice
+    /// meet operation to combine the constraints. If the meet results in bottom (empty domain),
+    /// the constraint fails.
+    ///
+    /// Note: if domains are resolved into singletons, then they are converted into value
+    ///       kind LTerms.
+    fn update_var_domain_value(self, x: &LTerm, domain: Box<dyn DomainValue>) -> SResult {
         assert!(x.is_var());
-        match self.dstore.get(x) {
-            Some(old_domain) => match old_domain.intersect(domain.as_ref()) {
-                Some(intersection) => self.resolve_storable_domain(x, Rc::new(intersection)),
-                None => Err(()), /* disjoint domains */
-            },
-            None => self.resolve_storable_domain(x, domain),
+
+        if let Some(existing_domain) = self.dstore.get(x) {
+            // Perform meet operation (lattice greatest lower bound)
+            match existing_domain.meet(domain.as_ref()) {
+                Some(meet_result) => self.resolve_storable_domain_value(x, meet_result),
+                None => Err(()), /* meet failed - inconsistent constraints */
+            }
+        } else {
+            // No existing domain, assign the new domain
+            self.resolve_storable_domain_value(x, domain)
         }
     }
 
     /// Stores a new `domain` for a variable `x` by updating the corresponding domain information
-    /// of the state. Any existing domain information is replaced with the new.
+    /// of the state. Any existing domain information is replaced with the new (backward compatibility).
     ///
     /// If the domain is a singleton, i.e. a single value, it is converted into a constant value
     /// instead, by creating a new constant from the singleton value and extending the
     /// substitution to map from the variable `x` to the newly created constant.
     fn resolve_storable_domain(mut self, x: &LTerm, domain: Rc<FiniteDomain>) -> SResult {
+        let domain_value = Box::new((*domain).clone()) as Box<dyn DomainValue>;
+        self.resolve_storable_domain_value(x, domain_value)
+    }
+
+    /// Stores a new domain value for a variable using the new DomainValue API
+    fn resolve_storable_domain_value(mut self, x: &LTerm, domain: Box<dyn DomainValue>) -> SResult {
         assert!(x.is_var());
-        match domain.singleton_value() {
-            Some(n) => {
-                // Extend substitution from `x` to the singleton value `n`
-                self.smap_to_mut().extend(x.clone(), LTerm::from(n));
+
+        if domain.is_singleton() {
+            if let Some(singleton_lterm) = domain.singleton_lterm() {
+                // Extend substitution from `x` to the singleton value
+                self.smap_to_mut().extend(x.clone(), singleton_lterm);
 
                 // Remove domain information from store
                 let _ = self.dstore_to_mut().remove(x);
 
                 // The substitution has been modified, re-run constraints.
                 self.run_constraints()
+            } else {
+                // Singleton but can't get LTerm value - this shouldn't happen
+                Err(())
             }
-            None => {
-                // Extend or update domain store with the given `domain`
-                let _ = self.dstore_to_mut().insert(x.clone(), domain);
-                Ok(self)
-            }
+        } else {
+            // Extend or update domain store with the given domain
+            self.dstore_to_mut().insert(x.clone(), domain);
+            Ok(self)
         }
     }
 
@@ -217,19 +258,25 @@ impl State {
     }
 
     // Removes domain `exclude` from the domain of all variables in list `x`.
+    // This method is updated to work with the new DomainValue system
     pub fn exclude_from_domain(mut self, x: &LTerm, exclude: Rc<FiniteDomain>) -> SResult {
         assert!(x.is_list());
         let dstore = self.get_dstore();
+
         for y in x {
-            match dstore.get(&y) {
-                Some(domain) => {
-                    match self.process_domain(&y, Rc::new(domain.diff(exclude.as_ref()).ok_or(())?))
-                    {
-                        Ok(state) => self = state,
-                        Err(error) => return Err(error),
+            if let Some(domain) = dstore.get(&y) {
+                // Try to downcast to FiniteDomain for difference operation
+                if let Some(domain_fd) = domain.as_any().downcast_ref::<FiniteDomain>() {
+                    if let Some(diff_result) = domain_fd.diff(&*exclude) {
+                        let new_domain = Box::new(diff_result) as Box<dyn DomainValue>;
+                        match self.process_domain_value(&y, new_domain) {
+                            Ok(state) => self = state,
+                            Err(error) => return Err(error),
+                        }
+                    } else {
+                        return Err(()); // Difference resulted in empty domain
                     }
                 }
-                None => (),
             }
         }
         Ok(self)
@@ -272,27 +319,26 @@ impl State {
     ///
     /// For each new substitution we need to add a new domain constraint. If variable `x`
     /// is substituted with term `v`, then `x` and `v` must have domains with non-zero
-    /// intersection. If variable `x` has a domain, then the domain is assigned to the
+    /// meet. If variable `x` has a domain, then the domain is assigned to the
     /// term `v` as well.
     ///
     /// If all substitutions are successful domain constraints, a state with updated
     /// domain- and constraint-stores is returned.
     ///
-    /// If the resulting intersection domain is non-zero, the
-    /// substitution is not possible, the constraint fails and `None` is returned.
+    /// If the resulting meet domain is empty, the substitution is not possible,
+    /// the constraint fails and an error is returned.
     fn process_extension_fd(mut self, extension: &SMap) -> SResult {
         let dstore = self.get_dstore();
         for (x, v) in extension.iter() {
-            match dstore.get(x) {
-                Some(domain) => {
-                    self = self
-                        .process_domain(v, domain.clone())?
-                        .remove_domain(x)?
-                        .run_constraints()?
-                }
-                None => {
-                    // No domain information found in store for `x`.
-                }
+            if let Some(domain) = dstore.get(x) {
+                // Clone the domain for the new variable
+                let domain_clone = domain.clone_box();
+                self = self
+                    .process_domain_value(v, domain_clone)?
+                    .remove_domain(x)?
+                    .run_constraints()?
+            } else {
+                // No domain information found in store for `x`.
             }
         }
         Ok(self)
@@ -326,7 +372,7 @@ impl State {
     /// Verifies that all variables constrained by domain constraints are properly bound.
     /// A variable is considered bound if it's either:
     /// 1. Bound in the substitution map (walk returns a non-variable), OR
-    /// 2. Has a domain in the domain store (constrained by finite domains)
+    /// 2. Has a domain in the domain store (constrained by any domain type)
     pub fn verify_all_bound(&self) -> Result<(), String> {
         for constraint in self
             .cstore_ref()
