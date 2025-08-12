@@ -578,28 +578,30 @@ impl Interpreter {
     }
 
     /// Find the standard library path by trying different locations
-    fn find_stdlib_path() -> Result<PathBuf, InterpreterError> {
+    pub fn find_stdlib_path() -> Result<PathBuf, InterpreterError> {
         // Try different locations for the standard library
         let candidates = vec![
-            // 1. Relative to current directory (current behavior)
+            // 1. Proto-vulcan's std directory (compile-time path - always points to proto-vulcan root)
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("std"),
+            // 2. Relative to current directory (current behavior)
             PathBuf::from("std"),
-            // 2. Relative to executable (preferred for installed binaries)
+            // 3. Relative to executable (preferred for installed binaries)
             Self::executable_relative_path("std"),
-            // 3. Relative to executable's parent directory (for development)
+            // 4. Relative to executable's parent directory (for development)
             Self::executable_relative_path("../std"),
-            // 4. In parent of executable's parent (for target/release structure)
+            // 5. In parent of executable's parent (for target/release structure)
             Self::executable_relative_path("../../std"),
         ];
-
-        for candidate in candidates {
+        
+        for candidate in &candidates {
             if candidate.exists() && candidate.is_dir() {
                 // Found a valid std directory, return it
-                return Ok(candidate);
+                return Ok(candidate.clone());
             }
         }
 
         Err(InterpreterError::IoError(
-            "Standard library not found. Tried searching relative to current directory and executable location.".to_string()
+            format!("Standard library not found. Tried paths: {:?}", candidates)
         ))
     }
 

@@ -862,6 +862,13 @@ impl Environment {
         let std_path = PathBuf::from("std/mod.pv");
         if std_path.exists() {
             self.load_module_from_path(&std_path, "std")?;
+        } else {
+            // Try to find std directory using the proper method
+            let std_dir = super::Interpreter::find_stdlib_path()?;
+            let std_mod_path = std_dir.join("mod.pv");
+            if std_mod_path.exists() {
+                self.load_module_from_path(&std_mod_path, "std")?;
+            }
         }
 
         Ok(())

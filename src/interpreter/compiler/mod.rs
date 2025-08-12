@@ -59,13 +59,17 @@ pub struct CrateSearchPaths {
 
 impl Default for CrateSearchPaths {
     fn default() -> Self {
-        Self {
-            paths: vec![
-                PathBuf::from("."),                 // Current directory
-                PathBuf::from("lib"),               // Local lib directory
-                PathBuf::from("/usr/local/lib/pv"), // System-wide (future)
-            ],
-        }
+        let mut paths = vec![
+            PathBuf::from("."),                 // Current directory
+            PathBuf::from("lib"),               // Local lib directory
+            PathBuf::from("/usr/local/lib/pv"), // System-wide (future)
+        ];
+        
+        // Add proto-vulcan's manifest directory so std crate can be found
+        let proto_vulcan_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        paths.push(proto_vulcan_dir);
+        
+        Self { paths }
     }
 }
 
