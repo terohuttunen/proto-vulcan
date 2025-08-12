@@ -10,7 +10,7 @@
 //! 2. Import resolution: Resolve use clauses and build final symbol maps
 //! 3. Body compilation: Compile bodies with full symbol resolution
 
-use crate::interpreter::constraint_domains::ConstraintDomainRegistry;
+use crate::interpreter::constraint_domains::ConstraintCompilerRegistry;
 use crate::interpreter::parser::ast;
 use crate::interpreter::symbol_table::InternedSymbol;
 use std::collections::HashMap;
@@ -163,8 +163,8 @@ pub struct Compiler {
     pub(super) external_module_items: Vec<(Rc<ir::ModulePath>, Vec<ast::Item>)>,
     /// Compilation context for warnings and validation
     pub(super) compilation_context: CompilationContext,
-    /// Constraint domain registry for template compilation
-    pub(super) constraint_domains: ConstraintDomainRegistry,
+    /// Constraint compiler registry for template compilation
+    pub(super) constraint_compilers: ConstraintCompilerRegistry,
     /// Local symbol scopes for compilation (similar to runtime variable_scopes)
     pub(super) local_scopes: Vec<HashMap<InternedSymbol, ir::TypeAnnotation>>,
     /// Search paths for discovering external crates
@@ -188,7 +188,7 @@ impl Compiler {
             resolved_glob_imports: Vec::new(),
             external_module_items: Vec::new(),
             compilation_context: CompilationContext::new(options),
-            constraint_domains: ConstraintDomainRegistry::default(),
+            constraint_compilers: ConstraintCompilerRegistry::default(),
             local_scopes: vec![HashMap::new()], // Start with global scope
             crate_search_paths: CrateSearchPaths::default(),
             module_map: ModuleMap::new(),

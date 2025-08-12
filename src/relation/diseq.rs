@@ -104,7 +104,7 @@ impl DisequalityConstraint
         match other.downcast_ref::<Self>() {
             Some(other) => {
                 let mut extension = SMap::new();
-                let mut state = State::new(Default::default()).with_smap(other.smap_ref().clone());
+                let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default())).with_smap(other.smap_ref().clone());
                 for (u, v) in self.0.iter() {
                     match unify_rec(state, &mut extension, &u, &v) {
                         Err(()) => return false,

@@ -2599,10 +2599,10 @@ impl Compiler {
 
         let domain_name = constraint_block.domain.as_str();
 
-        // Get the constraint domain
-        let domain = self
-            .constraint_domains
-            .get_domain(domain_name)
+        // Get the constraint compiler
+        let compiler = self
+            .constraint_compilers
+            .get_compiler(domain_name)
             .ok_or_else(|| CompileError::SemanticError {
                 message: format!("Unknown constraint domain: {}", domain_name),
                 symbol: InternedSymbol::from_text(domain_name),
@@ -2616,7 +2616,7 @@ impl Compiler {
         };
 
         // Compile the constraint into an IR template using the new API
-        let template = domain
+        let template = compiler
             .compile(&constraint_block.body, &binder)
             .map_err(|err| CompileError::SemanticError {
                 message: format!("Failed to compile constraint template: {}", err),

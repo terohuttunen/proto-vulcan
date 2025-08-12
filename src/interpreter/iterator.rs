@@ -69,7 +69,6 @@ impl QueryResultIterator {
         query: super::parser::ast::Goal,
         config: ExecutionConfig,
     ) -> Result<Self, InterpreterError> {
-        use crate::user::{DefaultUser, User};
         let (ir_program, variable_names, query_predicate_id) =
             compiler::Compiler::add_query_to_program(ir_program.clone(), query)?;
 
@@ -88,9 +87,8 @@ impl QueryResultIterator {
         );
 
         // Create solver and initial state
-        let user_state = DefaultUser::default();
-        let user_globals = <DefaultUser as User>::UserContext::default();
-        let mut solver = crate::solver::Solver::new(user_globals, false);
+        let plugin_registry = std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default());
+        let mut solver = crate::solver::Solver::new(false);
 
         // Set timeout if provided
         if let Some(timeout_ms) = config.timeout {
@@ -114,7 +112,7 @@ impl QueryResultIterator {
         // Combine query goal and reification in a conjunction (like macro system does)
         let query_goal = crate::operator::conj::Conj::new(base_query_goal, reify_goal).into();
 
-        let initial_state = crate::state::State::new(user_state);
+        let initial_state = crate::state::State::new(plugin_registry);
 
         // Start the stream with the reified query goal and initial state
         let stream = solver.start(&query_goal, initial_state);

@@ -2,7 +2,6 @@ use crate::engine::{DefaultEngine, Engine};
 use crate::goal::{DFSGoal, Goal};
 use crate::state::State;
 use crate::stream::{LazyStream, Stream};
-use crate::user::{DefaultUser, User};
 use std::any::{Any, TypeId};
 use std::fmt;
 use std::rc::Rc;
@@ -27,7 +26,6 @@ pub enum SolverResult {
 const TIMEOUT_CHECK_FREQUENCY: usize = 100;
 
 pub struct Solver {
-    context: <DefaultUser as User>::UserContext,
     engine: DefaultEngine,
     stream_iter_index: usize,
     #[cfg(feature = "debugger")]
@@ -42,12 +40,11 @@ pub struct Solver {
 }
 
 impl Solver {
-    pub fn new(context: <DefaultUser as User>::UserContext, debug_enabled: bool) -> Solver {
+    pub fn new(debug_enabled: bool) -> Solver {
         let engine = DefaultEngine::new();
         #[cfg(feature = "debugger")]
         let debugger = Debugger::new();
         Solver {
-            context,
             engine,
             stream_iter_index: 0,
             #[cfg(feature = "debugger")]
@@ -61,7 +58,6 @@ impl Solver {
 
     /// Create a new Solver with program access for type information
     pub fn with_program(
-        context: <DefaultUser as User>::UserContext,
         debug_enabled: bool,
         program: Rc<crate::interpreter::compiler::ir::Program>,
     ) -> Solver {
@@ -69,7 +65,6 @@ impl Solver {
         #[cfg(feature = "debugger")]
         let debugger = Debugger::new();
         Solver {
-            context,
             engine,
             stream_iter_index: 0,
             #[cfg(feature = "debugger")]
@@ -224,9 +219,6 @@ impl Solver {
         }
     }
 
-    pub fn context(&self) -> &<DefaultUser as User>::UserContext {
-        &self.context
-    }
 
     pub fn engine(&self) -> &DefaultEngine {
         &self.engine

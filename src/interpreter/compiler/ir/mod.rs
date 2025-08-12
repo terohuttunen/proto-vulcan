@@ -9,7 +9,7 @@
 //! The IR supports dynamic modification through Rc::make_mut while maintaining
 //! path-based stable identifiers for efficient symbol resolution.
 
-use crate::interpreter::constraint_domains::DomainConstraintTemplate;
+use crate::interpreter::constraint_domains::ConstraintTemplate;
 use crate::interpreter::symbol_table::InternedSymbol;
 use std::borrow::Borrow;
 use std::fmt::{self, Display};
@@ -1953,7 +1953,7 @@ pub enum EnumVariantConstructionKind {
 #[derive(Debug, Clone)]
 pub struct ConstraintBlock {
     pub domain: Rc<str>,
-    pub template: Rc<dyn DomainConstraintTemplate>,
+    pub template: Rc<dyn ConstraintTemplate>,
 }
 
 impl PartialEq for ConstraintBlock {

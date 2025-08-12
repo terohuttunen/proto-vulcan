@@ -4,7 +4,6 @@ use crate::lterm::LTerm;
 use crate::solver::Solver;
 use crate::state::State;
 use crate::stream::Stream;
-use crate::user::DefaultUser;
 
 use std::iter::FusedIterator;
 use std::marker::PhantomData;
@@ -95,9 +94,8 @@ where
     R: QueryResult,
 {
     pub fn run(&self) -> ResultIterator<R> {
-        let user_state = DefaultUser::new();
-        let user_globals = ();
-        self.run_with_user(user_state, user_globals)
+        let plugin_registry = std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default());
+        self.run_with_user(plugin_registry)
     }
 }
 
@@ -115,12 +113,10 @@ where
 
     pub fn run_with_user(
         &self,
-        user_state: DefaultUser,
-        user_globals: <DefaultUser as crate::user::User>::UserContext,
+        plugin_registry: std::rc::Rc<crate::state::ConstraintPluginRegistry>,
     ) -> ResultIterator<R> {
-        let initial_state = State::new(user_state);
-        let user_globals = user_globals;
-        let solver = Solver::new(user_globals, false);
+        let initial_state = State::new(plugin_registry);
+        let solver = Solver::new(false);
         ResultIterator::new(
             solver,
             self.variables.clone(),

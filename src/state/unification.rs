@@ -2,7 +2,6 @@ use super::substitution::SMap;
 use crate::compound::CompoundObject;
 use crate::lterm::{LTerm, LTermInner};
 use crate::state::{SResult, State};
-use crate::user::{DefaultUser, User};
 
 /// Recursive unification of tree terms
 pub fn unify_rec(mut state: State, extension: &mut SMap, u: &LTerm, v: &LTerm) -> SResult {
@@ -41,7 +40,8 @@ pub fn unify_rec(mut state: State, extension: &mut SMap, u: &LTerm, v: &LTerm) -
             Ok(state)
         }
         (LTermInner::User(_), _) | (_, LTermInner::User(_)) => {
-            DefaultUser::unify(state, extension, uwalk, vwalk)
+            // User-defined unification is no longer supported
+            Err(())
         }
         (LTermInner::Empty, LTermInner::Empty) => Ok(state),
         (LTermInner::Cons(uhead, utail), LTermInner::Cons(vhead, vtail)) => {
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn test_unify_1() {
         // 1. var == var
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn test_unify_2() {
         // 2. var != var
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_unify_3() {
         // 3. var == val
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn test_unify_4() {
         // 4. var == list
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn test_unify_5() {
         // 5. val == var
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn test_unify_6() {
         // 6. list == var
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!(_);
         let v1 = lterm!(_);
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn test_unify_7() {
         // 7. val == val
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!(1);
         let v1 = lterm!(_);
@@ -286,7 +286,7 @@ mod tests {
     #[test]
     fn test_unify_8() {
         // 8. val != val
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!(1);
         let v1 = lterm!(_);
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn test_unify_9() {
         // 9. list[N] == list[N]
-        let state = State::new(Default::default());
+        let state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let v0 = lterm!([1]);
         let v1 = lterm!([1]);
 
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn test_unify_10() {
         // 10. list[N] != list[N]
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!([1]);
         let v1 = lterm!(_);
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn test_unify_11() {
         // 11. list[N] != list[M] where N != M
-        let mut state = State::new(Default::default());
+        let mut state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let smap = state.smap_to_mut();
         let v0 = lterm!([1 | 1]);
         let v1 = lterm!(_);
@@ -353,7 +353,7 @@ mod tests {
     #[test]
     fn test_unify_12() {
         // Occurs check 1
-        let state = State::new(Default::default());
+        let state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let u = LTerm::var("u");
         let v = lterm!([1, 2, 3, u]);
 
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn test_unify_13() {
         // Occurs check 2
-        let state = State::new(Default::default());
+        let state = State::new(std::rc::Rc::new(crate::state::ConstraintPluginRegistry::default()));
         let u = LTerm::var("u");
         let v = lterm!([1, 2, 3, u]);
 

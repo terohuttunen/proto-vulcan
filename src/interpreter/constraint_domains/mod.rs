@@ -143,7 +143,7 @@ impl FreshVariableContext {
 }
 
 /// Trait for compiled constraint templates that execute with context stack
-pub trait DomainConstraintTemplate: std::fmt::Debug {
+pub trait ConstraintTemplate: std::fmt::Debug {
     /// Execute template with external binder and fresh variable context
     fn to_goal_with_context(
         &self,
@@ -167,9 +167,9 @@ pub enum ResolvedValue {
     Meta(crate::interpreter::compiler::ir::MetaValue),
 }
 
-/// Trait that all constraint domains must implement
-pub trait ConstraintDomain {
-    /// Domain name (e.g., "clpfd", "clpr", "clpb")
+/// Trait that all constraint compilers must implement
+pub trait ConstraintCompiler: std::fmt::Debug {
+    /// Compiler name (e.g., "clpfd", "clpr", "clpb")
     fn name(&self) -> &str;
 
     /// Get description of supported syntax for error messages
@@ -180,39 +180,40 @@ pub trait ConstraintDomain {
         &self,
         body: &ConstraintBody,
         binder: &dyn Fn(&str) -> Option<VariableType>,
-    ) -> Result<Rc<dyn DomainConstraintTemplate>, InterpreterError>;
+    ) -> Result<Rc<dyn ConstraintTemplate>, InterpreterError>;
 }
 
-/// Registry for constraint domains
-pub struct ConstraintDomainRegistry {
-    domains: HashMap<String, Box<dyn ConstraintDomain>>,
+/// Registry for constraint compilers
+#[derive(Debug)]
+pub struct ConstraintCompilerRegistry {
+    compilers: HashMap<String, Box<dyn ConstraintCompiler>>,
 }
 
-impl ConstraintDomainRegistry {
+impl ConstraintCompilerRegistry {
     pub fn new() -> Self {
         Self {
-            domains: HashMap::new(),
+            compilers: HashMap::new(),
         }
     }
 
-    pub fn register(&mut self, domain: Box<dyn ConstraintDomain>) {
-        self.domains.insert(domain.name().to_string(), domain);
+    pub fn register(&mut self, compiler: Box<dyn ConstraintCompiler>) {
+        self.compilers.insert(compiler.name().to_string(), compiler);
     }
 
-    pub fn get_domain(&self, name: &str) -> Option<&dyn ConstraintDomain> {
-        self.domains.get(name).map(|d| d.as_ref())
+    pub fn get_compiler(&self, name: &str) -> Option<&dyn ConstraintCompiler> {
+        self.compilers.get(name).map(|c| c.as_ref())
     }
 
-    pub fn list_domains(&self) -> Vec<&str> {
-        self.domains.keys().map(|s| s.as_str()).collect()
+    pub fn list_compilers(&self) -> Vec<&str> {
+        self.compilers.keys().map(|s| s.as_str()).collect()
     }
 }
 
-impl Default for ConstraintDomainRegistry {
+impl Default for ConstraintCompilerRegistry {
     fn default() -> Self {
         let mut registry = Self::new();
-        registry.register(Box::new(clpfd::ClpfdDomain::new()));
-        registry.register(Box::new(clpz::ClpzDomain::new()));
+        registry.register(Box::new(clpfd::ClpfdCompiler::new()));
+        registry.register(Box::new(clpz::ClpzCompiler::new()));
         registry
     }
 }

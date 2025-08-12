@@ -1,7 +1,6 @@
 use crate::lterm::{LTerm, LTermInner};
 use crate::lvalue::LValue;
 use crate::relation::diseq::DisequalityConstraint;
-use crate::user::{DefaultUser, User};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -27,6 +26,9 @@ pub mod map_sum;
 mod reification;
 pub use reification::reify;
 
+pub mod plugin;
+pub use plugin::{ConstraintPlugin, ConstraintPluginRegistry};
+
 pub type SResult = Result<State, ()>;
 
 /// Logic program state
@@ -40,7 +42,7 @@ pub type SResult = Result<State, ()>;
 ///    1. The current substitution of LTerms
 ///    2. The constraint store
 ///    3. The dynamic domain store (supports multiple constraint domain types)
-///    4. User data
+///    4. Plugin registry for extension processing and constraint compilation
 #[derive(Debug, Clone)]
 pub struct State {
     /// The substitution map
@@ -52,16 +54,17 @@ pub struct State {
     /// The dynamic domain store supporting multiple constraint domain types
     dstore: Rc<DynamicDomainStore>,
 
-    pub user_state: DefaultUser,
+    /// Plugin registry for extension processing and constraint compilation
+    plugin_registry: Rc<ConstraintPluginRegistry>,
 }
 
 impl State {
-    pub fn new(user_state: DefaultUser) -> State {
+    pub fn new(plugin_registry: Rc<ConstraintPluginRegistry>) -> State {
         State {
             smap: Rc::new(SMap::new()),
             cstore: Rc::new(ConstraintStore::new()),
             dstore: Rc::new(DynamicDomainStore::new()),
-            user_state,
+            plugin_registry,
         }
     }
 
@@ -135,7 +138,6 @@ impl State {
 
     /// Return the state with a new constraint
     pub fn with_constraint(mut self, constraint: Rc<dyn Constraint>) -> State {
-        DefaultUser::with_constraint(&mut self, &constraint);
         self.cstore_to_mut().push_and_normalize(constraint);
         self
     }
@@ -145,10 +147,7 @@ impl State {
         constraint: &Rc<dyn Constraint>,
     ) -> (State, Option<Rc<dyn Constraint>>) {
         match self.cstore_to_mut().take(constraint) {
-            Some(constraint) => {
-                DefaultUser::take_constraint(&mut self, &constraint);
-                (self, Some(constraint))
-            }
+            Some(constraint) => (self, Some(constraint)),
             None => (self, None),
         }
     }
@@ -344,8 +343,9 @@ impl State {
         Ok(self)
     }
 
-    fn process_extension_user(self, extension: &SMap) -> SResult {
-        DefaultUser::process_extension(self, extension)
+    fn process_extension_plugins(self, extension: &SMap) -> SResult {
+        let registry = Rc::clone(&self.plugin_registry);
+        registry.process_extension(self, extension)
     }
 
     /// Processes the extension to substitution
@@ -356,7 +356,7 @@ impl State {
     fn process_extension(self, extension: SMap) -> SResult {
         self.process_extension_diseq(&extension)?
             .process_extension_fd(&extension)?
-            .process_extension_user(&extension)
+            .process_extension_plugins(&extension)
     }
 
     fn is_finite_domain(constraint: &Rc<dyn Constraint>) -> bool {
@@ -431,7 +431,6 @@ impl State {
         for c in cstore.iter() {
             c.reify(self);
         }
-        DefaultUser::reify(self);
     }
 }
 

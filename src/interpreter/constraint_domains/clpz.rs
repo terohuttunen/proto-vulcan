@@ -5,7 +5,7 @@
 //! - x * y == z (multiplication constraints)
 //! - x < y (comparison constraints)
 
-use super::{ConstraintDomain, DomainConstraintTemplate, FreshVariableContext, RuntimeValue, VariableType};
+use super::{ConstraintCompiler, ConstraintTemplate, FreshVariableContext, RuntimeValue, VariableType};
 use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::interpreter::parser::ast::ConstraintBody;
 use crate::interpreter::InterpreterError;
@@ -34,7 +34,7 @@ pub struct ClpzTemplate {
 }
 
 
-impl DomainConstraintTemplate for ClpzTemplate {
+impl ConstraintTemplate for ClpzTemplate {
     fn to_goal_with_context(
         &self,
         external_binder: &dyn Fn(&str) -> Option<RuntimeValue>,
@@ -62,16 +62,17 @@ impl DomainConstraintTemplate for ClpzTemplate {
     }
 }
 
-/// CLPZ constraint domain
-pub struct ClpzDomain;
+/// CLPZ constraint compiler
+#[derive(Debug)]
+pub struct ClpzCompiler;
 
-impl ClpzDomain {
+impl ClpzCompiler {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl ConstraintDomain for ClpzDomain {
+impl ConstraintCompiler for ClpzCompiler {
     fn name(&self) -> &str {
         "clpz"
     }
@@ -87,7 +88,7 @@ impl ConstraintDomain for ClpzDomain {
         &self,
         body: &ConstraintBody,
         binder: &dyn Fn(&str) -> Option<VariableType>,
-    ) -> Result<Rc<dyn DomainConstraintTemplate>, InterpreterError> {
+    ) -> Result<Rc<dyn ConstraintTemplate>, InterpreterError> {
         // Parse constraints and validate variables using binder
         let constraints = self.parse_constraints_with_binder(&body.raw_content, binder)?;
 
@@ -128,7 +129,7 @@ impl ConstraintDomain for ClpzDomain {
     }
 }
 
-impl ClpzDomain {
+impl ClpzCompiler {
     /// Parse constraints with binder validation for the new compile API
     fn parse_constraints_with_binder(
         &self,
