@@ -6,7 +6,7 @@ use crate::goal::{AnyGoal, Goal, GoalCast};
 use crate::lterm::{LTerm, LTermInner, LValue};
 use crate::relation::fail;
 use crate::solver::{Solve, Solver};
-use crate::state::State;
+use crate::state::{Constraint, SResult, State};
 use crate::stream::Stream;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1134,7 +1134,7 @@ pub fn is_dir_builtin(args: Vec<ArgumentValue>) -> Goal {
 // PATH MANIPULATION BUILTINS
 // =============================================================================
 
-/// Join path components
+/// Constraint-based join path components that supports bidirectional semantics
 pub fn join_path_builtin(args: Vec<ArgumentValue>) -> Goal {
     let lterms = match validate_args_relational(args, 3) {
         Ok(lterms) => lterms,
@@ -1145,41 +1145,133 @@ pub fn join_path_builtin(args: Vec<ArgumentValue>) -> Goal {
     let component_term = lterms[1].clone();
     let result_term = lterms[2].clone();
 
+    let constraint = Rc::new(JoinPathConstraint {
+        base_term,
+        component_term,
+        result_term,
+    });
+
+    // Create goal that immediately adds the constraint
     #[derive(Debug)]
     struct JoinPathGoal {
-        base_term: LTerm,
-        component_term: LTerm,
-        result_term: LTerm,
+        constraint: Rc<JoinPathConstraint>,
     }
 
     impl Solve for JoinPathGoal {
         fn solve(&self, _solver: &Solver, state: State) -> Stream {
-            let base_walked = state.smap_ref().walk(&self.base_term);
-            let component_walked = state.smap_ref().walk(&self.component_term);
-            
-            if let (Some(base_str), Some(component_str)) = (
-                extract_string_from_lterm(&base_walked, &state),
-                extract_string_from_lterm(&component_walked, &state)
-            ) {
-                let result_path = Path::new(&base_str).join(&component_str);
-                let result_str = result_path.to_string_lossy().to_string();
-                let result_lterm = string_to_lterm(result_str);
-                
-                match state.unify(&self.result_term, &result_lterm) {
-                    Ok(new_state) => Stream::unit(Box::new(new_state)),
-                    Err(_) => Stream::empty(),
-                }
-            } else {
-                Stream::empty()
+            match self.constraint.clone().run(state) {
+                Ok(new_state) => Stream::unit(Box::new(new_state)),
+                Err(_) => Stream::empty(),
             }
         }
     }
 
-    Goal::dynamic(Rc::new(JoinPathGoal {
-        base_term,
-        component_term,
-        result_term,
-    }))
+    Goal::dynamic(Rc::new(JoinPathGoal { constraint }))
+}
+
+/// Constraint that maintains the relationship: join_path(Base, Component, Result)
+#[derive(Debug)]
+struct JoinPathConstraint {
+    base_term: LTerm,
+    component_term: LTerm,
+    result_term: LTerm,
+}
+
+impl Constraint for JoinPathConstraint {
+    fn run(self: Rc<Self>, mut state: State) -> SResult {
+        let base_walked = state.smap_ref().walk(&self.base_term);
+        let component_walked = state.smap_ref().walk(&self.component_term);
+        let result_walked = state.smap_ref().walk(&self.result_term);
+
+        // Extract concrete strings where available
+        let base_str = extract_string_from_lterm(&base_walked, &state);
+        let component_str = extract_string_from_lterm(&component_walked, &state);
+        let result_str = extract_string_from_lterm(&result_walked, &state);
+
+        match (base_str, component_str, result_str) {
+            // All three grounded: verify the relationship
+            (Some(base), Some(component), Some(result)) => {
+                let expected_result = Path::new(&base).join(&component);
+                if expected_result.to_string_lossy() == result {
+                    Ok(state)
+                } else {
+                    Err(()) // Path join mismatch
+                }
+            }
+            
+            // Base and component grounded, result ungrounded: compute result
+            (Some(base), Some(component), None) => {
+                let result_path = Path::new(&base).join(&component);
+                let result_lterm = string_to_lterm(result_path.to_string_lossy().to_string());
+                let result_walked_clone = result_walked.clone();
+                state.smap_to_mut().extend(result_walked_clone, result_lterm);
+                state.run_constraints()
+            }
+            
+            // Result and component grounded, base ungrounded: try to derive base
+            (None, Some(component), Some(result)) => {
+                let result_path = Path::new(&result);
+                // Try to remove the component suffix to get the base
+                if let Some(base_path) = try_remove_suffix(&result_path, &component) {
+                    let base_lterm = string_to_lterm(base_path.to_string_lossy().to_string());
+                    let base_walked_clone = base_walked.clone();
+                    state.smap_to_mut().extend(base_walked_clone, base_lterm);
+                    state.run_constraints()
+                } else {
+                    Err(()) // Cannot derive valid base path
+                }
+            }
+            
+            // Result and base grounded, component ungrounded: try to derive component
+            (Some(base), None, Some(result)) => {
+                let base_path = Path::new(&base);
+                let result_path = Path::new(&result);
+                
+                // Try to get the relative path from base to result
+                if let Ok(component_path) = result_path.strip_prefix(base_path) {
+                    let component_lterm = string_to_lterm(component_path.to_string_lossy().to_string());
+                    let component_walked_clone = component_walked.clone();
+                    state.smap_to_mut().extend(component_walked_clone, component_lterm);
+                    state.run_constraints()
+                } else {
+                    Err(()) // Result is not within base path
+                }
+            }
+            
+            // Less than two grounded: defer constraint until more information available
+            _ => Ok(state.with_constraint(self)),
+        }
+    }
+
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.base_term.clone(), self.component_term.clone(), self.result_term.clone()]
+    }
+}
+
+impl std::fmt::Display for JoinPathConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "join_path({}, {}, {})", self.base_term, self.component_term, self.result_term)
+    }
+}
+
+/// Helper function to try removing a suffix component from a path to derive the base
+fn try_remove_suffix(full_path: &Path, suffix: &str) -> Option<PathBuf> {
+    let full_str = full_path.to_string_lossy();
+    let suffix_path = Path::new(suffix);
+    
+    // Try to find where the suffix starts in the full path
+    if full_str.ends_with(suffix) {
+        let base_len = full_str.len() - suffix.len();
+        if base_len > 0 {
+            let base_str = &full_str[..base_len];
+            // Remove trailing path separator if present
+            let base_str = base_str.trim_end_matches('/').trim_end_matches('\\');
+            if !base_str.is_empty() {
+                return Some(PathBuf::from(base_str));
+            }
+        }
+    }
+    None
 }
 
 /// Get parent directory

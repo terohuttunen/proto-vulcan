@@ -1,0 +1,139 @@
+// Tests for constraint-based path operation builtins with ungrounded variable support
+// These tests demonstrate bidirectional path operations that would fail with procedural approach
+
+// =============================================================================
+// BASIC BIDIRECTIONAL BEHAVIOR
+// =============================================================================
+
+@test
+rel test_join_path_grounds_result() {
+    // Test that result becomes grounded when base and component are grounded
+    |result| {
+        __builtin_join_path("/home", "user", result),  // result should become grounded
+        result == "/home/user"  // Verify result was correctly grounded
+    }
+}
+
+@test
+rel test_join_path_grounds_component() {
+    // Test that component becomes grounded when base and result are grounded
+    |component| {
+        __builtin_join_path("/home", component, "/home/user"),  // component should become grounded
+        component == "user"  // Verify component was correctly grounded
+    }
+}
+
+@test
+rel test_join_path_grounds_base() {
+    // Test that base becomes grounded when component and result are grounded
+    |base| {
+        __builtin_join_path(base, "user", "/home/user"),  // base should become grounded
+        base == "/home"  // Verify base was correctly grounded
+    }
+}
+
+@test
+rel test_join_path_verify_relationship() {
+    // Test verification when all three arguments are grounded
+    __builtin_join_path("/home", "user", "/home/user")  // Should succeed
+}
+
+// =============================================================================
+// COMPLEX PATH OPERATIONS
+// =============================================================================
+
+@test
+rel test_join_path_chain_forward() {
+    // Chain multiple path joins forward
+    |intermediate, final| {
+        __builtin_join_path("/home", "user", intermediate),
+        __builtin_join_path(intermediate, "documents", final),
+        final == "/home/user/documents"
+    }
+}
+
+@test
+rel test_join_path_chain_backward() {
+    // Chain multiple path joins backward - derive intermediate paths
+    |base, intermediate, component| {
+        __builtin_join_path(base, "user", intermediate),
+        __builtin_join_path(intermediate, component, "/home/user/documents"),
+        base == "/home",
+        component == "documents"
+    }
+}
+
+@test
+rel test_join_path_multiple_solutions() {
+    // Multiple ways to decompose the same path
+    |base1, comp1, base2, comp2| {
+        // Same result, different decompositions
+        __builtin_join_path(base1, comp1, "/a/b/c"),
+        __builtin_join_path(base2, comp2, "/a/b/c"),
+        // First decomposition
+        base1 == "/a",
+        comp1 == "b/c",
+        // Second decomposition  
+        base2 == "/a/b",
+        comp2 == "c"
+    }
+}
+
+@test
+rel test_join_path_relative_paths() {
+    // Test with relative paths
+    |result| {
+        __builtin_join_path("docs", "readme.md", result),
+        result == "docs/readme.md"
+    }
+}
+
+@test
+rel test_join_path_derive_component_complex() {
+    // Derive component from complex paths
+    |component| {
+        __builtin_join_path("/usr/local", component, "/usr/local/bin/python"),
+        component == "bin/python"
+    }
+}
+
+// =============================================================================
+// CONSTRAINT DEFERRAL
+// =============================================================================
+
+@test
+rel test_join_path_constraint_deferral() {
+    // Test that constraints are properly deferred
+    |base, component, result| {
+        // All three ungrounded initially - constraint should defer
+        __builtin_join_path(base, component, result),
+        // Later provide concrete values
+        base == "/tmp",
+        component == "file.txt",
+        result == "/tmp/file.txt"
+    }
+}
+
+@test
+rel test_join_path_constraint_deferral_until_sufficient_info() {
+    // Test that constraints defer until sufficient information is available
+    |path1, path2, component| {
+        // Initially all ungrounded - constraints should defer
+        __builtin_join_path(path1, component, path2),
+        // Provide partial information
+        path1 == "/usr",
+        // Now component should be derivable when path2 is provided
+        path2 == "/usr/bin",
+        component == "bin"
+    }
+}
+
+@test
+rel test_simple_bidirectional_solving() {
+    // Simple bidirectional constraint solving
+    |base, result| {
+        __builtin_join_path(base, "file", result),
+        base == "/tmp",
+        result == "/tmp/file"
+    }
+}
