@@ -28,6 +28,7 @@ fn get_builtin_specs() -> Vec<BuiltinSpec> {
     vec![
         // Core language builtins
         BuiltinSpec { name: "__builtin_length", arity: 2, func: core::length_builtin },
+        BuiltinSpec { name: "__builtin_println", arity: 1, func: core::println_builtin },
         
         // Testing builtins
         BuiltinSpec { name: "assert_eq", arity: 2, func: testing::assert_eq_builtin },

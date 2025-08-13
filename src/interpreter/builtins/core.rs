@@ -115,3 +115,72 @@ impl std::fmt::Display for LengthConstraint {
     }
 }
 
+/// Println builtin that outputs values when they become grounded
+pub fn println_builtin(args: Vec<ArgumentValue>) -> Goal {
+    if args.len() != 1 {
+        return Goal::fail();
+    }
+
+    let term = match &args[0] {
+        ArgumentValue::Relational(term) => term.clone(),
+        ArgumentValue::Meta(meta_val) => {
+            // For meta values, print immediately
+            println!("{}", meta_val);
+            return Goal::succeed();
+        }
+    };
+
+    let constraint = Rc::new(PrintlnConstraint { term });
+
+    #[derive(Debug)]
+    struct PrintlnGoal {
+        constraint: Rc<PrintlnConstraint>,
+    }
+
+    impl Solve for PrintlnGoal {
+        fn solve(&self, _solver: &Solver, state: State) -> Stream {
+            match self.constraint.clone().run(state) {
+                Ok(new_state) => Stream::unit(Box::new(new_state)),
+                Err(_) => Stream::empty(),
+            }
+        }
+    }
+
+    Goal::dynamic(Rc::new(PrintlnGoal { constraint }))
+}
+
+/// Constraint that prints a value when it becomes grounded
+#[derive(Debug)]
+struct PrintlnConstraint {
+    term: LTerm,
+}
+
+impl Constraint for PrintlnConstraint {
+    fn run(self: Rc<Self>, state: State) -> SResult {
+        let walked_term = state.smap_ref().walk(&self.term);
+        
+        match walked_term.as_ref() {
+            // If the term is grounded (not a variable), print it
+            LTermInner::Var(_, _) => {
+                // Still ungrounded, keep the constraint
+                Ok(state.with_constraint(self))
+            }
+            _ => {
+                // Grounded, print the value
+                println!("{}", walked_term);
+                Ok(state) // Remove constraint after printing
+            }
+        }
+    }
+
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.term.clone()]
+    }
+}
+
+impl std::fmt::Display for PrintlnConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "println({})", self.term)
+    }
+}
+
