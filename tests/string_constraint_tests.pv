@@ -1,0 +1,416 @@
+// Comprehensive string utility tests demonstrating constraint-based behavior
+// Tests include both grounded and ungrounded variable scenarios
+use std::string::*;
+
+// =============================================================================
+// STRING TO CHARS TESTS - Bidirectional constraint behavior
+// =============================================================================
+
+@test
+rel test_string_to_chars_grounded_string() {
+    // String grounded, chars ungrounded
+    |chars| {
+        string_to_chars("hello", chars),
+        assert_eq(chars, ["h", "e", "l", "l", "o"])
+    }
+}
+
+@test
+rel test_string_to_chars_grounded_chars() {
+    // Chars grounded, string ungrounded
+    |str| {
+        string_to_chars(str, ["h", "i"]),
+        assert_eq(str, "hi")
+    }
+}
+
+@test
+rel test_string_to_chars_both_ungrounded() {
+    // Both ungrounded initially - constraint defers until one is bound
+    |str, chars| {
+        // First bind one variable
+        str == "test",
+        // Then the constraint can resolve
+        string_to_chars(str, chars),
+        assert_eq(chars, ["t", "e", "s", "t"])
+    }
+}
+
+@test
+rel test_string_to_chars_verification() {
+    // Both grounded - verifies relationship
+    string_to_chars("abc", ["a", "b", "c"])
+}
+
+@test
+rel test_chars_to_string_bidirectional() {
+    // Test reverse direction works with same constraint
+    |str| {
+        chars_to_string(["w", "o", "r", "l", "d"], str),
+        assert_eq(str, "world")
+    }
+}
+
+// =============================================================================
+// CHAR TO DIGIT TESTS - Bidirectional constraint behavior  
+// =============================================================================
+
+@test
+rel test_char_to_digit_grounded_char() {
+    // Char grounded, digit ungrounded
+    |digit| {
+        char_to_digit("7", digit),
+        assert_eq(digit, 7)
+    }
+}
+
+@test
+rel test_char_to_digit_grounded_digit() {
+    // Digit grounded, char ungrounded
+    |char| {
+        char_to_digit(char, 3),
+        assert_eq(char, "3")
+    }
+}
+
+@test
+rel test_char_to_digit_both_ungrounded() {
+    // Both ungrounded initially
+    |char, digit| {
+        // Bind one variable first
+        digit == 5,
+        // Constraint resolves
+        char_to_digit(char, digit),
+        assert_eq(char, "5")
+    }
+}
+
+@test
+rel test_digit_to_char_reverse() {
+    // Test reverse direction
+    |char| {
+        digit_to_char(9, char),
+        assert_eq(char, "9")
+    }
+}
+
+@test
+rel test_char_digit_all_combinations() {
+    // Test all digit/char combinations work bidirectionally
+    |char0, char1, char2| {
+        char_to_digit("0", 0),
+        digit_to_char(1, char1),
+        char_to_digit(char2, 2),
+        assert_eq(char1, "1"),
+        assert_eq(char2, "2")
+    }
+}
+
+// =============================================================================
+// STRING TO INT TESTS - Bidirectional constraint behavior
+// =============================================================================
+
+@test
+rel test_string_to_int_grounded_string() {
+    // String grounded, int ungrounded
+    |num| {
+        string_to_int("42", num),
+        assert_eq(num, 42)
+    }
+}
+
+@test
+rel test_string_to_int_grounded_int() {
+    // Int grounded, string ungrounded
+    |str| {
+        string_to_int(str, 123),
+        assert_eq(str, "123")
+    }
+}
+
+@test
+rel test_string_to_int_both_ungrounded() {
+    // Both ungrounded initially
+    |str, num| {
+        num == 999,
+        string_to_int(str, num),
+        assert_eq(str, "999")
+    }
+}
+
+@test
+rel test_int_to_string_reverse() {
+    // Test reverse direction
+    |str| {
+        int_to_string(-456, str),
+        assert_eq(str, "-456")
+    }
+}
+
+@test
+rel test_string_int_negative_numbers() {
+    // Test negative numbers work bidirectionally
+    |str, num| {
+        string_to_int("-789", num),
+        assert_eq(num, -789),
+        int_to_string(num, str),
+        assert_eq(str, "-789")
+    }
+}
+
+// =============================================================================
+// STRING SPLIT/JOIN TESTS - Bidirectional constraint behavior
+// =============================================================================
+
+@test
+rel test_string_split_grounded_string() {
+    // String and delimiter grounded, parts ungrounded
+    |parts| {
+        string_split("a,b,c", ",", parts),
+        assert_eq(parts, ["a", "b", "c"])
+    }
+}
+
+@test
+rel test_string_split_grounded_parts() {
+    // Parts and delimiter grounded, string ungrounded  
+    |str| {
+        string_split(str, "-", ["x", "y", "z"]),
+        assert_eq(str, "x-y-z")
+    }
+}
+
+@test
+rel test_string_split_both_ungrounded() {
+    // Only delimiter grounded initially
+    |str, parts| {
+        parts == ["hello", "world"],
+        string_split(str, " ", parts),
+        assert_eq(str, "hello world")
+    }
+}
+
+@test
+rel test_string_join_reverse() {
+    // Test reverse direction
+    |str| {
+        string_join(["one", "two", "three"], "|", str),
+        assert_eq(str, "one|two|three")
+    }
+}
+
+@test
+rel test_string_split_join_roundtrip() {
+    // Test full roundtrip with ungrounded variables
+    |original, parts, reconstructed| {
+        original == "apple:banana:cherry",
+        string_split(original, ":", parts),
+        string_join(parts, ":", reconstructed),
+        assert_eq(original, reconstructed)
+    }
+}
+
+// =============================================================================
+// STRING SPLIT LINES TESTS - Bidirectional constraint behavior
+// =============================================================================
+
+@test
+rel test_string_split_lines_grounded_string() {
+    // String grounded, lines ungrounded
+    |lines| {
+        string_split_lines("line1\nline2\nline3", lines),
+        assert_eq(lines, ["line1", "line2", "line3"])
+    }
+}
+
+@test
+rel test_string_split_lines_grounded_lines() {
+    // Lines grounded, string ungrounded
+    |str| {
+        string_split_lines(str, ["first", "second"]),
+        assert_eq(str, "first\nsecond")
+    }
+}
+
+@test
+rel test_string_split_lines_both_ungrounded() {
+    // Both ungrounded initially
+    |str, lines| {
+        lines == ["alpha", "beta", "gamma"],
+        string_split_lines(str, lines),
+        assert_eq(str, "alpha\nbeta\ngamma")
+    }
+}
+
+// =============================================================================
+// CHARACTER CLASSIFICATION TESTS - Constraint deferral behavior
+// =============================================================================
+
+@test
+rel test_is_digit_grounded() {
+    // Character grounded - immediate check
+    is_digit("5")
+}
+
+@test
+rel test_is_digit_ungrounded_deferred() {
+    // Character ungrounded - constraint defers until bound
+    |char| {
+        char == "8",
+        is_digit(char)
+    }
+}
+
+@test
+rel test_is_alpha_grounded() {
+    is_alpha("a")
+}
+
+@test
+rel test_is_alpha_ungrounded_deferred() {
+    |char| {
+        char == "Z",
+        is_alpha(char)
+    }
+}
+
+@test
+rel test_is_alnum_grounded() {
+    is_alnum("9")
+}
+
+@test
+rel test_is_alnum_ungrounded_deferred() {
+    |char| {
+        char == "b",
+        is_alnum(char)
+    }
+}
+
+// =============================================================================
+// COMPLEX CONSTRAINT INTERACTION TESTS
+// =============================================================================
+
+@test
+rel test_complex_string_pipeline_ungrounded() {
+    // Complex pipeline with multiple ungrounded variables
+    |input, chars, digits_only, result_str, final_num| {
+        // Start with ungrounded variables
+        input == "123",
+        
+        // Convert to chars (input grounded, chars ungrounded)
+        string_to_chars(input, chars),
+        
+        // Filter to keep only digits (for demo - simplified)
+        chars == digits_only,
+        
+        // Convert back to string (digits_only grounded, result_str ungrounded)
+        chars_to_string(digits_only, result_str),
+        
+        // Convert to number (result_str grounded, final_num ungrounded)
+        string_to_int(result_str, final_num),
+        
+        // Verify final result
+        assert_eq(final_num, 123)
+    }
+}
+
+@test
+rel test_constraint_propagation_chain() {
+    // Test constraint propagation through multiple variables
+    |str1, chars1, str2, chars2, str3| {
+        // Start with one bound variable
+        str1 == "abc",
+        
+        // Chain of constraints where each depends on the previous
+        string_to_chars(str1, chars1),
+        chars_to_string(chars1, str2),
+        string_to_chars(str2, chars2),
+        chars_to_string(chars2, str3),
+        
+        // Should propagate through the chain
+        assert_eq(str3, "abc")
+    }
+}
+
+@test
+rel test_bidirectional_verification() {
+    // Test that constraints work in both directions simultaneously
+    |str, chars, num| {
+        // Set up relationships that must be consistent
+        str == "42",
+        string_to_chars(str, chars),
+        string_to_int(str, num),
+        
+        // Verify all relationships hold
+        assert_eq(chars, ["4", "2"]),
+        assert_eq(num, 42),
+        
+        // Test reverse direction with same variables
+        |str2, chars2| {
+            chars_to_string(chars, str2),
+            string_to_chars(str2, chars2),
+            assert_eq(str2, str),
+            assert_eq(chars2, chars)
+        }
+    }
+}
+
+@test
+rel test_constraint_deferral_and_resolution() {
+    // Test that constraints properly defer and resolve when variables become bound
+    |x, y, z| {
+        // Set up constraints with all variables ungrounded
+        string_to_chars(x, y),
+        chars_to_string(y, z),
+        
+        // Bind one variable - should trigger constraint resolution
+        x == "test",
+        
+        // Verify constraints resolved correctly
+        assert_eq(y, ["t", "e", "s", "t"]),
+        assert_eq(z, "test")
+    }
+}
+
+// =============================================================================
+// EDGE CASES AND ERROR HANDLING
+// =============================================================================
+
+@test
+rel test_empty_string_constraints() {
+    |empty_chars| {
+        string_to_chars("", empty_chars),
+        assert_eq(empty_chars, [])
+    }
+}
+
+@test
+rel test_single_char_constraints() {
+    |single_char_list, reconstructed| {
+        string_to_chars("x", single_char_list),
+        chars_to_string(single_char_list, reconstructed),
+        assert_eq(single_char_list, ["x"]),
+        assert_eq(reconstructed, "x")
+    }
+}
+
+@test
+rel test_zero_number_constraints() {
+    |zero_str, zero_char| {
+        string_to_int("0", 0),
+        int_to_string(0, zero_str),
+        char_to_digit("0", 0),
+        digit_to_char(0, zero_char),
+        assert_eq(zero_str, "0"),
+        assert_eq(zero_char, "0")
+    }
+}
+
+@test
+rel test_split_empty_string() {
+    |empty_parts| {
+        string_split("", ",", empty_parts),
+        assert_eq(empty_parts, [""])
+    }
+}

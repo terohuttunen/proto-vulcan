@@ -14,6 +14,7 @@ mod testing;
 mod macros;
 mod fs;
 mod env;
+mod string;
 
 /// Specification for a builtin predicate
 pub struct BuiltinSpec {
@@ -76,6 +77,21 @@ fn get_builtin_specs() -> Vec<BuiltinSpec> {
         BuiltinSpec { name: "__builtin_which", arity: 2, func: env::which_builtin },
         BuiltinSpec { name: "__builtin_env_vars", arity: 1, func: env::env_vars_builtin },
         BuiltinSpec { name: "__builtin_argv", arity: 1, func: env::argv_builtin },
+        
+        // String manipulation builtins
+        BuiltinSpec { name: "__builtin_string_to_chars", arity: 2, func: string::string_to_chars_builtin },
+        BuiltinSpec { name: "__builtin_chars_to_string", arity: 2, func: string::chars_to_string_builtin },
+        BuiltinSpec { name: "__builtin_char_to_digit", arity: 2, func: string::char_to_digit_builtin },
+        BuiltinSpec { name: "__builtin_digit_to_char", arity: 2, func: string::digit_to_char_builtin },
+        BuiltinSpec { name: "__builtin_string_to_int", arity: 2, func: string::string_to_int_builtin },
+        BuiltinSpec { name: "__builtin_int_to_string", arity: 2, func: string::int_to_string_builtin },
+        BuiltinSpec { name: "__builtin_string_length", arity: 2, func: string::string_length_builtin },
+        BuiltinSpec { name: "__builtin_is_digit", arity: 1, func: string::is_digit_builtin },
+        BuiltinSpec { name: "__builtin_is_alpha", arity: 1, func: string::is_alpha_builtin },
+        BuiltinSpec { name: "__builtin_is_alnum", arity: 1, func: string::is_alnum_builtin },
+        BuiltinSpec { name: "__builtin_string_split", arity: 3, func: string::string_split_builtin },
+        BuiltinSpec { name: "__builtin_string_split_lines", arity: 2, func: string::string_split_lines_builtin },
+        BuiltinSpec { name: "__builtin_string_join", arity: 3, func: string::string_join_builtin },
     ]
 }
 

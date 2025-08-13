@@ -1,0 +1,116 @@
+// String manipulation utilities for Proto-Vulcan
+// Uses efficient builtin predicates for string operations
+
+/// Convert a string to a list of individual character strings
+pub rel string_to_chars(str, chars) {
+    __builtin_string_to_chars(str, chars)
+}
+
+/// Check if a string is a single character
+pub rel single_char(char) {
+    |len| {
+        __builtin_string_length(char, len),
+        len == 1
+    }
+}
+
+/// Convert string to integer using efficient builtin
+pub rel string_to_int(str, n) {
+    __builtin_string_to_int(str, n)
+}
+
+/// Convert integer to string using efficient builtin
+pub rel int_to_string(n, str) {
+    __builtin_int_to_string(n, str)
+}
+
+/// Convert digit character to numeric value
+pub rel char_to_digit(char, digit) {
+    __builtin_char_to_digit(char, digit)
+}
+
+/// Convert digit to character representation
+pub rel digit_to_char(digit, char) {
+    __builtin_digit_to_char(digit, char)
+}
+
+/// Check if character is a digit
+pub rel is_digit(char) {
+    __builtin_is_digit(char)
+}
+
+/// Check if character is alphabetic
+pub rel is_alpha(char) {
+    __builtin_is_alpha(char)
+}
+
+/// Check if character is alphanumeric
+pub rel is_alnum(char) {
+    __builtin_is_alnum(char)
+}
+
+/// Check if string contains only digits
+pub rel is_numeric_string(str) {
+    |chars| {
+        string_to_chars(str, chars),
+        all_digits(chars)
+    }
+}
+
+/// Check if all characters in list are digits
+pub rel all_digits(chars) {
+    match chars {
+        [] => true,
+        [char | rest] => all {
+            is_digit(char),
+            all_digits(rest)
+        }
+    }
+}
+
+/// Convert a list of characters back to a string
+pub rel chars_to_string(chars, str) {
+    __builtin_chars_to_string(chars, str)
+}
+
+/// Get the length of a string efficiently
+pub rel string_length(str, len) {
+    __builtin_string_length(str, len)
+}
+
+/// Get the first character of a string
+pub rel string_first_char(str, char) {
+    |chars| {
+        string_to_chars(str, chars),
+        chars == [char | _]
+    }
+}
+
+/// Get the substring after the first character
+pub rel string_rest(str, rest) {
+    |chars, rest_chars| {
+        string_to_chars(str, chars),
+        chars == [_ | rest_chars],
+        chars_to_string(rest_chars, rest)
+    }
+}
+
+/// Split a string by a delimiter into a list of parts
+pub rel string_split(str, delimiter, parts) {
+    __builtin_string_split(str, delimiter, parts)
+}
+
+/// Split a string into lines
+pub rel string_split_lines(str, lines) {
+    __builtin_string_split_lines(str, lines)
+}
+
+/// Join a list of strings with a delimiter
+pub rel string_join(parts, delimiter, str) {
+    __builtin_string_join(parts, delimiter, str)
+}
+
+/// Split a string by whitespace (convenience predicate)
+pub rel string_split_whitespace(str, parts) {
+    string_split(str, " ", parts)
+}

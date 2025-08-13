@@ -1,0 +1,26 @@
+// Simple test for string builtins - no imports
+
+@test
+rel test_basic_string_to_chars() {
+    __builtin_string_to_chars("hello", ["h", "e", "l", "l", "o"])
+}
+
+@test
+rel test_basic_chars_to_string() {
+    __builtin_chars_to_string(["h", "i"], "hi")
+}
+
+@test
+rel test_basic_char_to_digit() {
+    __builtin_char_to_digit("5", 5)
+}
+
+@test
+rel test_basic_string_to_int() {
+    __builtin_string_to_int("123", 123)
+}
+
+@test
+rel test_basic_string_split() {
+    __builtin_string_split("a,b,c", ",", ["a", "b", "c"])
+}

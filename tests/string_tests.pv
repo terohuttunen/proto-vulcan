@@ -1,0 +1,347 @@
+// Comprehensive test suite for string manipulation builtins
+use std::string::*;
+
+// =============================================================================
+// BASIC STRING TO CHARS TESTS
+// =============================================================================
+
+@test
+rel test_string_to_chars_empty() {
+    string_to_chars("", [])
+}
+
+@test
+rel test_string_to_chars_single() {
+    string_to_chars("a", ["a"])
+}
+
+@test
+rel test_string_to_chars_multiple() {
+    string_to_chars("hello", ["h", "e", "l", "l", "o"])
+}
+
+@test
+rel test_string_to_chars_digits() {
+    string_to_chars("123", ["1", "2", "3"])
+}
+
+@test
+rel test_string_to_chars_symbols() {
+    string_to_chars("!@#", ["!", "@", "#"])
+}
+
+// =============================================================================
+// CHARS TO STRING TESTS
+// =============================================================================
+
+@test
+rel test_chars_to_string_empty() {
+    chars_to_string([], "")
+}
+
+@test
+rel test_chars_to_string_single() {
+    chars_to_string(["a"], "a")
+}
+
+@test
+rel test_chars_to_string_multiple() {
+    chars_to_string(["h", "e", "l", "l", "o"], "hello")
+}
+
+@test
+rel test_chars_to_string_bidirectional() {
+    |str, chars| {
+        str == "test",
+        string_to_chars(str, chars),
+        chars_to_string(chars, str)
+    }
+}
+
+// =============================================================================
+// CHARACTER DIGIT CONVERSION TESTS
+// =============================================================================
+
+@test
+rel test_char_to_digit_zero() {
+    char_to_digit("0", 0)
+}
+
+@test
+rel test_char_to_digit_nine() {
+    char_to_digit("9", 9)
+}
+
+@test
+rel test_char_to_digit_all_digits() {
+    all {
+        char_to_digit("0", 0),
+        char_to_digit("1", 1),
+        char_to_digit("2", 2),
+        char_to_digit("3", 3),
+        char_to_digit("4", 4),
+        char_to_digit("5", 5),
+        char_to_digit("6", 6),
+        char_to_digit("7", 7),
+        char_to_digit("8", 8),
+        char_to_digit("9", 9)
+    }
+}
+
+@test
+rel test_digit_to_char_zero() {
+    digit_to_char(0, "0")
+}
+
+@test
+rel test_digit_to_char_nine() {
+    digit_to_char(9, "9")
+}
+
+@test
+rel test_digit_to_char_bidirectional() {
+    |digit, char| {
+        digit == 5,
+        digit_to_char(digit, char),
+        char_to_digit(char, digit)
+    }
+}
+
+// =============================================================================
+// STRING INTEGER CONVERSION TESTS
+// =============================================================================
+
+@test
+rel test_string_to_int_zero() {
+    string_to_int("0", 0)
+}
+
+@test
+rel test_string_to_int_positive() {
+    string_to_int("123", 123)
+}
+
+@test
+rel test_string_to_int_negative() {
+    string_to_int("-42", -42)
+}
+
+@test
+rel test_string_to_int_large() {
+    string_to_int("999999", 999999)
+}
+
+@test
+rel test_int_to_string_zero() {
+    int_to_string(0, "0")
+}
+
+@test
+rel test_int_to_string_positive() {
+    int_to_string(123, "123")
+}
+
+@test
+rel test_int_to_string_negative() {
+    int_to_string(-42, "-42")
+}
+
+@test
+rel test_int_to_string_bidirectional() {
+    |num, str| {
+        num == 456,
+        int_to_string(num, str),
+        string_to_int(str, num)
+    }
+}
+
+// =============================================================================
+// STRING LENGTH TESTS
+// =============================================================================
+
+@test
+rel test_string_length_empty() {
+    string_length("", 0)
+}
+
+@test
+rel test_string_length_single() {
+    string_length("a", 1)
+}
+
+@test
+rel test_string_length_multiple() {
+    string_length("hello", 5)
+}
+
+@test
+rel test_string_length_unicode() {
+    string_length("café", 4)
+}
+
+// =============================================================================
+// CHARACTER CLASSIFICATION TESTS
+// =============================================================================
+
+@test
+rel test_is_digit_positive() {
+    all {
+        is_digit("0"),
+        is_digit("5"),
+        is_digit("9")
+    }
+}
+
+@test
+rel test_is_alpha_positive() {
+    all {
+        is_alpha("a"),
+        is_alpha("Z"),
+        is_alpha("m")
+    }
+}
+
+@test
+rel test_is_alnum_positive() {
+    all {
+        is_alnum("a"),
+        is_alnum("Z"),
+        is_alnum("5"),
+        is_alnum("0")
+    }
+}
+
+// =============================================================================
+// STRING SPLITTING TESTS
+// =============================================================================
+
+@test
+rel test_string_split_empty() {
+    string_split("", ",", [""])
+}
+
+@test
+rel test_string_split_single() {
+    string_split("hello", ",", ["hello"])
+}
+
+@test
+rel test_string_split_comma() {
+    string_split("a,b,c", ",", ["a", "b", "c"])
+}
+
+@test
+rel test_string_split_space() {
+    string_split("hello world", " ", ["hello", "world"])
+}
+
+@test
+rel test_string_split_multiple_delimiters() {
+    string_split("a,b,c,d", ",", ["a", "b", "c", "d"])
+}
+
+@test
+rel test_string_split_lines_single() {
+    string_split_lines("hello", ["hello"])
+}
+
+@test
+rel test_string_split_lines_multiple() {
+    string_split_lines("line1\nline2\nline3", ["line1", "line2", "line3"])
+}
+
+@test
+rel test_string_join_empty() {
+    string_join([], ",", "")
+}
+
+@test
+rel test_string_join_single() {
+    string_join(["hello"], ",", "hello")
+}
+
+@test
+rel test_string_join_multiple() {
+    string_join(["a", "b", "c"], ",", "a,b,c")
+}
+
+@test
+rel test_string_join_space() {
+    string_join(["hello", "world"], " ", "hello world")
+}
+
+@test
+rel test_string_split_join_bidirectional() {
+    |original, parts| {
+        original == "a,b,c,d",
+        string_split(original, ",", parts),
+        string_join(parts, ",", original)
+    }
+}
+
+// =============================================================================
+// CONVENIENCE PREDICATE TESTS
+// =============================================================================
+
+@test
+rel test_string_split_whitespace() {
+    string_split_whitespace("hello world test", ["hello", "world", "test"])
+}
+
+@test
+rel test_single_char_positive() {
+    all {
+        single_char("a"),
+        single_char("5"),
+        single_char("!")
+    }
+}
+
+@test
+rel test_is_numeric_string_positive() {
+    all {
+        is_numeric_string("123"),
+        is_numeric_string("0"),
+        is_numeric_string("999")
+    }
+}
+
+// =============================================================================
+// COMPLEX INTEGRATION TESTS
+// =============================================================================
+
+@test
+rel test_complex_string_manipulation() {
+    |original, chars, reversed_chars, reversed| {
+        original == "hello",
+        string_to_chars(original, chars),
+        // Reverse the character list manually
+        chars == ["h", "e", "l", "l", "o"],
+        reversed_chars == ["o", "l", "l", "e", "h"],
+        chars_to_string(reversed_chars, reversed),
+        reversed == "olleh"
+    }
+}
+
+@test 
+rel test_number_parsing_and_formatting() {
+    |num_str, num, formatted| {
+        num_str == "42",
+        string_to_int(num_str, num),
+        num == 42,
+        int_to_string(num, formatted),
+        formatted == "42"
+    }
+}
+
+@test
+rel test_csv_parsing() {
+    |csv, parts, first, second, third| {
+        csv == "apple,banana,cherry",
+        string_split(csv, ",", parts),
+        parts == [first, second, third],
+        first == "apple",
+        second == "banana", 
+        third == "cherry"
+    }
+}
