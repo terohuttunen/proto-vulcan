@@ -1289,28 +1289,10 @@ pub fn parent_path_builtin(args: Vec<ArgumentValue>) -> Goal {
 
     impl Solve for ParentPathGoal {
         fn solve(&self, _solver: &Solver, state: State) -> Stream {
-            let path_walked = state.smap_ref().walk(&self.path_term);
-            
-            if let Some(path_str) = extract_string_from_lterm(&path_walked, &state) {
-                let path = Path::new(&path_str);
-                let parent_str = if let Some(parent) = path.parent() {
-                    parent.to_string_lossy().to_string()
-                } else if path_str == "/" {
-                    // Special case: parent of root is root
-                    "/".to_string()
-                } else {
-                    // No parent for relative paths at root level
-                    return Stream::empty();
-                };
-                
-                let parent_lterm = string_to_lterm(parent_str);
-                
-                match state.unify(&self.parent_term, &parent_lterm) {
-                    Ok(new_state) => Stream::unit(Box::new(new_state)),
-                    Err(_) => Stream::empty(),
-                }
-            } else {
-                Stream::empty()
+            let constraint = ParentPathConstraint::new(self.path_term.clone(), self.parent_term.clone());
+            match constraint.run(state) {
+                Ok(new_state) => Stream::unit(Box::new(new_state)),
+                Err(_) => Stream::empty(),
             }
         }
     }
@@ -1336,22 +1318,10 @@ pub fn file_name_builtin(args: Vec<ArgumentValue>) -> Goal {
 
     impl Solve for FileNameGoal {
         fn solve(&self, _solver: &Solver, state: State) -> Stream {
-            let path_walked = state.smap_ref().walk(&self.path_term);
-            
-            if let Some(path_str) = extract_string_from_lterm(&path_walked, &state) {
-                if let Some(name) = Path::new(&path_str).file_name() {
-                    let name_str = name.to_string_lossy().to_string();
-                    let name_lterm = string_to_lterm(name_str);
-                    
-                    match state.unify(&self.name_term, &name_lterm) {
-                        Ok(new_state) => Stream::unit(Box::new(new_state)),
-                        Err(_) => Stream::empty(),
-                    }
-                } else {
-                    Stream::empty() // No filename (e.g., root path)
-                }
-            } else {
-                Stream::empty()
+            let constraint = FileNameConstraint::new(self.path_term.clone(), self.name_term.clone());
+            match constraint.run(state) {
+                Ok(new_state) => Stream::unit(Box::new(new_state)),
+                Err(_) => Stream::empty(),
             }
         }
     }
@@ -1554,5 +1524,165 @@ pub fn string_concat_builtin(args: Vec<ArgumentValue>) -> Goal {
         strings_term,
         result_term,
     }))
+}
+
+// =============================================================================
+// PATH OPERATION CONSTRAINTS
+// =============================================================================
+
+#[derive(Debug)]
+pub struct ParentPathConstraint {
+    path_term: LTerm,
+    parent_term: LTerm,
+}
+
+impl ParentPathConstraint {
+    pub fn new(path_term: LTerm, parent_term: LTerm) -> Rc<dyn Constraint> {
+        Rc::new(ParentPathConstraint { path_term, parent_term })
+    }
+}
+
+impl Constraint for ParentPathConstraint {
+    fn run(self: Rc<Self>, mut state: State) -> SResult {
+        let path_walked = state.smap_ref().walk(&self.path_term);
+        let parent_walked = state.smap_ref().walk(&self.parent_term);
+
+        match (
+            extract_string_from_lterm(&path_walked, &state),
+            extract_string_from_lterm(&parent_walked, &state),
+        ) {
+            // Both grounded: verify parent relationship
+            (Some(path_str), Some(parent_str)) => {
+                let path = Path::new(&path_str);
+                let expected_parent = if let Some(parent) = path.parent() {
+                    parent.to_string_lossy().to_string()
+                } else if path_str == "/" {
+                    "/".to_string()
+                } else {
+                    return Err(()) // No parent available
+                };
+
+                if expected_parent == parent_str {
+                    Ok(state)
+                } else {
+                    Err(()) // Parent mismatch
+                }
+            }
+            
+            // Path grounded, parent ungrounded: derive parent
+            (Some(path_str), None) => {
+                let path = Path::new(&path_str);
+                let parent_str = if let Some(parent) = path.parent() {
+                    parent.to_string_lossy().to_string()
+                } else if path_str == "/" {
+                    "/".to_string()
+                } else {
+                    return Err(()) // No parent available
+                };
+
+                let parent_lterm = string_to_lterm(parent_str);
+                let parent_walked_clone = parent_walked.clone();
+                state.smap_to_mut().extend(parent_walked_clone, parent_lterm);
+                state.run_constraints()
+            }
+            
+            // Parent grounded, path ungrounded: this is complex, defer for now
+            (None, Some(_parent_str)) => {
+                // Deriving path from parent is not generally solvable since many paths can have same parent
+                // Defer the constraint until more information is available
+                Ok(state.with_constraint(self))
+            }
+            
+            // Both ungrounded: defer until one becomes grounded
+            (None, None) => {
+                Ok(state.with_constraint(self))
+            }
+        }
+    }
+
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.path_term.clone(), self.parent_term.clone()]
+    }
+}
+
+impl std::fmt::Display for ParentPathConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "parent_path({}, {})", self.path_term, self.parent_term)
+    }
+}
+
+#[derive(Debug)]
+pub struct FileNameConstraint {
+    path_term: LTerm,
+    name_term: LTerm,
+}
+
+impl FileNameConstraint {
+    pub fn new(path_term: LTerm, name_term: LTerm) -> Rc<dyn Constraint> {
+        Rc::new(FileNameConstraint { path_term, name_term })
+    }
+}
+
+impl Constraint for FileNameConstraint {
+    fn run(self: Rc<Self>, mut state: State) -> SResult {
+        let path_walked = state.smap_ref().walk(&self.path_term);
+        let name_walked = state.smap_ref().walk(&self.name_term);
+
+        match (
+            extract_string_from_lterm(&path_walked, &state),
+            extract_string_from_lterm(&name_walked, &state),
+        ) {
+            // Both grounded: verify filename relationship
+            (Some(path_str), Some(name_str)) => {
+                let path = Path::new(&path_str);
+                if let Some(filename) = path.file_name() {
+                    let expected_name = filename.to_string_lossy().to_string();
+                    if expected_name == name_str {
+                        Ok(state)
+                    } else {
+                        Err(()) // Filename mismatch
+                    }
+                } else {
+                    Err(()) // Path has no filename
+                }
+            }
+            
+            // Path grounded, name ungrounded: derive filename
+            (Some(path_str), None) => {
+                let path = Path::new(&path_str);
+                if let Some(filename) = path.file_name() {
+                    let name_str = filename.to_string_lossy().to_string();
+                    let name_lterm = string_to_lterm(name_str);
+                    let name_walked_clone = name_walked.clone();
+                    state.smap_to_mut().extend(name_walked_clone, name_lterm);
+                    state.run_constraints()
+                } else {
+                    Err(()) // Path has no filename
+                }
+            }
+            
+            // Name grounded, path ungrounded: this is complex, defer for now
+            (None, Some(_name_str)) => {
+                // Deriving full path from just filename is not generally solvable
+                // Defer the constraint until more information is available
+                Ok(state.with_constraint(self))
+            }
+            
+            // Both ungrounded: defer until one becomes grounded
+            (None, None) => {
+                Ok(state.with_constraint(self))
+            }
+        }
+    }
+
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.path_term.clone(), self.name_term.clone()]
+    }
+}
+
+impl std::fmt::Display for FileNameConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "file_name({}, {})", self.path_term, self.name_term)
+    }
 }
 
