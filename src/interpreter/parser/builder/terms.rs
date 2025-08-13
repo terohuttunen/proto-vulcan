@@ -3,6 +3,39 @@ use crate::interpreter::parser::{ast::*, meta_parser};
 use pest::iterators::Pair;
 
 impl<'a> AstBuilder<'a> {
+    /// Process escape sequences in a string literal
+    fn process_escape_sequences(&self, input: &str) -> String {
+        let mut result = String::new();
+        let mut chars = input.chars();
+        
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                if let Some(escaped) = chars.next() {
+                    match escaped {
+                        'n' => result.push('\n'),
+                        't' => result.push('\t'),
+                        'r' => result.push('\r'),
+                        '\\' => result.push('\\'),
+                        '"' => result.push('"'),
+                        '\'' => result.push('\''),
+                        '0' => result.push('\0'),
+                        _ => {
+                            // Unknown escape sequence - preserve literally
+                            result.push('\\');
+                            result.push(escaped);
+                        }
+                    }
+                } else {
+                    // Trailing backslash - preserve literally
+                    result.push('\\');
+                }
+            } else {
+                result.push(ch);
+            }
+        }
+        
+        result
+    }
     pub fn build_term(&mut self, pair: Pair<Rule>) -> ParseResult<Term> {
         if pair.as_rule() == Rule::term {
             // If we get a generic term, we need to extract the specific term type
@@ -141,7 +174,9 @@ impl<'a> AstBuilder<'a> {
             Rule::number_literal => Ok(Literal::Number(pair.as_str().to_string())),
             Rule::string_literal => {
                 let s = pair.as_str();
-                Ok(Literal::String(s[1..s.len() - 1].to_string()))
+                let unquoted = &s[1..s.len() - 1];
+                let processed = self.process_escape_sequences(unquoted);
+                Ok(Literal::String(processed))
             }
             Rule::char_literal => {
                 let s = pair.as_str();
