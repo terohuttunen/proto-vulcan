@@ -511,6 +511,10 @@ impl Compiler {
         for param in &parameters {
             if let Some(type_annotation) = &param.type_annotation {
                 self.add_local_symbol(param.name.clone(), type_annotation.clone());
+            } else {
+                // Add parameter without type annotation (like DCG Input/Output parameters)
+                // Use LTerm type annotation for logic terms
+                self.add_local_symbol(param.name.clone(), ir::TypeAnnotation::LTerm);
             }
         }
 
@@ -550,7 +554,76 @@ impl Compiler {
         Ok(())
     }
 
-    /// Compile DCG body goals, transforming them to thread difference lists
+    /// Check if a goal is a DCG call that participates in difference list threading
+    fn is_dcg_goal(&mut self, goal: &ast::Goal, ir_program: &mut ir::Program) -> bool {
+        let result = match goal {
+            ast::Goal::RelationCall(call, _) => {
+                // Check if the called predicate is a DCG
+                let qualified_path = match &call.name {
+                    ast::RelationName::Simple(name) => {
+                        ast::QualifiedPath::Relative(vec![name.clone()])
+                    }
+                    ast::RelationName::Qualified(qualified_name) => {
+                        match &qualified_name.path {
+                            ast::QualifiedPath::Global(segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Global(new_segments)
+                            }
+                            ast::QualifiedPath::Absolute(segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Absolute(new_segments)
+                            }
+                            ast::QualifiedPath::Relative(segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Relative(new_segments)
+                            }
+                            ast::QualifiedPath::Super(levels, segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Super(*levels, new_segments)
+                            }
+                            ast::QualifiedPath::Self_(segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::Self_(new_segments)
+                            }
+                            ast::QualifiedPath::External(crate_name, segments) => {
+                                let mut new_segments = segments.clone();
+                                new_segments.push(qualified_name.name.clone());
+                                ast::QualifiedPath::External(crate_name.clone(), new_segments)
+                            }
+                        }
+                    }
+                };
+
+                if let Ok(predicate_target) = self.resolve_qualified_path_to_predicate(&qualified_path, ir_program) {
+                    match &predicate_target {
+                        ir::PredicateCallTarget::Predicate(predicate_id) => {
+                            ir_program.registry.get_predicate(&predicate_id.id)
+                                .map(|p| p.kind == ir::PredicateKind::Grammar)
+                                .unwrap_or(false)
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            }
+            ast::Goal::PatternMatch(_, _) => true, // Pattern matches can consume input
+            ast::Goal::Conjunction(_, _) | ast::Goal::Disjunction(_, _) => true, // May contain DCG goals
+            ast::Goal::Fresh(fresh_vars, _) => {
+                // Check if the fresh variable body contains any DCG goals
+                fresh_vars.body.iter().any(|goal| self.is_dcg_goal(goal, ir_program))
+            }
+            _ => false, // Other goals don't consume input
+        };
+        result
+    }
+
+    /// Compile DCG body goals, transforming them to thread difference lists only through DCG goals
     fn compile_dcg_body(
         &mut self,
         body: &[ast::Goal],
@@ -560,24 +633,39 @@ impl Compiler {
         let mut current_list_var = InternedSymbol::from_text("Input");
         let mut intermediate_vars = vec![];
 
-        // Process each goal in sequence, threading the difference lists
+        // Find all DCG goals that participate in threading
+        let dcg_goal_indices: Vec<usize> = body.iter().enumerate()
+            .filter(|(_, goal)| self.is_dcg_goal(goal, ir_program))
+            .map(|(i, _)| i)
+            .collect();
+        
+
+        // Process each goal
         for (i, goal) in body.iter().enumerate() {
-            let next_list_var = if i == body.len() - 1 {
-                // Last goal uses Output
-                InternedSymbol::from_text("Output")
+            if self.is_dcg_goal(goal, ir_program) {
+                // This is a DCG goal - find the next DCG goal to thread to
+                let current_dcg_index = dcg_goal_indices.iter().position(|&idx| idx == i).unwrap();
+                let next_list_var = if current_dcg_index == dcg_goal_indices.len() - 1 {
+                    // Last DCG goal uses Output
+                    InternedSymbol::from_text("Output")
+                } else {
+                    // Thread to next DCG goal
+                    let next_dcg_index = dcg_goal_indices[current_dcg_index + 1];
+                    let var_name = InternedSymbol::from_text(&format!("__dcg_rest_{}", next_dcg_index));
+                    intermediate_vars.push(var_name.clone());
+                    var_name
+                };
+
+                let compiled_goal = self.compile_dcg_goal(goal, current_list_var, next_list_var.clone(), ir_program)?;
+                compiled_goals.push(compiled_goal);
+                current_list_var = next_list_var;
             } else {
-                // Intermediate goal uses a fresh variable with compiler prefix
-                let var_name = InternedSymbol::from_text(&format!("__dcg_rest_{}", i));
-                intermediate_vars.push(var_name.clone());
-                var_name
-            };
-
-            let compiled_goal =
-                self.compile_dcg_goal(goal, current_list_var, next_list_var.clone(), ir_program)?;
-            compiled_goals.push(compiled_goal);
-
-            current_list_var = next_list_var;
+                // Non-DCG goal - compile normally, no difference list involvement
+                let compiled_goal = self.compile_goal(goal, ir_program)?;
+                compiled_goals.push(compiled_goal);
+            }
         }
+
 
         // If we have intermediate variables, wrap the goals in a Fresh goal
         if !intermediate_vars.is_empty() {
@@ -589,6 +677,131 @@ impl Compiler {
         } else {
             Ok(compiled_goals)
         }
+    }
+
+    /// Analyze DCG structure to identify all DCG-participating goals
+    fn analyze_dcg_structure(&mut self, goals: &[ast::Goal], ir_program: &mut ir::Program) -> Vec<(usize, bool)> {
+        goals.iter().enumerate()
+            .map(|(i, goal)| (i, self.is_dcg_participating_goal(goal, ir_program)))
+            .collect()
+    }
+
+    /// Check if a goal participates in DCG threading (more precise than is_dcg_goal)
+    fn is_dcg_participating_goal(&mut self, goal: &ast::Goal, ir_program: &mut ir::Program) -> bool {
+        match goal {
+            // Only RelationCall to DCG predicates participate in threading
+            ast::Goal::RelationCall(call, _) => {
+                if let Ok(predicate_target) = self.resolve_qualified_path_to_predicate(
+                    &self.relation_call_to_qualified_path(call), ir_program
+                ) {
+                    match &predicate_target {
+                        ir::PredicateCallTarget::Predicate(predicate_id) => {
+                            ir_program.registry.get_predicate(&predicate_id.id)
+                                .map(|p| p.kind == ir::PredicateKind::Grammar)
+                                .unwrap_or(false)
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            }
+            // Containers with bodies may contain DCG goals
+            ast::Goal::Conjunction(conj, _) => conj.body.iter().any(|g| self.is_dcg_participating_goal(g, ir_program)),
+            ast::Goal::Disjunction(disj, _) => disj.body.iter().any(|g| self.is_dcg_participating_goal(g, ir_program)),
+            ast::Goal::Fresh(fresh, _) => fresh.body.iter().any(|g| self.is_dcg_participating_goal(g, ir_program)),
+            ast::Goal::PatternMatch(pm, _) => pm.arms.iter().any(|arm| 
+                arm.body.iter().any(|g| self.is_dcg_participating_goal(g, ir_program))
+            ),
+            // All other goals are guards/non-participating
+            _ => false,
+        }
+    }
+
+    /// Helper to convert RelationCall to QualifiedPath
+    fn relation_call_to_qualified_path(&self, call: &ast::RelationCall) -> ast::QualifiedPath {
+        match &call.name {
+            ast::RelationName::Simple(name) => {
+                ast::QualifiedPath::Relative(vec![name.clone()])
+            }
+            ast::RelationName::Qualified(qualified_name) => {
+                match &qualified_name.path {
+                    ast::QualifiedPath::Global(segments) => {
+                        let mut new_segments = segments.clone();
+                        new_segments.push(qualified_name.name.clone());
+                        ast::QualifiedPath::Global(new_segments)
+                    }
+                    ast::QualifiedPath::Absolute(segments) => {
+                        let mut new_segments = segments.clone();
+                        new_segments.push(qualified_name.name.clone());
+                        ast::QualifiedPath::Absolute(new_segments)
+                    }
+                    ast::QualifiedPath::Relative(segments) => {
+                        let mut new_segments = segments.clone();
+                        new_segments.push(qualified_name.name.clone());
+                        ast::QualifiedPath::Relative(new_segments)
+                    }
+                    ast::QualifiedPath::Super(levels, segments) => {
+                        let mut new_segments = segments.clone();
+                        new_segments.push(qualified_name.name.clone());
+                        ast::QualifiedPath::Super(*levels, new_segments)
+                    }
+                    ast::QualifiedPath::Self_(segments) => {
+                        let mut new_segments = segments.clone();
+                        new_segments.push(qualified_name.name.clone());
+                        ast::QualifiedPath::Self_(new_segments)
+                    }
+                    ast::QualifiedPath::External(crate_name, segments) => {
+                        let mut new_segments = segments.clone();
+                        new_segments.push(qualified_name.name.clone());
+                        ast::QualifiedPath::External(crate_name.clone(), new_segments)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Compile DCG goals with systematic threading
+    fn compile_dcg_goals(
+        &mut self,
+        goals: &[ast::Goal],
+        input_var: InternedSymbol,
+        output_var: InternedSymbol,
+        ir_program: &mut ir::Program,
+    ) -> Result<(Vec<ir::Goal>, Vec<InternedSymbol>), CompileError> {
+        let dcg_analysis = self.analyze_dcg_structure(goals, ir_program);
+        let dcg_goals: Vec<(usize, &ast::Goal)> = dcg_analysis.iter()
+            .filter_map(|(i, is_dcg)| if *is_dcg { Some((*i, &goals[*i])) } else { None })
+            .collect();
+
+        let mut compiled_goals = Vec::new();
+        let mut threading_vars = Vec::new();
+        let mut current_input = input_var;
+
+        for (i, goal) in goals.iter().enumerate() {
+            if let Some(dcg_index) = dcg_goals.iter().position(|(idx, _)| *idx == i) {
+                // This is a DCG goal - handle threading
+                let next_output = if dcg_index == dcg_goals.len() - 1 {
+                    // Last DCG goal uses final output
+                    output_var.clone()
+                } else {
+                    // Create intermediate variable for threading
+                    let var_name = InternedSymbol::from_text(&format!("__dcg_thread_{}", i));
+                    threading_vars.push(var_name.clone());
+                    var_name
+                };
+
+                let compiled_goal = self.compile_dcg_goal(goal, current_input, next_output.clone(), ir_program)?;
+                compiled_goals.push(compiled_goal);
+                current_input = next_output;
+            } else {
+                // Non-DCG goal (guard) - compile normally
+                let compiled_goal = self.compile_goal(goal, ir_program)?;
+                compiled_goals.push(compiled_goal);
+            }
+        }
+
+        Ok((compiled_goals, threading_vars))
     }
 
     /// Compile a single DCG goal, adding difference list parameters
@@ -623,10 +836,6 @@ impl Compiler {
                         }
                     }
                 }
-
-                // Add difference list arguments
-                args.push(ir::Term::Variable(input_var));
-                args.push(ir::Term::Variable(output_var));
 
                 // Use the same structure as regular relation calls
                 // Convert RelationName to QualifiedPath
@@ -675,6 +884,27 @@ impl Compiler {
                 let predicate_target =
                     self.resolve_qualified_path_to_predicate(&qualified_path, ir_program)?;
 
+                // Check if the called predicate is itself a DCG
+                let is_dcg_call = match &predicate_target {
+                    ir::PredicateCallTarget::Predicate(predicate_id) => {
+                        // Look up the predicate in the registry to check its kind
+                        let is_dcg = ir_program.registry.get_predicate(&predicate_id.id)
+                            .map(|p| p.kind == ir::PredicateKind::Grammar)
+                            .unwrap_or(false);
+                        is_dcg
+                    }
+                    _ => {
+                        false
+                    }
+                };
+
+                // Only add difference list arguments to DCG predicates
+                // Non-DCG predicates like is_digit() don't consume input and act as guards
+                if is_dcg_call {
+                    args.push(ir::Term::Variable(input_var));
+                    args.push(ir::Term::Variable(output_var));
+                }
+
                 Ok(ir::Goal::PredicateCall(ir::PredicateCall {
                     target: predicate_target,
                     arguments: args,
@@ -686,48 +916,23 @@ impl Compiler {
                 self.compile_dcg_pattern_match(pattern_match, input_var, output_var, ir_program)
             }
             ast::Goal::Conjunction(conjunction, _span) => {
-                // For conjunctions in DCG, we need to thread the difference lists through
-                // each goal in the conjunction
-                let mut compiled_goals = vec![];
-                let mut current_input = input_var;
-                let mut intermediate_vars = vec![];
+                // Use unified DCG threading approach
+                let (compiled_goals, threading_vars) = self.compile_dcg_goals(
+                    &conjunction.body, input_var, output_var, ir_program
+                )?;
 
-                for (i, goal) in conjunction.body.iter().enumerate() {
-                    let next_output = if i == conjunction.body.len() - 1 {
-                        // Last goal uses the final output
-                        output_var.clone()
-                    } else {
-                        // Intermediate goal uses a fresh variable
-                        let var_name = InternedSymbol::from_text(&format!("__dcg_conj_{}", i));
-                        intermediate_vars.push(var_name.clone());
-                        var_name
-                    };
-
-                    let compiled_goal = self.compile_dcg_goal(
-                        goal,
-                        current_input,
-                        next_output.clone(),
-                        ir_program,
-                    )?;
-                    compiled_goals.push(compiled_goal);
-                    current_input = next_output;
-                }
-
-                // Wrap in fresh variables if needed
-                if !intermediate_vars.is_empty() {
+                if !threading_vars.is_empty() {
                     Ok(ir::Goal::Fresh(ir::Fresh {
-                        variables: intermediate_vars,
+                        variables: threading_vars,
                         body: ir::StructuralGoal::from_vec(compiled_goals),
                     }))
                 } else {
-                    Ok(ir::Goal::Conjunction(ir::StructuralGoal::from_vec(
-                        compiled_goals,
-                    )))
+                    Ok(ir::Goal::Conjunction(ir::StructuralGoal::from_vec(compiled_goals)))
                 }
             }
             ast::Goal::Disjunction(disjunction, _span) => {
-                // For disjunctions in DCG, each alternative should use the same Input and Output vars
-                // Each branch gets the same input and should produce the same output
+                // For disjunctions, each branch gets the same input and output
+                // Do NOT use sequential threading like conjunctions
                 let mut compiled_goals = vec![];
 
                 for goal in disjunction.body.iter() {
@@ -744,10 +949,32 @@ impl Compiler {
                     compiled_goals,
                 )))
             }
+            ast::Goal::Fresh(fresh_vars, _span) => {
+                // Use unified DCG compilation for fresh body
+                let (compiled_goals, intermediate_vars) = self.compile_dcg_goals(
+                    &fresh_vars.body,
+                    input_var,
+                    output_var,
+                    ir_program,
+                )?;
+
+                // Create fresh goal with original variables plus any intermediate threading vars
+                let mut all_vars = fresh_vars.vars.clone();
+                for var in intermediate_vars {
+                    all_vars.push(ast::Parameter {
+                        name: var,
+                        type_annotation: None,
+                    });
+                }
+
+                Ok(ir::Goal::Fresh(ir::Fresh {
+                    variables: all_vars.into_iter().map(|param| param.name).collect(),
+                    body: ir::StructuralGoal::from_vec(compiled_goals),
+                }))
+            }
             _ => {
                 // For non-DCG goals like unification, compile normally
-                // These goals don't need difference list threading but should
-                // have access to Input/Output variables in their scope
+                // These should not normally be reached since non-DCG goals are handled in compile_dcg_body
                 self.compile_goal(goal, ir_program)
             }
         }
@@ -761,12 +988,13 @@ impl Compiler {
         output_var: InternedSymbol,
         ir_program: &mut ir::Program,
     ) -> Result<ir::Goal, CompileError> {
+        
         // Compile the term being matched
         let compiled_term = self.compile_term(&pattern_match.term, ir_program)?;
 
         // Compile each arm with DCG goal compilation
         let mut compiled_arms = vec![];
-        for arm in &pattern_match.arms {
+        for (i, arm) in pattern_match.arms.iter().enumerate() {
             let compiled_pattern = self.compile_pattern(&arm.pattern, ir_program)?;
 
             // Compile guard if present
@@ -795,33 +1023,20 @@ impl Compiler {
                 )?;
                 compiled_body_goals.push(compiled_goal);
             } else {
-                // Multiple goals - thread difference lists through them
-                let mut current_input = input_var.clone();
-                let mut intermediate_vars = vec![];
+                // Multiple goals - use unified DCG compilation
+                let (goals, threading_vars) = self.compile_dcg_goals(
+                    &arm.body,
+                    input_var.clone(),
+                    output_var.clone(),
+                    ir_program,
+                )?;
 
-                for (i, goal) in arm.body.iter().enumerate() {
-                    let next_output = if i == arm.body.len() - 1 {
-                        output_var.clone()
-                    } else {
-                        let var_name = InternedSymbol::from_text(&format!("__dcg_arm_{}", i));
-                        intermediate_vars.push(var_name.clone());
-                        var_name
-                    };
+                compiled_body_goals = goals;
 
-                    let compiled_goal = self.compile_dcg_goal(
-                        goal,
-                        current_input,
-                        next_output.clone(),
-                        ir_program,
-                    )?;
-                    compiled_body_goals.push(compiled_goal);
-                    current_input = next_output;
-                }
-
-                // Wrap in fresh if needed
-                if !intermediate_vars.is_empty() {
+                // Wrap in fresh if threading variables were created
+                if !threading_vars.is_empty() {
                     let fresh_goal = ir::Goal::Fresh(ir::Fresh {
-                        variables: intermediate_vars,
+                        variables: threading_vars,
                         body: ir::StructuralGoal::from_vec(compiled_body_goals),
                     });
                     compiled_body_goals = vec![fresh_goal];

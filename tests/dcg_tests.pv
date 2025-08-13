@@ -2,24 +2,11 @@
 // Tests core DCG compilation and usage patterns
 
 use std::list::{member, append};
+use std::dcg::{any_element, terminal, eos};
 
 // =============================================================================
 // DCG Test Utilities - Define DCG rules for testing
 // =============================================================================
-
-/// Basic terminal DCG that matches a specific element
-dcg terminal(element) {
-    match Input {
-        [element | rest] => Output == rest
-    }
-}
-
-/// DCG that consumes any single element and returns it
-dcg any_element(element) {
-    match Input {
-        [element | rest] => Output == rest
-    }
-}
 
 /// DCG that peeks at next element without consuming it
 dcg peek_element(element) {
@@ -30,8 +17,7 @@ dcg peek_element(element) {
 
 /// DCG that matches end of input
 dcg end_of_input() {
-    Input == Output,
-    Input == []
+    eos()
 }
 
 /// DCG that matches a sequence of terminals
@@ -354,4 +340,185 @@ rel test_nested_choice_deep() {
 @test
 rel test_nested_choice_shallow() {
     nested_choice("a", ["a"], [])
+}
+
+// =============================================================================
+// DCG Fix Verification Tests - Tests for the specific issues that were fixed
+// =============================================================================
+
+/// Test that Input/Output variables are properly in scope for pattern matching
+/// This was the core issue - DCG Input/Output parameters weren't being added to scope
+@test
+rel test_input_output_variables_in_scope() {
+    // This DCG directly references Input and Output variables in pattern matching
+    |element| {
+        dcg_with_direct_input_output_reference(element, ["test"], []),
+        element == "test"
+    }
+}
+
+dcg dcg_with_direct_input_output_reference(element) {
+    match Input {
+        [element | rest] => Output == rest
+    }
+}
+
+/// Test DCG calling another DCG (difference list threading)
+/// Verifies that DCG predicates get Input/Output args when called from other DCGs
+@test
+rel test_dcg_calling_dcg() {
+    |result| {
+        dcg_caller(result, ["first", "second"], []),
+        result == ["first", "second"]
+    }
+}
+
+dcg dcg_caller(result) {
+    |first, second| {
+        any_element(first),
+        any_element(second),
+        result == [first, second]
+    }
+}
+
+/// Test DCG calling non-DCG predicate (guard behavior)
+/// Verifies that non-DCG predicates don't get Input/Output args when called from DCGs
+@test
+rel test_dcg_calling_non_dcg() {
+    |result| {
+        dcg_with_guard(result, ["valid"], []),
+        result == "valid"
+    }
+}
+
+dcg dcg_with_guard(result) {
+    |element| {
+        any_element(element),
+        is_valid_element(element),  // Non-DCG predicate as guard
+        result == element
+    }
+}
+
+rel is_valid_element(element) {
+    element == "valid"
+}
+
+/// Test nested DCG conjunctions with mixed DCG/non-DCG goals
+/// Verifies proper threading through complex nested structures
+@test
+rel test_nested_dcg_conjunctions() {
+    nested_dcg_conjunction(["a", "b"], ["a", "b"], [])
+}
+
+dcg nested_dcg_conjunction(expected) {
+    |first| {
+        any_element(first),
+        all {
+            |second| {
+                any_element(second),
+                first == "a",  // Non-DCG guard
+                second == "b", // Non-DCG guard
+                expected == [first, second]
+            }
+        }
+    }
+}
+
+/// Test nested DCG disjunctions with proper threading
+/// Verifies that each branch of disjunction gets same Input/Output
+@test
+rel test_nested_dcg_disjunctions() {
+    |result1, result2| {
+        all {
+            nested_dcg_disjunction(result1, ["x"], []),
+            result1 == "x",
+            nested_dcg_disjunction(result2, ["y"], []),
+            result2 == "y"
+        }
+    }
+}
+
+dcg nested_dcg_disjunction(result) {
+    any {
+        all {
+            terminal("x"),
+            result == "x"
+        },
+        all {
+            terminal("y"), 
+            result == "y"
+        }
+    }
+}
+
+/// Test recursive DCG that was failing before the fix
+/// This combines all the problematic patterns: recursion, std library DCGs, mixed goals
+@test
+rel test_recursive_dcg_with_std_library() {
+    |result| {
+        recursive_parser(result, ["1", "2"], ["2"]),
+        result == ["1"]
+    }
+}
+
+dcg recursive_parser(digits) {
+    |first_digit| {
+        any_element(first_digit),
+        first_digit == "1", // Guard to ensure it's digit 1
+        any {
+            all {
+                |rest_digits| {
+                    recursive_parser(rest_digits),
+                    digits == [first_digit | rest_digits]
+                }
+            },
+            digits == [first_digit]
+        }
+    }
+}
+
+/// Test that std library DCG predicates work correctly from within other DCGs
+@test  
+rel test_std_dcg_from_dcg() {
+    // Test direct call to std::dcg::any_element first
+    |elem| {
+        any_element(elem, ["hello"], []),
+        elem == "hello"
+    }
+}
+
+/// Test complex DCG with multiple std library calls and guards
+@test
+rel test_complex_dcg_with_std_and_guards() {
+    |result| {
+        complex_dcg_parser(result, ["a", "b", "c"], []),
+        result == ["a", "b", "c"]
+    }
+}
+
+dcg complex_dcg_parser(result) {
+    |first, second, third| {
+        any_element(first),
+        first == "a",  // Non-DCG guard
+        any_element(second), 
+        second == "b", // Non-DCG guard
+        any_element(third),
+        third == "c",  // Non-DCG guard
+        result == [first, second, third]
+    }
+}
+
+/// Test Input/Output variable references in arm bodies work correctly
+@test
+rel test_pattern_match_arm_input_output() {
+    pattern_with_input_output_refs(["test"], [])
+}
+
+dcg pattern_with_input_output_refs() {
+    match Input {
+        ["test" | rest] => all {
+            Output == rest,
+            rest == []  // This references the pattern variable
+        }
+    }
 }
