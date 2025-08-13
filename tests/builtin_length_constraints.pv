@@ -1,0 +1,100 @@
+// Tests for constraint-based length builtin with ungrounded variable support
+// These tests demonstrate that __builtin_length now works with ungrounded variables
+
+// =============================================================================
+// BASIC CONSTRAINT BEHAVIOR
+// =============================================================================
+
+@test
+rel test_length_grounds_from_list() {
+    // Test that length becomes grounded when list is grounded
+    |list, len| {
+        list == [1, 2, 3],  // Ground the list
+        __builtin_length(list, len),  // len should become grounded
+        len == 3  // Verify len was correctly grounded
+    }
+}
+
+@test
+rel test_length_grounds_empty_list() {
+    // Test that empty list is grounded when length is 0
+    |list| {
+        __builtin_length(list, 0),  // list should become grounded to []
+        list == []  // Verify list was correctly grounded
+    }
+}
+
+@test
+rel test_length_verify_relationship() {
+    // Test verification when both list and length are grounded
+    __builtin_length([1, 2, 3, 4], 4)  // Should succeed
+}
+
+// =============================================================================
+// CONSTRAINT PROPAGATION
+// =============================================================================
+
+@test
+rel test_length_generate_list_of_length() {
+    // Generate a list constrained to have length 3
+    // Old approach: would fail because list is ungrounded
+    // New approach: defers constraint until list is more constrained
+    |list, a, b, c| {
+        __builtin_length(list, 3),
+        list == [a, b, c],
+        a == 1,
+        b == 2, 
+        c == 3
+    }
+}
+
+@test
+rel test_length_multiple_constraints() {
+    // Multiple constraints on the same list variable
+    |list, len1, len2| {
+        __builtin_length(list, len1),
+        __builtin_length(list, len2),
+        list == [1, 2],
+        len1 == 2,
+        len2 == 2
+    }
+}
+
+@test 
+rel test_length_constraint_propagation() {
+    // Test that length constraints propagate correctly
+    |list1, list2, len, a, b, x, y| {
+        __builtin_length(list1, len),
+        __builtin_length(list2, len),
+        list1 == [a, b],
+        list2 == [x, y],
+        len == 2,
+        a == 1,
+        b == 2,
+        x == 3,
+        y == 4
+    }
+}
+
+// =============================================================================
+// CONSTRAINT DEFERRAL
+// =============================================================================
+
+@test
+rel test_length_empty_list_constraint() {
+    // Test length constraint with empty list
+    |list| {
+        __builtin_length(list, 0),
+        list == []
+    }
+}
+
+@test
+rel test_length_constraint_cascade() {
+    // Test cascading constraint propagation
+    |list, len| {
+        list == [1, 2, 3, 4],
+        __builtin_length(list, len),  // len should become 4
+        len == 4
+    }
+}
