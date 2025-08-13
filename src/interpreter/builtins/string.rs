@@ -352,40 +352,91 @@ pub fn digit_to_char_builtin(args: Vec<ArgumentValue>) -> Goal {
 }
 
 /// Get the length of a string efficiently
+/// Constraint-based string length predicate that handles ungrounded variables
 pub fn string_length_builtin(args: Vec<ArgumentValue>) -> Goal {
     let (string_term, length_term) = match extract_two_relational(args) {
         Ok(result) => result,
         Err(goal) => return goal,
     };
 
+    let constraint = Rc::new(StringLengthConstraint {
+        string_term,
+        length_term,
+    });
+
     #[derive(Debug)]
     struct StringLengthGoal {
-        string_term: LTerm,
-        length_term: LTerm,
+        constraint: Rc<StringLengthConstraint>,
     }
 
     impl Solve for StringLengthGoal {
         fn solve(&self, _solver: &Solver, state: State) -> Stream {
-            let string_walked = state.smap_ref().walk(&self.string_term);
-            
-            if let Some(string_val) = extract_string_from_lterm(&string_walked, &state) {
-                let length = string_val.chars().count() as isize;
-                let length_lterm = number_to_lterm(length);
-                
-                match state.unify(&self.length_term, &length_lterm) {
-                    Ok(new_state) => Stream::unit(Box::new(new_state)),
-                    Err(_) => Stream::empty(),
-                }
-            } else {
-                Stream::empty()
+            match self.constraint.clone().run(state) {
+                Ok(new_state) => Stream::unit(Box::new(new_state)),
+                Err(_) => Stream::empty(),
             }
         }
     }
 
-    Goal::Dynamic(Rc::new(StringLengthGoal {
-        string_term,
-        length_term,
-    }))
+    Goal::Dynamic(Rc::new(StringLengthGoal { constraint }))
+}
+
+/// Constraint that maintains the relationship between a string and its length
+#[derive(Debug)]
+struct StringLengthConstraint {
+    string_term: LTerm,
+    length_term: LTerm,
+}
+
+impl Constraint for StringLengthConstraint {
+    fn run(self: Rc<Self>, mut state: State) -> SResult {
+        let string_walked = state.smap_ref().walk(&self.string_term);
+        let length_walked = state.smap_ref().walk(&self.length_term);
+
+        match (string_walked.as_ref(), length_walked.as_ref()) {
+            // Both grounded: verify the relationship
+            (LTermInner::Val(LValue::String(s)), LTermInner::Val(LValue::Number(n))) => {
+                let actual_length = s.chars().count() as isize;
+                if actual_length == *n {
+                    Ok(state)
+                } else {
+                    Err(()) // Length mismatch
+                }
+            }
+            
+            // String grounded, length ungrounded: compute length
+            (LTermInner::Val(LValue::String(s)), LTermInner::Var(_, _)) => {
+                let length = s.chars().count() as isize;
+                let length_lterm = number_to_lterm(length);
+                let length_walked_clone = length_walked.clone();
+                state.smap_to_mut().extend(length_walked_clone, length_lterm);
+                state.run_constraints()
+            }
+            
+            // Length grounded, string ungrounded: cannot generate string from length alone
+            (LTermInner::Var(_, _), LTermInner::Val(LValue::Number(_))) => {
+                // Cannot generate a string from just a length - defer
+                Ok(state.with_constraint(self))
+            }
+            
+            // Both ungrounded: defer until one becomes grounded
+            (LTermInner::Var(_, _), LTermInner::Var(_, _)) => {
+                Ok(state.with_constraint(self))
+            }
+            
+            _ => Err(()) // Type error: non-string or non-number
+        }
+    }
+
+    fn operands(&self) -> Vec<LTerm> {
+        vec![self.string_term.clone(), self.length_term.clone()]
+    }
+}
+
+impl std::fmt::Display for StringLengthConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "string_length({}, {})", self.string_term, self.length_term)
+    }
 }
 
 // =============================================================================

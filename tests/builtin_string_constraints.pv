@@ -1,0 +1,182 @@
+// Tests for constraint-based string operation builtins with ungrounded variable support
+// These tests demonstrate bidirectional string operations that work with ungrounded variables
+
+// =============================================================================
+// STRING TO CHARS CONSTRAINTS
+// =============================================================================
+
+@test
+rel test_string_to_chars_grounds_chars() {
+    // Test that chars becomes grounded when string is grounded
+    |chars| {
+        __builtin_string_to_chars("hi", chars),  // chars should become grounded
+        chars == ["h", "i"]  // Verify chars was correctly grounded
+    }
+}
+
+@test
+rel test_string_to_chars_grounds_string() {
+    // Test that string becomes grounded when chars is grounded
+    |str| {
+        __builtin_string_to_chars(str, ["h", "i"]),  // str should become grounded
+        str == "hi"  // Verify str was correctly grounded
+    }
+}
+
+@test
+rel test_string_to_chars_bidirectional() {
+    // Test bidirectional string to chars conversion
+    |str, chars| {
+        __builtin_string_to_chars(str, chars),
+        chars == ["h", "e", "l", "l", "o"],
+        str == "hello"
+    }
+}
+
+// =============================================================================
+// STRING LENGTH CONSTRAINTS
+// =============================================================================
+
+@test
+rel test_string_length_ungrounded() {
+    // Test string length with ungrounded variables - they get grounded by the constraint
+    |str, len| {
+        str == "hello",  // Ground the string first
+        __builtin_string_length(str, len),  // len should become grounded to 5
+        len == 5  // Verify len was grounded correctly
+    }
+}
+
+@test
+rel test_string_length_grounds_from_string() {
+    // Test that length becomes grounded when string is grounded
+    |len| {
+        __builtin_string_length("test", len),  // len should become grounded
+        len == 4  // Verify len was correctly grounded
+    }
+}
+
+// =============================================================================
+// STRING JOIN CONSTRAINTS
+// =============================================================================
+
+@test
+rel test_string_join_grounds_result() {
+    // Test that result becomes grounded when parts and separator are grounded
+    |result| {
+        __builtin_string_join(["a", "b"], ",", result),  // result should become grounded
+        result == "a,b"  // Verify result was correctly grounded
+    }
+}
+
+@test
+rel test_string_join_ungrounded_list() {
+    // Join with ungrounded string list
+    |parts, result| {
+        __builtin_string_join(parts, ",", result),
+        parts == ["a", "b", "c"],
+        result == "a,b,c"  
+    }
+}
+
+@test
+rel test_string_join_empty_list() {
+    // Test string join with empty list
+    |result| {
+        __builtin_string_join([], ",", result),
+        result == ""
+    }
+}
+
+// =============================================================================
+// STRING SPLIT CONSTRAINTS
+// =============================================================================
+
+@test
+rel test_string_split_grounds_parts() {
+    // Test that parts becomes grounded when string and separator are grounded
+    |parts| {
+        __builtin_string_split("a,b,c", ",", parts),  // parts should become grounded
+        parts == ["a", "b", "c"]  // Verify parts was correctly grounded
+    }
+}
+
+@test
+rel test_string_split_derive_parts() {
+    // Split to derive the parts list
+    |parts| {
+        __builtin_string_split("one,two,three", ",", parts),
+        parts == ["one", "two", "three"]
+    }
+}
+
+@test
+rel test_string_split_lines_grounds_lines() {
+    // Test that lines becomes grounded when string is grounded
+    |lines| {
+        __builtin_string_split_lines("hello\nworld", lines),
+        lines == ["hello", "world"]
+    }
+}
+
+// =============================================================================
+// CHARACTER CLASSIFICATION CONSTRAINTS
+// =============================================================================
+
+@test
+rel test_char_to_digit_grounds_digit() {
+    // Test that digit becomes grounded when char is grounded
+    |digit| {
+        __builtin_char_to_digit("5", digit),
+        digit == 5
+    }
+}
+
+@test
+rel test_digit_to_char_grounds_char() {
+    // Test that char becomes grounded when digit is grounded
+    |char| {
+        __builtin_digit_to_char(7, char),
+        char == "7"
+    }
+}
+
+@test
+rel test_string_to_int_grounds_int() {
+    // Test that int becomes grounded when string is grounded
+    |num| {
+        __builtin_string_to_int("123", num),
+        num == 123
+    }
+}
+
+@test
+rel test_int_to_string_grounds_string() {
+    // Test that string becomes grounded when int is grounded
+    |str| {
+        __builtin_int_to_string(456, str),
+        str == "456"
+    }
+}
+
+// =============================================================================
+// CHARACTER CLASSIFICATION PREDICATES
+// =============================================================================
+
+@test
+rel test_is_digit_constraint() {
+    // Test character classification
+    __builtin_is_digit("5")  // Should succeed
+}
+
+@test
+rel test_is_alpha_constraint() {
+    // Test alphabetic character classification
+    __builtin_is_alpha("a")  // Should succeed
+}
+
+@test
+rel test_is_alnum_constraint() {
+    // Test alphanumeric character classification
+    __builtin_is_alnum("x")  // Should succeed
+}

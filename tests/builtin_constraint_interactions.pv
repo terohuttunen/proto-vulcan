@@ -1,0 +1,180 @@
+// Tests for interactions between different constraint-based builtins
+// These tests demonstrate how multiple constraints work together with ungrounded variables
+
+// =============================================================================
+// LENGTH AND STRING INTERACTIONS
+// =============================================================================
+
+@test
+rel test_length_and_string_length_combined() {
+    // Combine list length and string length constraints
+    |list, str, len| {
+        list == [1, 2, 3, 4],
+        str == "test",
+        __builtin_length(list, len),  // len should become 4
+        __builtin_string_length(str, len),  // should verify len == 4
+        len == 4
+    }
+}
+
+@test
+rel test_length_and_string_chars_combined() {
+    // Combine list length with string-to-chars conversion
+    |str, chars, len| {
+        str == "hi",
+        __builtin_string_to_chars(str, chars),  // chars should become ["h", "i"]
+        __builtin_length(chars, len),  // len should become 2
+        len == 2
+    }
+}
+
+// =============================================================================
+// PATH AND STRING INTERACTIONS
+// =============================================================================
+
+@test
+rel test_path_join_and_string_length() {
+    // Combine path operations with string length
+    |base, file, path, len| {
+        base == "/tmp",
+        file == "test.txt",
+        __builtin_join_path(base, file, path),  // path should become "/tmp/test.txt"
+        __builtin_string_length(path, len),  // len should become length of path
+        path == "/tmp/test.txt",
+        len == 13
+    }
+}
+
+@test
+rel test_path_component_string_analysis() {
+    // Analyze path components as strings
+    |base, component, path, component_chars| {
+        __builtin_join_path(base, component, path),
+        __builtin_string_to_chars(component, component_chars),
+        base == "/home",
+        path == "/home/user",
+        component == "user",
+        component_chars == ["u", "s", "e", "r"]
+    }
+}
+
+// =============================================================================
+// CONSTRAINT PROPAGATION NETWORKS
+// =============================================================================
+
+@test
+rel test_constraint_propagation_cascade() {
+    // Test cascading constraint propagation
+    |list1, list2, str, len| {
+        // Set up constraint network
+        __builtin_length(list1, len),
+        __builtin_length(list2, len), 
+        __builtin_string_length(str, len),
+        // Trigger propagation
+        list1 == [1, 2],
+        list2 == [3, 4],
+        str == "xy",
+        len == 2
+    }
+}
+
+@test
+rel test_mixed_constraint_propagation() {
+    // Mix different types of constraints
+    |path, base, file, chars, path_len, char_count| {
+        // Path constraints
+        __builtin_join_path(base, file, path),
+        // String analysis constraints
+        __builtin_string_length(path, path_len),
+        __builtin_string_to_chars(file, chars),
+        __builtin_length(chars, char_count),
+        // Ground some values to trigger propagation
+        base == "/tmp",
+        file == "data",
+        path == "/tmp/data",
+        path_len == 9,
+        char_count == 4
+    }
+}
+
+// =============================================================================
+// CONSTRAINT DEFERRAL INTERACTIONS
+// =============================================================================
+
+@test
+rel test_multiple_constraint_deferral() {
+    // Test that multiple constraints defer properly when variables are ungrounded
+    |list, str, path, base, component, len| {
+        // Set up multiple constraints - all should defer initially
+        __builtin_length(list, len),
+        __builtin_string_length(str, len), 
+        __builtin_join_path(base, component, path),
+        // Later provide concrete values
+        list == [1, 2, 3],
+        str == "abc",
+        base == "/usr",
+        component == "bin",
+        path == "/usr/bin",
+        len == 3
+    }
+}
+
+@test
+rel test_constraint_ordering_independence() {
+    // Test that constraint order doesn't matter
+    |str, chars, len, list| {
+        // Different order of the same constraints
+        __builtin_string_to_chars(str, chars),
+        __builtin_length(list, len),
+        __builtin_string_length(str, len),
+        __builtin_length(chars, len),
+        // Ground values
+        str == "test",
+        chars == ["t", "e", "s", "t"],
+        list == [1, 2, 3, 4],
+        len == 4
+    }
+}
+
+// =============================================================================
+// BIDIRECTIONAL CONSTRAINT SOLVING
+// =============================================================================
+
+@test
+rel test_bidirectional_constraint_network() {
+    // Test complex bidirectional constraint solving
+    |path_base, path_file, path_full, file_chars, file_len| {
+        // Path constraints
+        __builtin_join_path(path_base, path_file, path_full),
+        // String constraints on filename
+        __builtin_string_to_chars(path_file, file_chars),
+        __builtin_string_length(path_file, file_len),
+        __builtin_length(file_chars, file_len),
+        // Provide partial solution - constraints should propagate
+        path_base == "/var",
+        path_full == "/var/log",
+        path_file == "log",
+        file_len == 3,
+        file_chars == ["l", "o", "g"]
+    }
+}
+
+@test
+rel test_constraint_satisfaction_multiple_paths() {
+    // Test multiple constraint satisfaction paths
+    |str1, str2, chars1, chars2, len| {
+        // Both strings should have same length
+        __builtin_string_length(str1, len),
+        __builtin_string_length(str2, len),
+        // Convert to character lists
+        __builtin_string_to_chars(str1, chars1),
+        __builtin_string_to_chars(str2, chars2),
+        // Character lists should also have same length
+        __builtin_length(chars1, len),
+        __builtin_length(chars2, len),
+        // Ground the strings
+        str1 == "ab",
+        str2 == "xy",
+        len == 2
+    }
+}
