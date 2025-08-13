@@ -808,6 +808,16 @@ impl Compiler {
         if let Some(crate_module) = ir_program.registry.get_module(&crate_module_id) {
             let mut current_module_path = crate_module.id.full_path();
 
+            if segments.len() == 0 {
+                return Err(CompileError::UnresolvedReference {
+                    attempted_item: ir::ItemId::new(
+                        Some(Rc::new(ir::ModulePath::root())),
+                        ir::ItemName::new("".to_string(), ir::ItemKind::Predicate).unwrap(),
+                    ),
+                    symbol: crate_name.clone(),
+                });
+            }
+
             if segments.len() == 1 {
                 return Ok((current_module_path, segments[0].to_string()));
             }
