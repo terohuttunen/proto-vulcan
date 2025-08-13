@@ -44,6 +44,78 @@ fn test_query_parsing_error() {
 }
 
 #[test]
+fn test_dcg_recursive_parsing_should_work() {
+    let mut interpreter = TestInterpreter::with_stdlib();
+    
+    // Test program with recursive DCG parsing that should work but currently fails
+    let program_source = r#"
+        use std::string::{string_to_chars, chars_to_string, is_digit};
+        use std::dcg::{any_element};
+
+        // This DCG should recursively parse digit sequences of any length
+        dcg parse_digit_sequence(digits) {
+            parse_one_digit(first_digit),
+            any {
+                all {
+                    parse_digit_sequence(rest_digits),
+                    digits == [first_digit | rest_digits]
+                },
+                digits == [first_digit]
+            }
+        }
+
+        dcg parse_one_digit(digit) {
+            any_element(char),
+            is_digit(char),
+            digit == char
+        }
+
+        rel test_dcg_parsing(input, result) {
+            |chars| {
+                string_to_chars(input, chars),
+                parse_digit_sequence(result, chars, [])
+            }
+        }
+    "#;
+    
+    let program = parser::parse_str(program_source);
+    match &program {
+        Ok(_) => println!("Program parsed successfully"),
+        Err(e) => println!("Parse error: {:?}", e),
+    }
+    let program = program.unwrap();
+    
+    let load_result = interpreter.load_program_ast(program);
+    match &load_result {
+        Ok(_) => println!("Program loaded successfully"),
+        Err(e) => println!("Load error: {:?}", e),
+    }
+    assert!(load_result.is_ok(), "Program should load successfully");
+    
+    // Test that DCG recursive parsing works for various digit sequences
+    let test_cases = vec![
+        ("\"4\"", vec!["4"]),           // Single digit
+        ("\"42\"", vec!["4", "2"]),     // Two digits  
+        ("\"123\"", vec!["1", "2", "3"]), // Three digits
+        ("\"9876\"", vec!["9", "8", "7", "6"]), // Four digits
+    ];
+    
+    for (input, expected) in test_cases {
+        let query = format!("test_dcg_parsing({}, result)", input);
+        let result = interpreter.query(&query, ExecutionConfig::default());
+        
+        // This test currently fails - DCG recursive parsing doesn't work properly
+        assert!(result.is_ok(), "DCG recursive parsing should work for input: {}", input);
+        
+        let solutions: Vec<_> = result.unwrap().collect_limited(10).unwrap_or_default();
+        assert!(!solutions.is_empty(), "Should find at least one solution for input: {}", input);
+        
+        // Verify the parsed result matches expected digits
+        // Note: This is a simplified check - in practice we'd need to extract and verify the actual result
+    }
+}
+
+#[test]
 fn test_comprehensive_program_loading() {
     let mut interpreter = TestInterpreter::with_stdlib();
 
