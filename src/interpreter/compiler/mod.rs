@@ -165,10 +165,66 @@ pub struct Compiler {
     pub(super) module_map: ModuleMap,
 }
 
+/// Builder for configuring a Compiler with custom options
+pub struct CompilerBuilder {
+    options: CompilationOptions,
+    constraint_compilers: ConstraintCompilerRegistry,
+    crate_search_paths: CrateSearchPaths,
+}
+
+impl CompilerBuilder {
+    /// Create a new CompilerBuilder with default settings
+    pub fn new() -> Self {
+        Self {
+            options: CompilationOptions::default(),
+            constraint_compilers: ConstraintCompilerRegistry::default(),
+            crate_search_paths: CrateSearchPaths::default(),
+        }
+    }
+
+    /// Set compilation options
+    pub fn with_options(mut self, options: CompilationOptions) -> Self {
+        self.options = options;
+        self
+    }
+
+    /// Add a single constraint compiler
+    pub fn with_constraint_compiler(mut self, compiler: Box<dyn crate::interpreter::constraint_domains::ConstraintCompiler>) -> Self {
+        self.constraint_compilers.register(compiler);
+        self
+    }
+
+    /// Add a crate search path
+    pub fn with_crate_search_path(mut self, path: PathBuf) -> Self {
+        self.crate_search_paths.add_path(path);
+        self
+    }
+
+    /// Build the configured Compiler
+    pub fn build(self) -> Compiler {
+        Compiler {
+            module_path_stack: Vec::new(), // Will be initialized when program is created
+            compilation_phase: CompilationPhase::SymbolAndUseClauseCollection,
+            pending_imports: Vec::new(),
+            external_module_items: Vec::new(),
+            compilation_context: CompilationContext::new(self.options),
+            constraint_compilers: self.constraint_compilers,
+            local_scopes: vec![HashMap::new()], // Start with global scope
+            crate_search_paths: self.crate_search_paths,
+            module_map: ModuleMap::new(),
+        }
+    }
+}
+
 impl Compiler {
     /// Create a new IR compiler
     pub fn new() -> Self {
         Self::with_options(CompilationOptions::default())
+    }
+
+    /// Create a new CompilerBuilder for fluent configuration
+    pub fn builder() -> CompilerBuilder {
+        CompilerBuilder::new()
     }
 
     /// Create a new IR compiler with specific compilation options

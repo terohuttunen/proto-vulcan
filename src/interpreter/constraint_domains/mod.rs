@@ -183,6 +183,37 @@ pub trait ConstraintCompiler: std::fmt::Debug {
     ) -> Result<Rc<dyn ConstraintTemplate>, InterpreterError>;
 }
 
+/// Builder for constraint compiler registry
+pub struct ConstraintCompilerRegistryBuilder {
+    registry: ConstraintCompilerRegistry,
+}
+
+impl ConstraintCompilerRegistryBuilder {
+    pub fn new() -> Self {
+        Self {
+            registry: ConstraintCompilerRegistry::new(),
+        }
+    }
+
+    /// Add a constraint compiler
+    pub fn with_compiler(mut self, compiler: Box<dyn ConstraintCompiler>) -> Self {
+        self.registry.register(compiler);
+        self
+    }
+
+    /// Include default compilers (clpfd and clpz)
+    pub fn with_defaults(mut self) -> Self {
+        self.registry.register(Box::new(clpfd::ClpfdCompiler::new()));
+        self.registry.register(Box::new(clpz::ClpzCompiler::new()));
+        self
+    }
+
+    /// Build the constraint compiler registry
+    pub fn build(self) -> ConstraintCompilerRegistry {
+        self.registry
+    }
+}
+
 /// Registry for constraint compilers
 #[derive(Debug)]
 pub struct ConstraintCompilerRegistry {
@@ -194,6 +225,11 @@ impl ConstraintCompilerRegistry {
         Self {
             compilers: HashMap::new(),
         }
+    }
+
+    /// Create a new builder for fluent constraint compiler registration
+    pub fn builder() -> ConstraintCompilerRegistryBuilder {
+        ConstraintCompilerRegistryBuilder::new()
     }
 
     pub fn register(&mut self, compiler: Box<dyn ConstraintCompiler>) {

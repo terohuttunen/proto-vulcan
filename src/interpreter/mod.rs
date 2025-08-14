@@ -37,6 +37,10 @@ pub use config::*;
 pub use iterator::*;
 pub use results::*;
 
+// Export builder patterns and constraint plugin support
+pub use crate::state::{ConstraintPlugin, ConstraintPluginRegistry};
+pub use compiler::CompilerBuilder;
+
 /// Validation functions for @main relations
 pub fn find_main_relation(
     program: &ast::Program,
@@ -246,11 +250,57 @@ impl From<compiler::errors::CompileError> for InterpreterError {
     }
 }
 
+/// Builder for configuring an Interpreter with custom options
+pub struct InterpreterBuilder {
+    with_stdlib: bool,
+    plugin_registry: crate::state::ConstraintPluginRegistry,
+}
+
+impl InterpreterBuilder {
+    /// Create a new InterpreterBuilder with default settings
+    pub fn new() -> Self {
+        Self {
+            with_stdlib: false,
+            plugin_registry: crate::state::ConstraintPluginRegistry::new(),
+        }
+    }
+
+    /// Enable standard library builtin predicates
+    pub fn with_stdlib(mut self) -> Self {
+        self.with_stdlib = true;
+        self
+    }
+
+    /// Add a constraint plugin (which may provide both state handling and compilation)
+    pub fn with_constraint_plugin(mut self, plugin: Box<dyn crate::state::ConstraintPlugin>) -> Self {
+        self.plugin_registry.register(plugin);
+        self
+    }
+
+    /// Build the configured Interpreter
+    pub fn build(self) -> Interpreter {
+        let interpreter = Interpreter {
+            environment: Rc::new(RefCell::new(Environment::new())),
+            base_program: None,
+            constraint_plugins: Some(Rc::new(self.plugin_registry)),
+        };
+
+        // Register builtins if requested
+        if self.with_stdlib {
+            builtins::register_builtins(&mut interpreter.environment.borrow_mut());
+        }
+
+        interpreter
+    }
+}
+
 /// The main interpreter struct
 pub struct Interpreter {
     pub environment: Rc<RefCell<Environment>>,
     /// Base program stored for query execution using copy-on-write semantics
     pub base_program: Option<Rc<compiler::ir::Program>>,
+    /// Custom constraint plugins for enhanced constraint domain support
+    constraint_plugins: Option<Rc<crate::state::ConstraintPluginRegistry>>,
 }
 
 impl Interpreter {
@@ -259,6 +309,7 @@ impl Interpreter {
         Self {
             environment: Rc::new(RefCell::new(Environment::new())),
             base_program: None,
+            constraint_plugins: None,
         }
     }
 
@@ -273,6 +324,11 @@ impl Interpreter {
         // Note: No longer loading stdlib here - it will be loaded automatically
         // via the new IR-based import resolution when std predicates are imported
         interpreter
+    }
+
+    /// Create a new InterpreterBuilder for fluent configuration
+    pub fn builder() -> InterpreterBuilder {
+        InterpreterBuilder::new()
     }
 
     /// Get a reference to the environment
