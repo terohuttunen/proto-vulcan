@@ -566,15 +566,6 @@ impl Compiler {
 
                 self.pending_imports.push(pending_import);
             }
-            ast::UsePath::Glob(_qualified_path) => {
-                let pending_import = PendingImport {
-                    use_statement: use_statement.clone(),
-                    importing_module: current_module.clone(),
-                    alias: None,
-                };
-
-                self.pending_imports.push(pending_import);
-            }
             ast::UsePath::List(_qualified_path, items) => {
                 for (symbol, alias) in items {
                     let _symbol_name = symbol.to_string();

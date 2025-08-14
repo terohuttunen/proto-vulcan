@@ -1,8 +1,9 @@
 // Higher-Order Predicates Test Suite
 // Tests for predicates that take other predicates/relations as arguments
 
-use std::list::*;
-use std::higher_order::*;
+use std::list::{nth, distinct};
+use std::higher_order::{maplist, map_transform, map_combine, filter, all_true,
+    any_true, apply_to_all_nested, all_satisfy, any_satisfy, apply_to_all};
 
 // =============================================================================
 // HELPER PREDICATES FOR TESTS

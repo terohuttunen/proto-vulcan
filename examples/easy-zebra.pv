@@ -1,5 +1,5 @@
 // examples/easy-zebra.pv
-use std::list::*;
+use std::list::{member};
 
 // Helper relation for "right next to" logic
 rel righto(x, y, l) {

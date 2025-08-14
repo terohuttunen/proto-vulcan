@@ -1,5 +1,5 @@
 // tests/expected_assertions.pv
-use std::list::*;
+use std::list::{member};
 
 // --- Tests for `expected` parameter ---
 

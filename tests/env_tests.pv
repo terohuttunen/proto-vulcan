@@ -1,7 +1,10 @@
 // Environment Variables Test Suite
 // Tests for std::env module functionality
 
-use std::env::*;
+use std::env::{env_var, current_dir, temp_dir, env_var_or_default, env_var_exists,
+    expand_path, home_dir, home_relative, config_dir, data_dir, cache_dir,
+    env_var_result, env_ok, env_error, env_vars, env_var_count, which, exe_dir,
+    exe_path, argv, args, program_name, argv_count, arg_count, has_flag};
 use std::fs::{file_exists};
 use std::path::{join_path, parent_path, file_name};
 use std::list::{member, first};

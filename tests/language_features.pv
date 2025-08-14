@@ -1,5 +1,5 @@
 // tests/language_features.pv
-use std::list::*;
+use std::list::{member};
 
 // --- Conjunction Tests (AND) ---
 

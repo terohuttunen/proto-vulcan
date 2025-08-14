@@ -126,14 +126,6 @@ impl<'a> AstBuilder<'a> {
 
                 Ok(UsePath::Simple(path, item))
             }
-            Rule::use_path_glob => {
-                // Glob import: use use_path_base::*;
-                let mut parts = inner.into_inner();
-                let use_path_base_pair = parts.next().unwrap();
-
-                let qualified_path = self.build_use_path_base(use_path_base_pair)?;
-                Ok(UsePath::Glob(qualified_path))
-            }
             Rule::use_path_list => {
                 // List import: use use_path_base{...};
                 let mut parts = inner.into_inner();

@@ -1,5 +1,5 @@
 // examples/medium-zebra.pv
-use std::list::*;
+use std::list::{member, first};
 
 /* The puzzle:
         1. There are five houses.

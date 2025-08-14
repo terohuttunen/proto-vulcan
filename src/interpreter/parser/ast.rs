@@ -379,8 +379,6 @@ impl Spanned for UseStatement {
 pub enum UsePath {
     /// Simple import: use path::to::item;
     Simple(QualifiedPath, InternedSymbol),
-    /// Glob import: use path::to::*;
-    Glob(QualifiedPath),
     /// List import: use path::to::{item1, item2 as alias};
     List(QualifiedPath, Vec<(InternedSymbol, Option<InternedSymbol>)>),
 }
@@ -1099,7 +1097,6 @@ impl Display for UsePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             UsePath::Simple(path, item) => write!(f, "{}::{}", path, item),
-            UsePath::Glob(path) => write!(f, "{}::*", path),
             UsePath::List(path, imports) => {
                 let import_str = imports
                     .iter()

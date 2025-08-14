@@ -1,7 +1,9 @@
 // Path Manipulation Test Suite
 // Tests for std::path module functionality
 
-use std::path::*;
+use std::path::{join_path, join_paths, parent_path, file_name, file_stem,
+    extension, has_extension, is_relative_path, add_suffix, absolute_path,
+    ancestors, path_components, with_extension};
 
 // =============================================================================
 // PATH CONSTRUCTION TESTS

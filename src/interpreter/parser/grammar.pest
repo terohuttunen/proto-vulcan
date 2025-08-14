@@ -123,11 +123,10 @@ extern_crate_statement = { extern_keyword ~ crate_keyword ~ ident ~ (as_keyword 
 use_statement = { use_keyword ~ use_path ~ ";" }
 
 use_path = {
-    use_path_glob | use_path_list | use_path_simple
+    use_path_list | use_path_simple
 }
 
 use_path_simple = { use_path_base }
-use_path_glob = { use_path_base ~ path_sep ~ glob }
 use_path_list = { use_path_base ~ path_sep ~ list_import }
 
 use_path_base = {
@@ -135,7 +134,6 @@ use_path_base = {
 }
 
 path_segment = { ident }
-glob = { "*" }
 list_import = { "{" ~ (import_item ~ ("," ~ import_item)*)? ~ ","? ~ "}" }
 import_item = { ident ~ ("as" ~ ident)? }
 

@@ -29,8 +29,6 @@ mod symbol_collection;
 pub mod errors;
 pub mod ir;
 
-#[cfg(test)]
-mod glob_import_tests;
 
 // Re-export types used by multiple phases
 pub use module_map::ModuleMap;
@@ -85,14 +83,6 @@ impl CrateSearchPaths {
     }
 }
 
-/// A resolved glob import that can be used during compilation
-#[derive(Debug, Clone)]
-pub struct ResolvedGlobImport {
-    /// The module that this import is in
-    pub importing_module: ir::ModuleId,
-    /// The target module that was imported with glob (use target::*)
-    pub target_module: ir::ModuleId,
-}
 
 /// Result of resolving a qualified path - contains all items found for that name
 #[derive(Debug, Clone)]
@@ -161,8 +151,6 @@ pub struct Compiler {
     pub(super) compilation_phase: CompilationPhase,
     /// Global list of pending imports to be resolved (simplified architecture)
     pub(super) pending_imports: Vec<PendingImport>,
-    /// Resolved glob imports for use during compilation phase
-    pub(super) resolved_glob_imports: Vec<ResolvedGlobImport>,
     /// External module items that need body compilation after import resolution
     pub(super) external_module_items: Vec<(Rc<ir::ModulePath>, Vec<ast::Item>)>,
     /// Compilation context for warnings and validation
@@ -189,7 +177,6 @@ impl Compiler {
             module_path_stack: Vec::new(), // Will be initialized when program is created
             compilation_phase: CompilationPhase::SymbolAndUseClauseCollection,
             pending_imports: Vec::new(),
-            resolved_glob_imports: Vec::new(),
             external_module_items: Vec::new(),
             compilation_context: CompilationContext::new(options),
             constraint_compilers: ConstraintCompilerRegistry::default(),
@@ -1090,37 +1077,6 @@ impl Compiler {
             return Some(resolved_item);
         }
 
-        // If not found locally or via aliases, check items visible through re-exports
-        // This uses the registry's re-export map to find items from glob imports
-        let current_module = self.current_module_id();
-        let visible_items = ir_program.registry.get_all_visible_items(&current_module);
-
-        // Look for the item with the expected name and kind
-        let item_name = ir::ItemName::new(name, expected_kind).ok()?;
-        if let Some(item_id) = visible_items.get(&item_name) {
-            // Check visibility - only public items are accessible through glob imports
-            let is_public = match expected_kind {
-                ir::ItemKind::Type => ir_program
-                    .registry
-                    .get_type(item_id)
-                    .map(|t| t.visibility == ir::Visibility::Public)
-                    .unwrap_or(false),
-                ir::ItemKind::Predicate => ir_program
-                    .registry
-                    .get_predicate(item_id)
-                    .map(|p| p.visibility == ir::Visibility::Public)
-                    .unwrap_or(false),
-                ir::ItemKind::Module => ir_program
-                    .registry
-                    .get_module(item_id)
-                    .map(|m| m.visibility == ir::Visibility::Public)
-                    .unwrap_or(false),
-            };
-
-            if is_public {
-                return Some(item_id.clone());
-            }
-        }
 
         // If not found locally or via glob imports, check global items (items with module_path = None)
         let (global_item_id, global_found) = match expected_kind {

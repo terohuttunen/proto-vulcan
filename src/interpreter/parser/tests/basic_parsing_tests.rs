@@ -88,22 +88,6 @@ fn test_parse_use_statement_simple() {
     assert_eq!(ast, expected);
 }
 
-#[test]
-fn test_parse_use_statement_glob() {
-    let input = "use a::b::*;";
-    let ast = parse_str(input).unwrap();
-    let expected = Program {
-        items: vec![Item::Use(UseStatement {
-            path: UsePath::Glob(QualifiedPath::Relative(vec![
-                InternedSymbol::from_text("a"),
-                InternedSymbol::from_text("b"),
-            ])),
-            span: Default::default(),
-        })],
-        span: Default::default(),
-    };
-    assert_eq!(ast, expected);
-}
 
 #[test]
 fn test_parse_use_statement_list() {

@@ -1,6 +1,8 @@
 // Comprehensive string utility tests demonstrating constraint-based behavior
 // Tests include both grounded and ungrounded variable scenarios
-use std::string::*;
+use std::string::{string_to_chars, chars_to_string, char_to_digit, digit_to_char,
+    string_to_int, int_to_string, string_split, string_join, string_split_lines,
+    is_digit, is_alpha, is_alnum};
 
 // =============================================================================
 // STRING TO CHARS TESTS - Bidirectional constraint behavior

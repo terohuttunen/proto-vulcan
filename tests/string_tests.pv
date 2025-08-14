@@ -1,5 +1,8 @@
 // Comprehensive test suite for string manipulation builtins
-use std::string::*;
+use std::string::{string_to_chars, chars_to_string, char_to_digit, digit_to_char,
+    string_to_int, int_to_string, string_length, is_digit, is_alpha, is_alnum,
+    string_split, string_split_lines, string_join, string_split_whitespace,
+    single_char, is_numeric_string};
 
 // =============================================================================
 // BASIC STRING TO CHARS TESTS

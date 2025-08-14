@@ -16,10 +16,6 @@ pub struct ItemRegistry {
     /// Items are wrapped in Rc for efficient clone-on-write semantics
     items: HashMap<ItemId, Rc<Item>>,
 
-    /// Map to track which modules re-export other modules
-    /// Key: ModuleId of the exporting module
-    /// Value: Vec of ModuleIds that are re-exported by this module
-    re_exports: HashMap<ModuleId, Vec<ModuleId>>,
 }
 
 impl ItemRegistry {
@@ -27,7 +23,6 @@ impl ItemRegistry {
     pub fn new() -> Self {
         Self {
             items: HashMap::new(),
-            re_exports: HashMap::new(),
         }
     }
 
@@ -415,7 +410,6 @@ impl ItemRegistry {
 
         let new_registry = Self {
             items: new_items,
-            re_exports: self.re_exports.clone(),
         };
 
         (new_registry, previous)
@@ -437,7 +431,6 @@ impl ItemRegistry {
 
         let new_registry = Self {
             items: new_items,
-            re_exports: self.re_exports.clone(),
         };
 
         (
@@ -462,45 +455,6 @@ impl ItemRegistry {
         self.with_item(Item::Predicate(predicate))
     }
 
-    /// Create a new registry with a re-export added (immutable operation)
-    pub fn with_re_export(&self, exporting_module: ModuleId, re_exported_module: ModuleId) -> Self {
-        let mut new_re_exports = self.re_exports.clone();
-        new_re_exports
-            .entry(exporting_module)
-            .or_insert_with(Vec::new)
-            .push(re_exported_module);
-        
-        Self {
-            items: self.items.clone(),
-            re_exports: new_re_exports,
-        }
-    }
-
-    /// Create a new registry with a re-export removed (immutable operation)
-    pub fn without_re_export(&self, exporting_module: &ModuleId, re_exported_module: &ModuleId) -> (Self, bool) {
-        let mut new_re_exports = self.re_exports.clone();
-        let was_removed = if let Some(re_exported_modules) = new_re_exports.get_mut(exporting_module) {
-            if let Some(pos) = re_exported_modules.iter().position(|m| m == re_exported_module) {
-                re_exported_modules.remove(pos);
-                // Clean up empty entries
-                if re_exported_modules.is_empty() {
-                    new_re_exports.remove(exporting_module);
-                }
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-        
-        let new_registry = Self {
-            items: self.items.clone(),
-            re_exports: new_re_exports,
-        };
-        
-        (new_registry, was_removed)
-    }
 
     /*
     /// Remove a module and all its children using recursive hierarchy traversal
@@ -589,201 +543,6 @@ impl ItemRegistry {
     }
     */
 
-    // ============================================================================
-    // Re-exports Management API
-    // ============================================================================
-
-    /// Add a re-export relationship: exporting_module re-exports re_exported_module
-    /// 
-    /// This is used when a module has `pub use other_module::*` or similar re-export statements.
-    /// It records that items from `re_exported_module` are accessible through `exporting_module`.
-    pub fn add_re_export(&mut self, exporting_module: ModuleId, re_exported_module: ModuleId) {
-        self.re_exports
-            .entry(exporting_module)
-            .or_insert_with(Vec::new)
-            .push(re_exported_module);
-    }
-
-    /// Remove a specific re-export relationship
-    /// 
-    /// Returns true if the re-export was found and removed, false otherwise.
-    pub fn remove_re_export(&mut self, exporting_module: &ModuleId, re_exported_module: &ModuleId) -> bool {
-        if let Some(re_exported_modules) = self.re_exports.get_mut(exporting_module) {
-            if let Some(pos) = re_exported_modules.iter().position(|m| m == re_exported_module) {
-                re_exported_modules.remove(pos);
-                // Clean up empty entries
-                if re_exported_modules.is_empty() {
-                    self.re_exports.remove(exporting_module);
-                }
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Clear all re-exports for a given module
-    /// 
-    /// This removes all `pub use other::*` relationships where the given module is the exporter.
-    pub fn clear_re_exports(&mut self, exporting_module: &ModuleId) {
-        self.re_exports.remove(exporting_module);
-    }
-
-    /// Get all modules re-exported by the given module
-    /// 
-    /// Returns None if the module has no re-exports.
-    pub fn get_re_exports(&self, module_id: &ModuleId) -> Option<&Vec<ModuleId>> {
-        self.re_exports.get(module_id)
-    }
-
-    /// Check if a specific re-export relationship exists
-    pub fn has_re_export(&self, exporting_module: &ModuleId, re_exported_module: &ModuleId) -> bool {
-        self.re_exports
-            .get(exporting_module)
-            .map(|modules| modules.contains(re_exported_module))
-            .unwrap_or(false)
-    }
-
-    /// Find all modules that re-export the given target module
-    /// 
-    /// This is useful for reverse lookups: "which modules make target_module's items available?"
-    pub fn modules_that_re_export(&self, target_module: &ModuleId) -> Vec<&ModuleId> {
-        self.re_exports
-            .iter()
-            .filter_map(|(exporting_module, re_exported_modules)| {
-                if re_exported_modules.contains(target_module) {
-                    Some(exporting_module)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    /// Get the total number of re-export relationships
-    pub fn re_export_count(&self) -> usize {
-        self.re_exports.values().map(|v| v.len()).sum()
-    }
-
-    /// Check if any re-exports are defined
-    pub fn has_any_re_exports(&self) -> bool {
-        !self.re_exports.is_empty()
-    }
-
-    /// Check if adding a re-export would create a cycle
-    /// 
-    /// This prevents infinite loops in re-export chains by detecting if 
-    /// `target_module` already re-exports `exporting_module` (directly or indirectly).
-    pub fn would_create_cycle(&self, exporting_module: &ModuleId, target_module: &ModuleId) -> bool {
-        use std::collections::HashSet;
-        
-        let mut visited = HashSet::new();
-        self.has_re_export_path(target_module, exporting_module, &mut visited)
-    }
-
-    /// Check if there's a re-export path from `from_module` to `to_module`
-    /// 
-    /// Used internally for cycle detection.
-    fn has_re_export_path(&self, from_module: &ModuleId, to_module: &ModuleId, visited: &mut std::collections::HashSet<ModuleId>) -> bool {
-        // Avoid infinite recursion
-        if visited.contains(from_module) {
-            return false;
-        }
-        visited.insert(from_module.clone());
-
-        // Direct re-export
-        if let Some(re_exported_modules) = self.re_exports.get(from_module) {
-            if re_exported_modules.contains(to_module) {
-                return true;
-            }
-            
-            // Indirect re-export through other modules
-            for intermediate_module in re_exported_modules {
-                if self.has_re_export_path(intermediate_module, to_module, visited) {
-                    return true;
-                }
-            }
-        }
-        
-        false
-    }
-
-    /// Resolve the complete re-export chain for a module with cycle detection
-    /// 
-    /// Returns all modules that are transitively re-exported by the given module.
-    /// The `visited` set is used for cycle detection and should be empty on the initial call.
-    pub fn resolve_re_export_chain(&self, module_id: &ModuleId, visited: &mut std::collections::HashSet<ModuleId>) -> Vec<ModuleId> {
-        
-        let mut result = Vec::new();
-        
-        // Avoid infinite recursion
-        if visited.contains(module_id) {
-            return result;
-        }
-        visited.insert(module_id.clone());
-
-        if let Some(re_exported_modules) = self.re_exports.get(module_id) {
-            for re_exported in re_exported_modules {
-                // Add the directly re-exported module
-                result.push(re_exported.clone());
-                
-                // Recursively add transitively re-exported modules
-                let mut transitive = self.resolve_re_export_chain(re_exported, visited);
-                result.append(&mut transitive);
-            }
-        }
-        
-        result
-    }
-
-    /// Get all items visible through a module, including re-exported items
-    /// 
-    /// This includes:
-    /// 1. Items directly defined in the module
-    /// 2. Items from modules that this module re-exports (transitively)
-    /// 
-    /// Note: This returns a HashMap where later entries may shadow earlier ones.
-    /// The caller should handle name conflicts according to their resolution rules.
-    pub fn get_all_visible_items(&self, module_id: &ModuleId) -> std::collections::HashMap<ItemName, ItemId> {
-        use std::collections::{HashMap, HashSet};
-        
-        let mut result = HashMap::new();
-        let mut visited = HashSet::new();
-        
-        self.collect_visible_items_recursive(module_id, &mut result, &mut visited);
-        
-        result
-    }
-
-    /// Recursively collect items from a module and its re-exports
-    fn collect_visible_items_recursive(
-        &self, 
-        module_id: &ModuleId, 
-        result: &mut std::collections::HashMap<ItemName, ItemId>,
-        visited: &mut std::collections::HashSet<ModuleId>
-    ) {
-        // Avoid infinite recursion
-        if visited.contains(module_id) {
-            return;
-        }
-        visited.insert(module_id.clone());
-
-        // Collect items directly defined in this module
-        for item in self.items.values() {
-            if let Some(item_module_id) = item.id().parent_module_id() {
-                if item_module_id == *module_id {
-                    let (_, item_name) = item.id().split();
-                    result.insert(item_name, item.id().clone());
-                }
-            }
-        }
-
-        // Recursively collect items from re-exported modules
-        if let Some(re_exported_modules) = self.re_exports.get(module_id) {
-            for re_exported in re_exported_modules {
-                self.collect_visible_items_recursive(re_exported, result, visited);
-            }
-        }
-    }
 
     // ============================================================================
     // Runtime Symbol Resolution with Incremental Support
@@ -815,12 +574,6 @@ impl ItemRegistry {
                 .map(|id| (id, ImportPrecedence::ExplicitImport))
         );
 
-        // 3. Glob imports (lowest precedence) - RUNTIME RESOLUTION
-        candidates.extend(
-            self.find_glob_imports_runtime(module_id, symbol_name, symbol_kind)
-                .into_iter()
-                .map(|id| (id, ImportPrecedence::GlobImport))
-        );
 
         self.resolve_with_precedence(candidates)
     }
@@ -874,62 +627,6 @@ impl ItemRegistry {
         results
     }
 
-    /// Find items through glob imports (use module::*) - runtime resolution
-    fn find_glob_imports_runtime(
-        &self,
-        module_id: &ModuleId,
-        symbol_name: &str,
-        symbol_kind: ItemKind,
-    ) -> Vec<ItemId> {
-        let mut results = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-
-        // Follow re-export chains to find symbols
-        if let Some(re_exported_modules) = self.get_re_exports(module_id) {
-            for target_module in re_exported_modules {
-                self.search_module_for_symbol(
-                    target_module,
-                    symbol_name,
-                    symbol_kind,
-                    &mut results,
-                    &mut visited,
-                );
-            }
-        }
-
-        results
-    }
-
-    /// Recursively search a module for a specific symbol
-    fn search_module_for_symbol(
-        &self,
-        module_id: &ModuleId,
-        symbol_name: &str,
-        symbol_kind: ItemKind,
-        results: &mut Vec<ItemId>,
-        visited: &mut std::collections::HashSet<ModuleId>,
-    ) {
-        if visited.contains(module_id) {
-            return; // Cycle detection
-        }
-        visited.insert(module_id.clone());
-
-        // Search direct items in this module
-        results.extend(self.find_direct_items(module_id, symbol_name, symbol_kind));
-
-        // Recursively search re-exported modules
-        if let Some(re_exported_modules) = self.get_re_exports(module_id) {
-            for re_exported in re_exported_modules {
-                self.search_module_for_symbol(
-                    re_exported,
-                    symbol_name,
-                    symbol_kind,
-                    results,
-                    visited,
-                );
-            }
-        }
-    }
 
     /// Resolve conflicts using precedence rules (like Rust)
     fn resolve_with_precedence(
@@ -963,7 +660,6 @@ impl ItemRegistry {
 pub enum ImportPrecedence {
     DirectItem = 0,     // Highest priority
     ExplicitImport = 1, // Medium priority  
-    GlobImport = 2,     // Lowest priority
 }
 
 /// Symbol resolution errors
@@ -1650,207 +1346,4 @@ mod tests {
         assert_eq!(registry.get_predicate_arity(&non_existent), None);
     }
 
-    #[test]
-    fn test_basic_re_exports() {
-        let mut registry = ItemRegistry::new();
-        
-        let module_a = ModuleId::from_path("::a");
-        let module_b = ModuleId::from_path("::b");
-        let module_c = ModuleId::from_path("::c");
-
-        // Test adding re-exports
-        registry.add_re_export(module_a.clone(), module_b.clone());
-        registry.add_re_export(module_a.clone(), module_c.clone());
-
-        // Test querying re-exports
-        assert!(registry.has_re_export(&module_a, &module_b));
-        assert!(registry.has_re_export(&module_a, &module_c));
-        assert!(!registry.has_re_export(&module_b, &module_a));
-
-        let re_exports = registry.get_re_exports(&module_a).unwrap();
-        assert_eq!(re_exports.len(), 2);
-        assert!(re_exports.contains(&module_b));
-        assert!(re_exports.contains(&module_c));
-
-        // Test reverse lookup
-        let modules_re_exporting_b = registry.modules_that_re_export(&module_b);
-        assert_eq!(modules_re_exporting_b.len(), 1);
-        assert_eq!(modules_re_exporting_b[0], &module_a);
-
-        // Test counts
-        assert_eq!(registry.re_export_count(), 2);
-        assert!(registry.has_any_re_exports());
-    }
-
-    #[test]
-    fn test_remove_re_exports() {
-        let mut registry = ItemRegistry::new();
-        
-        let module_a = ModuleId::from_path("::a");
-        let module_b = ModuleId::from_path("::b");
-        let module_c = ModuleId::from_path("::c");
-
-        // Add re-exports
-        registry.add_re_export(module_a.clone(), module_b.clone());
-        registry.add_re_export(module_a.clone(), module_c.clone());
-
-        // Remove one re-export
-        assert!(registry.remove_re_export(&module_a, &module_b));
-        assert!(!registry.has_re_export(&module_a, &module_b));
-        assert!(registry.has_re_export(&module_a, &module_c));
-
-        // Try to remove non-existent re-export
-        assert!(!registry.remove_re_export(&module_a, &module_b));
-
-        // Remove last re-export (should clean up empty entry)
-        assert!(registry.remove_re_export(&module_a, &module_c));
-        assert!(registry.get_re_exports(&module_a).is_none());
-        assert_eq!(registry.re_export_count(), 0);
-        assert!(!registry.has_any_re_exports());
-    }
-
-    #[test]
-    fn test_clear_re_exports() {
-        let mut registry = ItemRegistry::new();
-        
-        let module_a = ModuleId::from_path("::a");
-        let module_b = ModuleId::from_path("::b");
-        let module_c = ModuleId::from_path("::c");
-
-        // Add re-exports
-        registry.add_re_export(module_a.clone(), module_b.clone());
-        registry.add_re_export(module_a.clone(), module_c.clone());
-        
-        // Clear all re-exports for module_a
-        registry.clear_re_exports(&module_a);
-        
-        assert!(registry.get_re_exports(&module_a).is_none());
-        assert_eq!(registry.re_export_count(), 0);
-    }
-
-    #[test]
-    fn test_cycle_detection() {
-        let mut registry = ItemRegistry::new();
-        
-        let module_a = ModuleId::from_path("::a");
-        let module_b = ModuleId::from_path("::b");
-        let module_c = ModuleId::from_path("::c");
-
-        // Create a chain: A -> B -> C
-        registry.add_re_export(module_a.clone(), module_b.clone());
-        registry.add_re_export(module_b.clone(), module_c.clone());
-
-        // Direct cycle detection: C -> A would create a cycle
-        assert!(registry.would_create_cycle(&module_c, &module_a));
-        
-        // Indirect cycle detection: C -> B would create a cycle (B already leads to C)
-        assert!(registry.would_create_cycle(&module_c, &module_b));
-        
-        // No cycle: A -> C is fine (even though A -> B -> C exists)
-        assert!(!registry.would_create_cycle(&module_a, &module_c));
-    }
-
-    #[test]
-    fn test_re_export_chain_resolution() {
-        let mut registry = ItemRegistry::new();
-        
-        let module_a = ModuleId::from_path("::a");
-        let module_b = ModuleId::from_path("::b");
-        let module_c = ModuleId::from_path("::c");
-        let module_d = ModuleId::from_path("::d");
-
-        // Create chain: A -> B, B -> C, B -> D
-        registry.add_re_export(module_a.clone(), module_b.clone());
-        registry.add_re_export(module_b.clone(), module_c.clone());
-        registry.add_re_export(module_b.clone(), module_d.clone());
-
-        let mut visited = std::collections::HashSet::new();
-        let chain = registry.resolve_re_export_chain(&module_a, &mut visited);
-        
-        // Should contain B (direct), C and D (transitive through B)
-        assert_eq!(chain.len(), 3);
-        assert!(chain.contains(&module_b));
-        assert!(chain.contains(&module_c));
-        assert!(chain.contains(&module_d));
-    }
-
-    #[test]
-    fn test_visible_items_with_re_exports() {
-        let mut registry = ItemRegistry::new();
-
-        // Create modules
-        let module_a = Module {
-            id: ModuleId::from_path("::a"),
-            visibility: Visibility::Public,
-        };
-        let module_b = Module {
-            id: ModuleId::from_path("::b"),
-            visibility: Visibility::Public,
-        };
-        registry.add_module(module_a.clone());
-        registry.add_module(module_b.clone());
-
-        // Add a type to module B
-        let type_in_b = TypeDefinition {
-            id: TypeId::from_path("::b::TypeInB"),
-            kind: TypeKind::Struct(StructDefinition {
-                name: InternedSymbol::from_text("TypeInB"),
-                fields: StructFields::Tuple(vec![]),
-            }),
-            visibility: Visibility::Public,
-        };
-        registry.add_type(type_in_b);
-
-        // Add a predicate to module A
-        let pred_in_a = Predicate {
-            id: PredicateId::from_path("::a::pred_in_a"),
-            parameters: vec![],
-            body: StructuralGoal::empty_container(),
-            kind: PredicateKind::Relation,
-            visibility: Visibility::Public,
-        };
-        registry.add_predicate(pred_in_a);
-
-        // A re-exports B
-        registry.add_re_export(module_a.id.clone(), module_b.id.clone());
-
-        // Get all visible items through module A
-        let visible_items = registry.get_all_visible_items(&module_a.id);
-        
-        // Should contain both the predicate from A and the type from B
-        assert_eq!(visible_items.len(), 2);
-        
-        let pred_name = ItemName::new("pred_in_a", ItemKind::Predicate).unwrap();
-        let type_name = ItemName::new("TypeInB", ItemKind::Type).unwrap();
-        
-        assert!(visible_items.contains_key(&pred_name));
-        assert!(visible_items.contains_key(&type_name));
-    }
-
-    #[test]
-    fn test_immutable_re_export_operations() {
-        let registry = ItemRegistry::new();
-        
-        let module_a = ModuleId::from_path("::a");
-        let module_b = ModuleId::from_path("::b");
-
-        // Test immutable add
-        let new_registry = registry.with_re_export(module_a.clone(), module_b.clone());
-        
-        // Original registry unchanged
-        assert!(!registry.has_re_export(&module_a, &module_b));
-        
-        // New registry has the re-export
-        assert!(new_registry.has_re_export(&module_a, &module_b));
-        
-        // Test immutable remove
-        let (final_registry, was_removed) = new_registry.without_re_export(&module_a, &module_b);
-        assert!(was_removed);
-        assert!(!final_registry.has_re_export(&module_a, &module_b));
-        
-        // Test removing non-existent
-        let (unchanged_registry, was_removed) = registry.without_re_export(&module_a, &module_b);
-        assert!(!was_removed);
-        assert_eq!(unchanged_registry.re_export_count(), 0);
-    }
 }

@@ -1,7 +1,10 @@
 // Simplified Filesystem Operations Test Suite
 // Tests for core working functionality of std::fs and std::path modules
 
-use std::fs::*;
+use std::fs::{read_file, write_file, file_exists, is_file, is_dir, file_size,
+    read_file_bytes, read_file_lines, write_file_bytes, write_file_lines,
+    append_file, copy_file, remove_file, rename_file, read_dir, create_dir,
+    remove_dir, create_dir_all, remove_dir_all, read_file_result, fs_ok, fs_error};
 use std::path::{join_path, join_paths, parent_path, file_name, canonicalize, 
                 relative_path, normalize_path, path_components, 
                 is_absolute_path};

@@ -1,7 +1,7 @@
 // Comprehensive runtime tests for metaprogramming features
 // Tests the template expansion engine
 
-use std::list::*;
+use std::list::{member};
 
 // Test basic meta let statement execution
 @test(expected = [5])

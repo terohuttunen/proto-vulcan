@@ -682,15 +682,6 @@ impl Environment {
                 };
                 self.import_simple(vec![full_path])?;
             }
-            UsePath::Glob(qualified_path) => {
-                let resolved_path = self.resolve_qualified_path(&qualified_path)?;
-                let path_segments = if resolved_path.is_empty() {
-                    vec![]
-                } else {
-                    resolved_path.split("::").map(|s| s.to_string()).collect()
-                };
-                self.import_glob(path_segments)?;
-            }
             UsePath::List(qualified_path, imports) => {
                 let resolved_path = self.resolve_qualified_path(&qualified_path)?;
                 let path_segments = if resolved_path.is_empty() {

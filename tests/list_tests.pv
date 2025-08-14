@@ -1,7 +1,8 @@
 // List Operations Test Suite
 // Tests for structural and utility predicates in std::list
 
-use std::list::*;
+use std::list::{member, append, length, reverse, permute, distinct, flatten,
+    transpose, nth, cons, first, rest, rember, member_once, flatten_lists};
 
 // =============================================================================
 // ARITHMETIC PREDICATES (CONSTRAINT-BASED) - FOR TESTING ONLY

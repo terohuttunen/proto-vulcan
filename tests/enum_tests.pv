@@ -1,5 +1,4 @@
 // tests/enum_tests.pv - Tests for enum syntax in Proto-Vulcan
-use std::list::*;
 
 // Basic unit variant enums
 enum Color {

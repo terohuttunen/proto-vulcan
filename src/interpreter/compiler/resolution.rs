@@ -72,10 +72,6 @@ impl Compiler {
                 // we can return the full path and let the resolver handle it
                 Some(qualified_path)
             }
-            ast::UsePath::Glob(qualified_path) => {
-                // For glob imports, the entire qualified path is the module
-                Some(qualified_path)
-            }
             ast::UsePath::List(qualified_path, _) => {
                 // For list imports, the qualified path is the module
                 Some(qualified_path)
@@ -87,7 +83,6 @@ impl Compiler {
     fn import_references_crate(&self, import: &PendingImport, crate_name: &str) -> bool {
         match &import.use_statement.path {
             ast::UsePath::Simple(qualified_path, _)
-            | ast::UsePath::Glob(qualified_path)
             | ast::UsePath::List(qualified_path, _) => {
                 self.qualified_path_references_crate(qualified_path, crate_name)
             }
@@ -124,7 +119,6 @@ impl Compiler {
             ast::UsePath::Simple(qualified_path, name) => {
                 self.try_resolve_simple_import(qualified_path, name, ir_program)
             }
-            ast::UsePath::Glob(_) => self.try_resolve_glob_import(pending_import, ir_program),
             ast::UsePath::List(_, _) => self.try_resolve_list_import(pending_import, ir_program),
         };
 
@@ -195,177 +189,6 @@ impl Compiler {
         }
     }
 
-    /// Try to resolve a glob import (use path::*) with incremental compilation support
-    ///
-    /// This validates the glob import at compile time but defers actual symbol resolution
-    /// to runtime, allowing incremental changes to be picked up automatically.
-    fn try_resolve_glob_import(
-        &mut self,
-        pending_import: &PendingImport,
-        ir_program: &mut Program,
-    ) -> Result<Option<Vec<ResolvedImport>>, CompileError> {
-        // Extract the qualified path from the glob import
-        let qualified_path = match &pending_import.use_statement.path {
-            ast::UsePath::Glob(qualified_path) => qualified_path,
-            _ => unreachable!("try_resolve_glob_import called on non-glob import"),
-        };
-
-        // 1. VALIDATION: Resolve target module and check accessibility
-        let target_module = match self.resolve_qualified_path_as_module(qualified_path, ir_program)
-        {
-            Ok(module_id) => module_id,
-            Err(_) => {
-                // Module not found yet - import cannot be resolved
-                return Ok(None);
-            }
-        };
-
-        // 2. VALIDATION: Check module accessibility
-        if !self.is_module_accessible(&pending_import.importing_module, &target_module, ir_program)
-        {
-            return Err(CompileError::ModuleNotAccessible {
-                target: target_module,
-                from: pending_import.importing_module.clone(),
-            });
-        }
-
-        // 3. VALIDATION: Check for immediate conflicts with existing symbols
-        // We validate current conflicts but allow runtime resolution for incremental changes
-        if let Err(conflict) = self.validate_glob_conflicts(
-            &pending_import.importing_module,
-            &target_module,
-            ir_program,
-        ) {
-            return Err(conflict);
-        }
-
-        // 4. RECORD RE-EXPORT: Add the re-export relationship for runtime resolution
-        ir_program.registry_mut().add_re_export(
-            pending_import.importing_module.clone(),
-            target_module.clone(),
-        );
-
-        // 5. Record as resolved glob import for tracking
-        self.resolved_glob_imports.push(super::ResolvedGlobImport {
-            importing_module: pending_import.importing_module.clone(),
-            target_module,
-        });
-
-
-        // Return empty resolved imports - actual resolution happens at runtime
-        // This allows incremental changes to be picked up automatically
-        Ok(Some(Vec::new()))
-    }
-
-    /// Check if a target module is accessible from the importing module
-    fn is_module_accessible(
-        &self,
-        _importing_module: &ModuleId,
-        _target_module: &ModuleId,
-        _ir_program: &Program,
-    ) -> bool {
-        // For now, all public modules are accessible
-        // In the future, this could check:
-        // - Crate boundaries
-        // - pub(crate) visibility rules
-        // - pub(super) visibility rules
-        true
-    }
-
-    /// Validate that a glob import doesn't create immediate conflicts
-    fn validate_glob_conflicts(
-        &self,
-        importing_module: &ModuleId,
-        target_module: &ModuleId,
-        ir_program: &Program,
-    ) -> Result<(), CompileError> {
-        // Get symbols that would be imported
-        let target_symbols = ir_program.registry().get_all_visible_items(target_module);
-
-        // Check each symbol for conflicts with existing symbols in the importing module
-        for (item_name, _item_id) in target_symbols {
-            // Check for conflicts with direct items
-            if let Some(_existing) =
-                self.find_existing_direct_symbol(importing_module, &item_name, ir_program)
-            {
-                // Direct items take precedence over glob imports - no conflict
-                continue;
-            }
-
-            // Check for conflicts with explicit imports
-            if let Some(_existing) =
-                self.find_existing_explicit_import(importing_module, &item_name, ir_program)
-            {
-                // Explicit imports take precedence over glob imports - no conflict
-                continue;
-            }
-
-            // Check for conflicts with other glob imports (same precedence level)
-            if let Some(existing_glob) =
-                self.find_existing_glob_import(importing_module, &item_name, ir_program)
-            {
-                if existing_glob != *target_module {
-                    return Err(CompileError::AmbiguousGlobImport {
-                        symbol: item_name,
-                        source1: existing_glob,
-                        source2: target_module.clone(),
-                        importing_module: importing_module.clone(),
-                    });
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Find an existing direct symbol in a module
-    fn find_existing_direct_symbol(
-        &self,
-        module_id: &ModuleId,
-        item_name: &ItemName,
-        ir_program: &Program,
-    ) -> Option<ItemId> {
-        let direct_items = ir_program.registry().find_direct_items(
-            module_id,
-            item_name.name.as_ref(),
-            item_name.kind,
-        );
-        direct_items.into_iter().next()
-    }
-
-    /// Find an existing explicit import in a module
-    fn find_existing_explicit_import(
-        &self,
-        module_id: &ModuleId,
-        item_name: &ItemName,
-        ir_program: &Program,
-    ) -> Option<ItemId> {
-        let explicit_imports = ir_program.registry().find_explicit_imports(
-            module_id,
-            item_name.name.as_ref(),
-            item_name.kind,
-        );
-        explicit_imports.into_iter().next()
-    }
-
-    /// Find an existing glob import that provides a symbol
-    fn find_existing_glob_import(
-        &self,
-        module_id: &ModuleId,
-        item_name: &ItemName,
-        ir_program: &Program,
-    ) -> Option<ModuleId> {
-        // Check all re-exported modules for this symbol
-        if let Some(re_exported_modules) = ir_program.registry().get_re_exports(module_id) {
-            for re_exported in re_exported_modules {
-                let symbols = ir_program.registry().get_all_visible_items(re_exported);
-                if symbols.contains_key(item_name) {
-                    return Some(re_exported.clone());
-                }
-            }
-        }
-        None
-    }
 
     /// Try to resolve a list import (use path::{item1, item2})
     fn try_resolve_list_import(

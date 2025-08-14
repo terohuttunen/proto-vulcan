@@ -2,7 +2,7 @@
 // Comprehensive tests for import functionality
 
 // Test standard library imports
-use std::list::*;
+use std::list::{member, append};
 
 // Test simple selective imports
 use std::list::{member, append};
