@@ -699,6 +699,13 @@ impl Compiler {
     ) -> Result<(Rc<ir::ModulePath>, String), CompileError> {
         let mut current_module_path = self.current_module_path();
 
+        // Handle empty segments - this is an error condition
+        if segments.is_empty() {
+            // We need a symbol for the error, but we don't have one for empty segments
+            // This indicates a bug in the parser or earlier compilation phases
+            panic!("resolve_relative_path called with empty segments - this indicates a compiler bug");
+        }
+
         if segments.len() == 1 {
             return Ok((current_module_path, segments[0].to_string()));
         }
