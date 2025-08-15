@@ -885,11 +885,21 @@ impl Interpreter {
         program_ast: ast::Program,
         _config: &ExecutionConfig,
     ) -> Result<compiler::ir::Program, InterpreterError> {
-        let mut compiler = compiler::Compiler::new();
-
-        // Set compilation options based on config
-        // TODO: Set compilation options from config when available
-        // For now, use default options
+        // Create compiler builder to configure with constraint plugins
+        let mut compiler_builder = compiler::CompilerBuilder::new();
+        
+        // Add constraint compilers from registered plugins generically
+        if let Some(ref plugins) = self.constraint_plugins {
+            // Create and add constraint compiler instances from all plugins
+            for plugin in plugins.plugins() {
+                if let Some(compiler) = plugin.create_constraint_compiler() {
+                    compiler_builder = compiler_builder.with_constraint_compiler(compiler);
+                }
+            }
+        }
+        
+        // Build the configured compiler
+        let mut compiler = compiler_builder.build();
 
         compiler
             .compile_from_ast(program_ast)

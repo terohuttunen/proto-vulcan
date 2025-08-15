@@ -30,6 +30,14 @@ pub trait ConstraintPlugin: std::fmt::Debug {
     fn constraint_compiler(&self) -> Option<Box<dyn ConstraintCompiler>> {
         None
     }
+    
+    /// Create a new instance of the constraint compiler if this plugin provides one
+    /// 
+    /// This is needed because we can't clone trait objects, so we need a factory method
+    /// to create new instances when transferring compilers to different contexts.
+    fn create_constraint_compiler(&self) -> Option<Box<dyn ConstraintCompiler>> {
+        self.constraint_compiler()
+    }
 }
 
 /// Registry for constraint plugins
@@ -104,6 +112,36 @@ impl ConstraintPluginRegistry {
     /// Get the number of registered plugins
     pub fn plugin_count(&self) -> usize {
         self.plugins.len()
+    }
+    
+    /// Get a reference to the internal constraint compiler registry
+    pub fn compiler_registry(&self) -> &ConstraintCompilerRegistry {
+        &self.compiler_registry
+    }
+    
+    /// Create new constraint compiler instances from all plugins
+    /// 
+    /// This is useful when we need to transfer constraint compilers to another context
+    /// like the Compiler, since we can't clone trait objects.
+    pub fn create_constraint_compilers(&self) -> ConstraintCompilerRegistry {
+        let mut registry = ConstraintCompilerRegistry::new();
+        
+        // Add compilers from the cached registry
+        // Note: We still can't clone the existing registry, but we can create new instances from plugins
+        
+        // Create new instances from each plugin
+        for plugin in &self.plugins {
+            if let Some(compiler) = plugin.create_constraint_compiler() {
+                registry.register(compiler);
+            }
+        }
+        
+        registry
+    }
+    
+    /// Get access to plugins for creating constraint compiler instances
+    pub fn plugins(&self) -> &[Box<dyn ConstraintPlugin>] {
+        &self.plugins
     }
 }
 
